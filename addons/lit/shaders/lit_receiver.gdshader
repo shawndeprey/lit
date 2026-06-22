@@ -22,8 +22,19 @@ uniform float specular_k = 32.0;
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
 
-// Scope through Phase 2: ambient + point diffuse + specular + emissive + soft
-// shadows. No directional branch (Phase 3), no mask/subtract (Phase 4).
+// --- directional tuning (D5; by-eye dials) ---
+// Horizontal reach of a directional light's shading vector vs. its `height`;
+// elevation = atan(height / scale). Default gives ~27° at height 16, so the
+// direction reads clearly. Larger = more grazing.
+uniform float directional_horizontal_scale = 32.0;
+// Directional shadows march this many screen-diagonals across the SDF before
+// they're "open sky". Self-calibrating to screen size so the fixed step budget
+// stays well-sampled (a fixed huge distance under-samples the penumbra).
+uniform float directional_shadow_reach = 1.0;
+
+// Light types (texel 3.r): 0 = point, 1 = directional (sun), 2 = spot.
+// Scope: ambient + point/directional/spot diffuse + specular + emissive + soft
+// shadows. No mask/subtract (Phase 4).
 
 // IQ soft-shadow march of the native screen-space SDF (D4, §9.3). Operates in
 // SDF space; marches from the fragment toward the light, tracking the running
@@ -71,6 +82,9 @@ void fragment() {
 
 	vec2 frag_uv = SCREEN_UV;                     // §9.0 canonical space
 	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // §9.3 shadow march space
+	// Screen diagonal measured in SDF units — the natural scale for a directional
+	// shadow's march distance (keeps the step budget well-sampled at any res).
+	float sdf_diag = length(screen_uv_to_sdf(vec2(1.0)) - screen_uv_to_sdf(vec2(0.0)));
 
 	for (int i = 0; i < lit_light_count; i++) {
 		// Unpack the per-light record (§9.4).
@@ -85,21 +99,53 @@ void fragment() {
 		float height = t1.w;
 		float falloff = t3.w;
 
-		// flags: bit 0 = shadow_enabled, bit 1 = subtractive (Phase 4). §9.4.
+		// type: 0 = point, 1 = directional, 2 = spot. flags bit 0 = shadow_enabled,
+		// bit 1 = subtractive (Phase 4).
+		int type = int(round(t3.x));
+		bool is_directional = type == 1;
+		bool is_spot = type == 2;
 		int flags = int(round(t3.y));
 		bool shadow_enabled = (flags & 1) != 0;
 
-		// §9.0/§9.2: work in pixels. UV delta -> pixel delta.
-		vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
-		float dist = length(to_light_px);
-		if (dist > range) {
-			continue;                            // early-out beyond range
+		vec3 Ldir;
+		float atten;
+		vec2 shadow_dir_uv = vec2(0.0);          // toward-light, screen-UV space (directional only)
+
+		if (is_directional) {
+			// t0.xy is a unit screen-space direction toward the light (§9.0, D5).
+			// No position, no attenuation; `height` sets the elevation.
+			vec2 dir_px = t0.xy;
+			Ldir = normalize(vec3(dir_px * directional_horizontal_scale, height));
+			atten = 1.0;
+			shadow_dir_uv = dir_px / lit_viewport_size; // pixel dir -> UV dir
+		} else {
+			// Positional (point or spot). §9.0/§9.2: work in pixels.
+			vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
+			float dist = length(to_light_px);
+			if (dist > range) {
+				continue;                        // early-out beyond range
+			}
+			Ldir = normalize(vec3(to_light_px, height));
+			atten = pow(clamp(1.0 - dist / range, 0.0, 1.0), falloff);
+
+			// A spot light is a point light masked to a cone (texel 4): aim.xy is
+			// the screen-space direction the light points; the fragment is lit if
+			// it lies within the cone, with a soft edge between inner/outer angle.
+			if (is_spot) {
+				vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // aim.xy | cos_outer | cos_inner
+				vec2 dir_to_frag = (dist > 0.0001) ? (-to_light_px / dist) : t4.xy;
+				float cone = smoothstep(t4.z, t4.w, dot(t4.xy, dir_to_frag));
+				atten *= cone;
+			}
 		}
 
-		vec3 Lvec = vec3(to_light_px, height);
-		vec3 Ldir = normalize(Lvec);
+		// Fully attenuated (out of range, or outside a spot's cone): nothing to add
+		// and no shadow to march.
+		if (atten <= 0.0) {
+			continue;
+		}
+
 		float ndotl = max(dot(N, Ldir), 0.0);
-		float atten = pow(clamp(1.0 - dist / range, 0.0, 1.0), falloff);
 
 		// Diffuse (§9.2).
 		vec3 diffuse = albedo * light_color * energy * ndotl * atten;
@@ -119,7 +165,19 @@ void fragment() {
 		// the light is fully blocked). Shadow factor 1 = lit, 0 = occluded.
 		if (shadow_enabled) {
 			vec4 t2 = texelFetch(lit_light_data, ivec2(2, i), 0); // shadow_color.rgb | shadow_hardness
-			float s = lit_shadow(frag_sdf, screen_uv_to_sdf(light_uv), t2.w);
+			vec2 light_sdf;
+			if (is_directional) {
+				// March a fixed direction across the SDF (D5, §9.3). screen_uv_to_sdf
+				// is affine, so the SDF-space direction comes from offsetting the
+				// fragment UV along the toward-light dir. Distance scales with the
+				// screen so the step budget stays well-sampled.
+				vec2 dir_sdf = normalize(screen_uv_to_sdf(SCREEN_UV + shadow_dir_uv) - frag_sdf);
+				light_sdf = frag_sdf + dir_sdf * sdf_diag * directional_shadow_reach;
+			} else {
+				// Point and spot both march toward the light's screen position.
+				light_sdf = screen_uv_to_sdf(light_uv);
+			}
+			float s = lit_shadow(frag_sdf, light_sdf, t2.w);
 			contribution *= mix(t2.rgb, vec3(1.0), s);
 		}
 

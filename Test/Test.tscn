@@ -6,6 +6,8 @@
 [ext_resource type="Texture2D" uid="uid://00ekrajqf1ch" path="res://Test/cinderskull_preview_n.png" id="2_pyd3v"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_4l8u5"]
 [ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="4_lg8mm"]
+[ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="7_iednq"]
+[ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="8_5ghie"]
 
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
 polygon = PackedVector2Array(-5.200012, -11.799999, -9.400017, -7.5999985, -9.200012, 3.7999992, -7.8000107, 7.200001, -3.0000153, 13.200001, 2.7999878, 12.999996, 6.9999847, 6.6000023, 8.399986, 3.6000023, 8.599983, -7.3999977, 3.5999832, -12.399998)
@@ -39,8 +41,15 @@ metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="LitLights" type="Node2D" parent="." unique_id=976079942]
 
+[node name="LitDirectionalLight2D" type="Node2D" parent="LitLights" unique_id=707866917]
+script = ExtResource("7_iednq")
+energy = 0.2
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://7156lwdhmrod"
+
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(486, 280)
+position = Vector2(524, 131)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 3.0
@@ -50,158 +59,28 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights" unique_id=1063815886]
-position = Vector2(679, 449)
+position = Vector2(669, 386)
 script = ExtResource("4_lg8mm")
-color = Color(1, 0.41074198, 0.7963516, 1)
+color = Color(0.8709204, 5.640924e-05, 0.65549177, 1)
 energy = 2.0
 range = 1024.0
 shadow_enabled = true
 shadow_hardness = 1.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
-[node name="LitPointLight2D3" type="Node2D" parent="LitLights" unique_id=2105760168]
-visible = false
-position = Vector2(578, 166)
-script = ExtResource("4_lg8mm")
-color = Color(0.77804685, 0.53520906, 1, 1)
+[node name="LitSpotLight2D" type="Node2D" parent="LitLights" unique_id=1682313072]
+position = Vector2(457, 389.00006)
+rotation = -0.4061976
+script = ExtResource("8_5ghie")
+color = Color(0, 0, 1, 1)
+energy = 3.0
 range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D4" type="Node2D" parent="LitLights" unique_id=930651507]
-visible = false
-position = Vector2(431, 70)
-script = ExtResource("4_lg8mm")
-color = Color(0.6262406, 0.60984623, 1, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D5" type="Node2D" parent="LitLights" unique_id=1011417854]
-visible = false
-position = Vector2(353, 178)
-script = ExtResource("4_lg8mm")
-color = Color(0.34653375, 0.68956554, 1, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D6" type="Node2D" parent="LitLights" unique_id=1353744140]
-visible = false
-position = Vector2(200, 482)
-script = ExtResource("4_lg8mm")
-color = Color(4.7168137e-06, 0.7562609, 0.7904028, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D7" type="Node2D" parent="LitLights" unique_id=751826762]
-visible = false
-position = Vector2(393, 581)
-script = ExtResource("4_lg8mm")
-color = Color(2.3102762e-06, 0.7933681, 0.4507625, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D8" type="Node2D" parent="LitLights" unique_id=360960103]
-visible = false
-position = Vector2(604, 604)
-script = ExtResource("4_lg8mm")
-color = Color(0.7073694, 0.6900119, 7.70092e-07, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D9" type="Node2D" parent="LitLights" unique_id=1854684915]
-visible = false
-position = Vector2(810, 582)
-script = ExtResource("4_lg8mm")
-color = Color(1, 0.19215687, 0.13333334, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D10" type="Node2D" parent="LitLights" unique_id=1914034289]
-visible = false
-position = Vector2(1032, 532)
-script = ExtResource("4_lg8mm")
-color = Color(0.9999998, 0.12256538, 0.39921388, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D11" type="Node2D" parent="LitLights" unique_id=1217861649]
-visible = false
-position = Vector2(1029, 303)
-script = ExtResource("4_lg8mm")
-color = Color(0.7361279, 5.5350363e-05, 0.5786448, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D12" type="Node2D" parent="LitLights" unique_id=867290046]
-visible = false
-position = Vector2(1059, 93)
-script = ExtResource("4_lg8mm")
-color = Color(0.65937907, 0.0011566782, 0.78464806, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D13" type="Node2D" parent="LitLights" unique_id=1322998387]
-visible = false
-position = Vector2(646, 60)
-script = ExtResource("4_lg8mm")
-color = Color(0.5275046, 0.0037114585, 0.9885929, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D14" type="Node2D" parent="LitLights" unique_id=1971853955]
-visible = false
-position = Vector2(104, 81)
-script = ExtResource("4_lg8mm")
-color = Color(0.19861537, 0.31443128, 1, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D15" type="Node2D" parent="LitLights" unique_id=143526665]
-visible = false
-position = Vector2(83, 274)
-script = ExtResource("4_lg8mm")
-color = Color(2.887845e-06, 0.596451, 0.83862156, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D16" type="Node2D" parent="LitLights" unique_id=1319562623]
-visible = false
-position = Vector2(81, 557)
-script = ExtResource("4_lg8mm")
-color = Color(0.99926466, 0.18311533, 1.1551381e-06, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D17" type="Node2D" parent="LitLights" unique_id=794013932]
-visible = false
-position = Vector2(62, 425)
-script = ExtResource("4_lg8mm")
-color = Color(0.36916506, 0.6385983, 9.62615e-07, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D18" type="Node2D" parent="LitLights" unique_id=2044435762]
-visible = false
-position = Vector2(265, 335)
-script = ExtResource("4_lg8mm")
-color = Color(0.32620487, 0.5205881, 1, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D19" type="Node2D" parent="LitLights" unique_id=667586438]
-visible = false
-position = Vector2(831, 356)
-script = ExtResource("4_lg8mm")
-color = Color(0.34566906, 0.72881335, 0, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D20" type="Node2D" parent="LitLights" unique_id=841350877]
-visible = false
-position = Vector2(862, 64)
-script = ExtResource("4_lg8mm")
-color = Color(0.16033241, 0.64939475, 0.99999994, 1)
-range = 1024.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+spot_angle = 90.0
+spot_softness = 1.0
+height = 64.0
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://blronx1n8oliq"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1618820850]
 position = Vector2(576, 324)
