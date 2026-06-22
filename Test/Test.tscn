@@ -30,7 +30,7 @@ script = ExtResource("3_4l8u5")
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="LitPointLight2D" type="Node2D" parent="." unique_id=2029040104]
-position = Vector2(424, 336)
+position = Vector2(457, 393)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0

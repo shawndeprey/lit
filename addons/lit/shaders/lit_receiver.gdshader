@@ -62,8 +62,12 @@ void fragment() {
 		// Diffuse (§9.2).
 		vec3 diffuse = albedo * light_color * energy * ndotl * atten;
 
-		// Specular (§9.2; tight by default so it reads as a highlight, not a wash).
-		vec3 specular = spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
+		// Specular (§9.2). Sharpened N·L lobe — tight, only where the surface
+		// tilts toward the light. Tinted by light_color so the highlight takes
+		// the light's hue instead of blowing out to white (SPECULAR_SHININESS.rgb
+		// defaults to white when no specular map is set). pow(ndotl, …) is already
+		// 0 when the surface faces away, so no extra gate is needed.
+		vec3 specular = light_color * spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
 
 		// Phase 1: additive only (Subtract blend is Phase 4).
 		lit += diffuse + specular;
