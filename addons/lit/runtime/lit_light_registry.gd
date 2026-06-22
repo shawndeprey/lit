@@ -34,7 +34,10 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	var visible: Array = []
 	for node in tree.get_nodes_in_group("lit_lights"):
 		var light := node as LitPointLight2D
-		if light == null or not light.enabled:
+		# Skip disabled or hidden lights (visibility mirrors `enabled`, and
+		# respects hidden ancestors). Culled here on the CPU: never packed,
+		# never iterated in the shader.
+		if light == null or not light.enabled or not light.is_visible_in_tree():
 			continue
 		var r: float = light.range
 		var light_aabb := Rect2(light.global_position - Vector2(r, r), Vector2(r * 2.0, r * 2.0))

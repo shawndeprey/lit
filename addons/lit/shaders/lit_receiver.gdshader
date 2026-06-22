@@ -18,9 +18,46 @@ uniform sampler2D emissive_mask : hint_default_white;   // white default -> stre
 uniform float specular_strength = 0.5;
 uniform float specular_k = 32.0;
 
-// Phase 1 scope: ambient + point diffuse + specular + emissive. No shadows
-// (Phase 2), no directional branch (Phase 3), no mask/subtract (Phase 4).
-// The light-data texture already carries those fields; this shader ignores them.
+// --- advanced shadow tuning (D4 / §9.3; developer-tunable) ---
+uniform int   shadow_steps = 64;
+uniform float shadow_min_step = 0.2;
+
+// Scope through Phase 2: ambient + point diffuse + specular + emissive + soft
+// shadows. No directional branch (Phase 3), no mask/subtract (Phase 4).
+
+// IQ soft-shadow march of the native screen-space SDF (D4, §9.3). Operates in
+// SDF space; marches from the fragment toward the light, tracking the running
+// minimum of k * d / t for the penumbra. Returns 1 = fully lit, 0 = occluded.
+float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness) {
+	// Screen-space SDF has no notion of 2D draw order. A fragment sitting inside
+	// an occluder's footprint is treated as on top of it, so a sprite drawn over
+	// an occluder stays lit instead of self-shadowing. (Distinct occluders that
+	// lie between this fragment and the light still cast normally.)
+	if (texture_sdf(frag_sdf) <= 0.0) {
+		return 1.0;
+	}
+	vec2 delta = light_sdf - frag_sdf;
+	float maxd = length(delta);
+	if (maxd < 0.0001) {
+		return 1.0;                          // light is on the fragment
+	}
+	vec2 dir = delta / maxd;
+	float t = shadow_min_step;
+	float res = 1.0;
+	float k = mix(8.0, 256.0, hardness);     // low hardness = soft, high = crisp
+	for (int s = 0; s < shadow_steps; s++) {
+		if (t >= maxd) {
+			break;
+		}
+		float d = texture_sdf(frag_sdf + dir * t);
+		if (d < 0.001) {
+			return 0.0;                      // fully occluded
+		}
+		res = min(res, k * d / t);           // penumbra accumulation
+		t += max(d, shadow_min_step);
+	}
+	return clamp(res, 0.0, 1.0);
+}
 
 void fragment() {
 	vec4 tex = texture(TEXTURE, UV);
@@ -33,6 +70,7 @@ void fragment() {
 	vec3 lit = albedo * lit_ambient_color.rgb * lit_ambient_energy;
 
 	vec2 frag_uv = SCREEN_UV;                     // §9.0 canonical space
+	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // §9.3 shadow march space
 
 	for (int i = 0; i < lit_light_count; i++) {
 		// Unpack the per-light record (§9.4).
@@ -46,6 +84,10 @@ void fragment() {
 		vec3 light_color = t1.rgb;
 		float height = t1.w;
 		float falloff = t3.w;
+
+		// flags: bit 0 = shadow_enabled, bit 1 = subtractive (Phase 4). §9.4.
+		int flags = int(round(t3.y));
+		bool shadow_enabled = (flags & 1) != 0;
 
 		// §9.0/§9.2: work in pixels. UV delta -> pixel delta.
 		vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
@@ -69,8 +111,20 @@ void fragment() {
 		// 0 when the surface faces away, so no extra gate is needed.
 		vec3 specular = light_color * spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
 
+		vec3 contribution = diffuse + specular;
+
+		// Shadows (D4, §9.3): marched only for shadow-casting lights, so a light
+		// with shadows off pays nothing here — not even the texel-2 fetch. In
+		// shadow the contribution is tinted by shadow_color (black default ->
+		// the light is fully blocked). Shadow factor 1 = lit, 0 = occluded.
+		if (shadow_enabled) {
+			vec4 t2 = texelFetch(lit_light_data, ivec2(2, i), 0); // shadow_color.rgb | shadow_hardness
+			float s = lit_shadow(frag_sdf, screen_uv_to_sdf(light_uv), t2.w);
+			contribution *= mix(t2.rgb, vec3(1.0), s);
+		}
+
 		// Phase 1: additive only (Subtract blend is Phase 4).
-		lit += diffuse + specular;
+		lit += contribution;
 	}
 
 	// D6 emissive: ignores the dark; composes with ambient + lights by construction.
