@@ -1,0 +1,53 @@
+# Godot 4 .gitignore
+
+# Godot-specific ignores
+.godot/
+*.translation
+
+# Import metadata (can be regenerated)
+*.import
+
+# Mono/C# specific
+.mono/
+data_*/
+mono_crash.*.json
+
+# Android export
+android/build/
+*.apk
+*.aab
+
+# iOS export
+ios/
+*.xcodeproj/
+
+# macOS export
+*.app/
+
+# Windows export
+*.exe
+*.pck
+*.zip
+
+# Linux export
+*.x86_64
+*.x86_32
+
+# Web export
+*.html
+*.js
+*.wasm
+*.wasm.gz
+
+# Export presets (contains project-specific paths)
+export_presets.cfg
+
+# Logs
+*.log
+
+# Editor temp files
+*.tmp
+
+# OS-specific
+.DS_Store
+Thumbs.db
