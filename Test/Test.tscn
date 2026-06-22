@@ -39,7 +39,7 @@ tile_map_data = PackedByteArray("AAAAAAAAAQAGAAAAAAAAAAEAAQAGAAAAAAAAAAIAAQAGAAA
 
 [node name="LitSprite2D" type="Sprite2D" parent="." unique_id=1127649428]
 material = SubResource("ShaderMaterial_s7aw1")
-position = Vector2(565.00006, 339)
+position = Vector2(576.00006, 324)
 scale = Vector2(5, 5)
 texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("6_ngwpp")

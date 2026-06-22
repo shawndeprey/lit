@@ -5,7 +5,7 @@ extends EditorPlugin
 ##
 ## Phase 1 responsibilities (plan §10, D1):
 ##  - Register the `lit_*` global shader parameters so receiver shaders compile
-##    in-editor and in exported builds (see _register_globals for the why).
+##    in-editor and in exported builds (see the global-registration block for why).
 ##  - Add the runtime `LitManager` autoload that drives the per-frame gather.
 ##
 ## Node registration is handled implicitly: every Lit node script uses
@@ -33,9 +33,23 @@ var _registry: LitLightRegistry
 var _refresh_accum := 0.0
 
 
+# --- Lifecycle ---------------------------------------------------------------
+#
+# The project.godot churn-on-close bug came from doing UNCONDITIONAL persistent
+# writes in _enter_tree and removals in _exit_tree — but those fire on every editor
+# open/close, not just enable/disable, so the file flip-flopped. The rule here:
+#
+#  - Persistent project.godot entries (autoload + `shader_globals/*`) are written
+#    in _enter_tree but GUARDED (only when missing → no write in steady state), and
+#    removed ONLY in _disable_plugin — never in _exit_tree. So a normal close never
+#    touches the file, yet the entries self-heal if they ever go missing.
+#  - Session state (live RenderingServer globals, tool menu, editor-live refresh)
+#    lives in _enter_tree/_exit_tree and touches no file.
+
 func _enter_tree() -> void:
-	_register_globals()
-	add_autoload_singleton(AUTOLOAD_NAME, AUTOLOAD_PATH)
+	_add_live_globals()       # session-only (RenderingServer state, not serialized)
+	_persist_globals()        # guarded: writes project.godot only if a key is missing
+	_ensure_autoload()        # guarded: adds only if not already registered
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_sprites_lit)
 	# Editor-side gather driver (the autoload covers runtime; it doesn't run here).
 	_registry = LitLightRegistryScript.new()
@@ -43,11 +57,25 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	# Session teardown only — NO project.godot writes here (that was the churn bug).
 	set_process(false)
 	_registry = null
 	remove_tool_menu_item(TOOL_MENU_ITEM)
+	_remove_live_globals()
+
+
+func _disable_plugin() -> void:
+	# Real deactivation (not a mere editor close): drop the persistent entries.
 	remove_autoload_singleton(AUTOLOAD_NAME)
-	_unregister_globals()
+	_unpersist_globals()
+
+
+## Register the runtime autoload, but only if it isn't already in project.godot —
+## add_autoload_singleton rewrites/saves the file, so guarding it keeps a normal
+## editor open from churning project.godot.
+func _ensure_autoload() -> void:
+	if not ProjectSettings.has_setting("autoload/" + AUTOLOAD_NAME):
+		add_autoload_singleton(AUTOLOAD_NAME, AUTOLOAD_PATH)
 
 
 # --- Editor-live preview (plan §8, §10) --------------------------------------
@@ -115,13 +143,14 @@ func _make_selected_sprites_lit() -> void:
 # in the engine's shader-globals registry *before* the shader compiles or it
 # errors out in-editor. We register them two ways, for two reasons:
 #
-#  1. Persisted into ProjectSettings under `shader_globals/*` (project.godot).
-#     The RenderingServer reads these at engine init, so the names exist with
-#     zero load-order race in both the editor and exported games.
+#  1. Persisted into ProjectSettings under `shader_globals/*` (project.godot), via
+#     the guarded _persist_globals in _enter_tree (see Lifecycle above). The
+#     RenderingServer reads these at engine init, so the names exist with zero
+#     load-order race in both the editor and exported games.
 #
-#  2. Added live via RenderingServer for the *current* editor session, because
-#     project.godot's shader_globals are only parsed at startup — without this,
-#     the very first plugin-enable wouldn't expose the names until a restart.
+#  2. Added live via RenderingServer for the *current* editor session (_enter_tree),
+#     because project.godot's shader_globals are only parsed at startup — without
+#     this, the very first plugin-enable wouldn't expose the names until a restart.
 #
 # On the next launch the persisted entries auto-register, and the live-add is
 # skipped (we check the existing list first), so there's no double-add.
@@ -158,8 +187,10 @@ func _rs_global_defs() -> Array:
 	]
 
 
-func _register_globals() -> void:
-	# 1. Persist into project.godot.
+## Persist the shader_globals into project.godot (idempotent — writes only the
+## missing keys, and saves only if something changed, so a normal editor open with
+## the keys already present rewrites nothing).
+func _persist_globals() -> void:
 	var ps_changed := false
 	for d in _ps_global_defs():
 		var key: String = "shader_globals/" + str(d.name)
@@ -169,20 +200,10 @@ func _register_globals() -> void:
 	if ps_changed:
 		ProjectSettings.save()
 
-	# 2. Add live for this session (skip any already present).
-	var existing := RenderingServer.global_shader_parameter_get_list()
-	for g in _rs_global_defs():
-		if not existing.has(g.name):
-			RenderingServer.global_shader_parameter_add(g.name, g.type, g.value)
 
-
-func _unregister_globals() -> void:
-	# Remove the live registrations…
-	var existing := RenderingServer.global_shader_parameter_get_list()
-	for g in _rs_global_defs():
-		if existing.has(g.name):
-			RenderingServer.global_shader_parameter_remove(g.name)
-	# …and the persisted entries (deactivating the plugin removes its features).
+## Remove the persisted shader_globals from project.godot. Called from
+## _disable_plugin only (deactivating the plugin removes its features).
+func _unpersist_globals() -> void:
 	var ps_changed := false
 	for d in _ps_global_defs():
 		var key: String = "shader_globals/" + str(d.name)
@@ -191,6 +212,26 @@ func _unregister_globals() -> void:
 			ps_changed = true
 	if ps_changed:
 		ProjectSettings.save()
+
+
+## Add the globals to the RenderingServer for this session (skip any already
+## present — e.g. auto-registered from persisted project.godot at engine init).
+## RenderingServer state isn't serialized, so this touches no file.
+func _add_live_globals() -> void:
+	var existing := RenderingServer.global_shader_parameter_get_list()
+	for g in _rs_global_defs():
+		if not existing.has(g.name):
+			RenderingServer.global_shader_parameter_add(g.name, g.type, g.value)
+
+
+## Remove the session's RenderingServer globals. On a normal editor close the
+## persisted entries re-register at the next launch's engine init; on plugin
+## disable, _unpersist_globals also drops the persisted copies. No file write.
+func _remove_live_globals() -> void:
+	var existing := RenderingServer.global_shader_parameter_get_list()
+	for g in _rs_global_defs():
+		if existing.has(g.name):
+			RenderingServer.global_shader_parameter_remove(g.name)
 
 
 ## A 1×1 float texture used only as the sampler global's default value; the
