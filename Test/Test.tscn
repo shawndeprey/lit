@@ -106,11 +106,4 @@ position = Vector2(576, 324)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
 script = ExtResource("11_ngwpp")
-threshold_cutoff = 0.09
-exposure = 3.27
-contrast = 2.05
-saturation = 1.73
-vignette_enabled = true
-vignette_strength = 1.0
-vignette_softness = 0.0
 metadata/_custom_type_script = "uid://djrtgftop1i8a"

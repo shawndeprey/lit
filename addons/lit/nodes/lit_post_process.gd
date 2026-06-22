@@ -19,15 +19,16 @@ class_name LitPostProcess
 ## increment from this node's `layer`, so wherever you park it, passes stay above it
 ## and in order.
 ##
-## Phase 5(a)/(b): Color Grade, Threshold, Vignette. Bloom arrives in 5(c).
+## Phase 5: Threshold, Bloom, Color Grade, Vignette.
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> grade -> vignette (bloom will slot before grade). Lower-layer
-## passes render first, so each reads the accumulated result of the ones before it.
+## threshold -> bloom -> grade -> vignette. Lower-layer passes render first, so
+## each reads the accumulated result of the ones before it.
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
 const VIGNETTE_SHADER := preload("res://addons/lit/shaders/lit_post_vignette.gdshader")
+const BLOOM_SHADER := preload("res://addons/lit/shaders/lit_post_bloom.gdshader")
 const PASS_META := "lit_post_pass"
 
 @export_group("Threshold")
@@ -39,6 +40,27 @@ const PASS_META := "lit_post_pass"
 @export_range(0.0, 1.0, 0.01) var threshold_cutoff: float = 0.5:
 	set(value):
 		threshold_cutoff = value
+		_apply_params()
+
+@export_group("Bloom")
+@export var bloom_enabled: bool = false:
+	set(value):
+		bloom_enabled = value
+		_rebuild()
+## Luma above this blooms. LDR screen, so the useful range is ~0.4–0.8 (not 1.0).
+@export_range(0.0, 1.0, 0.01) var bloom_threshold: float = 0.7:
+	set(value):
+		bloom_threshold = value
+		_apply_params()
+## Glow strength added on top of the frame. Crank past 1 for heavy fantasy bloom.
+@export_range(0.0, 4.0, 0.01, "or_greater") var bloom_intensity: float = 0.5:
+	set(value):
+		bloom_intensity = value
+		_apply_params()
+## Glow width — spreads the sampled mip levels. Larger = wider, softer halo.
+@export_range(0.0, 8.0, 0.01, "or_greater") var bloom_radius: float = 4.0:
+	set(value):
+		bloom_radius = value
 		_apply_params()
 
 @export_group("Color Grade")
@@ -81,6 +103,7 @@ const PASS_META := "lit_post_pass"
 
 # Generated pass materials, kept so parameter edits push without a rebuild.
 var _threshold_material: ShaderMaterial
+var _bloom_material: ShaderMaterial
 var _grade_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
@@ -108,14 +131,18 @@ func _rebuild() -> void:
 			remove_child(child)
 			child.queue_free()
 	_threshold_material = null
+	_bloom_material = null
 	_grade_material = null
 	_vignette_material = null
 
-	# Fixed canonical order: threshold -> grade -> vignette (bloom slots before grade
-	# in 5(c)). Lower-layer passes render first, so each reads the prior result.
+	# Fixed canonical order: threshold -> bloom -> grade -> vignette. Lower-layer
+	# passes render first, so each reads the prior result.
 	var index := 0
 	if threshold_enabled:
 		_threshold_material = _make_pass(THRESHOLD_SHADER, index)
+		index += 1
+	if bloom_enabled:
+		_bloom_material = _make_pass(BLOOM_SHADER, index)
 		index += 1
 	if grade_enabled:
 		_grade_material = _make_pass(GRADE_SHADER, index)
@@ -153,6 +180,10 @@ func _make_pass(shader: Shader, index: int) -> ShaderMaterial:
 func _apply_params() -> void:
 	if _threshold_material != null:
 		_threshold_material.set_shader_parameter("cutoff", threshold_cutoff)
+	if _bloom_material != null:
+		_bloom_material.set_shader_parameter("threshold", bloom_threshold)
+		_bloom_material.set_shader_parameter("intensity", bloom_intensity)
+		_bloom_material.set_shader_parameter("bloom_radius", bloom_radius)
 	if _grade_material != null:
 		_grade_material.set_shader_parameter("exposure", exposure)
 		_grade_material.set_shader_parameter("contrast", contrast)
