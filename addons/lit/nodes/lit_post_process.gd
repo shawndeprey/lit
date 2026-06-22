@@ -19,17 +19,32 @@ class_name LitPostProcess
 ## increment from this node's `layer`, so wherever you park it, passes stay above it
 ## and in order.
 ##
-## Phase 5: Threshold, Bloom, Color Grade, Vignette.
+## Phase 5: Threshold, Bloom, Color Grade, Vignette. Plus LUT (post-v1, see
+## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> grade -> vignette. Lower-layer passes render first, so
-## each reads the accumulated result of the ones before it.
+## threshold -> bloom -> grade -> lut -> vignette. Lower-layer passes render first,
+## so each reads the accumulated result of the ones before it.
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
 const VIGNETTE_SHADER := preload("res://addons/lit/shaders/lit_post_vignette.gdshader")
 const BLOOM_SHADER := preload("res://addons/lit/shaders/lit_post_bloom.gdshader")
+const LUT_SHADER := preload("res://addons/lit/shaders/lit_post_lut.gdshader")
 const PASS_META := "lit_post_pass"
+
+## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
+enum LutPreset { NEUTRAL, WARM, COOL, SEPIA, NOIR, TEAL_ORANGE, VINTAGE, VIBRANT }
+const PRESET_LUTS := [
+	preload("res://addons/lit/luts/lit_lut_neutral.png"),
+	preload("res://addons/lit/luts/lit_lut_warm.png"),
+	preload("res://addons/lit/luts/lit_lut_cool.png"),
+	preload("res://addons/lit/luts/lit_lut_sepia.png"),
+	preload("res://addons/lit/luts/lit_lut_noir.png"),
+	preload("res://addons/lit/luts/lit_lut_teal_orange.png"),
+	preload("res://addons/lit/luts/lit_lut_vintage.png"),
+	preload("res://addons/lit/luts/lit_lut_vibrant.png"),
+]
 
 @export_group("Threshold")
 @export var threshold_enabled: bool = false:
@@ -85,6 +100,29 @@ const PASS_META := "lit_post_pass"
 		tint = value
 		_apply_params()
 
+@export_group("LUT")
+## Apply a color grade through a lookup table (256×16 neutral-LUT strip).
+@export var lut_enabled: bool = false:
+	set(value):
+		lut_enabled = value
+		_rebuild()
+## Which baked-in LUT to use. Ignored when a `lut_custom` texture is assigned.
+@export var lut_preset: LutPreset = LutPreset.NEUTRAL:
+	set(value):
+		lut_preset = value
+		_apply_params()
+## Optional custom LUT (256×16 strip). When set, it overrides `lut_preset`. Import
+## with Filter on, Mipmaps off, Repeat disabled, Lossless.
+@export var lut_custom: Texture2D:
+	set(value):
+		lut_custom = value
+		_apply_params()
+## Blend between the original and the LUT-graded color (0 = off, 1 = full LUT).
+@export_range(0.0, 1.0, 0.01) var lut_amount: float = 1.0:
+	set(value):
+		lut_amount = value
+		_apply_params()
+
 @export_group("Vignette")
 @export var vignette_enabled: bool = false:
 	set(value):
@@ -105,6 +143,7 @@ const PASS_META := "lit_post_pass"
 var _threshold_material: ShaderMaterial
 var _bloom_material: ShaderMaterial
 var _grade_material: ShaderMaterial
+var _lut_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
 # node's layer can re-sync the pass child-layers live (editor only).
@@ -133,10 +172,11 @@ func _rebuild() -> void:
 	_threshold_material = null
 	_bloom_material = null
 	_grade_material = null
+	_lut_material = null
 	_vignette_material = null
 
-	# Fixed canonical order: threshold -> bloom -> grade -> vignette. Lower-layer
-	# passes render first, so each reads the prior result.
+	# Fixed canonical order: threshold -> bloom -> grade -> lut -> vignette.
+	# Lower-layer passes render first, so each reads the prior result.
 	var index := 0
 	if threshold_enabled:
 		_threshold_material = _make_pass(THRESHOLD_SHADER, index)
@@ -146,6 +186,11 @@ func _rebuild() -> void:
 		index += 1
 	if grade_enabled:
 		_grade_material = _make_pass(GRADE_SHADER, index)
+		index += 1
+	# A LUT is always available (a baked preset, or the custom override), so the
+	# pass exists whenever it's enabled.
+	if lut_enabled:
+		_lut_material = _make_pass(LUT_SHADER, index)
 		index += 1
 	if vignette_enabled:
 		_vignette_material = _make_pass(VIGNETTE_SHADER, index)
@@ -176,6 +221,14 @@ func _make_pass(shader: Shader, index: int) -> ShaderMaterial:
 	return mat
 
 
+## The LUT texture currently in effect: the custom override if one is assigned,
+## otherwise the selected baked-in preset.
+func _active_lut() -> Texture2D:
+	if lut_custom != null:
+		return lut_custom
+	return PRESET_LUTS[lut_preset]
+
+
 ## Push current parameters onto the generated pass materials (no rebuild needed).
 func _apply_params() -> void:
 	if _threshold_material != null:
@@ -189,6 +242,9 @@ func _apply_params() -> void:
 		_grade_material.set_shader_parameter("contrast", contrast)
 		_grade_material.set_shader_parameter("saturation", saturation)
 		_grade_material.set_shader_parameter("tint", tint)
+	if _lut_material != null:
+		_lut_material.set_shader_parameter("lut", _active_lut())
+		_lut_material.set_shader_parameter("amount", lut_amount)
 	if _vignette_material != null:
 		_vignette_material.set_shader_parameter("strength", vignette_strength)
 		_vignette_material.set_shader_parameter("softness", vignette_softness)
