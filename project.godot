@@ -15,10 +15,6 @@ run/main_scene="uid://dnpho6vflpb77"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
-[autoload]
-
-LitManager="*uid://brf2hvdtyyw3q"
-
 [display]
 
 window/stretch/mode="canvas_items"
@@ -36,28 +32,3 @@ enabled=PackedStringArray("res://addons/lit/plugin.cfg")
 
 textures/canvas_textures/default_texture_filter=0
 rendering_device/driver.windows="d3d12"
-
-[shader_globals]
-
-lit_light_data={
-"filter": "nearest",
-"repeat": "disable",
-"type": "sampler2D",
-"value": ""
-}
-lit_light_count={
-"type": "int",
-"value": 0
-}
-lit_viewport_size={
-"type": "vec2",
-"value": Vector2(0, 0)
-}
-lit_ambient_color={
-"type": "color",
-"value": Color(1, 1, 1, 1)
-}
-lit_ambient_energy={
-"type": "float",
-"value": 1.0
-}
