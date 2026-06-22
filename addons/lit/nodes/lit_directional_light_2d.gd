@@ -1,4 +1,5 @@
 @tool
+@icon("res://addons/lit/icons/lit_directional_light_2d.svg")
 extends Node2D
 class_name LitDirectionalLight2D
 

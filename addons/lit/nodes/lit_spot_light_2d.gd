@@ -1,4 +1,5 @@
 @tool
+@icon("res://addons/lit/icons/lit_spot_light_2d.svg")
 extends Node2D
 class_name LitSpotLight2D
 
