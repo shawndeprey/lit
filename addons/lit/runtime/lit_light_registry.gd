@@ -31,7 +31,14 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	if vp_size.x <= 0.0 or vp_size.y <= 0.0:
 		return
 
-	var canvas_xform := viewport.get_canvas_transform()
+	# World → screen-pixel transform. A Viewport applies `global_canvas_transform *
+	# canvas_transform` to its canvas items, so we must use the product — not just
+	# canvas_transform. At runtime the global part is identity and the camera lives
+	# in canvas_transform, so this is unchanged from before. In the editor the view's
+	# pan/zoom lives in global_canvas_transform instead, so using canvas_transform
+	# alone mis-placed lights and drifted them with zoom. The product is correct in
+	# both, and feeds positions, the directional/spot basis, and the cull rect alike.
+	var canvas_xform := viewport.get_global_canvas_transform() * viewport.get_canvas_transform()
 	var world_rect := _visible_world_rect(canvas_xform, vp_size)
 
 	# 1–3. Collect enabled, visible lights. Point and spot lights are AABB-culled

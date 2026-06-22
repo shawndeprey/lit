@@ -11,8 +11,8 @@ extends EditorPlugin
 ## Node registration is handled implicitly: every Lit node script uses
 ## `class_name`, so they already appear in the Create-Node dialog.
 ##
-## Phase 4 adds the "Make Selected Sprites Lit" tool (below). Editor-live preview
-## arrives in Phase 4 sub-step (b).
+## Phase 4 adds the "Make Selected Sprites Lit" tool and editor-live preview
+## (driving the shared gather against the 2D editor viewport — see _process).
 
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
@@ -20,17 +20,55 @@ const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 const TOOL_MENU_ITEM := "Make Selected Sprites Lit"
 
+const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
+
+# Editor-live refresh cadence (plan §8). Poll a few times a second so moving a
+# light, editing a property, or panning/zooming the 2D editor camera relights the
+# viewport without running the game. Polling (vs. per-node transform/property
+# signals) is the smaller, more robust path and is the only thing that catches
+# editor-camera pan/zoom — which the shadow/position math depends on.
+const EDITOR_REFRESH_INTERVAL := 1.0 / 30.0
+
+var _registry: LitLightRegistry
+var _refresh_accum := 0.0
+
 
 func _enter_tree() -> void:
 	_register_globals()
 	add_autoload_singleton(AUTOLOAD_NAME, AUTOLOAD_PATH)
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_sprites_lit)
+	# Editor-side gather driver (the autoload covers runtime; it doesn't run here).
+	_registry = LitLightRegistryScript.new()
+	set_process(true)
 
 
 func _exit_tree() -> void:
+	set_process(false)
+	_registry = null
 	remove_tool_menu_item(TOOL_MENU_ITEM)
 	remove_autoload_singleton(AUTOLOAD_NAME)
 	_unregister_globals()
+
+
+# --- Editor-live preview (plan §8, §10) --------------------------------------
+#
+# Autoloads don't run in the editor, so the EditorPlugin is the edit-time driver
+# for the same shared refresh() the runtime LitManager uses. It packs against the
+# 2D editor viewport, whose canvas transform reflects the editor camera, so lights
+# and their shadows stay aligned with what's displayed.
+#
+# A throttled poll keeps the viewport redrawing continuously while the plugin is
+# active; that's the intended live-preview tradeoff. Dirty-tracking to idle when
+# nothing changed is a post-v1 optimization (plan §13).
+
+func _process(delta: float) -> void:
+	_refresh_accum += delta
+	if _refresh_accum < EDITOR_REFRESH_INTERVAL:
+		return
+	_refresh_accum = 0.0
+	if _registry == null or EditorInterface.get_edited_scene_root() == null:
+		return  # no scene open / nothing to light
+	_registry.refresh(get_tree(), EditorInterface.get_editor_viewport_2d())
 
 
 # --- "Make Selected Sprites Lit" tool (plan §10) -----------------------------
