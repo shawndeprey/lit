@@ -19,10 +19,27 @@ class_name LitPostProcess
 ## increment from this node's `layer`, so wherever you park it, passes stay above it
 ## and in order.
 ##
-## Phase 5(a) ships Color Grade only. Bloom / Threshold / Vignette arrive in 5(b)/(c).
+## Phase 5(a)/(b): Color Grade, Threshold, Vignette. Bloom arrives in 5(c).
+##
+## Passes run in a fixed canonical order regardless of inspector order:
+## threshold -> grade -> vignette (bloom will slot before grade). Lower-layer
+## passes render first, so each reads the accumulated result of the ones before it.
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
+const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
+const VIGNETTE_SHADER := preload("res://addons/lit/shaders/lit_post_vignette.gdshader")
 const PASS_META := "lit_post_pass"
+
+@export_group("Threshold")
+@export var threshold_enabled: bool = false:
+	set(value):
+		threshold_enabled = value
+		_rebuild()
+## Luma below this fades to black (with a short soft knee); brighter pixels pass.
+@export_range(0.0, 1.0, 0.01) var threshold_cutoff: float = 0.5:
+	set(value):
+		threshold_cutoff = value
+		_apply_params()
 
 @export_group("Color Grade")
 @export var grade_enabled: bool = false:
@@ -46,8 +63,26 @@ const PASS_META := "lit_post_pass"
 		tint = value
 		_apply_params()
 
-# The generated grade pass material, kept so parameter edits push without a rebuild.
+@export_group("Vignette")
+@export var vignette_enabled: bool = false:
+	set(value):
+		vignette_enabled = value
+		_rebuild()
+## How dark the edges get (0 = none, 1 = corners crushed to black).
+@export_range(0.0, 1.0, 0.01) var vignette_strength: float = 0.4:
+	set(value):
+		vignette_strength = value
+		_apply_params()
+## Feather width of the vignette ramp (0 = tight to the corners, 1 = from center).
+@export_range(0.0, 1.0, 0.01) var vignette_softness: float = 0.5:
+	set(value):
+		vignette_softness = value
+		_apply_params()
+
+# Generated pass materials, kept so parameter edits push without a rebuild.
+var _threshold_material: ShaderMaterial
 var _grade_material: ShaderMaterial
+var _vignette_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
 # node's layer can re-sync the pass child-layers live (editor only).
 var _built_layer: int = 0
@@ -72,11 +107,21 @@ func _rebuild() -> void:
 		if child.has_meta(PASS_META):
 			remove_child(child)
 			child.queue_free()
+	_threshold_material = null
 	_grade_material = null
+	_vignette_material = null
 
+	# Fixed canonical order: threshold -> grade -> vignette (bloom slots before grade
+	# in 5(c)). Lower-layer passes render first, so each reads the prior result.
 	var index := 0
+	if threshold_enabled:
+		_threshold_material = _make_pass(THRESHOLD_SHADER, index)
+		index += 1
 	if grade_enabled:
 		_grade_material = _make_pass(GRADE_SHADER, index)
+		index += 1
+	if vignette_enabled:
+		_vignette_material = _make_pass(VIGNETTE_SHADER, index)
 		index += 1
 
 	_built_layer = layer
@@ -106,8 +151,13 @@ func _make_pass(shader: Shader, index: int) -> ShaderMaterial:
 
 ## Push current parameters onto the generated pass materials (no rebuild needed).
 func _apply_params() -> void:
+	if _threshold_material != null:
+		_threshold_material.set_shader_parameter("cutoff", threshold_cutoff)
 	if _grade_material != null:
 		_grade_material.set_shader_parameter("exposure", exposure)
 		_grade_material.set_shader_parameter("contrast", contrast)
 		_grade_material.set_shader_parameter("saturation", saturation)
 		_grade_material.set_shader_parameter("tint", tint)
+	if _vignette_material != null:
+		_vignette_material.set_shader_parameter("strength", vignette_strength)
+		_vignette_material.set_shader_parameter("softness", vignette_softness)
