@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="6_ngwpp"]
 [ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="7_iednq"]
 [ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="8_5ghie"]
+[ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="11_ngwpp"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_s7aw1"]
 shader = ExtResource("3_es8hm")
@@ -53,13 +54,14 @@ occluder = SubResource("OccluderPolygon2D_ywxc3")
 
 [node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]
 script = ExtResource("3_4l8u5")
+color = Color(0.06053035, 0.06053035, 0.060530342, 1)
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="LitLights" type="Node2D" parent="." unique_id=976079942]
 
 [node name="LitDirectionalLight2D" type="Node2D" parent="LitLights" unique_id=707866917]
+visible = false
 script = ExtResource("7_iednq")
-enabled = false
 energy = 0.2
 shadow_enabled = true
 shadow_hardness = 0.0
@@ -101,3 +103,8 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1618820850]
 position = Vector2(576, 324)
+
+[node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
+script = ExtResource("11_ngwpp")
+grade_enabled = true
+metadata/_custom_type_script = "uid://djrtgftop1i8a"
