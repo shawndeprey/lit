@@ -11,21 +11,64 @@ extends EditorPlugin
 ## Node registration is handled implicitly: every Lit node script uses
 ## `class_name`, so they already appear in the Create-Node dialog.
 ##
-## Editor-live preview, custom icons, and the "Make Selected Sprites Lit" tool
-## arrive in Phase 4 — they are intentionally absent here.
+## Phase 4 adds the "Make Selected Sprites Lit" tool (below). Editor-live preview
+## arrives in Phase 4 sub-step (b).
 
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
+
+const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
+const TOOL_MENU_ITEM := "Make Selected Sprites Lit"
 
 
 func _enter_tree() -> void:
 	_register_globals()
 	add_autoload_singleton(AUTOLOAD_NAME, AUTOLOAD_PATH)
+	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_sprites_lit)
 
 
 func _exit_tree() -> void:
+	remove_tool_menu_item(TOOL_MENU_ITEM)
 	remove_autoload_singleton(AUTOLOAD_NAME)
 	_unregister_globals()
+
+
+# --- "Make Selected Sprites Lit" tool (plan §10) -----------------------------
+#
+# Batch-convert selected plain Sprite2D nodes into Lit receivers: assign a fresh
+# receiver ShaderMaterial and wrap a plain texture in a CanvasTexture (so the
+# normal/specular slots appear). Each sprite gets its OWN material so per-instance
+# uniforms (receiver_mask, emissive_strength) stay independent. Lives under
+# Project → Tools → "Make Selected Sprites Lit". Undoable as one action.
+#
+# This is the batch path for existing art; LitSprite2D is the from-scratch path.
+
+func _make_selected_sprites_lit() -> void:
+	var sprites: Array[Sprite2D] = []
+	for node in EditorInterface.get_selection().get_selected_nodes():
+		var s := node as Sprite2D
+		if s != null:
+			sprites.append(s)
+	if sprites.is_empty():
+		push_warning("Make Selected Sprites Lit: select one or more Sprite2D nodes first.")
+		return
+
+	var shader := load(RECEIVER_SHADER_PATH) as Shader
+	var undo := get_undo_redo()
+	undo.create_action(TOOL_MENU_ITEM)
+	for s in sprites:
+		var mat := ShaderMaterial.new()
+		mat.shader = shader
+		undo.add_do_property(s, "material", mat)
+		undo.add_undo_property(s, "material", s.material)
+
+		# Only wrap a plain texture; leave a CanvasTexture (or an empty slot) alone.
+		if s.texture != null and not (s.texture is CanvasTexture):
+			var ct := CanvasTexture.new()
+			ct.diffuse_texture = s.texture
+			undo.add_do_property(s, "texture", ct)
+			undo.add_undo_property(s, "texture", s.texture)
+	undo.commit_action()
 
 
 # --- Global shader parameter registration (D1) -------------------------------

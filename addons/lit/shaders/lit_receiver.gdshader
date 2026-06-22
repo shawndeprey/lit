@@ -14,6 +14,13 @@ global uniform float     lit_ambient_energy;
 uniform float emissive_strength = 0.0;
 uniform sampler2D emissive_mask : hint_default_white;   // white default -> strength alone works
 
+// --- per-instance light mask (§9.5) ---
+// A light affects this receiver only if (light_mask & receiver_mask) != 0. Same
+// authoring intent as the engine's per-light cull mask, our own plumbing. Plain
+// int (shader uniforms have no layers hint); LitSprite2D proxies it with a nicer
+// 2D-render-layers control.
+uniform int receiver_mask = 1;
+
 // --- per-instance specular tuning (§9.2; K is a by-eye dial, plan §7/§14) ---
 uniform float specular_strength = 0.5;
 uniform float specular_k = 32.0;
@@ -34,7 +41,7 @@ uniform float directional_shadow_reach = 1.0;
 
 // Light types (texel 3.r): 0 = point, 1 = directional (sun), 2 = spot.
 // Scope: ambient + point/directional/spot diffuse + specular + emissive + soft
-// shadows. No mask/subtract (Phase 4).
+// shadows + per-light mask + additive/subtractive blend.
 
 // IQ soft-shadow march of the native screen-space SDF (D4, §9.3). Operates in
 // SDF space; marches from the fragment toward the light, tracking the running
@@ -100,12 +107,20 @@ void fragment() {
 		float falloff = t3.w;
 
 		// type: 0 = point, 1 = directional, 2 = spot. flags bit 0 = shadow_enabled,
-		// bit 1 = subtractive (Phase 4).
+		// bit 1 = subtractive.
 		int type = int(round(t3.x));
 		bool is_directional = type == 1;
 		bool is_spot = type == 2;
 		int flags = int(round(t3.y));
 		bool shadow_enabled = (flags & 1) != 0;
+		bool subtractive = (flags & 2) != 0;
+
+		// §9.5: skip lights this receiver's mask doesn't share a bit with, before
+		// any per-light work (diffuse/specular/shadow march all paid below).
+		int light_mask = int(round(t3.z));
+		if ((light_mask & receiver_mask) == 0) {
+			continue;
+		}
 
 		vec3 Ldir;
 		float atten;
@@ -181,8 +196,13 @@ void fragment() {
 			contribution *= mix(t2.rgb, vec3(1.0), s);
 		}
 
-		// Phase 1: additive only (Subtract blend is Phase 4).
-		lit += contribution;
+		// Blend per the light's mode: Subtract = negative light (carves darkness
+		// below ambient; the final COLOR clamps at display).
+		if (subtractive) {
+			lit -= contribution;
+		} else {
+			lit += contribution;
+		}
 	}
 
 	// D6 emissive: ignores the dark; composes with ambient + lights by construction.

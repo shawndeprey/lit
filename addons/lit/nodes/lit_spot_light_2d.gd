@@ -12,7 +12,8 @@ class_name LitSpotLight2D
 ## radial shadow march, so shadows come for free.
 ##
 ## As with the other lights, `light_mask` reuses the inherited CanvasItem
-## property (Phase 4 wires the mask system, plan §9.5).
+## property ("Visibility" in the inspector) and is matched against each receiver's
+## `receiver_mask` (plan §9.5).
 
 enum BlendMode { ADD, SUBTRACT }
 

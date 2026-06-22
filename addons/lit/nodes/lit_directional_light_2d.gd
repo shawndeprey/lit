@@ -14,7 +14,8 @@ class_name LitDirectionalLight2D
 ##
 ## Shares the receiver and shadow code path with point lights via the type flag
 ## in the light-data texture. As with point lights, `light_mask` reuses the
-## inherited CanvasItem property (Phase 4 wires the mask system, plan §9.5).
+## inherited CanvasItem property ("Visibility" in the inspector) and is matched
+## against each receiver's `receiver_mask` (plan §9.5).
 
 enum BlendMode { ADD, SUBTRACT }
 

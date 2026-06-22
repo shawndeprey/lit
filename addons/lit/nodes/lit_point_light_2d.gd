@@ -11,10 +11,11 @@ class_name LitPointLight2D
 ## fully animatable, and runtime refresh picks up changes every frame.
 ##
 ## Note on `light_mask`: CanvasItem already provides an inherited `light_mask`
-## (int, default 1). We deliberately reuse that inherited property as this
-## light's mask rather than redeclaring it (a redeclaration would collide with
-## the base class). The dedicated mask UI/behavior lands in Phase 4 (plan §9.5);
-## the pack already writes it.
+## (int, default 1, shown under "Visibility" in the inspector as 2D-render layers).
+## We reuse that inherited property as this light's mask rather than redeclaring it
+## (a redeclaration would collide with the base class). It is wired end-to-end: the
+## pack writes it (texel 3.b), and a receiver is lit by this light only if its
+## `receiver_mask` shares a bit (plan §9.5).
 
 enum BlendMode { ADD, SUBTRACT }
 
