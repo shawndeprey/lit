@@ -7,7 +7,7 @@ like (add a node, set some values, done) and fixes the part you don't: the hard 
 ~15 lights per object. Light a whole scene with as many lights as you want, get real soft
 shadows, and stack on a pile of post-processing — all without leaving the node workflow.
 
-[![Watch the Lit tech demo](https://img.youtube.com/vi/YprMbISOEsI/maxresdefault.jpg)](https://www.youtube.com/watch?v=YprMbISOEsI)
+*▶ [Watch the tech demo](https://www.youtube.com/watch?v=YprMbISOEsI)*
 
 > **Requires Godot 4.4+ on the Forward+ renderer.** (Mobile/Compatibility aren't supported.)
 

@@ -19,11 +19,7 @@ like (add a node, set some values, done) and fixes the part you don't: the hard 
 shadows, and stack on a pile of post-processing — all without leaving the node workflow.
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=YprMbISOEsI">
-    <img src="https://img.youtube.com/vi/YprMbISOEsI/maxresdefault.jpg" alt="Watch the Lit tech demo" width="640">
-  </a>
-  <br>
-  <em>▶ Watch the tech demo</em>
+  <a href="https://www.youtube.com/watch?v=YprMbISOEsI"><em>▶ Watch the tech demo</em></a>
 </p>
 
 > **Requires Godot 4.4+ on the Forward+ renderer.** (Mobile/Compatibility aren't supported.)
