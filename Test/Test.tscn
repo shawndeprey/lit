@@ -123,4 +123,5 @@ position = Vector2(576, 324)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
 script = ExtResource("11_ngwpp")
+vhs_enabled = true
 metadata/_custom_type_script = "uid://djrtgftop1i8a"

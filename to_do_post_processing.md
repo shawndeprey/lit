@@ -23,10 +23,12 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
   "social-media filter engine": infinite looks from one pass. (Generator script was
   removed once the pack was baked; recoverable from git history if more presets are
   wanted.)
-- [ ] **CRT** — barrel curvature + scanlines + aperture/shadow mask + edge vignette
+- [x] **CRT** — barrel curvature + scanlines + aperture/shadow mask + edge vignette
   + slight chroma. Bundles several sub-effects into one node.
-- [ ] **VHS** — chroma bleed/smear, tracking-noise lines, color-channel shift, tape
+  (`shaders/lit_post_crt.gdshader`; runs after lut, before vignette.)
+- [~] **VHS** — chroma bleed/smear, tracking-noise lines, color-channel shift, tape
   wobble/jitter, scanline roll. Animated via `TIME`.
+  (`shaders/lit_post_vhs.gdshader`; runs before crt — tape signal -> glass.)
 - [ ] **Film grain** — animated noise; pairs with everything. Trivial, big vibe.
 - [ ] **Chromatic aberration** — RGB split growing toward screen edges. Cheap, lens-y.
 

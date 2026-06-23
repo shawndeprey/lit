@@ -23,8 +23,9 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> grade -> lut -> crt -> vignette. Lower-layer passes render
-## first, so each reads the accumulated result of the ones before it.
+## threshold -> bloom -> grade -> lut -> vhs -> crt -> vignette. Lower-layer passes
+## render first, so each reads the accumulated result of the ones before it. (VHS is
+## the tape signal, CRT is the glass it's watched on, so VHS runs before CRT.)
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
@@ -32,6 +33,7 @@ const VIGNETTE_SHADER := preload("res://addons/lit/shaders/lit_post_vignette.gds
 const BLOOM_SHADER := preload("res://addons/lit/shaders/lit_post_bloom.gdshader")
 const LUT_SHADER := preload("res://addons/lit/shaders/lit_post_lut.gdshader")
 const CRT_SHADER := preload("res://addons/lit/shaders/lit_post_crt.gdshader")
+const VHS_SHADER := preload("res://addons/lit/shaders/lit_post_vhs.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -124,6 +126,55 @@ const PRESET_LUTS := [
 		lut_amount = value
 		_apply_params()
 
+@export_group("VHS")
+## Worn-tape look: per-line wobble, chroma shift + smear, a rolling tracking-noise
+## band, grain, and a slow brightness roll. Animated. Runs before CRT in the chain
+## (tape signal -> glass), so enable both for "old tape on an old tube".
+@export var vhs_enabled: bool = false:
+	set(value):
+		vhs_enabled = value
+		_rebuild()
+## Per-line horizontal jitter, in pixels.
+@export_range(0.0, 16.0, 0.1, "or_greater") var vhs_wobble_strength: float = 2.0:
+	set(value):
+		vhs_wobble_strength = value
+		_apply_params()
+## How fast the jitter reshuffles.
+@export_range(0.0, 20.0, 0.1, "or_greater") var vhs_wobble_speed: float = 4.0:
+	set(value):
+		vhs_wobble_speed = value
+		_apply_params()
+## R/B horizontal split, in pixels.
+@export_range(0.0, 16.0, 0.1, "or_greater") var vhs_chroma_shift: float = 2.0:
+	set(value):
+		vhs_chroma_shift = value
+		_apply_params()
+## Horizontal chroma smear (0 = crisp, 1 = full trailing bleed).
+@export_range(0.0, 1.0, 0.01) var vhs_bleed: float = 0.5:
+	set(value):
+		vhs_bleed = value
+		_apply_params()
+## Animated static-noise overlay.
+@export_range(0.0, 1.0, 0.01) var vhs_grain: float = 0.12:
+	set(value):
+		vhs_grain = value
+		_apply_params()
+## Severity of the rolling damaged band (0 = none).
+@export_range(0.0, 1.0, 0.01) var vhs_tracking_strength: float = 0.6:
+	set(value):
+		vhs_tracking_strength = value
+		_apply_params()
+## How fast the tracking band rolls up the screen (0 = parked).
+@export_range(0.0, 2.0, 0.01, "or_greater") var vhs_tracking_speed: float = 0.2:
+	set(value):
+		vhs_tracking_speed = value
+		_apply_params()
+## Strength of the slow vertical brightness roll.
+@export_range(0.0, 1.0, 0.01) var vhs_roll_strength: float = 0.1:
+	set(value):
+		vhs_roll_strength = value
+		_apply_params()
+
 @export_group("CRT")
 ## Old-tube look: barrel curvature + scanlines + RGB aperture mask + edge vignette
 ## + slight chromatic aberration. A steady (non-animated) effect; pair with VHS for
@@ -189,6 +240,7 @@ var _threshold_material: ShaderMaterial
 var _bloom_material: ShaderMaterial
 var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
+var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
@@ -229,10 +281,11 @@ func _rebuild() -> void:
 	_bloom_material = null
 	_grade_material = null
 	_lut_material = null
+	_vhs_material = null
 	_crt_material = null
 	_vignette_material = null
 
-	# Fixed canonical order: threshold -> bloom -> grade -> lut -> crt -> vignette.
+	# Fixed canonical order: threshold -> bloom -> grade -> lut -> vhs -> crt -> vignette.
 	# Lower-layer passes render first, so each reads the prior result.
 	var index := 0
 	if threshold_enabled:
@@ -248,6 +301,9 @@ func _rebuild() -> void:
 	# pass exists whenever it's enabled.
 	if lut_enabled:
 		_lut_material = _make_pass(LUT_SHADER, index)
+		index += 1
+	if vhs_enabled:
+		_vhs_material = _make_pass(VHS_SHADER, index)
 		index += 1
 	if crt_enabled:
 		_crt_material = _make_pass(CRT_SHADER, index)
@@ -306,6 +362,15 @@ func _apply_params() -> void:
 	if _lut_material != null:
 		_lut_material.set_shader_parameter("lut", _active_lut())
 		_lut_material.set_shader_parameter("amount", lut_amount)
+	if _vhs_material != null:
+		_vhs_material.set_shader_parameter("wobble_strength", vhs_wobble_strength)
+		_vhs_material.set_shader_parameter("wobble_speed", vhs_wobble_speed)
+		_vhs_material.set_shader_parameter("chroma_shift", vhs_chroma_shift)
+		_vhs_material.set_shader_parameter("bleed", vhs_bleed)
+		_vhs_material.set_shader_parameter("grain", vhs_grain)
+		_vhs_material.set_shader_parameter("tracking_strength", vhs_tracking_strength)
+		_vhs_material.set_shader_parameter("tracking_speed", vhs_tracking_speed)
+		_vhs_material.set_shader_parameter("roll_strength", vhs_roll_strength)
 	if _crt_material != null:
 		_crt_material.set_shader_parameter("curvature", crt_curvature)
 		_crt_material.set_shader_parameter("scanline_strength", crt_scanline_strength)
