@@ -75,7 +75,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Glitch / RGB-shift / datamosh-lite** — animated tearing/blocks (damage/hacking).
   (`shaders/lit_post_glitch.gdshader`; runs before color grade — corrupt the signal,
   then grade/display. Horizontal tear + RGB split + block jumps + flicker, time-quantized.)
-- [ ] **Soft focus / dream blur** + **Sharpen** — the two ends of the focus dial.
+- [x] **Soft focus / dream blur** + **Sharpen** — the two ends of the focus dial.
+  (`shaders/lit_post_focus.gdshader`; runs last. One signed `focus_amount`: negative =
+  dream blur (+ haze), positive = sharpen. Mip-blur reference like bloom.)
 
 ---
 

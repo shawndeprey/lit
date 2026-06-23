@@ -25,10 +25,11 @@ class_name LitPostProcess
 ## Passes run in a fixed canonical order regardless of inspector order:
 ## threshold -> bloom -> halation -> glitch -> grade -> lut -> pixelate -> posterize ->
 ## outline -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration ->
-## leaks -> grain -> vignette. Lower-layer passes render first, so each reads the result
-## of the ones before it. (Halation is bloom's warm-halo companion, applied with it
-## before grading; glitch corrupts the signal before color, so grading/stylize/display
-## all process the glitched image;
+## leaks -> grain -> vignette -> focus. Lower-layer passes render first, so each reads
+## the result of the ones before it. (Halation is bloom's warm-halo companion, applied
+## with it before grading; glitch corrupts the signal before color, so grading/stylize/
+## display all process the glitched image; focus is the final lens — dream blur or
+## sharpen on the completed image;
 ## pixelate blocks the image, posterize flattens the color, outline inks that flattened
 ## image, halftone dot-screens the result — dark ink lines survive as solid dots while
 ## fills break into dots — and dither does ordered color reduction; the high-frequency
@@ -58,6 +59,7 @@ const DITHER_SHADER := preload("res://addons/lit/shaders/lit_post_dither.gdshade
 const LENS_SHADER := preload("res://addons/lit/shaders/lit_post_lens_distortion.gdshader")
 const LIGHT_LEAKS_SHADER := preload("res://addons/lit/shaders/lit_post_light_leaks.gdshader")
 const GLITCH_SHADER := preload("res://addons/lit/shaders/lit_post_glitch.gdshader")
+const FOCUS_SHADER := preload("res://addons/lit/shaders/lit_post_focus.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -568,6 +570,29 @@ const PRESET_LUTS := [
 		vignette_softness = value
 		_apply_params()
 
+@export_group("Focus")
+## The final focus dial: negative = soft / dream blur, positive = sharpen. Runs last,
+## on the completed image.
+@export var focus_enabled: bool = false:
+	set(value):
+		focus_enabled = value
+		_rebuild()
+## < 0 = soft / dream blur, > 0 = sharpen, 0 = off.
+@export_range(-1.0, 1.0, 0.01, "or_greater", "or_less") var focus_amount: float = -0.5:
+	set(value):
+		focus_amount = value
+		_apply_params()
+## Blur reach (mip level). ~1 for sharpen, ~2–4 for a wide dream blur.
+@export_range(0.0, 6.0, 0.1, "or_greater") var focus_radius: float = 2.0:
+	set(value):
+		focus_radius = value
+		_apply_params()
+## Soft side only: hazy highlight glow blended back in for the dreamy look.
+@export_range(0.0, 1.0, 0.01) var focus_dream: float = 0.2:
+	set(value):
+		focus_dream = value
+		_apply_params()
+
 # Generated pass materials, kept so parameter edits push without a rebuild.
 var _threshold_material: ShaderMaterial
 var _bloom_material: ShaderMaterial
@@ -588,6 +613,7 @@ var _leaks_material: ShaderMaterial
 var _grain_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
 var _letterbox_material: ShaderMaterial
+var _focus_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
 # node's layer can re-sync the pass child-layers live (editor only).
 var _built_layer: int = 0
@@ -641,11 +667,12 @@ func _rebuild() -> void:
 	_grain_material = null
 	_vignette_material = null
 	_letterbox_material = null
+	_focus_material = null
 
 	# Fixed canonical order (see the class docstring for the rationale):
 	# threshold -> bloom -> halation -> glitch -> grade -> lut -> pixelate -> posterize
 	# -> outline -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration
-	# -> leaks -> grain -> vignette.
+	# -> leaks -> grain -> vignette -> focus.
 	# Lower-layer passes render first, so each reads the prior result. Letterbox is the
 	# content/display boundary: it mattes the finished image, then the display medium
 	# (lens/vhs/crt/aberration/grain/vignette) renders over the bars.
@@ -710,6 +737,10 @@ func _rebuild() -> void:
 		index += 1
 	if vignette_enabled:
 		_vignette_material = _make_pass(VIGNETTE_SHADER, index)
+		index += 1
+	# Final lens focus: dream blur / sharpen on the completed image.
+	if focus_enabled:
+		_focus_material = _make_pass(FOCUS_SHADER, index)
 		index += 1
 
 	_built_layer = layer
@@ -837,3 +868,7 @@ func _apply_params() -> void:
 		_letterbox_material.set_shader_parameter("bar_size", letterbox_size)
 		_letterbox_material.set_shader_parameter("softness", letterbox_softness)
 		_letterbox_material.set_shader_parameter("bar_color", letterbox_color)
+	if _focus_material != null:
+		_focus_material.set_shader_parameter("amount", focus_amount)
+		_focus_material.set_shader_parameter("radius", focus_radius)
+		_focus_material.set_shader_parameter("dream", focus_dream)
