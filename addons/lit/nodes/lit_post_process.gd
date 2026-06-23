@@ -23,10 +23,11 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> halation -> grade -> lut -> outline -> letterbox -> vhs ->
-## crt -> aberration -> grain -> vignette. Lower-layer passes render first, so each
-## reads the accumulated result of the ones before it. (Halation is bloom's warm-halo
-## companion, applied with it before grading; outline inks the graded image; letterbox
+## threshold -> bloom -> halation -> grade -> lut -> posterize -> outline -> letterbox
+## -> vhs -> crt -> aberration -> grain -> vignette. Lower-layer passes render first,
+## so each reads the accumulated result of the ones before it. (Halation is bloom's
+## warm-halo companion, applied with it before grading; posterize flattens the color
+## and outline inks that flattened image, for a comic look; letterbox
 ## mattes the finished content at the content/display boundary, so the display medium
 ## below renders over the bars — the tube curves them, scanlines/grain cross them, the
 ## vignette frames the whole tube; VHS is the tape signal, CRT the glass it's watched
@@ -44,6 +45,7 @@ const ABERRATION_SHADER := preload("res://addons/lit/shaders/lit_post_aberration
 const OUTLINE_SHADER := preload("res://addons/lit/shaders/lit_post_outline.gdshader")
 const HALATION_SHADER := preload("res://addons/lit/shaders/lit_post_halation.gdshader")
 const LETTERBOX_SHADER := preload("res://addons/lit/shaders/lit_post_letterbox.gdshader")
+const POSTERIZE_SHADER := preload("res://addons/lit/shaders/lit_post_posterize.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -162,6 +164,24 @@ const PRESET_LUTS := [
 @export_range(0.0, 1.0, 0.01) var lut_amount: float = 1.0:
 	set(value):
 		lut_amount = value
+		_apply_params()
+
+@export_group("Posterize")
+## Quantize colors into a few flat levels (screen-print / comic look). Runs before
+## Edge Outline, so the outline inks the flattened color.
+@export var posterize_enabled: bool = false:
+	set(value):
+		posterize_enabled = value
+		_rebuild()
+## Discrete steps per channel. 2 = harsh, higher = subtler banding.
+@export_range(2.0, 16.0, 1.0, "or_greater") var posterize_levels: float = 4.0:
+	set(value):
+		posterize_levels = value
+		_apply_params()
+## Blend between the original and the posterized color.
+@export_range(0.0, 1.0, 0.01) var posterize_strength: float = 1.0:
+	set(value):
+		posterize_strength = value
 		_apply_params()
 
 @export_group("Edge Outline")
@@ -381,6 +401,7 @@ var _bloom_material: ShaderMaterial
 var _halation_material: ShaderMaterial
 var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
+var _posterize_material: ShaderMaterial
 var _outline_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
@@ -427,6 +448,7 @@ func _rebuild() -> void:
 	_halation_material = null
 	_grade_material = null
 	_lut_material = null
+	_posterize_material = null
 	_outline_material = null
 	_vhs_material = null
 	_crt_material = null
@@ -458,6 +480,9 @@ func _rebuild() -> void:
 	# pass exists whenever it's enabled.
 	if lut_enabled:
 		_lut_material = _make_pass(LUT_SHADER, index)
+		index += 1
+	if posterize_enabled:
+		_posterize_material = _make_pass(POSTERIZE_SHADER, index)
 		index += 1
 	if outline_enabled:
 		_outline_material = _make_pass(OUTLINE_SHADER, index)
@@ -537,6 +562,9 @@ func _apply_params() -> void:
 	if _lut_material != null:
 		_lut_material.set_shader_parameter("lut", _active_lut())
 		_lut_material.set_shader_parameter("amount", lut_amount)
+	if _posterize_material != null:
+		_posterize_material.set_shader_parameter("levels", posterize_levels)
+		_posterize_material.set_shader_parameter("strength", posterize_strength)
 	if _outline_material != null:
 		_outline_material.set_shader_parameter("outline_color", outline_color)
 		_outline_material.set_shader_parameter("thickness", outline_thickness)

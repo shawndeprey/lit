@@ -41,7 +41,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] **Pixelate / mosaic** — quantize UVs for a chunky downscaled look.
 - [ ] **Dither** — ordered Bayer dithering + palette quantize (Game Boy / PICO-8 /
   1-bit aesthetics).
-- [ ] **Posterize / duotone** — hard color-step or two-tone map.
+- [x] **Posterize** — hard color-step. (`shaders/lit_post_posterize.gdshader`; runs
+  after lut, before outline — flatten color then ink for the comic look. Configurable
+  levels + strength.) Duotone two-tone map still TODO.
 - [ ] **Halftone / dot screen** — comic-book dots.
 - [x] **Edge outline (Sobel)** — ink/cel/comic outlines.
   (`shaders/lit_post_outline.gdshader`; runs after lut, before vhs — crisp edges
