@@ -24,12 +24,13 @@ class_name LitPostProcess
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
 ## threshold -> bloom -> halation -> grade -> lut -> pixelate -> posterize -> outline
-## -> halftone -> letterbox -> vhs -> crt -> aberration -> grain -> vignette.
+## -> halftone -> dither -> letterbox -> vhs -> crt -> aberration -> grain -> vignette.
 ## Lower-layer passes render first, so each reads the accumulated result of the ones
 ## before it. (Halation is bloom's warm-halo companion, applied with it before grading;
 ## pixelate blocks the image, posterize flattens the color, outline inks that flattened
-## image, and halftone dot-screens the result — dark ink lines survive as solid dots
-## while fills break into dots, for a printed-comic look; letterbox
+## image, halftone dot-screens the result — dark ink lines survive as solid dots while
+## fills break into dots — and dither does ordered color reduction; the high-frequency
+## stylize passes (halftone/dither) come after outline so edges stay clean; letterbox
 ## mattes the finished content at the content/display boundary, so the display medium
 ## below renders over the bars — the tube curves them, scanlines/grain cross them, the
 ## vignette frames the whole tube; VHS is the tape signal, CRT the glass it's watched
@@ -50,6 +51,7 @@ const LETTERBOX_SHADER := preload("res://addons/lit/shaders/lit_post_letterbox.g
 const POSTERIZE_SHADER := preload("res://addons/lit/shaders/lit_post_posterize.gdshader")
 const PIXELATE_SHADER := preload("res://addons/lit/shaders/lit_post_pixelate.gdshader")
 const HALFTONE_SHADER := preload("res://addons/lit/shaders/lit_post_halftone.gdshader")
+const DITHER_SHADER := preload("res://addons/lit/shaders/lit_post_dither.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -268,6 +270,34 @@ const PRESET_LUTS := [
 		halftone_paper_color = value
 		_apply_params()
 
+@export_group("Dither")
+## Ordered Bayer dithering into a few levels (PICO-8 / 1-bit / Game-Boy look). Runs
+## after the edge/print passes since it adds high-frequency detail.
+@export var dither_enabled: bool = false:
+	set(value):
+		dither_enabled = value
+		_rebuild()
+## Quantization steps per channel. 2 = 1-bit per channel; higher = subtler.
+@export_range(2.0, 16.0, 1.0, "or_greater") var dither_levels: float = 4.0:
+	set(value):
+		dither_levels = value
+		_apply_params()
+## Bayer cell size in screen pixels. Larger = chunkier dither.
+@export_range(1.0, 8.0, 1.0, "or_greater") var dither_scale: float = 1.0:
+	set(value):
+		dither_scale = value
+		_apply_params()
+## Collapse to luma first — true 1-bit black & white when levels = 2.
+@export var dither_monochrome: bool = false:
+	set(value):
+		dither_monochrome = value
+		_apply_params()
+## Blend between the original and the dithered result.
+@export_range(0.0, 1.0, 0.01) var dither_strength: float = 1.0:
+	set(value):
+		dither_strength = value
+		_apply_params()
+
 @export_group("Letterbox")
 ## Cinematic bars top and bottom — the matte on the finished content. Animate
 ## `letterbox_size` from 0 to ease them in/out for cutscenes. Sits at the
@@ -456,6 +486,7 @@ var _pixelate_material: ShaderMaterial
 var _posterize_material: ShaderMaterial
 var _outline_material: ShaderMaterial
 var _halftone_material: ShaderMaterial
+var _dither_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
 var _aberration_material: ShaderMaterial
@@ -505,6 +536,7 @@ func _rebuild() -> void:
 	_posterize_material = null
 	_outline_material = null
 	_halftone_material = null
+	_dither_material = null
 	_vhs_material = null
 	_crt_material = null
 	_aberration_material = null
@@ -547,6 +579,9 @@ func _rebuild() -> void:
 		index += 1
 	if halftone_enabled:
 		_halftone_material = _make_pass(HALFTONE_SHADER, index)
+		index += 1
+	if dither_enabled:
+		_dither_material = _make_pass(DITHER_SHADER, index)
 		index += 1
 	# Letterbox mattes the finished content; the display medium below renders over it.
 	if letterbox_enabled:
@@ -640,6 +675,11 @@ func _apply_params() -> void:
 		_halftone_material.set_shader_parameter("amount", halftone_amount)
 		_halftone_material.set_shader_parameter("ink_color", halftone_ink_color)
 		_halftone_material.set_shader_parameter("paper_color", halftone_paper_color)
+	if _dither_material != null:
+		_dither_material.set_shader_parameter("levels", dither_levels)
+		_dither_material.set_shader_parameter("scale", dither_scale)
+		_dither_material.set_shader_parameter("monochrome", dither_monochrome)
+		_dither_material.set_shader_parameter("strength", dither_strength)
 	if _vhs_material != null:
 		_vhs_material.set_shader_parameter("wobble_strength", vhs_wobble_strength)
 		_vhs_material.set_shader_parameter("wobble_speed", vhs_wobble_speed)

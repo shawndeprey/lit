@@ -9,7 +9,42 @@
 [ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="6_ngwpp"]
 [ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="7_iednq"]
 [ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="8_5ghie"]
+[ext_resource type="Material" path="res://addons/lit/materials/lit_receiver_material.tres" id="10_ngwpp"]
 [ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="11_ngwpp"]
+
+[sub_resource type="Gradient" id="Gradient_s7aw1"]
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_ywxc3"]
+gradient = SubResource("Gradient_s7aw1")
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 0.5)
+
+[sub_resource type="Gradient" id="Gradient_x1o0v"]
+offsets = PackedFloat32Array(0, 0.14239483, 0.85760516, 1)
+colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_o2bho"]
+gradient = SubResource("Gradient_x1o0v")
+
+[sub_resource type="Curve" id="Curve_d5qe5"]
+_data = [Vector2(0.20597017, 0.20769227), 0.0, 0.0, 0, 0, Vector2(0.49253735, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.60769224), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_abemx"]
+curve = SubResource("Curve_d5qe5")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_ynfqq"]
+particle_flag_disable_z = true
+spread = 180.0
+initial_velocity_min = 268.1
+initial_velocity_max = 270.78
+gravity = Vector3(0, 98, 0)
+scale_min = 0.29999998
+scale_max = 0.5
+color_ramp = SubResource("GradientTexture1D_o2bho")
+emission_curve = SubResource("CurveTexture_abemx")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_s7aw1"]
 shader = ExtResource("3_es8hm")
@@ -41,6 +76,14 @@ tile_map_data = PackedByteArray("AAAAAAAAAQAGAAAAAAAAAAEAAQAGAAAAAAAAAAIAAQAGAAA
 scale = Vector2(3, 3)
 tile_map_data = PackedByteArray("AAARAAcAAQAdAA8AAAAHAAUAAQAQAA4AAAAPAAMAAQAQAAgAAAA=")
 
+[node name="GPUParticles2D" type="GPUParticles2D" parent="." unique_id=944146707]
+material = ExtResource("10_ngwpp")
+position = Vector2(579, 306)
+amount = 16
+texture = SubResource("GradientTexture2D_ywxc3")
+lifetime = 2.0
+process_material = SubResource("ParticleProcessMaterial_ynfqq")
+
 [node name="LitSprite2D" type="Sprite2D" parent="." unique_id=1127649428]
 material = SubResource("ShaderMaterial_s7aw1")
 position = Vector2(578, 326.00003)
@@ -60,6 +103,7 @@ script = ExtResource("3_4l8u5")
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="Label" type="Label" parent="." unique_id=211440511]
+visible = false
 offset_left = 353.0
 offset_top = 387.0
 offset_right = 444.0
@@ -67,6 +111,7 @@ offset_bottom = 410.0
 text = "Hello World"
 
 [node name="MeshInstance2D" type="MeshInstance2D" parent="." unique_id=1057338403]
+visible = false
 position = Vector2(365, 366)
 scale = Vector2(20, 20)
 mesh = SubResource("QuadMesh_o2bho")
@@ -82,7 +127,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(468, 147)
+position = Vector2(439, 87)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 3.0
@@ -129,20 +174,4 @@ halation_threshold = 0.05
 halation_intensity = 1.39
 halation_radius = 5.04
 halation_tint = Color(0.8427926, 0.06220977, 0.55192626, 1)
-halftone_enabled = true
-halftone_dot_size = 5.0
-halftone_ink_color = Color(0, 0, 0.087658554, 1)
-halftone_paper_color = Color(1, 0.59607846, 1, 1)
-vhs_enabled = true
-vhs_wobble_strength = 1.2
-vhs_wobble_speed = 0.9
-vhs_chroma_shift = 1.7
-vhs_tracking_strength = 0.06
-crt_enabled = true
-crt_curvature = 0.37
-crt_scanline_strength = 0.57
-crt_scanline_count = 268.0
-crt_aberration = 5.8
-crt_vignette = 0.83
-crt_brightness = 2.0
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
