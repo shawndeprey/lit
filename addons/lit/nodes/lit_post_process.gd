@@ -23,9 +23,10 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> grade -> lut -> vhs -> crt -> vignette. Lower-layer passes
-## render first, so each reads the accumulated result of the ones before it. (VHS is
-## the tape signal, CRT is the glass it's watched on, so VHS runs before CRT.)
+## threshold -> bloom -> grade -> lut -> vhs -> crt -> grain -> vignette. Lower-layer
+## passes render first, so each reads the accumulated result of the ones before it.
+## (VHS is the tape signal, CRT is the glass it's watched on, so VHS runs before CRT;
+## grain sits on the final image, after CRT.)
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
@@ -34,6 +35,7 @@ const BLOOM_SHADER := preload("res://addons/lit/shaders/lit_post_bloom.gdshader"
 const LUT_SHADER := preload("res://addons/lit/shaders/lit_post_lut.gdshader")
 const CRT_SHADER := preload("res://addons/lit/shaders/lit_post_crt.gdshader")
 const VHS_SHADER := preload("res://addons/lit/shaders/lit_post_vhs.gdshader")
+const GRAIN_SHADER := preload("res://addons/lit/shaders/lit_post_grain.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -219,6 +221,33 @@ const PRESET_LUTS := [
 		crt_brightness = value
 		_apply_params()
 
+@export_group("Film Grain")
+## Animated film-grain noise over the final image. Cheap, pairs with everything.
+@export var grain_enabled: bool = false:
+	set(value):
+		grain_enabled = value
+		_rebuild()
+## Grain amount.
+@export_range(0.0, 0.5, 0.001, "or_greater") var grain_intensity: float = 0.05:
+	set(value):
+		grain_intensity = value
+		_apply_params()
+## Grain cell size in pixels. 1 = per-pixel; larger = chunkier, coarser grain.
+@export_range(1.0, 8.0, 0.1, "or_greater") var grain_size: float = 1.0:
+	set(value):
+		grain_size = value
+		_apply_params()
+## How much grain fades toward black/white (0 = uniform, 1 = midtones only).
+@export_range(0.0, 1.0, 0.01) var grain_luminance_response: float = 0.5:
+	set(value):
+		grain_luminance_response = value
+		_apply_params()
+## Monochrome film grain (off) vs. per-channel RGB sparkle (on).
+@export var grain_colored: bool = false:
+	set(value):
+		grain_colored = value
+		_apply_params()
+
 @export_group("Vignette")
 @export var vignette_enabled: bool = false:
 	set(value):
@@ -242,6 +271,7 @@ var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
+var _grain_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
 # node's layer can re-sync the pass child-layers live (editor only).
@@ -283,9 +313,11 @@ func _rebuild() -> void:
 	_lut_material = null
 	_vhs_material = null
 	_crt_material = null
+	_grain_material = null
 	_vignette_material = null
 
-	# Fixed canonical order: threshold -> bloom -> grade -> lut -> vhs -> crt -> vignette.
+	# Fixed canonical order:
+	# threshold -> bloom -> grade -> lut -> vhs -> crt -> grain -> vignette.
 	# Lower-layer passes render first, so each reads the prior result.
 	var index := 0
 	if threshold_enabled:
@@ -307,6 +339,9 @@ func _rebuild() -> void:
 		index += 1
 	if crt_enabled:
 		_crt_material = _make_pass(CRT_SHADER, index)
+		index += 1
+	if grain_enabled:
+		_grain_material = _make_pass(GRAIN_SHADER, index)
 		index += 1
 	if vignette_enabled:
 		_vignette_material = _make_pass(VIGNETTE_SHADER, index)
@@ -379,6 +414,11 @@ func _apply_params() -> void:
 		_crt_material.set_shader_parameter("aberration", crt_aberration)
 		_crt_material.set_shader_parameter("vignette", crt_vignette)
 		_crt_material.set_shader_parameter("brightness", crt_brightness)
+	if _grain_material != null:
+		_grain_material.set_shader_parameter("intensity", grain_intensity)
+		_grain_material.set_shader_parameter("grain_size", grain_size)
+		_grain_material.set_shader_parameter("luminance_response", grain_luminance_response)
+		_grain_material.set_shader_parameter("colored", grain_colored)
 	if _vignette_material != null:
 		_vignette_material.set_shader_parameter("strength", vignette_strength)
 		_vignette_material.set_shader_parameter("softness", vignette_softness)

@@ -29,7 +29,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 - [~] **VHS** — chroma bleed/smear, tracking-noise lines, color-channel shift, tape
   wobble/jitter, scanline roll. Animated via `TIME`.
   (`shaders/lit_post_vhs.gdshader`; runs before crt — tape signal -> glass.)
-- [ ] **Film grain** — animated noise; pairs with everything. Trivial, big vibe.
+- [x] **Film grain** — animated noise; pairs with everything. Trivial, big vibe.
+  (`shaders/lit_post_grain.gdshader`; runs after crt, before vignette. Mono/colored,
+  luminance-responsive.)
 - [ ] **Chromatic aberration** — RGB split growing toward screen edges. Cheap, lens-y.
 
 ## Tier 2 — stylize (retro / indie)
