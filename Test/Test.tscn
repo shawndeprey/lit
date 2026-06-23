@@ -60,6 +60,7 @@ script = ExtResource("3_4l8u5")
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="Label" type="Label" parent="." unique_id=211440511]
+visible = false
 offset_left = 353.0
 offset_top = 387.0
 offset_right = 444.0
@@ -67,6 +68,7 @@ offset_bottom = 410.0
 text = "Hello World"
 
 [node name="MeshInstance2D" type="MeshInstance2D" parent="." unique_id=1057338403]
+visible = false
 position = Vector2(365, 366)
 scale = Vector2(20, 20)
 mesh = SubResource("QuadMesh_o2bho")
@@ -82,7 +84,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(550, 240)
+position = Vector2(512, 195)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 3.0
@@ -92,7 +94,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights" unique_id=1063815886]
-position = Vector2(734, 432)
+position = Vector2(717, 468)
 script = ExtResource("4_lg8mm")
 color = Color(0.8709204, 5.640924e-05, 0.65549177, 1)
 energy = 3.0
@@ -102,7 +104,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights" unique_id=1682313072]
-position = Vector2(392, 474)
+position = Vector2(369.99997, 508)
 rotation = -0.82214713
 script = ExtResource("8_5ghie")
 color = Color(0, 0, 1, 1)
@@ -120,11 +122,5 @@ visible = false
 position = Vector2(576, 324)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
-visible = false
 script = ExtResource("11_ngwpp")
-threshold_cutoff = 0.35
-bloom_enabled = true
-bloom_threshold = 0.12
-bloom_intensity = 1.27
-bloom_radius = 3.63
 metadata/_custom_type_script = "uid://djrtgftop1i8a"

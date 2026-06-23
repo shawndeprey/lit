@@ -23,14 +23,15 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> grade -> lut -> vignette. Lower-layer passes render first,
-## so each reads the accumulated result of the ones before it.
+## threshold -> bloom -> grade -> lut -> crt -> vignette. Lower-layer passes render
+## first, so each reads the accumulated result of the ones before it.
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
 const VIGNETTE_SHADER := preload("res://addons/lit/shaders/lit_post_vignette.gdshader")
 const BLOOM_SHADER := preload("res://addons/lit/shaders/lit_post_bloom.gdshader")
 const LUT_SHADER := preload("res://addons/lit/shaders/lit_post_lut.gdshader")
+const CRT_SHADER := preload("res://addons/lit/shaders/lit_post_crt.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -123,6 +124,50 @@ const PRESET_LUTS := [
 		lut_amount = value
 		_apply_params()
 
+@export_group("CRT")
+## Old-tube look: barrel curvature + scanlines + RGB aperture mask + edge vignette
+## + slight chromatic aberration. A steady (non-animated) effect; pair with VHS for
+## motion artifacts.
+@export var crt_enabled: bool = false:
+	set(value):
+		crt_enabled = value
+		_rebuild()
+## Barrel bulge toward the edges. 0 = flat glass.
+@export_range(0.0, 1.0, 0.01, "or_greater") var crt_curvature: float = 0.2:
+	set(value):
+		crt_curvature = value
+		_apply_params()
+## How dark the scanline troughs get (0 = none, 1 = black lines).
+@export_range(0.0, 1.0, 0.01) var crt_scanline_strength: float = 0.3:
+	set(value):
+		crt_scanline_strength = value
+		_apply_params()
+## Number of scanline pairs down the screen. Lower = chunkier / more retro.
+@export_range(0.0, 1080.0, 1.0, "or_greater") var crt_scanline_count: float = 240.0:
+	set(value):
+		crt_scanline_count = value
+		_apply_params()
+## Depth of the R/G/B phosphor stripe mask. 0 = off.
+@export_range(0.0, 1.0, 0.01) var crt_mask_strength: float = 0.3:
+	set(value):
+		crt_mask_strength = value
+		_apply_params()
+## Max RGB split at the edges, in pixels.
+@export_range(0.0, 8.0, 0.1, "or_greater") var crt_aberration: float = 1.5:
+	set(value):
+		crt_aberration = value
+		_apply_params()
+## Edge darkening from the tube falloff. 0 = none.
+@export_range(0.0, 1.0, 0.01) var crt_vignette: float = 0.3:
+	set(value):
+		crt_vignette = value
+		_apply_params()
+## Brightness lift to offset the darkening from the mask and scanlines.
+@export_range(0.0, 2.0, 0.01, "or_greater") var crt_brightness: float = 1.2:
+	set(value):
+		crt_brightness = value
+		_apply_params()
+
 @export_group("Vignette")
 @export var vignette_enabled: bool = false:
 	set(value):
@@ -144,6 +189,7 @@ var _threshold_material: ShaderMaterial
 var _bloom_material: ShaderMaterial
 var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
+var _crt_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
 # node's layer can re-sync the pass child-layers live (editor only).
@@ -183,9 +229,10 @@ func _rebuild() -> void:
 	_bloom_material = null
 	_grade_material = null
 	_lut_material = null
+	_crt_material = null
 	_vignette_material = null
 
-	# Fixed canonical order: threshold -> bloom -> grade -> lut -> vignette.
+	# Fixed canonical order: threshold -> bloom -> grade -> lut -> crt -> vignette.
 	# Lower-layer passes render first, so each reads the prior result.
 	var index := 0
 	if threshold_enabled:
@@ -201,6 +248,9 @@ func _rebuild() -> void:
 	# pass exists whenever it's enabled.
 	if lut_enabled:
 		_lut_material = _make_pass(LUT_SHADER, index)
+		index += 1
+	if crt_enabled:
+		_crt_material = _make_pass(CRT_SHADER, index)
 		index += 1
 	if vignette_enabled:
 		_vignette_material = _make_pass(VIGNETTE_SHADER, index)
@@ -256,6 +306,14 @@ func _apply_params() -> void:
 	if _lut_material != null:
 		_lut_material.set_shader_parameter("lut", _active_lut())
 		_lut_material.set_shader_parameter("amount", lut_amount)
+	if _crt_material != null:
+		_crt_material.set_shader_parameter("curvature", crt_curvature)
+		_crt_material.set_shader_parameter("scanline_strength", crt_scanline_strength)
+		_crt_material.set_shader_parameter("scanline_count", crt_scanline_count)
+		_crt_material.set_shader_parameter("mask_strength", crt_mask_strength)
+		_crt_material.set_shader_parameter("aberration", crt_aberration)
+		_crt_material.set_shader_parameter("vignette", crt_vignette)
+		_crt_material.set_shader_parameter("brightness", crt_brightness)
 	if _vignette_material != null:
 		_vignette_material.set_shader_parameter("strength", vignette_strength)
 		_vignette_material.set_shader_parameter("softness", vignette_softness)
