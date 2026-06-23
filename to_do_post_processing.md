@@ -43,7 +43,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
   1-bit aesthetics).
 - [ ] **Posterize / duotone** — hard color-step or two-tone map.
 - [ ] **Halftone / dot screen** — comic-book dots.
-- [ ] **Edge outline (Sobel)** — ink/cel/comic outlines.
+- [x] **Edge outline (Sobel)** — ink/cel/comic outlines.
+  (`shaders/lit_post_outline.gdshader`; runs after lut, before vhs — crisp edges
+  before any tube/tape warp. Luma Sobel, configurable ink color/thickness/threshold.)
 
 ## Tier 3 — cinematic / photographic
 

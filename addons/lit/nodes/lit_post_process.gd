@@ -23,11 +23,11 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> grade -> lut -> vhs -> crt -> aberration -> grain -> vignette.
-## Lower-layer passes render first, so each reads the accumulated result of the ones
-## before it. (VHS is the tape signal, CRT is the glass it's watched on, so VHS runs
-## before CRT; aberration is the lens fringe and grain the film, both on the final
-## image after CRT.)
+## threshold -> bloom -> grade -> lut -> outline -> vhs -> crt -> aberration -> grain
+## -> vignette. Lower-layer passes render first, so each reads the accumulated result
+## of the ones before it. (Outline inks the graded image before any tube/tape warp;
+## VHS is the tape signal, CRT the glass it's watched on, so VHS runs before CRT;
+## aberration is the lens fringe and grain the film, both on the final image.)
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
@@ -38,6 +38,7 @@ const CRT_SHADER := preload("res://addons/lit/shaders/lit_post_crt.gdshader")
 const VHS_SHADER := preload("res://addons/lit/shaders/lit_post_vhs.gdshader")
 const GRAIN_SHADER := preload("res://addons/lit/shaders/lit_post_grain.gdshader")
 const ABERRATION_SHADER := preload("res://addons/lit/shaders/lit_post_aberration.gdshader")
+const OUTLINE_SHADER := preload("res://addons/lit/shaders/lit_post_outline.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -128,6 +129,39 @@ const PRESET_LUTS := [
 @export_range(0.0, 1.0, 0.01) var lut_amount: float = 1.0:
 	set(value):
 		lut_amount = value
+		_apply_params()
+
+@export_group("Edge Outline")
+## Sobel edge detection on luma, inked as a cel/comic outline. Computed before the
+## tube/tape passes so edges stay crisp.
+@export var outline_enabled: bool = false:
+	set(value):
+		outline_enabled = value
+		_rebuild()
+## Outline ink color (alpha scales opacity alongside Outline Strength).
+@export var outline_color: Color = Color(0.0, 0.0, 0.0, 1.0):
+	set(value):
+		outline_color = value
+		_apply_params()
+## Sobel tap spacing in pixels. Larger = thicker, coarser outlines.
+@export_range(0.5, 8.0, 0.1, "or_greater") var outline_thickness: float = 1.0:
+	set(value):
+		outline_thickness = value
+		_apply_params()
+## Edge magnitude needed before any ink shows. Higher = only strong edges.
+@export_range(0.0, 1.0, 0.01) var outline_threshold: float = 0.1:
+	set(value):
+		outline_threshold = value
+		_apply_params()
+## Anti-alias knee above the threshold (0 = hard line, higher = softer).
+@export_range(0.0, 1.0, 0.01) var outline_softness: float = 0.1:
+	set(value):
+		outline_softness = value
+		_apply_params()
+## Outline opacity.
+@export_range(0.0, 1.0, 0.01) var outline_strength: float = 1.0:
+	set(value):
+		outline_strength = value
 		_apply_params()
 
 @export_group("VHS")
@@ -288,6 +322,7 @@ var _threshold_material: ShaderMaterial
 var _bloom_material: ShaderMaterial
 var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
+var _outline_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
 var _aberration_material: ShaderMaterial
@@ -331,6 +366,7 @@ func _rebuild() -> void:
 	_bloom_material = null
 	_grade_material = null
 	_lut_material = null
+	_outline_material = null
 	_vhs_material = null
 	_crt_material = null
 	_aberration_material = null
@@ -354,6 +390,9 @@ func _rebuild() -> void:
 	# pass exists whenever it's enabled.
 	if lut_enabled:
 		_lut_material = _make_pass(LUT_SHADER, index)
+		index += 1
+	if outline_enabled:
+		_outline_material = _make_pass(OUTLINE_SHADER, index)
 		index += 1
 	if vhs_enabled:
 		_vhs_material = _make_pass(VHS_SHADER, index)
@@ -421,6 +460,12 @@ func _apply_params() -> void:
 	if _lut_material != null:
 		_lut_material.set_shader_parameter("lut", _active_lut())
 		_lut_material.set_shader_parameter("amount", lut_amount)
+	if _outline_material != null:
+		_outline_material.set_shader_parameter("outline_color", outline_color)
+		_outline_material.set_shader_parameter("thickness", outline_thickness)
+		_outline_material.set_shader_parameter("threshold", outline_threshold)
+		_outline_material.set_shader_parameter("softness", outline_softness)
+		_outline_material.set_shader_parameter("strength", outline_strength)
 	if _vhs_material != null:
 		_vhs_material.set_shader_parameter("wobble_strength", vhs_wobble_strength)
 		_vhs_material.set_shader_parameter("wobble_speed", vhs_wobble_speed)
