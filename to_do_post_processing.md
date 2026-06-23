@@ -51,7 +51,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [ ] **Lens distortion** — barrel / pincushion (fisheye or subtle correction).
 - [ ] **Letterbox bars** — animatable cinematic aspect crop (cutscenes).
-- [ ] **Halation** — warm red-ish bloom around highlights (film companion to bloom).
+- [x] **Halation** — warm red-ish bloom around highlights (film companion to bloom).
+  (`shaders/lit_post_halation.gdshader`; runs right after bloom, before grade. Reuses
+  bloom's mip-glow, luma-driven, recolored to a warm tint.)
 - [ ] **Light leaks** — animated colored gradients bleeding from edges (texture-driven).
 - [ ] **Glitch / RGB-shift / datamosh-lite** — animated tearing/blocks (damage/hacking).
 - [ ] **Soft focus / dream blur** + **Sharpen** — the two ends of the focus dial.

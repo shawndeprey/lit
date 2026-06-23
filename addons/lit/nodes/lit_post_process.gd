@@ -23,10 +23,11 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> grade -> lut -> outline -> vhs -> crt -> aberration -> grain
-## -> vignette. Lower-layer passes render first, so each reads the accumulated result
-## of the ones before it. (Outline inks the graded image before any tube/tape warp;
-## VHS is the tape signal, CRT the glass it's watched on, so VHS runs before CRT;
+## threshold -> bloom -> halation -> grade -> lut -> outline -> vhs -> crt ->
+## aberration -> grain -> vignette. Lower-layer passes render first, so each reads the
+## accumulated result of the ones before it. (Halation is bloom's warm-halo companion,
+## applied with it before grading; outline inks the graded image before any tube/tape
+## warp; VHS is the tape signal, CRT the glass it's watched on, so VHS runs before CRT;
 ## aberration is the lens fringe and grain the film, both on the final image.)
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
@@ -39,6 +40,7 @@ const VHS_SHADER := preload("res://addons/lit/shaders/lit_post_vhs.gdshader")
 const GRAIN_SHADER := preload("res://addons/lit/shaders/lit_post_grain.gdshader")
 const ABERRATION_SHADER := preload("res://addons/lit/shaders/lit_post_aberration.gdshader")
 const OUTLINE_SHADER := preload("res://addons/lit/shaders/lit_post_outline.gdshader")
+const HALATION_SHADER := preload("res://addons/lit/shaders/lit_post_halation.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -84,6 +86,34 @@ const PRESET_LUTS := [
 @export_range(0.0, 8.0, 0.01, "or_greater") var bloom_radius: float = 4.0:
 	set(value):
 		bloom_radius = value
+		_apply_params()
+
+@export_group("Halation")
+## Warm red-leaning halo around highlights (film companion to bloom). Applied with
+## bloom, before color grading.
+@export var halation_enabled: bool = false:
+	set(value):
+		halation_enabled = value
+		_rebuild()
+## Luma above this halates. LDR screen, so the useful range is ~0.4–0.8.
+@export_range(0.0, 1.0, 0.01) var halation_threshold: float = 0.6:
+	set(value):
+		halation_threshold = value
+		_apply_params()
+## Halo strength added on top of the frame.
+@export_range(0.0, 4.0, 0.01, "or_greater") var halation_intensity: float = 0.6:
+	set(value):
+		halation_intensity = value
+		_apply_params()
+## Halo width — spreads the sampled mip levels. Larger = wider, softer bleed.
+@export_range(0.0, 8.0, 0.01, "or_greater") var halation_radius: float = 5.0:
+	set(value):
+		halation_radius = value
+		_apply_params()
+## Halo color. Warm red-orange by default — the classic film halation hue.
+@export var halation_tint: Color = Color(1.0, 0.25, 0.1, 1.0):
+	set(value):
+		halation_tint = value
 		_apply_params()
 
 @export_group("Color Grade")
@@ -320,6 +350,7 @@ const PRESET_LUTS := [
 # Generated pass materials, kept so parameter edits push without a rebuild.
 var _threshold_material: ShaderMaterial
 var _bloom_material: ShaderMaterial
+var _halation_material: ShaderMaterial
 var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
 var _outline_material: ShaderMaterial
@@ -364,6 +395,7 @@ func _rebuild() -> void:
 			child.queue_free()
 	_threshold_material = null
 	_bloom_material = null
+	_halation_material = null
 	_grade_material = null
 	_lut_material = null
 	_outline_material = null
@@ -382,6 +414,9 @@ func _rebuild() -> void:
 		index += 1
 	if bloom_enabled:
 		_bloom_material = _make_pass(BLOOM_SHADER, index)
+		index += 1
+	if halation_enabled:
+		_halation_material = _make_pass(HALATION_SHADER, index)
 		index += 1
 	if grade_enabled:
 		_grade_material = _make_pass(GRADE_SHADER, index)
@@ -452,6 +487,11 @@ func _apply_params() -> void:
 		_bloom_material.set_shader_parameter("threshold", bloom_threshold)
 		_bloom_material.set_shader_parameter("intensity", bloom_intensity)
 		_bloom_material.set_shader_parameter("bloom_radius", bloom_radius)
+	if _halation_material != null:
+		_halation_material.set_shader_parameter("threshold", halation_threshold)
+		_halation_material.set_shader_parameter("intensity", halation_intensity)
+		_halation_material.set_shader_parameter("halation_radius", halation_radius)
+		_halation_material.set_shader_parameter("tint", halation_tint)
 	if _grade_material != null:
 		_grade_material.set_shader_parameter("exposure", exposure)
 		_grade_material.set_shader_parameter("contrast", contrast)
