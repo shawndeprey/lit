@@ -50,7 +50,10 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Tier 3 — cinematic / photographic
 
 - [ ] **Lens distortion** — barrel / pincushion (fisheye or subtle correction).
-- [ ] **Letterbox bars** — animatable cinematic aspect crop (cutscenes).
+- [x] **Letterbox bars** — animatable cinematic aspect crop (cutscenes).
+  (`shaders/lit_post_letterbox.gdshader`; runs at the content/display boundary — after
+  outline, before vhs — so the display passes render over the bars. Animate
+  `letterbox_size` to ease bars in/out; feather + color configurable.)
 - [x] **Halation** — warm red-ish bloom around highlights (film companion to bloom).
   (`shaders/lit_post_halation.gdshader`; runs right after bloom, before grade. Reuses
   bloom's mip-glow, luma-driven, recolored to a warm tint.)

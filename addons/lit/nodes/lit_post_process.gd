@@ -23,12 +23,14 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> halation -> grade -> lut -> outline -> vhs -> crt ->
-## aberration -> grain -> vignette. Lower-layer passes render first, so each reads the
-## accumulated result of the ones before it. (Halation is bloom's warm-halo companion,
-## applied with it before grading; outline inks the graded image before any tube/tape
-## warp; VHS is the tape signal, CRT the glass it's watched on, so VHS runs before CRT;
-## aberration is the lens fringe and grain the film, both on the final image.)
+## threshold -> bloom -> halation -> grade -> lut -> outline -> letterbox -> vhs ->
+## crt -> aberration -> grain -> vignette. Lower-layer passes render first, so each
+## reads the accumulated result of the ones before it. (Halation is bloom's warm-halo
+## companion, applied with it before grading; outline inks the graded image; letterbox
+## mattes the finished content at the content/display boundary, so the display medium
+## below renders over the bars — the tube curves them, scanlines/grain cross them, the
+## vignette frames the whole tube; VHS is the tape signal, CRT the glass it's watched
+## on, so VHS runs before CRT; aberration is the lens fringe and grain the film.)
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
@@ -41,6 +43,7 @@ const GRAIN_SHADER := preload("res://addons/lit/shaders/lit_post_grain.gdshader"
 const ABERRATION_SHADER := preload("res://addons/lit/shaders/lit_post_aberration.gdshader")
 const OUTLINE_SHADER := preload("res://addons/lit/shaders/lit_post_outline.gdshader")
 const HALATION_SHADER := preload("res://addons/lit/shaders/lit_post_halation.gdshader")
+const LETTERBOX_SHADER := preload("res://addons/lit/shaders/lit_post_letterbox.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -192,6 +195,31 @@ const PRESET_LUTS := [
 @export_range(0.0, 1.0, 0.01) var outline_strength: float = 1.0:
 	set(value):
 		outline_strength = value
+		_apply_params()
+
+@export_group("Letterbox")
+## Cinematic bars top and bottom — the matte on the finished content. Animate
+## `letterbox_size` from 0 to ease them in/out for cutscenes. Sits at the
+## content/display boundary, so the display passes below (VHS/CRT/etc.) render over
+## the bars: the tube curves them, scanlines and grain cross them.
+@export var letterbox_enabled: bool = false:
+	set(value):
+		letterbox_enabled = value
+		_rebuild()
+## Fraction of screen height covered by EACH bar (0 = none, 0.5 = bars meet center).
+@export_range(0.0, 0.5, 0.001) var letterbox_size: float = 0.12:
+	set(value):
+		letterbox_size = value
+		_apply_params()
+## Feathered inner edge of the bars (0 = hard edge).
+@export_range(0.0, 0.2, 0.001) var letterbox_softness: float = 0.0:
+	set(value):
+		letterbox_softness = value
+		_apply_params()
+## Bar color. Black by default; alpha makes the bars translucent.
+@export var letterbox_color: Color = Color(0.0, 0.0, 0.0, 1.0):
+	set(value):
+		letterbox_color = value
 		_apply_params()
 
 @export_group("VHS")
@@ -359,6 +387,7 @@ var _crt_material: ShaderMaterial
 var _aberration_material: ShaderMaterial
 var _grain_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
+var _letterbox_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
 # node's layer can re-sync the pass child-layers live (editor only).
 var _built_layer: int = 0
@@ -404,10 +433,14 @@ func _rebuild() -> void:
 	_aberration_material = null
 	_grain_material = null
 	_vignette_material = null
+	_letterbox_material = null
 
 	# Fixed canonical order:
-	# threshold -> bloom -> grade -> lut -> vhs -> crt -> grain -> vignette.
-	# Lower-layer passes render first, so each reads the prior result.
+	# threshold -> bloom -> halation -> grade -> lut -> outline -> letterbox -> vhs ->
+	# crt -> aberration -> grain -> vignette.
+	# Lower-layer passes render first, so each reads the prior result. Letterbox is the
+	# content/display boundary: it mattes the finished image, then the display medium
+	# (vhs/crt/aberration/grain/vignette) renders over the bars.
 	var index := 0
 	if threshold_enabled:
 		_threshold_material = _make_pass(THRESHOLD_SHADER, index)
@@ -428,6 +461,10 @@ func _rebuild() -> void:
 		index += 1
 	if outline_enabled:
 		_outline_material = _make_pass(OUTLINE_SHADER, index)
+		index += 1
+	# Letterbox mattes the finished content; the display medium below renders over it.
+	if letterbox_enabled:
+		_letterbox_material = _make_pass(LETTERBOX_SHADER, index)
 		index += 1
 	if vhs_enabled:
 		_vhs_material = _make_pass(VHS_SHADER, index)
@@ -534,3 +571,7 @@ func _apply_params() -> void:
 	if _vignette_material != null:
 		_vignette_material.set_shader_parameter("strength", vignette_strength)
 		_vignette_material.set_shader_parameter("softness", vignette_softness)
+	if _letterbox_material != null:
+		_letterbox_material.set_shader_parameter("bar_size", letterbox_size)
+		_letterbox_material.set_shader_parameter("softness", letterbox_softness)
+		_letterbox_material.set_shader_parameter("bar_color", letterbox_color)

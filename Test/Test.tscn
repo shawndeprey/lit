@@ -43,7 +43,7 @@ tile_map_data = PackedByteArray("AAARAAcAAQAdAA8AAAAHAAUAAQAQAA4AAAAPAAMAAQAQAAg
 
 [node name="LitSprite2D" type="Sprite2D" parent="." unique_id=1127649428]
 material = SubResource("ShaderMaterial_s7aw1")
-position = Vector2(610, 328)
+position = Vector2(578, 326.00003)
 scale = Vector2(5, 5)
 texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("6_ngwpp")
@@ -84,7 +84,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(474, 187)
+position = Vector2(501, 160)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 3.0
@@ -118,9 +118,17 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://blronx1n8oliq"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1618820850]
-visible = false
 position = Vector2(576, 324)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
 script = ExtResource("11_ngwpp")
+bloom_enabled = true
+bloom_threshold = 0.17
+bloom_intensity = 1.83
+bloom_radius = 3.56
+halation_enabled = true
+halation_threshold = 0.05
+halation_intensity = 1.3900000000000001
+halation_radius = 5.04
+halation_tint = Color(0.8427926, 0.06220977, 0.55192626, 1)
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
