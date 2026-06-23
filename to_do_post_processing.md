@@ -38,7 +38,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Tier 2 — stylize (retro / indie)
 
-- [ ] **Pixelate / mosaic** — quantize UVs for a chunky downscaled look.
+- [x] **Pixelate / mosaic** — quantize UVs for a chunky downscaled look.
+  (`shaders/lit_post_pixelate.gdshader`; runs first in the stylize cluster — after lut,
+  before posterize/outline — so they read the blocky image. `pixel_size` in px.)
 - [ ] **Dither** — ordered Bayer dithering + palette quantize (Game Boy / PICO-8 /
   1-bit aesthetics).
 - [x] **Posterize** — hard color-step. (`shaders/lit_post_posterize.gdshader`; runs

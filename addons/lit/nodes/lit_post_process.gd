@@ -23,11 +23,12 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> halation -> grade -> lut -> posterize -> outline -> letterbox
-## -> vhs -> crt -> aberration -> grain -> vignette. Lower-layer passes render first,
-## so each reads the accumulated result of the ones before it. (Halation is bloom's
-## warm-halo companion, applied with it before grading; posterize flattens the color
-## and outline inks that flattened image, for a comic look; letterbox
+## threshold -> bloom -> halation -> grade -> lut -> pixelate -> posterize -> outline
+## -> letterbox -> vhs -> crt -> aberration -> grain -> vignette. Lower-layer passes
+## render first, so each reads the accumulated result of the ones before it. (Halation
+## is bloom's warm-halo companion, applied with it before grading; pixelate blocks the
+## image, posterize flattens the color, and outline inks that flattened image, for a
+## pixel-art / comic look; letterbox
 ## mattes the finished content at the content/display boundary, so the display medium
 ## below renders over the bars — the tube curves them, scanlines/grain cross them, the
 ## vignette frames the whole tube; VHS is the tape signal, CRT the glass it's watched
@@ -46,6 +47,7 @@ const OUTLINE_SHADER := preload("res://addons/lit/shaders/lit_post_outline.gdsha
 const HALATION_SHADER := preload("res://addons/lit/shaders/lit_post_halation.gdshader")
 const LETTERBOX_SHADER := preload("res://addons/lit/shaders/lit_post_letterbox.gdshader")
 const POSTERIZE_SHADER := preload("res://addons/lit/shaders/lit_post_posterize.gdshader")
+const PIXELATE_SHADER := preload("res://addons/lit/shaders/lit_post_pixelate.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -164,6 +166,19 @@ const PRESET_LUTS := [
 @export_range(0.0, 1.0, 0.01) var lut_amount: float = 1.0:
 	set(value):
 		lut_amount = value
+		_apply_params()
+
+@export_group("Pixelate")
+## Snap the image to a coarse grid for a chunky low-res / mosaic look. Runs before the
+## other stylize and display passes, so they all read the blocky image.
+@export var pixelate_enabled: bool = false:
+	set(value):
+		pixelate_enabled = value
+		_rebuild()
+## Block edge in screen pixels. 1 = off, larger = chunkier blocks.
+@export_range(1.0, 64.0, 1.0, "or_greater") var pixelate_size: float = 4.0:
+	set(value):
+		pixelate_size = value
 		_apply_params()
 
 @export_group("Posterize")
@@ -401,6 +416,7 @@ var _bloom_material: ShaderMaterial
 var _halation_material: ShaderMaterial
 var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
+var _pixelate_material: ShaderMaterial
 var _posterize_material: ShaderMaterial
 var _outline_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
@@ -448,6 +464,7 @@ func _rebuild() -> void:
 	_halation_material = null
 	_grade_material = null
 	_lut_material = null
+	_pixelate_material = null
 	_posterize_material = null
 	_outline_material = null
 	_vhs_material = null
@@ -480,6 +497,9 @@ func _rebuild() -> void:
 	# pass exists whenever it's enabled.
 	if lut_enabled:
 		_lut_material = _make_pass(LUT_SHADER, index)
+		index += 1
+	if pixelate_enabled:
+		_pixelate_material = _make_pass(PIXELATE_SHADER, index)
 		index += 1
 	if posterize_enabled:
 		_posterize_material = _make_pass(POSTERIZE_SHADER, index)
@@ -562,6 +582,8 @@ func _apply_params() -> void:
 	if _lut_material != null:
 		_lut_material.set_shader_parameter("lut", _active_lut())
 		_lut_material.set_shader_parameter("amount", lut_amount)
+	if _pixelate_material != null:
+		_pixelate_material.set_shader_parameter("pixel_size", pixelate_size)
 	if _posterize_material != null:
 		_posterize_material.set_shader_parameter("levels", posterize_levels)
 		_posterize_material.set_shader_parameter("strength", posterize_strength)

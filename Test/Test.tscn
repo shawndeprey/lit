@@ -84,7 +84,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(501, 160)
+position = Vector2(515, 146)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 3.0
