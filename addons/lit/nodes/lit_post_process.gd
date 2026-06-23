@@ -24,17 +24,19 @@ class_name LitPostProcess
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
 ## threshold -> bloom -> halation -> grade -> lut -> pixelate -> posterize -> outline
-## -> halftone -> dither -> letterbox -> vhs -> crt -> aberration -> grain -> vignette.
-## Lower-layer passes render first, so each reads the accumulated result of the ones
-## before it. (Halation is bloom's warm-halo companion, applied with it before grading;
+## -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration -> grain ->
+## vignette. Lower-layer passes render first, so each reads the accumulated result of
+## the ones before it. (Halation is bloom's warm-halo companion, applied with it before
+## grading;
 ## pixelate blocks the image, posterize flattens the color, outline inks that flattened
 ## image, halftone dot-screens the result — dark ink lines survive as solid dots while
 ## fills break into dots — and dither does ordered color reduction; the high-frequency
 ## stylize passes (halftone/dither) come after outline so edges stay clean; letterbox
 ## mattes the finished content at the content/display boundary, so the display medium
 ## below renders over the bars — the tube curves them, scanlines/grain cross them, the
-## vignette frames the whole tube; VHS is the tape signal, CRT the glass it's watched
-## on, so VHS runs before CRT; aberration is the lens fringe and grain the film.)
+## vignette frames the whole tube; lens distortion is the device lens (first display
+## pass, distinct from CRT's curvature); VHS is the tape signal, CRT the glass it's
+## watched on, so VHS runs before CRT; aberration is the lens fringe and grain the film.)
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
@@ -52,6 +54,7 @@ const POSTERIZE_SHADER := preload("res://addons/lit/shaders/lit_post_posterize.g
 const PIXELATE_SHADER := preload("res://addons/lit/shaders/lit_post_pixelate.gdshader")
 const HALFTONE_SHADER := preload("res://addons/lit/shaders/lit_post_halftone.gdshader")
 const DITHER_SHADER := preload("res://addons/lit/shaders/lit_post_dither.gdshader")
+const LENS_SHADER := preload("res://addons/lit/shaders/lit_post_lens_distortion.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -323,6 +326,29 @@ const PRESET_LUTS := [
 		letterbox_color = value
 		_apply_params()
 
+@export_group("Lens Distortion")
+## Radial barrel / pincushion warp — the device lens. Positive bulges (fisheye),
+## negative pinches. Distinct from CRT curvature; stack or use either.
+@export var lens_enabled: bool = false:
+	set(value):
+		lens_enabled = value
+		_rebuild()
+## + = barrel/bulge (fisheye), - = pincushion/pinch. 0 = flat.
+@export_range(-2.0, 2.0, 0.01, "or_greater", "or_less") var lens_amount: float = 0.2:
+	set(value):
+		lens_amount = value
+		_apply_params()
+## Scale around center. >1 pushes the warped edges off screen to hide the bezel.
+@export_range(0.5, 2.0, 0.01, "or_greater") var lens_zoom: float = 1.0:
+	set(value):
+		lens_zoom = value
+		_apply_params()
+## Bezel color shown where the warp pulls the image off screen.
+@export var lens_edge_color: Color = Color(0.0, 0.0, 0.0, 1.0):
+	set(value):
+		lens_edge_color = value
+		_apply_params()
+
 @export_group("VHS")
 ## Worn-tape look: per-line wobble, chroma shift + smear, a rolling tracking-noise
 ## band, grain, and a slow brightness roll. Animated. Runs before CRT in the chain
@@ -487,6 +513,7 @@ var _posterize_material: ShaderMaterial
 var _outline_material: ShaderMaterial
 var _halftone_material: ShaderMaterial
 var _dither_material: ShaderMaterial
+var _lens_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
 var _aberration_material: ShaderMaterial
@@ -537,6 +564,7 @@ func _rebuild() -> void:
 	_outline_material = null
 	_halftone_material = null
 	_dither_material = null
+	_lens_material = null
 	_vhs_material = null
 	_crt_material = null
 	_aberration_material = null
@@ -544,12 +572,13 @@ func _rebuild() -> void:
 	_vignette_material = null
 	_letterbox_material = null
 
-	# Fixed canonical order:
-	# threshold -> bloom -> halation -> grade -> lut -> outline -> letterbox -> vhs ->
-	# crt -> aberration -> grain -> vignette.
+	# Fixed canonical order (see the class docstring for the rationale):
+	# threshold -> bloom -> halation -> grade -> lut -> pixelate -> posterize -> outline
+	# -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration -> grain ->
+	# vignette.
 	# Lower-layer passes render first, so each reads the prior result. Letterbox is the
 	# content/display boundary: it mattes the finished image, then the display medium
-	# (vhs/crt/aberration/grain/vignette) renders over the bars.
+	# (lens/vhs/crt/aberration/grain/vignette) renders over the bars.
 	var index := 0
 	if threshold_enabled:
 		_threshold_material = _make_pass(THRESHOLD_SHADER, index)
@@ -586,6 +615,10 @@ func _rebuild() -> void:
 	# Letterbox mattes the finished content; the display medium below renders over it.
 	if letterbox_enabled:
 		_letterbox_material = _make_pass(LETTERBOX_SHADER, index)
+		index += 1
+	# Display medium: lens warps the framed content, then tape -> tube -> film.
+	if lens_enabled:
+		_lens_material = _make_pass(LENS_SHADER, index)
 		index += 1
 	if vhs_enabled:
 		_vhs_material = _make_pass(VHS_SHADER, index)
@@ -680,6 +713,10 @@ func _apply_params() -> void:
 		_dither_material.set_shader_parameter("scale", dither_scale)
 		_dither_material.set_shader_parameter("monochrome", dither_monochrome)
 		_dither_material.set_shader_parameter("strength", dither_strength)
+	if _lens_material != null:
+		_lens_material.set_shader_parameter("amount", lens_amount)
+		_lens_material.set_shader_parameter("zoom", lens_zoom)
+		_lens_material.set_shader_parameter("edge_color", lens_edge_color)
 	if _vhs_material != null:
 		_vhs_material.set_shader_parameter("wobble_strength", vhs_wobble_strength)
 		_vhs_material.set_shader_parameter("wobble_speed", vhs_wobble_speed)

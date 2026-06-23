@@ -57,7 +57,10 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Tier 3 — cinematic / photographic
 
-- [ ] **Lens distortion** — barrel / pincushion (fisheye or subtle correction).
+- [x] **Lens distortion** — barrel / pincushion (fisheye or subtle correction).
+  (`shaders/lit_post_lens_distortion.gdshader`; first display pass, after letterbox.
+  Signed amount (barrel/pincushion) + zoom-to-fill + bezel color. Distinct from CRT
+  curvature; stackable.)
 - [x] **Letterbox bars** — animatable cinematic aspect crop (cutscenes).
   (`shaders/lit_post_letterbox.gdshader`; runs at the content/display boundary — after
   outline, before vhs — so the display passes render over the bars. Animate
