@@ -23,10 +23,11 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> grade -> lut -> vhs -> crt -> grain -> vignette. Lower-layer
-## passes render first, so each reads the accumulated result of the ones before it.
-## (VHS is the tape signal, CRT is the glass it's watched on, so VHS runs before CRT;
-## grain sits on the final image, after CRT.)
+## threshold -> bloom -> grade -> lut -> vhs -> crt -> aberration -> grain -> vignette.
+## Lower-layer passes render first, so each reads the accumulated result of the ones
+## before it. (VHS is the tape signal, CRT is the glass it's watched on, so VHS runs
+## before CRT; aberration is the lens fringe and grain the film, both on the final
+## image after CRT.)
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
@@ -36,6 +37,7 @@ const LUT_SHADER := preload("res://addons/lit/shaders/lit_post_lut.gdshader")
 const CRT_SHADER := preload("res://addons/lit/shaders/lit_post_crt.gdshader")
 const VHS_SHADER := preload("res://addons/lit/shaders/lit_post_vhs.gdshader")
 const GRAIN_SHADER := preload("res://addons/lit/shaders/lit_post_grain.gdshader")
+const ABERRATION_SHADER := preload("res://addons/lit/shaders/lit_post_aberration.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -221,6 +223,23 @@ const PRESET_LUTS := [
 		crt_brightness = value
 		_apply_params()
 
+@export_group("Chromatic Aberration")
+## Radial RGB lens fringe that grows toward the screen edges; center stays sharp.
+@export var aberration_enabled: bool = false:
+	set(value):
+		aberration_enabled = value
+		_rebuild()
+## Max R/B split at the corners, in pixels.
+@export_range(0.0, 16.0, 0.1, "or_greater") var aberration_amount: float = 3.0:
+	set(value):
+		aberration_amount = value
+		_apply_params()
+## Edge concentration. Higher keeps the center sharper and pushes the fringe outward.
+@export_range(0.0, 6.0, 0.1, "or_greater") var aberration_edge_falloff: float = 2.0:
+	set(value):
+		aberration_edge_falloff = value
+		_apply_params()
+
 @export_group("Film Grain")
 ## Animated film-grain noise over the final image. Cheap, pairs with everything.
 @export var grain_enabled: bool = false:
@@ -271,6 +290,7 @@ var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
+var _aberration_material: ShaderMaterial
 var _grain_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
 # The base `layer` the current chain was built against, so an inspector edit to the
@@ -313,6 +333,7 @@ func _rebuild() -> void:
 	_lut_material = null
 	_vhs_material = null
 	_crt_material = null
+	_aberration_material = null
 	_grain_material = null
 	_vignette_material = null
 
@@ -339,6 +360,9 @@ func _rebuild() -> void:
 		index += 1
 	if crt_enabled:
 		_crt_material = _make_pass(CRT_SHADER, index)
+		index += 1
+	if aberration_enabled:
+		_aberration_material = _make_pass(ABERRATION_SHADER, index)
 		index += 1
 	if grain_enabled:
 		_grain_material = _make_pass(GRAIN_SHADER, index)
@@ -414,6 +438,9 @@ func _apply_params() -> void:
 		_crt_material.set_shader_parameter("aberration", crt_aberration)
 		_crt_material.set_shader_parameter("vignette", crt_vignette)
 		_crt_material.set_shader_parameter("brightness", crt_brightness)
+	if _aberration_material != null:
+		_aberration_material.set_shader_parameter("amount", aberration_amount)
+		_aberration_material.set_shader_parameter("edge_falloff", aberration_edge_falloff)
 	if _grain_material != null:
 		_grain_material.set_shader_parameter("intensity", grain_intensity)
 		_grain_material.set_shader_parameter("grain_size", grain_size)

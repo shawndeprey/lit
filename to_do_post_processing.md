@@ -32,7 +32,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Film grain** — animated noise; pairs with everything. Trivial, big vibe.
   (`shaders/lit_post_grain.gdshader`; runs after crt, before vignette. Mono/colored,
   luminance-responsive.)
-- [ ] **Chromatic aberration** — RGB split growing toward screen edges. Cheap, lens-y.
+- [x] **Chromatic aberration** — RGB split growing toward screen edges. Cheap, lens-y.
+  (`shaders/lit_post_aberration.gdshader`; runs after crt, before grain. Radial,
+  edge-falloff shaped, center stays sharp.)
 
 ## Tier 2 — stylize (retro / indie)
 
