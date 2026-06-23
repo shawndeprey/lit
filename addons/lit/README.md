@@ -1,16 +1,6 @@
-<p align="center">
-  <img src="branding/Lit-Logo-Text.png" alt="Lit" width="220">
-</p>
+# Lit
 
-<p align="center"><b>Drop-in 2D lighting for Godot 4 — with no light limit.</b></p>
-
-<p align="center">
-  <img alt="Godot 4.4+" src="https://img.shields.io/badge/Godot-4.4%2B-478CBF?logo=godotengine&logoColor=white">
-  <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-ffca60">
-  <a href="https://discord.gg/nfqeRGnM7P"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white"></a>
-</p>
-
----
+**Drop-in 2D lighting for Godot 4 — with no light limit.**
 
 Lit is an alongside replacement for Godot's built-in 2D lights. It keeps the parts you
 like (add a node, set some values, done) and fixes the part you don't: the hard cap of
@@ -27,21 +17,6 @@ Lit is made and maintained by **Fading Lantern Games**. Questions, bugs, or just
 show off what you built? Come hang out in our Discord:
 
 **→ https://discord.gg/nfqeRGnM7P**
-
----
-
-## Installation
-
-**From the Godot Asset Library** *(recommended)*
-
-1. In Godot, open the **AssetLib** tab, search for **Lit**, and download it.
-2. Enable it under **Project → Project Settings → Plugins**.
-
-**Manually**
-
-1. Download this repo (Code → Download ZIP, or `git clone`).
-2. Copy the **`addons/lit`** folder into your project's `addons/` folder.
-3. Enable **Lit** under **Project → Project Settings → Plugins** (reload the project if asked).
 
 ---
 
@@ -69,7 +44,7 @@ That's it — everything updates live in the editor as you build.
 
 ## What you get
 
-- **Uncapped lights & shadows.** No 15-light limit. Use as many as your scene needs.
+- **Uncapped lights & Shadows.** No 15-light limit. Use as many as your scene needs.
 - **Three light types.** Point, Directional (a sun), and Spot (a cone).
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
 - **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` — no wiring.
@@ -110,7 +85,9 @@ That's it — everything updates live in the editor as you build.
 ## Contributing
 
 Lit is open source and we'd love the help. Found a bug, have an idea, or want to build out a
-feature? Open an issue or pull request right here on GitHub.
+feature? Open an issue or pull request on GitHub:
+
+**→ https://github.com/shawndeprey/lit**
 
 Want to talk an idea through first? The [Discord](https://discord.gg/nfqeRGnM7P) is the
 quickest way to reach us.
