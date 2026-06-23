@@ -24,11 +24,12 @@ class_name LitPostProcess
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
 ## threshold -> bloom -> halation -> grade -> lut -> pixelate -> posterize -> outline
-## -> letterbox -> vhs -> crt -> aberration -> grain -> vignette. Lower-layer passes
-## render first, so each reads the accumulated result of the ones before it. (Halation
-## is bloom's warm-halo companion, applied with it before grading; pixelate blocks the
-## image, posterize flattens the color, and outline inks that flattened image, for a
-## pixel-art / comic look; letterbox
+## -> halftone -> letterbox -> vhs -> crt -> aberration -> grain -> vignette.
+## Lower-layer passes render first, so each reads the accumulated result of the ones
+## before it. (Halation is bloom's warm-halo companion, applied with it before grading;
+## pixelate blocks the image, posterize flattens the color, outline inks that flattened
+## image, and halftone dot-screens the result — dark ink lines survive as solid dots
+## while fills break into dots, for a printed-comic look; letterbox
 ## mattes the finished content at the content/display boundary, so the display medium
 ## below renders over the bars — the tube curves them, scanlines/grain cross them, the
 ## vignette frames the whole tube; VHS is the tape signal, CRT the glass it's watched
@@ -48,6 +49,7 @@ const HALATION_SHADER := preload("res://addons/lit/shaders/lit_post_halation.gds
 const LETTERBOX_SHADER := preload("res://addons/lit/shaders/lit_post_letterbox.gdshader")
 const POSTERIZE_SHADER := preload("res://addons/lit/shaders/lit_post_posterize.gdshader")
 const PIXELATE_SHADER := preload("res://addons/lit/shaders/lit_post_pixelate.gdshader")
+const HALFTONE_SHADER := preload("res://addons/lit/shaders/lit_post_halftone.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -230,6 +232,40 @@ const PRESET_LUTS := [
 @export_range(0.0, 1.0, 0.01) var outline_strength: float = 1.0:
 	set(value):
 		outline_strength = value
+		_apply_params()
+
+@export_group("Halftone")
+## Dot-screen the image (comic / newsprint): a rotated grid of ink dots sized by local
+## brightness. Runs after Edge Outline, so ink lines survive as solid dots while fills
+## break into dots.
+@export var halftone_enabled: bool = false:
+	set(value):
+		halftone_enabled = value
+		_rebuild()
+## Grid cell / max dot footprint, in screen pixels. Larger = coarser dots.
+@export_range(2.0, 32.0, 0.5, "or_greater") var halftone_dot_size: float = 6.0:
+	set(value):
+		halftone_dot_size = value
+		_apply_params()
+## Screen rotation, in degrees (classic single-screen halftone is often ~15–45°).
+@export_range(0.0, 360.0, 1.0) var halftone_angle: float = 0.0:
+	set(value):
+		halftone_angle = value
+		_apply_params()
+## Blend between the original and the dot screen (1 = full halftone).
+@export_range(0.0, 1.0, 0.01) var halftone_amount: float = 1.0:
+	set(value):
+		halftone_amount = value
+		_apply_params()
+## Dot (ink) color.
+@export var halftone_ink_color: Color = Color(0.0, 0.0, 0.0, 1.0):
+	set(value):
+		halftone_ink_color = value
+		_apply_params()
+## Background (paper) color.
+@export var halftone_paper_color: Color = Color(1.0, 1.0, 1.0, 1.0):
+	set(value):
+		halftone_paper_color = value
 		_apply_params()
 
 @export_group("Letterbox")
@@ -419,6 +455,7 @@ var _lut_material: ShaderMaterial
 var _pixelate_material: ShaderMaterial
 var _posterize_material: ShaderMaterial
 var _outline_material: ShaderMaterial
+var _halftone_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
 var _aberration_material: ShaderMaterial
@@ -467,6 +504,7 @@ func _rebuild() -> void:
 	_pixelate_material = null
 	_posterize_material = null
 	_outline_material = null
+	_halftone_material = null
 	_vhs_material = null
 	_crt_material = null
 	_aberration_material = null
@@ -506,6 +544,9 @@ func _rebuild() -> void:
 		index += 1
 	if outline_enabled:
 		_outline_material = _make_pass(OUTLINE_SHADER, index)
+		index += 1
+	if halftone_enabled:
+		_halftone_material = _make_pass(HALFTONE_SHADER, index)
 		index += 1
 	# Letterbox mattes the finished content; the display medium below renders over it.
 	if letterbox_enabled:
@@ -593,6 +634,12 @@ func _apply_params() -> void:
 		_outline_material.set_shader_parameter("threshold", outline_threshold)
 		_outline_material.set_shader_parameter("softness", outline_softness)
 		_outline_material.set_shader_parameter("strength", outline_strength)
+	if _halftone_material != null:
+		_halftone_material.set_shader_parameter("dot_size", halftone_dot_size)
+		_halftone_material.set_shader_parameter("angle", halftone_angle)
+		_halftone_material.set_shader_parameter("amount", halftone_amount)
+		_halftone_material.set_shader_parameter("ink_color", halftone_ink_color)
+		_halftone_material.set_shader_parameter("paper_color", halftone_paper_color)
 	if _vhs_material != null:
 		_vhs_material.set_shader_parameter("wobble_strength", vhs_wobble_strength)
 		_vhs_material.set_shader_parameter("wobble_speed", vhs_wobble_speed)

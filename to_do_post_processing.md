@@ -46,7 +46,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Posterize** — hard color-step. (`shaders/lit_post_posterize.gdshader`; runs
   after lut, before outline — flatten color then ink for the comic look. Configurable
   levels + strength.) Duotone two-tone map still TODO.
-- [ ] **Halftone / dot screen** — comic-book dots.
+- [x] **Halftone / dot screen** — comic-book dots.
+  (`shaders/lit_post_halftone.gdshader`; runs after outline, before letterbox. Rotated
+  ink-dot grid sized by luma; configurable size/angle/amount/ink/paper.)
 - [x] **Edge outline (Sobel)** — ink/cel/comic outlines.
   (`shaders/lit_post_outline.gdshader`; runs after lut, before vhs — crisp edges
   before any tube/tape warp. Luma Sobel, configurable ink color/thickness/threshold.)
