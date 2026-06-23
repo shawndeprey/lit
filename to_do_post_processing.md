@@ -68,7 +68,10 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Halation** — warm red-ish bloom around highlights (film companion to bloom).
   (`shaders/lit_post_halation.gdshader`; runs right after bloom, before grade. Reuses
   bloom's mip-glow, luma-driven, recolored to a warm tint.)
-- [ ] **Light leaks** — animated colored gradients bleeding from edges (texture-driven).
+- [x] **Light leaks** — animated colored gradients bleeding from edges (texture-driven).
+  (`shaders/lit_post_light_leaks.gdshader`; runs after aberration, before grain. Screen-
+  blended, procedural by default with an optional `leaks_texture` override — same
+  baked-default + custom-texture pattern as LUT.)
 - [ ] **Glitch / RGB-shift / datamosh-lite** — animated tearing/blocks (damage/hacking).
 - [ ] **Soft focus / dream blur** + **Sharpen** — the two ends of the focus dial.
 

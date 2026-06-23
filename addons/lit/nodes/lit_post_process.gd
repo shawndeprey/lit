@@ -24,8 +24,8 @@ class_name LitPostProcess
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
 ## threshold -> bloom -> halation -> grade -> lut -> pixelate -> posterize -> outline
-## -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration -> grain ->
-## vignette. Lower-layer passes render first, so each reads the accumulated result of
+## -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration -> leaks ->
+## grain -> vignette. Lower-layer passes render first, so each reads the result of
 ## the ones before it. (Halation is bloom's warm-halo companion, applied with it before
 ## grading;
 ## pixelate blocks the image, posterize flattens the color, outline inks that flattened
@@ -55,6 +55,7 @@ const PIXELATE_SHADER := preload("res://addons/lit/shaders/lit_post_pixelate.gds
 const HALFTONE_SHADER := preload("res://addons/lit/shaders/lit_post_halftone.gdshader")
 const DITHER_SHADER := preload("res://addons/lit/shaders/lit_post_dither.gdshader")
 const LENS_SHADER := preload("res://addons/lit/shaders/lit_post_lens_distortion.gdshader")
+const LIGHT_LEAKS_SHADER := preload("res://addons/lit/shaders/lit_post_light_leaks.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -459,6 +460,41 @@ const PRESET_LUTS := [
 		aberration_edge_falloff = value
 		_apply_params()
 
+@export_group("Light Leaks")
+## Soft animated colored glows bleeding from the edges (film light-leak look).
+## Procedural by default; assign a Leak Texture to drive it from your own scrolling
+## gradient instead. Screen-blended over the image.
+@export var leaks_enabled: bool = false:
+	set(value):
+		leaks_enabled = value
+		_rebuild()
+## Overall leak strength.
+@export_range(0.0, 2.0, 0.01, "or_greater") var leaks_intensity: float = 0.6:
+	set(value):
+		leaks_intensity = value
+		_apply_params()
+## Animation drift / pulse speed (0 = frozen).
+@export_range(0.0, 4.0, 0.01, "or_greater") var leaks_speed: float = 1.0:
+	set(value):
+		leaks_speed = value
+		_apply_params()
+## First (warm) leak color. Ignored when a Leak Texture is assigned.
+@export var leaks_color1: Color = Color(1.0, 0.5, 0.2, 1.0):
+	set(value):
+		leaks_color1 = value
+		_apply_params()
+## Second (red) leak color. Ignored when a Leak Texture is assigned.
+@export var leaks_color2: Color = Color(1.0, 0.2, 0.3, 1.0):
+	set(value):
+		leaks_color2 = value
+		_apply_params()
+## Optional override: a scrolling gradient texture replaces the procedural leaks.
+## Import with Filter on, Repeat enabled.
+@export var leaks_texture: Texture2D:
+	set(value):
+		leaks_texture = value
+		_apply_params()
+
 @export_group("Film Grain")
 ## Animated film-grain noise over the final image. Cheap, pairs with everything.
 @export var grain_enabled: bool = false:
@@ -517,6 +553,7 @@ var _lens_material: ShaderMaterial
 var _vhs_material: ShaderMaterial
 var _crt_material: ShaderMaterial
 var _aberration_material: ShaderMaterial
+var _leaks_material: ShaderMaterial
 var _grain_material: ShaderMaterial
 var _vignette_material: ShaderMaterial
 var _letterbox_material: ShaderMaterial
@@ -568,6 +605,7 @@ func _rebuild() -> void:
 	_vhs_material = null
 	_crt_material = null
 	_aberration_material = null
+	_leaks_material = null
 	_grain_material = null
 	_vignette_material = null
 	_letterbox_material = null
@@ -628,6 +666,9 @@ func _rebuild() -> void:
 		index += 1
 	if aberration_enabled:
 		_aberration_material = _make_pass(ABERRATION_SHADER, index)
+		index += 1
+	if leaks_enabled:
+		_leaks_material = _make_pass(LIGHT_LEAKS_SHADER, index)
 		index += 1
 	if grain_enabled:
 		_grain_material = _make_pass(GRAIN_SHADER, index)
@@ -737,6 +778,13 @@ func _apply_params() -> void:
 	if _aberration_material != null:
 		_aberration_material.set_shader_parameter("amount", aberration_amount)
 		_aberration_material.set_shader_parameter("edge_falloff", aberration_edge_falloff)
+	if _leaks_material != null:
+		_leaks_material.set_shader_parameter("intensity", leaks_intensity)
+		_leaks_material.set_shader_parameter("speed", leaks_speed)
+		_leaks_material.set_shader_parameter("color1", leaks_color1)
+		_leaks_material.set_shader_parameter("color2", leaks_color2)
+		_leaks_material.set_shader_parameter("has_texture", leaks_texture != null)
+		_leaks_material.set_shader_parameter("leak_texture", leaks_texture)
 	if _grain_material != null:
 		_grain_material.set_shader_parameter("intensity", grain_intensity)
 		_grain_material.set_shader_parameter("grain_size", grain_size)
