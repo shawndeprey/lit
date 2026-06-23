@@ -153,6 +153,16 @@ var _built_layer: int = 0
 func _ready() -> void:
 	_rebuild()
 	set_process(Engine.is_editor_hint())
+	# Hiding this node should stop post-processing. The passes live in their own child
+	# CanvasLayers, which don't inherit a parent CanvasLayer's visibility, so mirror it.
+	if not visibility_changed.is_connected(_on_visibility_changed):
+		visibility_changed.connect(_on_visibility_changed)
+
+
+func _on_visibility_changed() -> void:
+	for child in get_children(true):
+		if child.has_meta(PASS_META):
+			(child as CanvasLayer).visible = visible
 
 
 func _process(_delta: float) -> void:
@@ -206,6 +216,7 @@ func _rebuild() -> void:
 func _make_pass(shader: Shader, index: int) -> ShaderMaterial:
 	var pass_layer := CanvasLayer.new()
 	pass_layer.layer = layer + index + 1    # above this node's base layer, in order
+	pass_layer.visible = visible            # respect the node's current visibility
 	pass_layer.set_meta(PASS_META, true)
 
 	var mat := ShaderMaterial.new()
