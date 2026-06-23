@@ -72,7 +72,9 @@ Status key: `[ ]` todo · `[~]` in progress · `[x]` done
   (`shaders/lit_post_light_leaks.gdshader`; runs after aberration, before grain. Screen-
   blended, procedural by default with an optional `leaks_texture` override — same
   baked-default + custom-texture pattern as LUT.)
-- [ ] **Glitch / RGB-shift / datamosh-lite** — animated tearing/blocks (damage/hacking).
+- [x] **Glitch / RGB-shift / datamosh-lite** — animated tearing/blocks (damage/hacking).
+  (`shaders/lit_post_glitch.gdshader`; runs before color grade — corrupt the signal,
+  then grade/display. Horizontal tear + RGB split + block jumps + flicker, time-quantized.)
 - [ ] **Soft focus / dream blur** + **Sharpen** — the two ends of the focus dial.
 
 ---

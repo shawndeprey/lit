@@ -23,11 +23,12 @@ class_name LitPostProcess
 ## to_do_post_processing.md).
 ##
 ## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> halation -> grade -> lut -> pixelate -> posterize -> outline
-## -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration -> leaks ->
-## grain -> vignette. Lower-layer passes render first, so each reads the result of
-## the ones before it. (Halation is bloom's warm-halo companion, applied with it before
-## grading;
+## threshold -> bloom -> halation -> glitch -> grade -> lut -> pixelate -> posterize ->
+## outline -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration ->
+## leaks -> grain -> vignette. Lower-layer passes render first, so each reads the result
+## of the ones before it. (Halation is bloom's warm-halo companion, applied with it
+## before grading; glitch corrupts the signal before color, so grading/stylize/display
+## all process the glitched image;
 ## pixelate blocks the image, posterize flattens the color, outline inks that flattened
 ## image, halftone dot-screens the result — dark ink lines survive as solid dots while
 ## fills break into dots — and dither does ordered color reduction; the high-frequency
@@ -56,6 +57,7 @@ const HALFTONE_SHADER := preload("res://addons/lit/shaders/lit_post_halftone.gds
 const DITHER_SHADER := preload("res://addons/lit/shaders/lit_post_dither.gdshader")
 const LENS_SHADER := preload("res://addons/lit/shaders/lit_post_lens_distortion.gdshader")
 const LIGHT_LEAKS_SHADER := preload("res://addons/lit/shaders/lit_post_light_leaks.gdshader")
+const GLITCH_SHADER := preload("res://addons/lit/shaders/lit_post_glitch.gdshader")
 const PASS_META := "lit_post_pass"
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
@@ -129,6 +131,34 @@ const PRESET_LUTS := [
 @export var halation_tint: Color = Color(1.0, 0.25, 0.1, 1.0):
 	set(value):
 		halation_tint = value
+		_apply_params()
+
+@export_group("Glitch")
+## Intermittent digital corruption: horizontal tearing, RGB split, datamosh-lite block
+## jumps, flicker. Animated. Runs before color grade (corrupt the signal, then grade).
+@export var glitch_enabled: bool = false:
+	set(value):
+		glitch_enabled = value
+		_rebuild()
+## How many slices glitch and how far they tear (0 = clean).
+@export_range(0.0, 1.0, 0.01) var glitch_intensity: float = 0.5:
+	set(value):
+		glitch_intensity = value
+		_apply_params()
+## Glitch slice height, in pixels. Smaller = finer tearing.
+@export_range(1.0, 64.0, 1.0, "or_greater") var glitch_block_size: float = 12.0:
+	set(value):
+		glitch_block_size = value
+		_apply_params()
+## RGB channel split, in pixels.
+@export_range(0.0, 32.0, 0.5, "or_greater") var glitch_rgb_shift: float = 4.0:
+	set(value):
+		glitch_rgb_shift = value
+		_apply_params()
+## Reshuffle rate — how many discrete glitch frames per second.
+@export_range(0.0, 30.0, 1.0, "or_greater") var glitch_speed: float = 8.0:
+	set(value):
+		glitch_speed = value
 		_apply_params()
 
 @export_group("Color Grade")
@@ -542,6 +572,7 @@ const PRESET_LUTS := [
 var _threshold_material: ShaderMaterial
 var _bloom_material: ShaderMaterial
 var _halation_material: ShaderMaterial
+var _glitch_material: ShaderMaterial
 var _grade_material: ShaderMaterial
 var _lut_material: ShaderMaterial
 var _pixelate_material: ShaderMaterial
@@ -594,6 +625,7 @@ func _rebuild() -> void:
 	_threshold_material = null
 	_bloom_material = null
 	_halation_material = null
+	_glitch_material = null
 	_grade_material = null
 	_lut_material = null
 	_pixelate_material = null
@@ -611,9 +643,9 @@ func _rebuild() -> void:
 	_letterbox_material = null
 
 	# Fixed canonical order (see the class docstring for the rationale):
-	# threshold -> bloom -> halation -> grade -> lut -> pixelate -> posterize -> outline
-	# -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration -> grain ->
-	# vignette.
+	# threshold -> bloom -> halation -> glitch -> grade -> lut -> pixelate -> posterize
+	# -> outline -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration
+	# -> leaks -> grain -> vignette.
 	# Lower-layer passes render first, so each reads the prior result. Letterbox is the
 	# content/display boundary: it mattes the finished image, then the display medium
 	# (lens/vhs/crt/aberration/grain/vignette) renders over the bars.
@@ -626,6 +658,9 @@ func _rebuild() -> void:
 		index += 1
 	if halation_enabled:
 		_halation_material = _make_pass(HALATION_SHADER, index)
+		index += 1
+	if glitch_enabled:
+		_glitch_material = _make_pass(GLITCH_SHADER, index)
 		index += 1
 	if grade_enabled:
 		_grade_material = _make_pass(GRADE_SHADER, index)
@@ -724,6 +759,11 @@ func _apply_params() -> void:
 		_halation_material.set_shader_parameter("intensity", halation_intensity)
 		_halation_material.set_shader_parameter("halation_radius", halation_radius)
 		_halation_material.set_shader_parameter("tint", halation_tint)
+	if _glitch_material != null:
+		_glitch_material.set_shader_parameter("intensity", glitch_intensity)
+		_glitch_material.set_shader_parameter("block_size", glitch_block_size)
+		_glitch_material.set_shader_parameter("rgb_shift", glitch_rgb_shift)
+		_glitch_material.set_shader_parameter("speed", glitch_speed)
 	if _grade_material != null:
 		_grade_material.set_shader_parameter("exposure", exposure)
 		_grade_material.set_shader_parameter("contrast", contrast)

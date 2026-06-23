@@ -1,0 +1,52 @@
+shader_type canvas_item;
+
+// Glitch / RGB-shift / datamosh-lite post pass (post-v1, to_do_post_processing.md).
+// Intermittent digital corruption: horizontal slice tearing, RGB channel split,
+// occasional vertical block displacement, and bright flicker. Time is quantized into
+// discrete glitch "frames" so the motion is jumpy, not smooth. Reads the frame so far
+// via hint_screen_texture.
+//
+// Runs before color grade (signal corruption first, then the image is graded/shown).
+uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
+
+uniform float intensity = 0.5;     // how many slices glitch + how far they tear
+uniform float block_size = 12.0;   // glitch slice height, in pixels
+uniform float rgb_shift = 4.0;     // RGB channel split, in pixels
+uniform float speed = 8.0;         // glitch reshuffle rate (discrete frames/sec)
+
+float hash21(vec2 p) {
+	return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+void fragment() {
+	vec2 px = SCREEN_PIXEL_SIZE;
+	float gt = floor(TIME * speed);                 // discrete glitch frame
+
+	// Per-slice random, reshuffled each glitch frame. `active` gates which slices
+	// corrupt — higher intensity lowers the bar so more slices glitch.
+	float block = floor(SCREEN_UV.y / (max(block_size, 1.0) * px.y));
+	float rnd = hash21(vec2(block, gt));
+	float active = step(1.0 - intensity, rnd);
+
+	// Horizontal tear: signed slice displacement, scaled by intensity.
+	float shift = (hash21(vec2(block, gt + 7.0)) - 0.5) * 2.0;
+	vec2 uv = SCREEN_UV;
+	uv.x += active * shift * intensity * 0.1;
+
+	// Datamosh-lite: a minority of active slices also jump vertically (block tear).
+	float ymosh = hash21(vec2(block, gt + 13.0)) - 0.5;
+	uv.y += active * step(0.7, hash21(vec2(block, gt + 3.0))) * ymosh * 0.05;
+
+	// RGB split — always a touch, stronger in active slices.
+	float chroma = rgb_shift * px.x * (0.3 + active);
+	vec3 col;
+	col.r = texture(screen_texture, uv + vec2(chroma, 0.0)).r;
+	col.g = texture(screen_texture, uv).g;
+	col.b = texture(screen_texture, uv - vec2(chroma, 0.0)).b;
+
+	// Occasional bright flicker on a corrupting slice.
+	float flick = step(0.95, hash21(vec2(block, gt + 21.0))) * active;
+	col += flick * 0.2;
+
+	COLOR = vec4(col, 1.0);
+}
