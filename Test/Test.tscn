@@ -64,6 +64,17 @@ normal_texture = ExtResource("2_pyd3v")
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
 polygon = PackedVector2Array(-5.200012, -11.799999, -9.400017, -7.5999985, -9.600014, 1.5999947, -7.8000107, 7.200001, -3.0000153, 13.200001, 2.1999893, 12.999996, 6.599991, 7.999996, 8.399994, 1.5999947, 8.999992, -6.4000053, 6.799988, -10.600006, 2.399994, -12.000008)
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ngwpp"]
+shader = ExtResource("3_es8hm")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
 [sub_resource type="QuadMesh" id="QuadMesh_o2bho"]
 
 [node name="Test" type="Node2D" unique_id=1250791965]
@@ -103,15 +114,17 @@ script = ExtResource("3_4l8u5")
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="Label" type="Label" parent="." unique_id=211440511]
-offset_left = 418.0
-offset_top = 432.0
-offset_right = 509.0
-offset_bottom = 455.0
+material = ExtResource("10_ngwpp")
+offset_left = 569.0
+offset_top = 441.0
+offset_right = 660.0
+offset_bottom = 464.0
 text = "Hello World"
 
 [node name="MeshInstance2D" type="MeshInstance2D" parent="." unique_id=1057338403]
-position = Vector2(365, 366)
-scale = Vector2(20, 20)
+material = SubResource("ShaderMaterial_ngwpp")
+position = Vector2(700, 338)
+scale = Vector2(40, 40)
 mesh = SubResource("QuadMesh_o2bho")
 
 [node name="LitLights" type="Node2D" parent="." unique_id=976079942]
@@ -145,7 +158,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights" unique_id=1682313072]
-position = Vector2(369.99997, 508)
+position = Vector2(417.00003, 483)
 rotation = -0.82214713
 script = ExtResource("8_5ghie")
 color = Color(0, 0, 1, 1)

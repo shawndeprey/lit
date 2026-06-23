@@ -11,14 +11,14 @@ extends EditorPlugin
 ## Node registration is handled implicitly: every Lit node script uses
 ## `class_name`, so they already appear in the Create-Node dialog.
 ##
-## Phase 4 adds the "Make Selected Sprites Lit" tool and editor-live preview
+## Phase 4 adds the "Make Selected Nodes Lit" tool and editor-live preview
 ## (driving the shared gather against the 2D editor viewport — see _process).
 
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 
 const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
-const TOOL_MENU_ITEM := "Make Selected Sprites Lit"
+const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 
@@ -50,7 +50,7 @@ func _enter_tree() -> void:
 	_add_live_globals()       # session-only (RenderingServer state, not serialized)
 	_persist_globals()        # guarded: writes project.godot only if a key is missing
 	_ensure_autoload()        # guarded: adds only if not already registered
-	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_sprites_lit)
+	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	# Editor-side gather driver (the autoload covers runtime; it doesn't run here).
 	_registry = LitLightRegistryScript.new()
 	set_process(true)
@@ -99,41 +99,51 @@ func _process(delta: float) -> void:
 	_registry.refresh(get_tree(), EditorInterface.get_editor_viewport_2d())
 
 
-# --- "Make Selected Sprites Lit" tool (plan §10) -----------------------------
+# --- "Make Selected Nodes Lit" tool (plan §10) -------------------------------
 #
-# Batch-convert selected plain Sprite2D nodes into Lit receivers: assign a fresh
-# receiver ShaderMaterial and wrap a plain texture in a CanvasTexture (so the
-# normal/specular slots appear). Each sprite gets its OWN material so per-instance
-# uniforms (receiver_mask, emissive_strength) stay independent. Lives under
-# Project → Tools → "Make Selected Sprites Lit". Undoable as one action.
+# Batch-convert selected 2D nodes into Lit receivers: assign a fresh receiver
+# ShaderMaterial to each. Works on ANY CanvasItem (Sprite2D, AnimatedSprite2D,
+# TileMapLayer, Polygon2D, MeshInstance2D, …) since `material` lives on CanvasItem —
+# tilemaps and tilesets are first-class world geometry, so the tool must cover them,
+# not just sprites. Each node gets its OWN material so per-instance uniforms
+# (receiver_mask, emissive_strength) stay independent. For nodes that draw a single
+# Texture2D, a plain texture is wrapped in a CanvasTexture so the normal/specular
+# slots appear. Lives under Project → Tools → "Make Selected Nodes Lit". Undoable as
+# one action.
 #
-# This is the batch path for existing art; LitSprite2D is the from-scratch path.
+# This is the batch path for existing art; LitSprite2D is the from-scratch path. It
+# also sidesteps the Quick Load friction (a node's `material` slot only accepts a
+# Material, never the `.gdshader`).
 
-func _make_selected_sprites_lit() -> void:
-	var sprites: Array[Sprite2D] = []
+func _make_selected_nodes_lit() -> void:
+	var targets: Array[CanvasItem] = []
 	for node in EditorInterface.get_selection().get_selected_nodes():
-		var s := node as Sprite2D
-		if s != null:
-			sprites.append(s)
-	if sprites.is_empty():
-		push_warning("Make Selected Sprites Lit: select one or more Sprite2D nodes first.")
+		var ci := node as CanvasItem
+		if ci != null:
+			targets.append(ci)
+	if targets.is_empty():
+		push_warning("Make Selected Nodes Lit: select one or more 2D (CanvasItem) nodes first.")
 		return
 
 	var shader := load(RECEIVER_SHADER_PATH) as Shader
 	var undo := get_undo_redo()
 	undo.create_action(TOOL_MENU_ITEM)
-	for s in sprites:
+	for ci in targets:
 		var mat := ShaderMaterial.new()
 		mat.shader = shader
-		undo.add_do_property(s, "material", mat)
-		undo.add_undo_property(s, "material", s.material)
+		undo.add_do_property(ci, "material", mat)
+		undo.add_undo_property(ci, "material", ci.material)
 
-		# Only wrap a plain texture; leave a CanvasTexture (or an empty slot) alone.
-		if s.texture != null and not (s.texture is CanvasTexture):
+		# If the node draws a single Texture2D (Sprite2D, Polygon2D, MeshInstance2D, …),
+		# wrap a plain texture in a CanvasTexture so the normal/specular slots appear.
+		# Dynamic get() — `texture` isn't on the CanvasItem base; returns null for nodes
+		# without it (TileMapLayer, AnimatedSprite2D), which then just get the material.
+		var tex = ci.get("texture")
+		if tex is Texture2D and not (tex is CanvasTexture):
 			var ct := CanvasTexture.new()
-			ct.diffuse_texture = s.texture
-			undo.add_do_property(s, "texture", ct)
-			undo.add_undo_property(s, "texture", s.texture)
+			ct.diffuse_texture = tex
+			undo.add_do_property(ci, "texture", ct)
+			undo.add_undo_property(ci, "texture", tex)
 	undo.commit_action()
 
 
