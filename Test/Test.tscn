@@ -29,6 +29,8 @@ normal_texture = ExtResource("2_pyd3v")
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
 polygon = PackedVector2Array(-5.200012, -11.799999, -9.400017, -7.5999985, -9.600014, 1.5999947, -7.8000107, 7.200001, -3.0000153, 13.200001, 2.1999893, 12.999996, 6.599991, 7.999996, 8.399994, 1.5999947, 8.999992, -6.4000053, 6.799988, -10.600006, 2.399994, -12.000008)
 
+[sub_resource type="QuadMesh" id="QuadMesh_o2bho"]
+
 [node name="Test" type="Node2D" unique_id=1250791965]
 
 [node name="TileBasicCrypt" parent="." unique_id=805693216 instance=ExtResource("1_un7ao")]
@@ -41,7 +43,7 @@ tile_map_data = PackedByteArray("AAARAAcAAQAdAA8AAAAHAAUAAQAQAA4AAAAPAAMAAQAQAAg
 
 [node name="LitSprite2D" type="Sprite2D" parent="." unique_id=1127649428]
 material = SubResource("ShaderMaterial_s7aw1")
-position = Vector2(599, 308)
+position = Vector2(610, 328)
 scale = Vector2(5, 5)
 texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("6_ngwpp")
@@ -55,21 +57,32 @@ occluder = SubResource("OccluderPolygon2D_ywxc3")
 
 [node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]
 script = ExtResource("3_4l8u5")
-color = Color(0.06053035, 0.06053035, 0.060530342, 1)
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="Label" type="Label" parent="." unique_id=211440511]
+offset_left = 353.0
+offset_top = 387.0
+offset_right = 444.0
+offset_bottom = 410.0
+text = "Hello World"
+
+[node name="MeshInstance2D" type="MeshInstance2D" parent="." unique_id=1057338403]
+position = Vector2(365, 366)
+scale = Vector2(20, 20)
+mesh = SubResource("QuadMesh_o2bho")
 
 [node name="LitLights" type="Node2D" parent="." unique_id=976079942]
 
 [node name="LitDirectionalLight2D" type="Node2D" parent="LitLights" unique_id=707866917]
 visible = false
 script = ExtResource("7_iednq")
-energy = 0.2
+energy = 0.3
 shadow_enabled = true
 shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(513, 149)
+position = Vector2(550, 240)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 3.0
@@ -79,7 +92,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights" unique_id=1063815886]
-position = Vector2(777, 402)
+position = Vector2(734, 432)
 script = ExtResource("4_lg8mm")
 color = Color(0.8709204, 5.640924e-05, 0.65549177, 1)
 energy = 3.0
@@ -89,8 +102,8 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights" unique_id=1682313072]
-position = Vector2(424, 427.00003)
-rotation = -0.4061976
+position = Vector2(392, 474)
+rotation = -0.82214713
 script = ExtResource("8_5ghie")
 color = Color(0, 0, 1, 1)
 energy = 3.0
@@ -103,13 +116,15 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://blronx1n8oliq"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1618820850]
+visible = false
 position = Vector2(576, 324)
-zoom = Vector2(0.75, 0.75)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
+visible = false
 script = ExtResource("11_ngwpp")
+threshold_cutoff = 0.35
 bloom_enabled = true
-bloom_threshold = 0.09
-bloom_intensity = 1.3
-bloom_radius = 8.0
+bloom_threshold = 0.12
+bloom_intensity = 1.27
+bloom_radius = 3.63
 metadata/_custom_type_script = "uid://djrtgftop1i8a"

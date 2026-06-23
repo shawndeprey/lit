@@ -55,7 +55,7 @@ lit_viewport_size={
 }
 lit_ambient_color={
 "type": "color",
-"value": Color(1, 1, 1, 1)
+"value": Color(0.6378432, 0.6378432, 0.6378431, 1)
 }
 lit_ambient_energy={
 "type": "float",

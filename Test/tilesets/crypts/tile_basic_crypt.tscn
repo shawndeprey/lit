@@ -20,6 +20,9 @@ polygon = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_b50dt"]
 polygon = PackedVector2Array(-8, -8, 8, -8, 7.733925, 15.467852, -7.3742065, 15.467852)
 
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_8oofv"]
+polygon = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_c5rau"]
 polygon = PackedVector2Array(-8, 0.179859, 8, 0.359718, 8, 8, -8, 8)
 
@@ -983,6 +986,7 @@ texture = SubResource("CanvasTexture_el2cc")
 21:12/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -1.43887, 8, -1.43887, 7.37421, 15.288, -8.09364, 15.4679)
 16:14/size_in_atlas = Vector2i(2, 2)
 16:14/0 = 0
+16:14/0/occlusion_layer_0/polygon_0/polygon = SubResource("OccluderPolygon2D_8oofv")
 16:14/0/physics_layer_0/polygon_0/points = PackedVector2Array(13.669264, -0.8992939, 13.849123, 13.669264, -13.669264, 13.489405, -13.669264, -1.0791512)
 20:14/size_in_atlas = Vector2i(2, 2)
 20:14/0 = 0
