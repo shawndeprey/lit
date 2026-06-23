@@ -88,6 +88,7 @@ scale = Vector2(3, 3)
 tile_map_data = PackedByteArray("AAARAAcAAQAdAA8AAAAHAAUAAQAQAA4AAAAPAAMAAQAQAAgAAAA=")
 
 [node name="GPUParticles2D" type="GPUParticles2D" parent="." unique_id=944146707]
+visible = false
 material = ExtResource("10_ngwpp")
 position = Vector2(579, 306)
 amount = 16
@@ -111,6 +112,7 @@ occluder = SubResource("OccluderPolygon2D_ywxc3")
 
 [node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]
 script = ExtResource("3_4l8u5")
+color = Color(0, 0, 0, 1)
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="Label" type="Label" parent="." unique_id=211440511]
@@ -138,11 +140,12 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(549, 130)
+position = Vector2(582, 191)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 3.0
 range = 1024.0
+height = 45.0
 shadow_enabled = true
 shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
@@ -150,7 +153,7 @@ metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights" unique_id=1063815886]
 position = Vector2(717, 468)
 script = ExtResource("4_lg8mm")
-color = Color(0.8709204, 5.640924e-05, 0.65549177, 1)
+color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 3.0
 range = 1024.0
 shadow_enabled = true
