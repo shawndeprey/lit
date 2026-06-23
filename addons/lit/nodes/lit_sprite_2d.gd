@@ -1,4 +1,5 @@
 @tool
+@icon("res://addons/lit/icons/lit_sprite_2d.svg")
 extends Sprite2D
 class_name LitSprite2D
 

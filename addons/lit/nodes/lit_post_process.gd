@@ -1,4 +1,5 @@
 @tool
+@icon("res://addons/lit/icons/lit_post_process.svg")
 extends CanvasLayer
 class_name LitPostProcess
 

@@ -1,4 +1,5 @@
 @tool
+@icon("res://addons/lit/icons/lit_canvas_modulate.svg")
 extends Node2D
 class_name LitCanvasModulate
 
