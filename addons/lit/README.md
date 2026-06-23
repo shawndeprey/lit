@@ -18,6 +18,10 @@ show off what you built? Come hang out in our Discord:
 
 **→ https://discord.gg/nfqeRGnM7P**
 
+Prefer videos? Subscribe on YouTube:
+
+**→ https://www.youtube.com/@FadingLanternGames**
+
 ---
 
 ## Quickstart
