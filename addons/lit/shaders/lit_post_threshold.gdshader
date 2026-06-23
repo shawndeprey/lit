@@ -1,9 +1,7 @@
 shader_type canvas_item;
 
-// Threshold post pass (plan §7.5 / D8). A luminance gate: pixels whose brightness
-// is below `cutoff` fade to black over a short soft knee; brighter pixels pass
-// through. A stylized high-contrast / "only the lit parts show" look that pairs
-// with the darkness of the lighting system. LDR; reads the frame so far.
+// Luminance gate: pixels below cutoff fade to black through a short soft knee,
+// brighter pixels pass through. High-contrast "only the lit parts show" look.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float cutoff = 0.5;       // luma below this is crushed toward black

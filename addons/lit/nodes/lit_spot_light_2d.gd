@@ -5,15 +5,14 @@ class_name LitSpotLight2D
 
 ## A spot light for the Lit system: a point light masked to a cone.
 ##
-## It has a position (like a point light) plus an aim: the node's local +X (the
-## way it "points", set by rotation) is the direction the cone shines. `range`
-## and `falloff` give the same radial distance attenuation as a point light, and
-## `spot_angle`/`spot_softness` shape the cone. It reuses the point light's
-## radial shadow march, so shadows come for free.
+## Has a position like a point light plus an aim: the node's local +X (the way it
+## points, set by rotation) is the direction the cone shines. `range` and `falloff`
+## give the same radial attenuation as a point light, and `spot_angle` / `spot_softness`
+## shape the cone. It reuses the point light's radial shadow march, so shadows come for
+## free.
 ##
-## As with the other lights, `light_mask` reuses the inherited CanvasItem
-## property ("Visibility" in the inspector) and is matched against each receiver's
-## `receiver_mask` (plan §9.5).
+## As with the other lights, `light_mask` reuses the inherited CanvasItem property
+## ("Visibility" in the inspector) and is matched against each receiver's `receiver_mask`.
 
 enum BlendMode { ADD, SUBTRACT }
 
@@ -24,7 +23,7 @@ enum BlendMode { ADD, SUBTRACT }
 @export_group("Falloff")
 ## Radius of influence in pixels; drives attenuation and AABB culling.
 @export var range: float = 256.0
-## Attenuation curve exponent (plan §9.2).
+## Attenuation curve exponent.
 @export var falloff: float = 1.0
 
 @export_group("Cone")
@@ -40,7 +39,7 @@ enum BlendMode { ADD, SUBTRACT }
 @export_group("Shadow")
 @export var shadow_enabled: bool = false
 @export var shadow_color: Color = Color.BLACK
-## 0 = very soft, 1 = hard (plan §9.3).
+## 0 = very soft, 1 = hard.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
 
 @export_group("Advanced")

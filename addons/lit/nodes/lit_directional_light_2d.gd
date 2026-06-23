@@ -3,19 +3,18 @@
 extends Node2D
 class_name LitDirectionalLight2D
 
-## A directional light for the Lit system (plan §7.2, D5).
+## A directional light for the Lit system.
 ##
-## Like LitPointLight2D, but with no positional attenuation: the node's
-## **rotation** defines the light direction (its local +X / the way it "points"
-## aims toward the light source), so every receiver is lit from the same angle.
-## `height` still tilts the shading vector out of the plane — lower = more
-## grazing/dramatic, higher = more head-on. There is no `range`, `falloff`, or
-## cookie; directional lights are never positionally culled.
+## Like LitPointLight2D but with no positional attenuation: the node's rotation defines
+## the light direction (its local +X aims toward the source), so every receiver is lit
+## from the same angle. `height` still tilts the shading vector out of the plane; lower
+## is more grazing, higher more head-on. There is no `range`, `falloff` or cookie, and
+## directional lights are never positionally culled.
 ##
-## Shares the receiver and shadow code path with point lights via the type flag
-## in the light-data texture. As with point lights, `light_mask` reuses the
-## inherited CanvasItem property ("Visibility" in the inspector) and is matched
-## against each receiver's `receiver_mask` (plan §9.5).
+## Shares the receiver and shadow code path with point lights via the type flag in the
+## light-data texture. As with point lights, `light_mask` reuses the inherited CanvasItem
+## property ("Visibility" in the inspector) and is matched against each receiver's
+## `receiver_mask`.
 
 enum BlendMode { ADD, SUBTRACT }
 
@@ -31,7 +30,7 @@ enum BlendMode { ADD, SUBTRACT }
 @export_group("Shadow")
 @export var shadow_enabled: bool = false
 @export var shadow_color: Color = Color.BLACK
-## 0 = very soft, 1 = hard (plan §9.3).
+## 0 = very soft, 1 = hard.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
 
 @export_group("Advanced")

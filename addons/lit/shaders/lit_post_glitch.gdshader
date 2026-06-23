@@ -1,12 +1,9 @@
 shader_type canvas_item;
 
-// Glitch / RGB-shift / datamosh-lite post pass (post-v1, to_do_post_processing.md).
 // Intermittent digital corruption: horizontal slice tearing, RGB channel split,
-// occasional vertical block displacement, and bright flicker. Time is quantized into
-// discrete glitch "frames" so the motion is jumpy, not smooth. Reads the frame so far
-// via hint_screen_texture.
-//
-// Runs before color grade (signal corruption first, then the image is graded/shown).
+// occasional vertical block displacement, and bright flicker. TIME is quantized into
+// discrete glitch frames so the motion is jumpy rather than smooth. Runs before the
+// color grade, so the signal is corrupted first and then graded.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float intensity = 0.5;     // how many slices glitch + how far they tear
@@ -23,7 +20,7 @@ void fragment() {
 	float gt = floor(TIME * speed);                 // discrete glitch frame
 
 	// Per-slice random, reshuffled each glitch frame. `active` gates which slices
-	// corrupt — higher intensity lowers the bar so more slices glitch.
+	// corrupt; higher intensity lowers the bar so more slices glitch.
 	float block = floor(SCREEN_UV.y / (max(block_size, 1.0) * px.y));
 	float rnd = hash21(vec2(block, gt));
 	float active = step(1.0 - intensity, rnd);
@@ -37,7 +34,7 @@ void fragment() {
 	float ymosh = hash21(vec2(block, gt + 13.0)) - 0.5;
 	uv.y += active * step(0.7, hash21(vec2(block, gt + 3.0))) * ymosh * 0.05;
 
-	// RGB split — always a touch, stronger in active slices.
+	// RGB split: always a touch, stronger in active slices.
 	float chroma = rgb_shift * px.x * (0.3 + active);
 	vec3 col;
 	col.r = texture(screen_texture, uv + vec2(chroma, 0.0)).r;

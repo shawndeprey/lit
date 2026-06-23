@@ -1,9 +1,7 @@
 shader_type canvas_item;
 
-// Vignette post pass (plan §7.5 / D8). Darkens the frame toward its edges/corners
-// based on distance from screen center. `strength` sets how dark the edges get,
-// `softness` how gradual the falloff. Cheap UV-space vignette (elliptical on
-// non-square aspect ratios, the usual 2D look). Reads the frame so far.
+// Darkens the frame toward its corners by distance from center. UV-space, so it
+// reads elliptical on non-square aspect ratios.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float strength = 0.4;     // 0 = none, 1 = corners to black

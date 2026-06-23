@@ -1,13 +1,10 @@
 shader_type canvas_item;
 
-// Dither post pass (post-v1, to_do_post_processing.md). Ordered 4x4 Bayer dithering
-// into a small number of per-channel levels — the PICO-8 / 1-bit / Game-Boy look. The
-// Bayer threshold pushes each pixel across a quantization step so flat banding becomes
-// a stable cross-hatch instead. `monochrome` collapses to luma first for true 1-bit.
-// Reads the frame so far via hint_screen_texture.
-//
-// Runs late in the stylize cluster (after outline/halftone): dithering adds lots of
-// high-frequency detail, so anything edge-detecting must come before it.
+// Ordered 4x4 Bayer dithering into a few per-channel levels (the PICO-8 / 1-bit /
+// Game Boy look). The Bayer threshold pushes each pixel across a quantization step so
+// flat banding turns into a stable cross-hatch. `monochrome` collapses to luma first
+// for true 1-bit. Dithering adds high-frequency detail, so it runs after any
+// edge-detecting passes.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float levels = 4.0;       // quantization steps per channel (2 = 1-bit per channel)

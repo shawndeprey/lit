@@ -3,43 +3,29 @@
 extends CanvasLayer
 class_name LitPostProcess
 
-## Post-processing chain (plan §7.5, D8).
+## Post-processing chain.
 ##
-## A CanvasLayer that builds an ordered chain of fullscreen passes as its INTERNAL
-## children — one child CanvasLayer per enabled pass, each holding a fullscreen
-## ColorRect with that pass's shader, reading the frame via hint_screen_texture.
-##
-## Chaining WITHOUT BackBufferCopy (deviation from plan D8, same result): sampling
+## A CanvasLayer that builds an ordered chain of fullscreen passes as internal children:
+## one child CanvasLayer per enabled pass, each holding a fullscreen ColorRect with that
+## pass's shader, reading the frame via hint_screen_texture. No BackBufferCopy is needed.
 ## hint_screen_texture reads the screen as drawn so far, and the per-pass CanvasLayer
-## boundary forces each pass to re-read the accumulated result, so passes compose in
-## order. The generated children are internal (not saved to the scene) and rebuilt
-## from the enabled-pass toggles.
+## boundary makes each pass re-read the accumulated result, so passes compose in order.
+## The children are internal (not saved to the scene) and rebuilt from the enabled-pass
+## toggles.
 ##
-## Placement: set this node's `layer` ABOVE your Lit receivers and BELOW your UI /
-## menus (e.g. 99 in a project that reserves high layers for post). Pass child-layers
-## increment from this node's `layer`, so wherever you park it, passes stay above it
-## and in order.
+## Placement: set this node's `layer` above your Lit receivers and below your UI. Pass
+## child-layers increment from this node's `layer`, so wherever you park it the passes
+## stay above it and in order.
 ##
-## Phase 5: Threshold, Bloom, Color Grade, Vignette. Plus LUT (post-v1, see
-## to_do_post_processing.md).
-##
-## Passes run in a fixed canonical order regardless of inspector order:
-## threshold -> bloom -> halation -> glitch -> grade -> lut -> pixelate -> posterize ->
-## outline -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration ->
-## leaks -> grain -> vignette -> focus. Lower-layer passes render first, so each reads
-## the result of the ones before it. (Halation is bloom's warm-halo companion, applied
-## with it before grading; glitch corrupts the signal before color, so grading/stylize/
-## display all process the glitched image; focus is the final lens — dream blur or
-## sharpen on the completed image;
-## pixelate blocks the image, posterize flattens the color, outline inks that flattened
-## image, halftone dot-screens the result — dark ink lines survive as solid dots while
-## fills break into dots — and dither does ordered color reduction; the high-frequency
-## stylize passes (halftone/dither) come after outline so edges stay clean; letterbox
-## mattes the finished content at the content/display boundary, so the display medium
-## below renders over the bars — the tube curves them, scanlines/grain cross them, the
-## vignette frames the whole tube; lens distortion is the device lens (first display
-## pass, distinct from CRT's curvature); VHS is the tape signal, CRT the glass it's
-## watched on, so VHS runs before CRT; aberration is the lens fringe and grain the film.)
+## Passes always run in a fixed order, regardless of inspector order:
+##   threshold, bloom, halation, glitch, grade, lut, pixelate, posterize, outline,
+##   halftone, dither, letterbox, lens, vhs, crt, aberration, leaks, grain, vignette,
+##   focus.
+## Lower layers render first, so each pass reads the result of the ones before it. The
+## order follows a signal-to-display pipeline: correct and glow the image, grade its
+## color, stylize it, then matte it and run it through the display medium (tape, then
+## tube, then film grain). Letterbox sits at the content/display boundary, so the
+## display passes render over the bars.
 
 const GRADE_SHADER := preload("res://addons/lit/shaders/lit_post_grade.gdshader")
 const THRESHOLD_SHADER := preload("res://addons/lit/shaders/lit_post_threshold.gdshader")
@@ -92,7 +78,7 @@ const PRESET_LUTS := [
 	set(value):
 		bloom_enabled = value
 		_rebuild()
-## Luma above this blooms. LDR screen, so the useful range is ~0.4–0.8 (not 1.0).
+## Luma above this blooms. The screen is LDR, so the useful range is about 0.4 to 0.8.
 @export_range(0.0, 1.0, 0.01) var bloom_threshold: float = 0.7:
 	set(value):
 		bloom_threshold = value
@@ -102,7 +88,7 @@ const PRESET_LUTS := [
 	set(value):
 		bloom_intensity = value
 		_apply_params()
-## Glow width — spreads the sampled mip levels. Larger = wider, softer halo.
+## Glow width: spreads the sampled mip levels. Larger is wider and softer.
 @export_range(0.0, 8.0, 0.01, "or_greater") var bloom_radius: float = 4.0:
 	set(value):
 		bloom_radius = value
@@ -115,7 +101,7 @@ const PRESET_LUTS := [
 	set(value):
 		halation_enabled = value
 		_rebuild()
-## Luma above this halates. LDR screen, so the useful range is ~0.4–0.8.
+## Luma above this halates. The screen is LDR, so the useful range is about 0.4 to 0.8.
 @export_range(0.0, 1.0, 0.01) var halation_threshold: float = 0.6:
 	set(value):
 		halation_threshold = value
@@ -125,12 +111,12 @@ const PRESET_LUTS := [
 	set(value):
 		halation_intensity = value
 		_apply_params()
-## Halo width — spreads the sampled mip levels. Larger = wider, softer bleed.
+## Halo width: spreads the sampled mip levels. Larger is wider and softer.
 @export_range(0.0, 8.0, 0.01, "or_greater") var halation_radius: float = 5.0:
 	set(value):
 		halation_radius = value
 		_apply_params()
-## Halo color. Warm red-orange by default — the classic film halation hue.
+## Halo color. Warm red-orange by default, the classic film halation hue.
 @export var halation_tint: Color = Color(1.0, 0.25, 0.1, 1.0):
 	set(value):
 		halation_tint = value
@@ -158,7 +144,7 @@ const PRESET_LUTS := [
 	set(value):
 		glitch_rgb_shift = value
 		_apply_params()
-## Reshuffle rate — how many discrete glitch frames per second.
+## Reshuffle rate: how many discrete glitch frames per second.
 @export_range(0.0, 30.0, 1.0, "or_greater") var glitch_speed: float = 8.0:
 	set(value):
 		glitch_speed = value
@@ -187,7 +173,7 @@ const PRESET_LUTS := [
 		_apply_params()
 
 @export_group("LUT")
-## Apply a color grade through a lookup table (256×16 neutral-LUT strip).
+## Apply a color grade through a lookup table (256x16 LUT strip).
 @export var lut_enabled: bool = false:
 	set(value):
 		lut_enabled = value
@@ -197,8 +183,8 @@ const PRESET_LUTS := [
 	set(value):
 		lut_preset = value
 		_apply_params()
-## Optional custom LUT (256×16 strip). When set, it overrides `lut_preset`. Import
-## with Filter on, Mipmaps off, Repeat disabled, Lossless.
+## Optional custom LUT (256x16 strip). When set, it overrides `lut_preset`. Import with
+## Filter on, Mipmaps off, Repeat disabled, Lossless.
 @export var lut_custom: Texture2D:
 	set(value):
 		lut_custom = value
@@ -286,7 +272,7 @@ const PRESET_LUTS := [
 	set(value):
 		halftone_dot_size = value
 		_apply_params()
-## Screen rotation, in degrees (classic single-screen halftone is often ~15–45°).
+## Screen rotation, in degrees (classic single-screen halftone is often 15 to 45).
 @export_range(0.0, 360.0, 1.0) var halftone_angle: float = 0.0:
 	set(value):
 		halftone_angle = value
@@ -324,7 +310,7 @@ const PRESET_LUTS := [
 	set(value):
 		dither_scale = value
 		_apply_params()
-## Collapse to luma first — true 1-bit black & white when levels = 2.
+## Collapse to luma first: true 1-bit black and white when levels = 2.
 @export var dither_monochrome: bool = false:
 	set(value):
 		dither_monochrome = value
@@ -336,9 +322,9 @@ const PRESET_LUTS := [
 		_apply_params()
 
 @export_group("Letterbox")
-## Cinematic bars top and bottom — the matte on the finished content. Animate
-## `letterbox_size` from 0 to ease them in/out for cutscenes. Sits at the
-## content/display boundary, so the display passes below (VHS/CRT/etc.) render over
+## Cinematic bars top and bottom, the matte on the finished content. Animate
+## `letterbox_size` from 0 to ease them in and out for cutscenes. Sits at the
+## content/display boundary, so the display passes below (VHS, CRT, etc.) render over
 ## the bars: the tube curves them, scanlines and grain cross them.
 @export var letterbox_enabled: bool = false:
 	set(value):
@@ -361,7 +347,7 @@ const PRESET_LUTS := [
 		_apply_params()
 
 @export_group("Lens Distortion")
-## Radial barrel / pincushion warp — the device lens. Positive bulges (fisheye),
+## Radial barrel / pincushion warp, the device lens. Positive bulges (fisheye),
 ## negative pinches. Distinct from CRT curvature; stack or use either.
 @export var lens_enabled: bool = false:
 	set(value):
@@ -384,9 +370,9 @@ const PRESET_LUTS := [
 		_apply_params()
 
 @export_group("VHS")
-## Worn-tape look: per-line wobble, chroma shift + smear, a rolling tracking-noise
+## Worn-tape look: per-line wobble, chroma shift and smear, a rolling tracking-noise
 ## band, grain, and a slow brightness roll. Animated. Runs before CRT in the chain
-## (tape signal -> glass), so enable both for "old tape on an old tube".
+## (tape signal, then glass), so enable both for "old tape on an old tube".
 @export var vhs_enabled: bool = false:
 	set(value):
 		vhs_enabled = value
@@ -583,7 +569,7 @@ const PRESET_LUTS := [
 	set(value):
 		focus_amount = value
 		_apply_params()
-## Blur reach (mip level). ~1 for sharpen, ~2–4 for a wide dream blur.
+## Blur reach (mip level). About 1 for sharpen, 2 to 4 for a wide dream blur.
 @export_range(0.0, 6.0, 0.1, "or_greater") var focus_radius: float = 2.0:
 	set(value):
 		focus_radius = value
@@ -670,13 +656,10 @@ func _rebuild() -> void:
 	_letterbox_material = null
 	_focus_material = null
 
-	# Fixed canonical order (see the class docstring for the rationale):
-	# threshold -> bloom -> halation -> glitch -> grade -> lut -> pixelate -> posterize
-	# -> outline -> halftone -> dither -> letterbox -> lens -> vhs -> crt -> aberration
-	# -> leaks -> grain -> vignette -> focus.
-	# Lower-layer passes render first, so each reads the prior result. Letterbox is the
+	# Fixed pass order (the class doc explains the rationale). Lower-layer passes render
+	# first, so each reads the result of the ones before it. Letterbox marks the
 	# content/display boundary: it mattes the finished image, then the display medium
-	# (lens/vhs/crt/aberration/grain/vignette) renders over the bars.
+	# (lens, vhs, crt, aberration, grain, vignette) renders over the bars.
 	var index := 0
 	if threshold_enabled:
 		_threshold_material = _make_pass(THRESHOLD_SHADER, index)
@@ -717,7 +700,7 @@ func _rebuild() -> void:
 	if letterbox_enabled:
 		_letterbox_material = _make_pass(LETTERBOX_SHADER, index)
 		index += 1
-	# Display medium: lens warps the framed content, then tape -> tube -> film.
+	# Display medium: lens warps the framed content, then tape, tube, film.
 	if lens_enabled:
 		_lens_material = _make_pass(LENS_SHADER, index)
 		index += 1

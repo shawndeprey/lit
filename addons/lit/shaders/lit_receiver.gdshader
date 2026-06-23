@@ -1,51 +1,41 @@
 shader_type canvas_item;
-render_mode unshaded; // D2: disable Godot's built-in canvas light() pass.
+render_mode unshaded; // we do our own lighting; skip Godot's built-in canvas light() pass
 
-// --- D1 transport: global uniforms + per-frame light-data texture ---
-// Read via texelFetch (integer coords, no filtering), so the texture's filter
-// mode is irrelevant to correctness here.
+// Transport: global uniforms plus the per-frame light-data texture, packed by the
+// manager. Read via texelFetch (integer coords, no filtering), so the texture's
+// filter mode doesn't matter here.
 global uniform sampler2D lit_light_data;
 global uniform int       lit_light_count;
-global uniform vec2      lit_viewport_size;             // §9.0, pixels
-global uniform vec4      lit_ambient_color : source_color; // D7
+global uniform vec2      lit_viewport_size;             // pixels
+global uniform vec4      lit_ambient_color : source_color;
 global uniform float     lit_ambient_energy;
 
-// --- per-instance (D6 emissive) ---
 uniform float emissive_strength = 0.0;
-uniform sampler2D emissive_mask : hint_default_white;   // white default -> strength alone works
+uniform sampler2D emissive_mask : hint_default_white;   // white default lets strength work alone
 
-// --- per-instance light mask (§9.5) ---
-// A light affects this receiver only if (light_mask & receiver_mask) != 0. Same
-// authoring intent as the engine's per-light cull mask, our own plumbing. Plain
-// int (shader uniforms have no layers hint); LitSprite2D proxies it with a nicer
+// A light affects this receiver only if (light_mask & receiver_mask) != 0. Plain int,
+// since shader uniforms have no layers hint; LitSprite2D proxies it with a nicer
 // 2D-render-layers control.
 uniform int receiver_mask = 1;
 
-// --- per-instance specular tuning (§9.2; K is a by-eye dial, plan §7/§14) ---
 uniform float specular_strength = 0.5;
 uniform float specular_k = 32.0;
 
-// --- advanced shadow tuning (D4 / §9.3; developer-tunable) ---
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
 
-// --- directional tuning (D5; by-eye dials) ---
-// Horizontal reach of a directional light's shading vector vs. its `height`;
-// elevation = atan(height / scale). Default gives ~27° at height 16, so the
-// direction reads clearly. Larger = more grazing.
+// Horizontal reach of a directional light's shading vector relative to its `height`;
+// elevation is atan(height / scale). The default gives about 27 degrees at height 16,
+// so the direction reads clearly. Larger is more grazing.
 uniform float directional_horizontal_scale = 32.0;
-// Directional shadows march this many screen-diagonals across the SDF before
-// they're "open sky". Self-calibrating to screen size so the fixed step budget
-// stays well-sampled (a fixed huge distance under-samples the penumbra).
+// How far a directional shadow marches across the SDF before it counts as open sky,
+// in screen diagonals. Scaling to screen size keeps the fixed step budget
+// well-sampled; a fixed huge distance would under-sample the penumbra.
 uniform float directional_shadow_reach = 1.0;
 
-// Light types (texel 3.r): 0 = point, 1 = directional (sun), 2 = spot.
-// Scope: ambient + point/directional/spot diffuse + specular + emissive + soft
-// shadows + per-light mask + additive/subtractive blend.
-
-// IQ soft-shadow march of the native screen-space SDF (D4, §9.3). Operates in
-// SDF space; marches from the fragment toward the light, tracking the running
-// minimum of k * d / t for the penumbra. Returns 1 = fully lit, 0 = occluded.
+// Soft-shadow march of Godot's screen-space SDF (the IQ technique). Works in SDF
+// space, marching from the fragment toward the light and tracking the running minimum
+// of k * d / t for the penumbra. Returns 1 fully lit, 0 occluded.
 float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness) {
 	// Screen-space SDF has no notion of 2D draw order. A fragment sitting inside
 	// an occluder's footprint is treated as on top of it, so a sprite drawn over
@@ -62,7 +52,7 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness) {
 	vec2 dir = delta / maxd;
 	float t = shadow_min_step;
 	float res = 1.0;
-	float k = mix(8.0, 256.0, hardness);     // low hardness = soft, high = crisp
+	float k = mix(8.0, 256.0, hardness);     // low hardness is soft, high is crisp
 	for (int s = 0; s < shadow_steps; s++) {
 		if (t >= maxd) {
 			break;
@@ -80,21 +70,21 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness) {
 void fragment() {
 	vec4 tex = texture(TEXTURE, UV);
 	vec3 albedo = tex.rgb * COLOR.rgb;
-	vec3 N = normalize(NORMAL);                  // D3: auto from CanvasTexture normal map; faces out when absent
-	vec3 spec_shin = SPECULAR_SHININESS.rgb;     // D3
+	vec3 N = normalize(NORMAL);                  // from the CanvasTexture normal map; faces out when absent
+	vec3 spec_shin = SPECULAR_SHININESS.rgb;
 	float shininess = SPECULAR_SHININESS.a;
 
-	// D7 ambient base: albedo lit by the (dark) ambient term.
+	// Ambient base: albedo lit by the (dark) ambient term.
 	vec3 lit = albedo * lit_ambient_color.rgb * lit_ambient_energy;
 
-	vec2 frag_uv = SCREEN_UV;                     // §9.0 canonical space
-	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // §9.3 shadow march space
-	// Screen diagonal measured in SDF units — the natural scale for a directional
-	// shadow's march distance (keeps the step budget well-sampled at any res).
+	vec2 frag_uv = SCREEN_UV;                     // canonical screen-UV space
+	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // shadow-march space
+	// Screen diagonal in SDF units: the natural scale for a directional shadow's march
+	// distance, keeping the step budget well-sampled at any resolution.
 	float sdf_diag = length(screen_uv_to_sdf(vec2(1.0)) - screen_uv_to_sdf(vec2(0.0)));
 
 	for (int i = 0; i < lit_light_count; i++) {
-		// Unpack the per-light record (§9.4).
+		// Unpack the per-light record.
 		vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0); // uv.xy | range | energy
 		vec4 t1 = texelFetch(lit_light_data, ivec2(1, i), 0); // color.rgb | height
 		vec4 t3 = texelFetch(lit_light_data, ivec2(3, i), 0); // type | flags | mask | falloff
@@ -115,8 +105,8 @@ void fragment() {
 		bool shadow_enabled = (flags & 1) != 0;
 		bool subtractive = (flags & 2) != 0;
 
-		// §9.5: skip lights this receiver's mask doesn't share a bit with, before
-		// any per-light work (diffuse/specular/shadow march all paid below).
+		// Skip lights this receiver's mask doesn't share a bit with, before paying for
+		// any diffuse, specular or shadow work below.
 		int light_mask = int(round(t3.z));
 		if ((light_mask & receiver_mask) == 0) {
 			continue;
@@ -124,28 +114,28 @@ void fragment() {
 
 		vec3 Ldir;
 		float atten;
-		vec2 shadow_dir_uv = vec2(0.0);          // toward-light, screen-UV space (directional only)
+		vec2 shadow_dir_uv = vec2(0.0);          // toward-light dir in screen-UV space (directional only)
 
 		if (is_directional) {
-			// t0.xy is a unit screen-space direction toward the light (§9.0, D5).
-			// No position, no attenuation; `height` sets the elevation.
+			// t0.xy is a unit screen-space direction toward the light. No position, no
+			// attenuation; `height` sets the elevation.
 			vec2 dir_px = t0.xy;
 			Ldir = normalize(vec3(dir_px * directional_horizontal_scale, height));
 			atten = 1.0;
-			shadow_dir_uv = dir_px / lit_viewport_size; // pixel dir -> UV dir
+			shadow_dir_uv = dir_px / lit_viewport_size; // pixel dir to UV dir
 		} else {
-			// Positional (point or spot). §9.0/§9.2: work in pixels.
+			// Point or spot: work in pixels.
 			vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
 			float dist = length(to_light_px);
 			if (dist > range) {
-				continue;                        // early-out beyond range
+				continue;                        // beyond range
 			}
 			Ldir = normalize(vec3(to_light_px, height));
 			atten = pow(clamp(1.0 - dist / range, 0.0, 1.0), falloff);
 
-			// A spot light is a point light masked to a cone (texel 4): aim.xy is
-			// the screen-space direction the light points; the fragment is lit if
-			// it lies within the cone, with a soft edge between inner/outer angle.
+			// A spot is a point light masked to a cone (texel 4): aim.xy is the
+			// screen-space direction it points. The fragment is lit if it falls inside
+			// the cone, with a soft edge between the inner and outer angle.
 			if (is_spot) {
 				vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // aim.xy | cos_outer | cos_inner
 				vec2 dir_to_frag = (dist > 0.0001) ? (-to_light_px / dist) : t4.xy;
@@ -162,30 +152,28 @@ void fragment() {
 
 		float ndotl = max(dot(N, Ldir), 0.0);
 
-		// Diffuse (§9.2).
 		vec3 diffuse = albedo * light_color * energy * ndotl * atten;
 
-		// Specular (§9.2). Sharpened N·L lobe — tight, only where the surface
-		// tilts toward the light. Tinted by light_color so the highlight takes
-		// the light's hue instead of blowing out to white (SPECULAR_SHININESS.rgb
-		// defaults to white when no specular map is set). pow(ndotl, …) is already
-		// 0 when the surface faces away, so no extra gate is needed.
+		// Sharpened N.L lobe, tight and only where the surface tilts toward the light.
+		// Tinted by light_color so the highlight takes the light's hue instead of
+		// blowing out to white (SPECULAR_SHININESS.rgb is white when no specular map is
+		// set). pow(ndotl, ...) is already 0 when the surface faces away, so no extra
+		// gate is needed.
 		vec3 specular = light_color * spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
 
 		vec3 contribution = diffuse + specular;
 
-		// Shadows (D4, §9.3): marched only for shadow-casting lights, so a light
-		// with shadows off pays nothing here — not even the texel-2 fetch. In
-		// shadow the contribution is tinted by shadow_color (black default ->
-		// the light is fully blocked). Shadow factor 1 = lit, 0 = occluded.
+		// Marched only for shadow-casting lights, so a light with shadows off pays
+		// nothing here, not even the texel-2 fetch. In shadow the contribution is
+		// tinted by shadow_color (black blocks the light entirely). Factor 1 is lit,
+		// 0 is occluded.
 		if (shadow_enabled) {
 			vec4 t2 = texelFetch(lit_light_data, ivec2(2, i), 0); // shadow_color.rgb | shadow_hardness
 			vec2 light_sdf;
 			if (is_directional) {
-				// March a fixed direction across the SDF (D5, §9.3). screen_uv_to_sdf
-				// is affine, so the SDF-space direction comes from offsetting the
-				// fragment UV along the toward-light dir. Distance scales with the
-				// screen so the step budget stays well-sampled.
+				// March a fixed direction across the SDF. screen_uv_to_sdf is affine, so
+				// the SDF-space direction comes from offsetting the fragment UV along the
+				// toward-light dir; the distance scales with the screen.
 				vec2 dir_sdf = normalize(screen_uv_to_sdf(SCREEN_UV + shadow_dir_uv) - frag_sdf);
 				light_sdf = frag_sdf + dir_sdf * sdf_diag * directional_shadow_reach;
 			} else {
@@ -196,8 +184,8 @@ void fragment() {
 			contribution *= mix(t2.rgb, vec3(1.0), s);
 		}
 
-		// Blend per the light's mode: Subtract = negative light (carves darkness
-		// below ambient; the final COLOR clamps at display).
+		// Subtract mode is negative light: it carves darkness below ambient, and the
+		// final COLOR clamps at display.
 		if (subtractive) {
 			lit -= contribution;
 		} else {
@@ -205,7 +193,7 @@ void fragment() {
 		}
 	}
 
-	// D6 emissive: ignores the dark; composes with ambient + lights by construction.
+	// Emissive ignores the dark and composes with ambient and lights by construction.
 	vec3 emissive = albedo * emissive_strength * texture(emissive_mask, UV).r;
 
 	COLOR = vec4(lit + emissive, tex.a * COLOR.a);

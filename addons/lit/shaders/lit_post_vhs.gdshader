@@ -1,12 +1,9 @@
 shader_type canvas_item;
 
-// VHS post pass (post-v1, to_do_post_processing.md). The animated cousin of CRT:
-// per-line tape wobble/jitter, horizontal chroma shift + smear, a rolling
-// tracking-noise band, static grain, and a slow brightness roll. Driven by TIME so
-// it lives and breathes. Reads the accumulated frame via hint_screen_texture.
-//
-// Signal-vs-display: VHS models the tape SIGNAL, so in the chain it runs BEFORE CRT
-// (the glass). Enable both and you're watching a worn tape on an old tube.
+// The animated cousin of CRT: per-line tape wobble, horizontal chroma shift and
+// smear, a rolling tracking-noise band, static grain, and a slow brightness roll,
+// all driven by TIME. VHS is the tape signal and CRT is the glass, so the chain runs
+// VHS before CRT; enable both for a worn tape on an old tube.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float wobble_strength = 2.0;   // per-line horizontal jitter, in pixels
@@ -18,7 +15,6 @@ uniform float tracking_strength = 0.6; // severity of the rolling damaged band
 uniform float tracking_speed = 0.2;    // how fast the band rolls up the screen
 uniform float roll_strength = 0.1;     // slow vertical brightness roll
 
-// TAU is a built-in shader constant (2*PI).
 const int BLEED_TAPS = 4;
 
 float hash21(vec2 p) {
@@ -29,13 +25,13 @@ void fragment() {
 	vec2 px = SCREEN_PIXEL_SIZE;
 	float t = TIME;
 
-	// Rolling tracking band: a soft horizontal zone scrolling up the screen where the
-	// tape "loses sync" -> it amplifies the displacement, chroma and noise below.
+	// A soft horizontal zone scrolling up the screen where the tape loses sync. It
+	// amplifies the displacement, chroma and noise below.
 	float band_pos = fract(-t * tracking_speed);
 	float band = smoothstep(0.12, 0.0, abs(SCREEN_UV.y - band_pos)) * tracking_strength;
 
-	// Per-line horizontal wobble: each scanline shifts as a unit (the VHS jitter) — a
-	// quantized random per row+time plus a slow sine drift, amplified inside the band.
+	// Per-line wobble: each scanline shifts as a unit. A quantized random per row and
+	// time plus a slow sine drift, amplified inside the band.
 	float line_id = floor(SCREEN_UV.y / px.y);
 	float jitter = hash21(vec2(line_id, floor(t * wobble_speed * 8.0))) - 0.5;
 	float drift = sin(SCREEN_UV.y * 6.0 + t * wobble_speed) * 0.3;

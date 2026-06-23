@@ -1,10 +1,8 @@
 shader_type canvas_item;
 
-// CRT post pass (post-v1, to_do_post_processing.md). Bundles the classic tube look
-// into one fullscreen pass: barrel curvature + scanlines + an RGB aperture/shadow
-// mask + edge vignette + a touch of chromatic aberration. Reads the accumulated
-// frame via hint_screen_texture. CRT is a STEADY look (no TIME); VHS is the animated
-// cousin that adds wobble/noise on top.
+// The classic tube look in one pass: barrel curvature, scanlines, an RGB aperture
+// mask, edge vignette, and a touch of chromatic aberration. Steady (no TIME); VHS is
+// the animated cousin that adds wobble and noise on top.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float curvature = 0.2;          // barrel warp toward the edges; 0 = flat
@@ -15,10 +13,8 @@ uniform float aberration = 1.5;         // max RGB split at the edges, in pixels
 uniform float vignette = 0.3;           // edge darkening; 0 = none
 uniform float brightness = 1.2;         // lift to offset mask/scanline darkening
 
-// TAU is a built-in shader constant (2*PI); used for the scanline frequency.
-
-// Barrel distortion: push UVs outward from center by r^2, so the image bulges like
-// curved glass. Returns the warped sample UV (may land outside [0,1] at the corners).
+// Push UVs outward from center by r^2 so the image bulges like curved glass. The
+// warped UV may land outside [0,1] at the corners.
 vec2 barrel(vec2 uv, float amt) {
 	vec2 cc = uv - 0.5;
 	float r2 = dot(cc, cc);
@@ -28,12 +24,12 @@ vec2 barrel(vec2 uv, float amt) {
 void fragment() {
 	vec2 uv = barrel(SCREEN_UV, curvature);
 
-	// Past the curved tube edge -> black bezel (the corners the bulge pulls in).
-	// `return` is illegal in fragment(), so guard the whole body instead.
+	// Anything past the curved tube edge reads as black bezel. return is illegal in
+	// fragment(), so guard the whole body instead.
 	vec3 col = vec3(0.0);
 	if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
-		// Chromatic aberration: split R/B radially, growing toward the edges. At the
-		// mid-edge (|center| ~ 0.5) the split is ~`aberration` pixels.
+		// Split R/B radially, growing toward the edges. At the mid-edge the split is
+		// about `aberration` pixels.
 		vec2 center = uv - 0.5;
 		vec2 ab_off = center * aberration * SCREEN_PIXEL_SIZE * 2.0;
 		col.r = texture(screen_texture, uv - ab_off).r;
@@ -44,8 +40,8 @@ void fragment() {
 		float line = 0.5 + 0.5 * sin(uv.y * scanline_count * TAU);
 		col *= mix(1.0, line, scanline_strength);
 
-		// RGB aperture grille: tint successive screen columns R / G / B so each
-		// phosphor stripe favors one channel. Uses FRAGCOORD (physical glass).
+		// Aperture grille: tint successive screen columns R/G/B so each phosphor stripe
+		// favors one channel. Keyed off FRAGCOORD (physical glass, not the warped UV).
 		int m = int(mod(FRAGCOORD.x, 3.0));
 		vec3 mask = vec3(1.0 - mask_strength);
 		if (m == 0) {

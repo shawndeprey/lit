@@ -1,12 +1,9 @@
 shader_type canvas_item;
 
-// Lens distortion post pass (post-v1, to_do_post_processing.md). Radial barrel /
-// pincushion warp: positive `amount` bulges (fisheye), negative pinches (the subtle
-// correction look). `zoom` scales around center to push the warped edges back off
-// screen so you don't see the bezel. Reads the frame so far via hint_screen_texture.
-//
-// This is the device lens; it's distinct from CRT's own curvature (you can stack
-// both, or zero one and use the other).
+// Radial barrel / pincushion warp: positive `amount` bulges (fisheye), negative
+// pinches. `zoom` scales around center to push the warped edges back off screen so
+// the bezel isn't visible. This is the device lens, distinct from CRT's own
+// curvature; you can stack both or zero one and use the other.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float amount = 0.2;     // + = barrel/bulge, - = pincushion/pinch

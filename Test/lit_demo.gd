@@ -1,14 +1,15 @@
 extends Node2D
 
-## Lit — Performance Demo / Tech Demo.
+## Lit performance / tech demo.
 ##
-## A self-contained, staged showcase + benchmark for the Lit plugin. Press the on-screen
-## button to start; it hides the scene's existing lights, drops in its own occluder props,
-## and runs a timed reel that shows off one feature at a time (named by an on-screen
-## label) while a perf panel reports FPS / frame time / live light count / draw calls.
+## A self-contained, staged showcase and benchmark for the Lit plugin. Press the
+## on-screen button to start: it hides the scene's existing lights, drops in its own
+## occluder props, and runs a timed reel that shows one feature at a time (named by an
+## on-screen label) while a perf panel reports FPS, frame time, live light count, and
+## draw calls.
 ##
 ## Everything is spawned at runtime and torn down on stop, so it never touches the saved
-## scene. All demo lights run full soft shadows (shadow_hardness = 0), per the brief.
+## scene. All demo lights run full soft shadows (shadow_hardness = 0).
 
 const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver.gdshader")
 
@@ -53,19 +54,19 @@ var _perf_lbl: Label
 var _stages := [
 	{"id": "intro",     "name": "Lit",                       "desc": "Lighting & Performance Demo",          "dur": 3.5,  "auto": true},
 	{"id": "point",     "name": "Point Light",               "desc": "One light • full soft shadows",        "dur": 5.0,  "auto": true},
-	{"id": "dir",       "name": "Directional Light",         "desc": "A sun — parallel light, sweeping shadows", "dur": 5.0, "auto": true},
+	{"id": "dir",       "name": "Directional Light",         "desc": "A sun - parallel light, sweeping shadows", "dur": 5.0, "auto": true},
 	{"id": "spot",      "name": "Spot Light",                "desc": "An aimable cone",                      "dur": 5.0,  "auto": true},
 	{"id": "colors",    "name": "Many Colored Lights",       "desc": "Mixed types, every color, all moving", "dur": 6.0,  "auto": true},
 	{"id": "shadows",   "name": "Layered Soft Shadows",      "desc": "Overlapping casters, all real-time",   "dur": 6.0,  "auto": true},
 	{"id": "negative",  "name": "Negative Lights",           "desc": "Subtract mode carves darkness",        "dur": 5.0,  "auto": true},
 	{"id": "masks",     "name": "Light Masks",               "desc": "Lights only touch matching objects",   "dur": 5.5,  "auto": true},
 	{"id": "stress",    "name": "Stress Test",               "desc": "Ramping up to 128 lights…",            "dur": 14.0, "auto": true},
-	{"id": "fx_bloom",     "name": "Post FX — Bloom",            "desc": "Glow on the brights",                 "dur": 4.0,  "auto": true},
-	{"id": "fx_halation",  "name": "Post FX — Bloom + Halation", "desc": "Warm highlight bleed — pure fire",    "dur": 4.5,  "auto": true},
-	{"id": "fx_grade",     "name": "Post FX — Color Grade + LUT","desc": "Cinematic color",                     "dur": 4.0,  "auto": true},
-	{"id": "fx_crt",    "name": "Post FX — CRT",             "desc": "Curvature, scanlines, shadow mask",    "dur": 4.0,  "auto": true},
-	{"id": "fx_vhs",    "name": "Post FX — VHS",             "desc": "Tape wobble & chroma bleed",           "dur": 4.0,  "auto": true},
-	{"id": "fx_glitch", "name": "Post FX — Glitch",          "desc": "Datamosh tearing & RGB split",         "dur": 4.0,  "auto": true},
+	{"id": "fx_bloom",     "name": "Post FX - Bloom",           "desc": "Glow on the brights",                 "dur": 4.0,  "auto": true},
+	{"id": "fx_halation",  "name": "Post FX - Bloom + Halation","desc": "Warm highlight bleed, pure fire",    "dur": 4.5,  "auto": true},
+	{"id": "fx_grade",     "name": "Post FX - Color Grade + LUT","desc": "Cinematic color",                     "dur": 4.0,  "auto": true},
+	{"id": "fx_crt",    "name": "Post FX - CRT",            "desc": "Curvature, scanlines, shadow mask",    "dur": 4.0,  "auto": true},
+	{"id": "fx_vhs",    "name": "Post FX - VHS",            "desc": "Tape wobble & chroma bleed",           "dur": 4.0,  "auto": true},
+	{"id": "fx_glitch", "name": "Post FX - Glitch",         "desc": "Datamosh tearing & RGB split",         "dur": 4.0,  "auto": true},
 	{"id": "finale",    "name": "Lit",                       "desc": "github.com/shawndeprey/lit",           "dur": 0.0,  "auto": false},
 ]
 
@@ -203,7 +204,7 @@ func _teardown() -> void:
 
 
 func _capture_scene_state() -> void:
-	# The lights already in the scene are the originals — capture before we spawn any.
+	# The lights already in the scene are the originals; capture before we spawn any.
 	_orig_lights = get_tree().get_nodes_in_group("lit_lights").duplicate()
 	for l in _orig_lights:
 		l.enabled = false
@@ -221,7 +222,7 @@ func _capture_scene_state() -> void:
 		_post_all_off()
 
 	# Pre-existing scene occluders (e.g. the skull's LightOccluder2D) fight the demo's
-	# own shadows — drop them from the SDF while the demo runs, restore on stop.
+	# own shadows, so drop them from the SDF while the demo runs and restore on stop.
 	_occluders.clear()
 	for occ in _find_all(scene, LightOccluder2D):
 		_occluders.append({"node": occ, "sdf": occ.sdf_collision})
@@ -280,14 +281,14 @@ func _make_prop(pos: Vector2, size: Vector2) -> void:
 
 	var spr := Sprite2D.new()
 	spr.texture = _white_tex
-	spr.scale = size                       # 1x1 white tex -> a size.x by size.y block
+	spr.scale = size                       # scale the 1x1 white tex to a size.x by size.y block
 	spr.modulate = Color(0.82, 0.84, 0.92)
 	var mat := ShaderMaterial.new()
 	mat.shader = RECEIVER_SHADER
 	spr.material = mat
 	root.add_child(spr)
 
-	var occ := LightOccluder2D.new()       # sdf_collision defaults true -> feeds the SDF
+	var occ := LightOccluder2D.new()       # sdf_collision defaults true, so it feeds the SDF
 	var poly := OccluderPolygon2D.new()
 	var hw := size.x * 0.5
 	var hh := size.y * 0.5

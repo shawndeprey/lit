@@ -3,18 +3,18 @@
 extends Node2D
 class_name LitCanvasModulate
 
-## Ambient / darkness value source (plan §7.3, D7).
+## Ambient / darkness source.
 ##
-## Feeds ambient color + energy to receivers as the `lit_ambient_color` /
-## `lit_ambient_energy` global shader uniforms. Lights resolve *with* ambient
+## Feeds ambient color and energy to receivers through the `lit_ambient_color` and
+## `lit_ambient_energy` global shader uniforms. Lights resolve together with ambient
 ## inside the receiver, so they always punch through the darkness.
 ##
-## This REPLACES the native CanvasModulate — it does not accompany it. A live
-## native CanvasModulate would multiply our already-correct output and
-## double-darken, so we warn (edit time + runtime) if one is present.
+## This replaces the native CanvasModulate rather than accompanying it. A live native
+## CanvasModulate would multiply our already-correct output and double-darken, so we
+## warn at edit time and runtime if one is present.
 ##
-## Only one active LitCanvasModulate is expected; if several exist, the last one
-## to enter the tree wins (each writes the globals on enter / on change).
+## Only one active LitCanvasModulate is expected; if several exist, the last one to
+## enter the tree wins (each writes the globals on enter and on change).
 
 const GROUP := "lit_canvas_modulate"
 
@@ -40,8 +40,8 @@ func _exit_tree() -> void:
 	remove_from_group(GROUP)
 
 
-## Publish ambient to the global shader uniforms. Works at edit time too (it
-## tints the editor viewport), which gives a live darkness preview in Phase 1.
+## Publish ambient to the global shader uniforms. Works at edit time too, tinting the
+## editor viewport for a live darkness preview.
 func _apply() -> void:
 	RenderingServer.global_shader_parameter_set("lit_ambient_color", color)
 	RenderingServer.global_shader_parameter_set("lit_ambient_energy", ambient_energy)

@@ -1,13 +1,12 @@
 extends Node
 
-## LitManager — runtime gather driver (plan §8, autoload added by lit_plugin.gd).
+## Runtime gather driver, added as an autoload by lit_plugin.gd.
 ##
-## Autoloads do not run in the editor, so this drives the per-frame
-## gather/cull/pack only while the game is running. Editor-live preview is
-## handled separately by the EditorPlugin (Phase 4).
+## Autoloads don't run in the editor, so this drives the per-frame gather/cull/pack
+## only while the game is running; editor-live preview is handled by the EditorPlugin.
 ##
-## The work here is the pack, not the per-pixel lighting; a full per-frame
-## repack is fine for v1. Dirty-tracking is a post-v1 optimization (plan §13).
+## The cost here is the pack, not the per-pixel lighting, so a full repack every frame
+## is fine. Dirty-tracking would be a later optimization.
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 

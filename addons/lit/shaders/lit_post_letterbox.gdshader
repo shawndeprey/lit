@@ -1,12 +1,10 @@
 shader_type canvas_item;
 
-// Letterbox post pass (post-v1, to_do_post_processing.md). Draws cinematic bars over
-// the top and bottom of the frame. Animate `bar_size` from 0 to ease the bars in/out
-// for cutscenes. Runs last in the chain so the bars stay clean (no grain/vignette
-// drawn over them). Reads the frame so far via hint_screen_texture.
+// Cinematic bars over the top and bottom of the frame. Animate `bar_size` from 0 to
+// ease the bars in and out for cutscenes.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
-uniform float bar_size = 0.0;     // fraction of screen height covered by EACH bar (0–0.5)
+uniform float bar_size = 0.0;     // fraction of screen height covered by each bar (0 to 0.5)
 uniform float softness = 0.0;     // feathered inner edge, in height fraction
 uniform vec4 bar_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 

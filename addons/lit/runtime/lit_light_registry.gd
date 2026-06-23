@@ -1,19 +1,19 @@
 extends RefCounted
 class_name LitLightRegistry
 
-## Shared gather / cull / pack logic (plan §8, §9.0, §9.4).
+## Shared gather / cull / pack logic.
 ##
-## Driven by `lit_manager.gd` (autoload) at runtime, and — from Phase 4 —
-## by `lit_plugin.gd` for editor-live preview. Both call the same refresh().
+## Driven by lit_manager.gd (the autoload) at runtime, and by lit_plugin.gd for
+## editor-live preview. Both call the same refresh().
 ##
-## Each instance owns its own light-data texture, so the editor and a running
-## game (separate processes / RenderingServer global state) never collide.
+## Each instance owns its own light-data texture, so the editor and a running game
+## (separate processes and RenderingServer state) never collide.
 ##
-## Packs a per-light record (plan §9.4, extended). Texel 3.r is the type:
-##  0 point     — texel 0 is a screen-UV position.
-##  1 directional — texel 0 is a screen-space direction toward the light.
-##  2 spot      — texel 0 is a position (as point); texel 4 adds the cone
-##                (aim direction + cos of the inner/outer angles).
+## Packs a per-light record. Texel 3.r is the type:
+##  0 point:       texel 0 is a screen-UV position.
+##  1 directional: texel 0 is a screen-space direction toward the light.
+##  2 spot:        texel 0 is a position (as a point); texel 4 adds the cone
+##                 (aim direction plus the cosines of the inner and outer angles).
 
 const TEXELS_PER_LIGHT := 5
 
@@ -31,21 +31,20 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	if vp_size.x <= 0.0 or vp_size.y <= 0.0:
 		return
 
-	# World → screen-pixel transform. A Viewport applies `global_canvas_transform *
-	# canvas_transform` to its canvas items, so we must use the product — not just
-	# canvas_transform. At runtime the global part is identity and the camera lives
-	# in canvas_transform, so this is unchanged from before. In the editor the view's
-	# pan/zoom lives in global_canvas_transform instead, so using canvas_transform
-	# alone mis-placed lights and drifted them with zoom. The product is correct in
-	# both, and feeds positions, the directional/spot basis, and the cull rect alike.
+	# World-to-screen-pixel transform. A Viewport applies global_canvas_transform *
+	# canvas_transform to its canvas items, so we need the product, not just
+	# canvas_transform. At runtime the global part is identity and the camera lives in
+	# canvas_transform; in the editor the view's pan/zoom lives in global_canvas_transform,
+	# so canvas_transform alone mis-places lights and drifts them with zoom. The product
+	# is correct in both, and feeds positions, the directional/spot basis, and the cull
+	# rect alike.
 	var canvas_xform := viewport.get_global_canvas_transform() * viewport.get_canvas_transform()
 	var world_rect := _visible_world_rect(canvas_xform, vp_size)
 
-	# 1–3. Collect enabled, visible lights. Point and spot lights are AABB-culled
-	# against the visible world rect; directional lights are never positionally
-	# culled (plan §8.3). Disabled or hidden lights (visibility mirrors `enabled`,
-	# and respects hidden ancestors) are culled here on the CPU: never packed,
-	# never iterated.
+	# Collect enabled, visible lights. Point and spot lights are AABB-culled against the
+	# visible world rect; directional lights are never positionally culled. Disabled or
+	# hidden lights (is_visible_in_tree respects hidden ancestors) are dropped here on
+	# the CPU, so they're never packed or iterated.
 	var visible: Array = []
 	for node in tree.get_nodes_in_group("lit_lights"):
 		var directional := node as LitDirectionalLight2D
@@ -65,14 +64,14 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 
 	var count := visible.size()
 
-	# Zero-light case (plan §9.4): count 0 + 1×1 dummy, never a 4×0 image.
+	# Zero-light case: count 0 plus a 1x1 dummy, never a 4x0 image.
 	if count == 0:
 		RenderingServer.global_shader_parameter_set("lit_light_count", 0)
 		RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 		RenderingServer.global_shader_parameter_set("lit_light_data", _get_dummy())
 		return
 
-	# 4. Pack each light into the RGBAF image (plan §9.4, extended).
+	# Pack each light into one row of the RGBAF image.
 	var img := Image.create(TEXELS_PER_LIGHT, count, false, Image.FORMAT_RGBAF)
 	for i in count:
 		var directional := visible[i] as LitDirectionalLight2D
@@ -86,19 +85,19 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 		_pack_point(img, i, visible[i] as LitPointLight2D, canvas_xform, vp_size)
 	_update_texture(img)
 
-	# 5. Publish globals.
+	# Publish globals.
 	RenderingServer.global_shader_parameter_set("lit_light_count", count)
 	RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 	RenderingServer.global_shader_parameter_set("lit_light_data", _texture)
 
 
-## Pack one point light into row `row` (plan §9.4 texel table).
+## Pack one point light into row `row`.
 func _pack_point(img: Image, row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
-	# Position → normalized screen UV (plan §9.0): the one canonical space.
+	# Position to normalized screen UV, the one canonical space.
 	var screen_px: Vector2 = canvas_xform * light.global_position
 	var uv := screen_px / vp_size
 
-	# Integer fields stored as plain floats, decoded with int(round(...)) in-shader.
+	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
 	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive
 	const TYPE_POINT := 0.0
@@ -113,13 +112,13 @@ func _pack_point(img: Image, row: int, light: LitPointLight2D, canvas_xform: Tra
 	img.set_pixel(3, row, Color(TYPE_POINT, flags, float(light.light_mask), light.falloff))
 
 
-## Pack one directional light into row `row` (plan §7.2, §9.0, D5).
-## Texel 0 carries a normalized *direction toward the light* in screen-pixel
-## space instead of a UV position; range/falloff are unused.
+## Pack one directional light into row `row`. Texel 0 carries a normalized direction
+## toward the light in screen-pixel space instead of a UV position; range and falloff
+## are unused.
 func _pack_directional(img: Image, row: int, light: LitDirectionalLight2D, canvas_xform: Transform2D) -> void:
-	# The node's local +X (its rotation) is the direction the light *travels* /
-	# aims, so the direction toward the source is the opposite. Convert to screen
-	# space via the canvas basis (camera rotation/zoom carries through).
+	# The node's local +X (its rotation) is the direction the light travels, so the
+	# direction toward the source is the opposite. Convert to screen space via the
+	# canvas basis, which carries camera rotation and zoom through.
 	var aim_world := Vector2.from_angle(light.global_rotation)
 	var dir_px := canvas_xform.basis_xform(-aim_world)
 	if dir_px.length() > 0.0:
@@ -139,20 +138,20 @@ func _pack_directional(img: Image, row: int, light: LitDirectionalLight2D, canva
 	img.set_pixel(3, row, Color(TYPE_DIRECTIONAL, flags, float(light.light_mask), 1.0))
 
 
-## Pack one spot light into row `row`: a point light (texels 0–3) plus a cone
+## Pack one spot light into row `row`: a point light (texels 0 to 3) plus a cone
 ## (texel 4). The node's local +X (its rotation) is the direction the cone aims.
 func _pack_spot(img: Image, row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
 	var screen_px: Vector2 = canvas_xform * light.global_position
 	var uv := screen_px / vp_size
 
-	# Aim direction in screen space (camera rotation/zoom carries through).
+	# Aim direction in screen space (camera rotation and zoom carry through).
 	var aim_px := canvas_xform.basis_xform(Vector2.from_angle(light.global_rotation))
 	if aim_px.length() > 0.0:
 		aim_px = aim_px.normalized()
 
 	# Cone as cosines: cos(outer) is the edge, cos(inner) the fully-lit core.
-	# spot_softness feathers the core inward; keep inner strictly inside outer so
-	# the in-shader smoothstep never divides by zero.
+	# spot_softness feathers the core inward; keep inner strictly inside outer so the
+	# shader's smoothstep never divides by zero.
 	var cos_outer := cos(deg_to_rad(light.spot_angle))
 	var cos_inner := cos(deg_to_rad(light.spot_angle * (1.0 - light.spot_softness)))
 	if cos_inner <= cos_outer:
@@ -180,7 +179,7 @@ func _aabb_visible(pos: Vector2, light_range: float, world_rect: Rect2) -> bool:
 	return world_rect.intersects(aabb)
 
 
-## Visible screen rect transformed into world space (plan §8.2).
+## Visible screen rect transformed into world space.
 func _visible_world_rect(canvas_xform: Transform2D, vp_size: Vector2) -> Rect2:
 	var inv := canvas_xform.affine_inverse()
 	var rect := Rect2(inv * Vector2.ZERO, Vector2.ZERO)

@@ -1,18 +1,17 @@
 @tool
 extends EditorPlugin
 
-## Lit — EditorPlugin.
+## Lit editor plugin.
 ##
-## Phase 1 responsibilities (plan §10, D1):
-##  - Register the `lit_*` global shader parameters so receiver shaders compile
-##    in-editor and in exported builds (see the global-registration block for why).
+## Responsibilities:
+##  - Register the `lit_*` global shader parameters so receiver shaders compile in the
+##    editor and in exported builds (see the registration block below for why).
 ##  - Add the runtime `LitManager` autoload that drives the per-frame gather.
+##  - Provide the "Make Selected Nodes Lit" tool and editor-live preview, driving the
+##    shared gather against the 2D editor viewport (see _process).
 ##
-## Node registration is handled implicitly: every Lit node script uses
-## `class_name`, so they already appear in the Create-Node dialog.
-##
-## Phase 4 adds the "Make Selected Nodes Lit" tool and editor-live preview
-## (driving the shared gather against the 2D editor viewport — see _process).
+## Node registration is implicit: every Lit node script uses `class_name`, so they
+## already appear in the Create Node dialog.
 
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
@@ -22,11 +21,11 @@ const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 
-# Editor-live refresh cadence (plan §8). Poll a few times a second so moving a
-# light, editing a property, or panning/zooming the 2D editor camera relights the
-# viewport without running the game. Polling (vs. per-node transform/property
-# signals) is the smaller, more robust path and is the only thing that catches
-# editor-camera pan/zoom — which the shadow/position math depends on.
+# Editor-live refresh cadence. Polling a few times a second relights the viewport when
+# a light moves, a property changes, or the 2D editor camera pans or zooms, without
+# running the game. Polling is smaller and more robust than per-node transform/property
+# signals, and it's the only thing that catches editor-camera pan/zoom, which the
+# shadow and position math depend on.
 const EDITOR_REFRESH_INTERVAL := 1.0 / 30.0
 
 var _registry: LitLightRegistry
@@ -35,29 +34,28 @@ var _refresh_accum := 0.0
 
 # --- Lifecycle ---------------------------------------------------------------
 #
-# The project.godot churn-on-close bug came from doing UNCONDITIONAL persistent
-# writes in _enter_tree and removals in _exit_tree — but those fire on every editor
-# open/close, not just enable/disable, so the file flip-flopped. The rule here:
+# _enter_tree and _exit_tree fire on every editor open and close, not just on
+# enable/disable, so writing project.godot from them churns the file. The split:
 #
-#  - Persistent project.godot entries (autoload + `shader_globals/*`) are written
-#    in _enter_tree but GUARDED (only when missing → no write in steady state), and
-#    removed ONLY in _disable_plugin — never in _exit_tree. So a normal close never
-#    touches the file, yet the entries self-heal if they ever go missing.
-#  - Session state (live RenderingServer globals, tool menu, editor-live refresh)
-#    lives in _enter_tree/_exit_tree and touches no file.
+#  - Persistent project.godot entries (the autoload and `shader_globals/*`) are written
+#    in _enter_tree but guarded, so they're written only when missing, and removed only
+#    in _disable_plugin. A normal close never touches the file, yet the entries self-heal
+#    if they ever go missing.
+#  - Session state (live RenderingServer globals, the tool menu, the editor-live refresh)
+#    lives in _enter_tree / _exit_tree and touches no file.
 
 func _enter_tree() -> void:
-	_add_live_globals()       # session-only (RenderingServer state, not serialized)
+	_add_live_globals()       # session-only RenderingServer state, not serialized
 	_persist_globals()        # guarded: writes project.godot only if a key is missing
 	_ensure_autoload()        # guarded: adds only if not already registered
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
-	# Editor-side gather driver (the autoload covers runtime; it doesn't run here).
+	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
 	_registry = LitLightRegistryScript.new()
 	set_process(true)
 
 
 func _exit_tree() -> void:
-	# Session teardown only — NO project.godot writes here (that was the churn bug).
+	# Session teardown only; no project.godot writes here.
 	set_process(false)
 	_registry = null
 	remove_tool_menu_item(TOOL_MENU_ITEM)
@@ -65,29 +63,28 @@ func _exit_tree() -> void:
 
 
 func _disable_plugin() -> void:
-	# Real deactivation (not a mere editor close): drop the persistent entries.
+	# Real deactivation, not just an editor close: drop the persistent entries.
 	remove_autoload_singleton(AUTOLOAD_NAME)
 	_unpersist_globals()
 
 
-## Register the runtime autoload, but only if it isn't already in project.godot —
-## add_autoload_singleton rewrites/saves the file, so guarding it keeps a normal
+## Register the runtime autoload, but only if it isn't already in project.godot.
+## add_autoload_singleton rewrites and saves the file, so guarding it keeps a normal
 ## editor open from churning project.godot.
 func _ensure_autoload() -> void:
 	if not ProjectSettings.has_setting("autoload/" + AUTOLOAD_NAME):
 		add_autoload_singleton(AUTOLOAD_NAME, AUTOLOAD_PATH)
 
 
-# --- Editor-live preview (plan §8, §10) --------------------------------------
+# --- Editor-live preview -----------------------------------------------------
 #
-# Autoloads don't run in the editor, so the EditorPlugin is the edit-time driver
-# for the same shared refresh() the runtime LitManager uses. It packs against the
-# 2D editor viewport, whose canvas transform reflects the editor camera, so lights
-# and their shadows stay aligned with what's displayed.
+# Autoloads don't run in the editor, so the plugin is the edit-time driver for the same
+# refresh() the runtime LitManager uses. It packs against the 2D editor viewport, whose
+# canvas transform reflects the editor camera, so lights and their shadows stay aligned
+# with what's displayed.
 #
-# A throttled poll keeps the viewport redrawing continuously while the plugin is
-# active; that's the intended live-preview tradeoff. Dirty-tracking to idle when
-# nothing changed is a post-v1 optimization (plan §13).
+# A throttled poll keeps the viewport redrawing while the plugin is active; that's the
+# live-preview tradeoff. Idling when nothing changed would be a later optimization.
 
 func _process(delta: float) -> void:
 	_refresh_accum += delta
@@ -99,21 +96,20 @@ func _process(delta: float) -> void:
 	_registry.refresh(get_tree(), EditorInterface.get_editor_viewport_2d())
 
 
-# --- "Make Selected Nodes Lit" tool (plan §10) -------------------------------
+# --- "Make Selected Nodes Lit" tool ------------------------------------------
 #
-# Batch-convert selected 2D nodes into Lit receivers: assign a fresh receiver
-# ShaderMaterial to each. Works on ANY CanvasItem (Sprite2D, AnimatedSprite2D,
-# TileMapLayer, Polygon2D, MeshInstance2D, …) since `material` lives on CanvasItem —
-# tilemaps and tilesets are first-class world geometry, so the tool must cover them,
-# not just sprites. Each node gets its OWN material so per-instance uniforms
-# (receiver_mask, emissive_strength) stay independent. For nodes that draw a single
-# Texture2D, a plain texture is wrapped in a CanvasTexture so the normal/specular
-# slots appear. Lives under Project → Tools → "Make Selected Nodes Lit". Undoable as
-# one action.
+# Batch-converts the selected 2D nodes into Lit receivers by assigning each a fresh
+# receiver ShaderMaterial. Works on any CanvasItem (Sprite2D, AnimatedSprite2D,
+# TileMapLayer, Polygon2D, MeshInstance2D, ...) since `material` lives on CanvasItem;
+# tilemaps are first-class world geometry, so the tool has to cover them too. Each node
+# gets its own material so the per-instance uniforms (receiver_mask, emissive_strength)
+# stay independent. For nodes that draw a single Texture2D, the texture is wrapped in a
+# CanvasTexture so the normal/specular slots appear. Lives under Project > Tools, and is
+# undoable as one action.
 #
-# This is the batch path for existing art; LitSprite2D is the from-scratch path. It
-# also sidesteps the Quick Load friction (a node's `material` slot only accepts a
-# Material, never the `.gdshader`).
+# This is the batch path for existing art; LitSprite2D is the from-scratch path. It also
+# sidesteps the Quick Load friction, since a node's `material` slot only accepts a
+# Material, never a `.gdshader`.
 
 func _make_selected_nodes_lit() -> void:
 	var targets: Array[CanvasItem] = []
@@ -134,10 +130,10 @@ func _make_selected_nodes_lit() -> void:
 		undo.add_do_property(ci, "material", mat)
 		undo.add_undo_property(ci, "material", ci.material)
 
-		# If the node draws a single Texture2D (Sprite2D, Polygon2D, MeshInstance2D, …),
-		# wrap a plain texture in a CanvasTexture so the normal/specular slots appear.
-		# Dynamic get() — `texture` isn't on the CanvasItem base; returns null for nodes
-		# without it (TileMapLayer, AnimatedSprite2D), which then just get the material.
+		# If the node draws a single Texture2D (Sprite2D, Polygon2D, MeshInstance2D, ...),
+		# wrap it in a CanvasTexture so the normal/specular slots appear. `texture` isn't
+		# on the CanvasItem base, so the dynamic get() returns null for nodes without it
+		# (TileMapLayer, AnimatedSprite2D), which then just get the material.
 		var tex = ci.get("texture")
 		if tex is Texture2D and not (tex is CanvasTexture):
 			var ct := CanvasTexture.new()
@@ -147,27 +143,26 @@ func _make_selected_nodes_lit() -> void:
 	undo.commit_action()
 
 
-# --- Global shader parameter registration (D1) -------------------------------
+# --- Global shader parameter registration -------------------------------------
 #
-# A receiver shader declares `global uniform ...` names; those names must exist
-# in the engine's shader-globals registry *before* the shader compiles or it
-# errors out in-editor. We register them two ways, for two reasons:
+# A receiver shader declares `global uniform ...` names, and those names must exist in
+# the engine's shader-globals registry before the shader compiles or it errors out in
+# the editor. We register them two ways:
 #
-#  1. Persisted into ProjectSettings under `shader_globals/*` (project.godot), via
-#     the guarded _persist_globals in _enter_tree (see Lifecycle above). The
-#     RenderingServer reads these at engine init, so the names exist with zero
-#     load-order race in both the editor and exported games.
+#  1. Persisted into ProjectSettings under `shader_globals/*` (project.godot), via the
+#     guarded _persist_globals in _enter_tree. The RenderingServer reads these at engine
+#     init, so the names exist with no load-order race in the editor or in exports.
 #
-#  2. Added live via RenderingServer for the *current* editor session (_enter_tree),
-#     because project.godot's shader_globals are only parsed at startup — without
-#     this, the very first plugin-enable wouldn't expose the names until a restart.
+#  2. Added live via RenderingServer for the current editor session, because
+#     project.godot's shader_globals are only parsed at startup; without this the very
+#     first plugin-enable wouldn't expose the names until a restart.
 #
-# On the next launch the persisted entries auto-register, and the live-add is
-# skipped (we check the existing list first), so there's no double-add.
+# On the next launch the persisted entries auto-register and the live-add is skipped
+# (we check the existing list first), so there's no double-add.
 
-## ProjectSettings serialization defs: name + the Dictionary stored under
-## `shader_globals/<name>`. Built at call time because the values aren't
-## constant expressions.
+## ProjectSettings serialization defs: each name plus the Dictionary stored under
+## `shader_globals/<name>`. Built at call time because the values aren't constant
+## expressions.
 func _ps_global_defs() -> Array:
 	return [
 		{
@@ -197,9 +192,9 @@ func _rs_global_defs() -> Array:
 	]
 
 
-## Persist the shader_globals into project.godot (idempotent — writes only the
-## missing keys, and saves only if something changed, so a normal editor open with
-## the keys already present rewrites nothing).
+## Persist the shader_globals into project.godot. Idempotent: writes only the missing
+## keys and saves only if something changed, so a normal editor open with the keys
+## already present rewrites nothing.
 func _persist_globals() -> void:
 	var ps_changed := false
 	for d in _ps_global_defs():
@@ -224,8 +219,8 @@ func _unpersist_globals() -> void:
 		ProjectSettings.save()
 
 
-## Add the globals to the RenderingServer for this session (skip any already
-## present — e.g. auto-registered from persisted project.godot at engine init).
+## Add the globals to the RenderingServer for this session, skipping any already present
+## (for example auto-registered from persisted project.godot at engine init).
 ## RenderingServer state isn't serialized, so this touches no file.
 func _add_live_globals() -> void:
 	var existing := RenderingServer.global_shader_parameter_get_list()
@@ -244,8 +239,8 @@ func _remove_live_globals() -> void:
 			RenderingServer.global_shader_parameter_remove(g.name)
 
 
-## A 1×1 float texture used only as the sampler global's default value; the
-## manager overrides it with real light data every frame.
+## A 1x1 float texture used only as the sampler global's default value; the manager
+## overrides it with real light data every frame.
 func _placeholder_texture() -> ImageTexture:
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBAF)
 	img.set_pixel(0, 0, Color(0, 0, 0, 0))

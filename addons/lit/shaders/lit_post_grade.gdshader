@@ -1,8 +1,7 @@
 shader_type canvas_item;
 
-// Color grade post pass (plan §7.5 / D8). Reads the screen via hint_screen_texture
-// and applies exposure -> contrast -> saturation -> tint. LDR; the output clamps
-// at display. One fullscreen ColorRect drives this over the whole frame.
+// Color grade: exposure, then contrast, then saturation, then tint. Output clamps
+// at display.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float exposure = 1.0;     // linear multiply

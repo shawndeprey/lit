@@ -1,13 +1,10 @@
 shader_type canvas_item;
 
-// Halftone / dot-screen post pass (post-v1, to_do_post_processing.md). Re-prints the
-// frame as a rotated grid of ink dots whose size tracks local brightness (dark = fat
-// dots that merge toward solid, bright = tiny dots), the classic comic / newsprint
-// look. Monochrome ink-on-paper with configurable colors and an `amount` blend back
-// to the original. Reads the frame so far via hint_screen_texture.
-//
-// Placed after Edge Outline: dark ink lines map to near-solid dots so the outline
-// survives, while the flat fills break into dots.
+// Re-prints the frame as a rotated grid of ink dots sized by local brightness (dark
+// makes fat dots that merge toward solid, bright makes tiny ones): the comic /
+// newsprint look. Ink-on-paper with configurable colors and an `amount` blend back
+// to the original. Runs after Edge Outline, so dark ink lines map to near-solid dots
+// and survive while the flat fills break into dots.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float dot_size = 6.0;      // grid cell / max dot footprint, in screen pixels
@@ -33,7 +30,7 @@ void fragment() {
 	vec2 sample_uv = (inv * cell_center_r) * SCREEN_PIXEL_SIZE;
 	float luma = dot(texture(screen_texture, sample_uv).rgb, vec3(0.2126, 0.7152, 0.0722));
 
-	// Darker -> bigger dot. Max radius reaches the cell corner (0.5 * sqrt(2)).
+	// Darker means a bigger dot. Max radius reaches the cell corner (0.5 * sqrt(2)).
 	float radius = (1.0 - luma) * dot_size * 0.70710678;
 	float d = length(rp - cell_center_r);
 	float coverage = smoothstep(radius + 1.0, radius - 1.0, d);   // 1px AA

@@ -1,9 +1,8 @@
 shader_type canvas_item;
 
-// Film grain post pass (post-v1, to_do_post_processing.md). Animated monochrome (or
-// colored) noise overlaid on the frame, optionally fading in the shadows/highlights
-// so it sits in the midtones like real film stock. Cheap, pairs with everything.
-// Driven by TIME. Runs late in the chain (grain is on the final image, after CRT).
+// Animated monochrome (or colored) noise over the frame, optionally fading in the
+// shadows and highlights so it sits in the midtones like real film stock. Driven by
+// TIME. Runs late in the chain, on the final image.
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear;
 
 uniform float intensity = 0.05;          // grain amount
@@ -34,8 +33,8 @@ void fragment() {
 		noise = vec3(hash21(cell + vec2(frame, frame)) - 0.5);
 	}
 
-	// Luminance response: real grain is least visible in deep shadows / blown
-	// highlights. 4*l*(1-l) peaks at mid-grey; mix toward uniform at response 0.
+	// Real grain is least visible in deep shadows and blown highlights. 4*l*(1-l)
+	// peaks at mid-grey; mix toward uniform as response approaches 0.
 	float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
 	float lum_mask = mix(1.0, 4.0 * luma * (1.0 - luma), luminance_response);
 
