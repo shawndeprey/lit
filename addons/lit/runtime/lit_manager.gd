@@ -10,28 +10,24 @@ extends Node
 ##
 ## This node is also the runtime home for the lit/quality/* settings (Phase 0): it reads
 ## them at startup and live-updates on ProjectSettings.settings_changed. The knobs that
-## reach the shader are mirrored to global uniforms here (lit_shadow_steps_max); the
-## CPU-side ones are held as fields for later phases to consume (shadow_step_scaling in
-## Phase 3b, lighting_resolution_scale in Phase 4). All defaults reproduce current
-## behavior, so this phase changes no pixels.
+## reach the shader are mirrored to global uniforms here (lit_shadow_steps_max,
+## lit_shadow_step_scaling). All defaults reproduce current behavior, so the default path
+## changes no pixels.
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 
 # Setting paths and their defaults (defaults match today's behavior).
 const SETTING_SHADOW_STEP_SCALING := "lit/quality/shadow_step_scaling"
 const SETTING_SHADOW_STEPS_MAX := "lit/quality/shadow_steps_max"
-const SETTING_LIGHTING_RESOLUTION_SCALE := "lit/quality/lighting_resolution_scale"
 
 const DEFAULT_SHADOW_STEP_SCALING := false
 const DEFAULT_SHADOW_STEPS_MAX := 64
-const DEFAULT_LIGHTING_RESOLUTION_SCALE := 1.0
 
 var _registry: LitLightRegistry
 
 # Cached quality settings, refreshed from ProjectSettings at startup and on change.
 var shadow_step_scaling: bool = DEFAULT_SHADOW_STEP_SCALING
 var shadow_steps_max: int = DEFAULT_SHADOW_STEPS_MAX
-var lighting_resolution_scale: float = DEFAULT_LIGHTING_RESOLUTION_SCALE
 
 
 func _ready() -> void:
@@ -60,8 +56,6 @@ func _reload_quality_settings() -> void:
 		SETTING_SHADOW_STEP_SCALING, DEFAULT_SHADOW_STEP_SCALING))
 	shadow_steps_max = int(ProjectSettings.get_setting(
 		SETTING_SHADOW_STEPS_MAX, DEFAULT_SHADOW_STEPS_MAX))
-	lighting_resolution_scale = float(ProjectSettings.get_setting(
-		SETTING_LIGHTING_RESOLUTION_SCALE, DEFAULT_LIGHTING_RESOLUTION_SCALE))
 
 	# Guard against nonsense values reaching the shader loop bound.
 	shadow_steps_max = clampi(shadow_steps_max, 1, 256)

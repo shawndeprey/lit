@@ -279,16 +279,6 @@ func _quality_setting_defs() -> Array:
 				"hint_string": "1,256,1",
 			},
 		},
-		{
-			"name": "lit/quality/lighting_resolution_scale",
-			"default": 1.0,
-			"info": {
-				"name": "lit/quality/lighting_resolution_scale",
-				"type": TYPE_FLOAT,
-				"hint": PROPERTY_HINT_RANGE,
-				"hint_string": "0.25,1.0,0.05",
-			},
-		},
 	]
 
 
