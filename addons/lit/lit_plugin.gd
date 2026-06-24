@@ -179,6 +179,26 @@ func _ps_global_defs() -> Array:
 		# name exists; first consumed by the shadow march in Phase 3b. Default 64 matches
 		# today's fixed step count, so registering it changes no pixels.
 		{"name": "lit_shadow_steps_max", "def": {"type": "int", "value": 64}},
+		# Phase 3b gate: when true, the shadow march scales its step count by screen-space
+		# march length. Default false reproduces the fixed lit_shadow_steps_max march.
+		{"name": "lit_shadow_step_scaling", "def": {"type": "bool", "value": false}},
+		# Tiled light culling (Phase 3, Item 3a). The grid metadata plus the header and
+		# flat-index textures the receiver loops over. Lossless: changes evaluation order
+		# only. nearest/disable so texelFetch reads exact texels.
+		{"name": "lit_tile_size", "def": {"type": "int", "value": 64}},
+		{"name": "lit_tile_grid", "def": {"type": "ivec2", "value": Vector2i.ZERO}},
+		# Directional lights are packed first (rows [0, lit_directional_count)) and bypass
+		# tiling; the shader runs just those in its always-on loop instead of scanning all
+		# lights to find them.
+		{"name": "lit_directional_count", "def": {"type": "int", "value": 0}},
+		{
+			"name": "lit_tile_headers",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
+		{
+			"name": "lit_tile_indices",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
 	]
 
 
@@ -196,6 +216,12 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_ambient_color", "type": RenderingServer.GLOBAL_VAR_TYPE_COLOR, "value": Color(1, 1, 1, 1)},
 		{"name": "lit_ambient_energy", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
 		{"name": "lit_shadow_steps_max", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 64},
+		{"name": "lit_shadow_step_scaling", "type": RenderingServer.GLOBAL_VAR_TYPE_BOOL, "value": false},
+		{"name": "lit_tile_size", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 64},
+		{"name": "lit_tile_grid", "type": RenderingServer.GLOBAL_VAR_TYPE_IVEC2, "value": Vector2i.ZERO},
+		{"name": "lit_directional_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
+		{"name": "lit_tile_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 	]
 
 

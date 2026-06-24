@@ -26,8 +26,22 @@ class_name LitLightRegistry
 
 const TEXELS_PER_LIGHT := 5
 
+# Tiled light culling (Phase 3, Item 3a). The screen is divided into TILE_SIZE-px
+# tiles; each tile stores the list of lights whose screen-space AABB overlaps it, so a
+# fragment only iterates the lights near it instead of every visible light. This changes
+# the order of evaluation, not the math — lossless.
+const TILE_SIZE := 64
+# Flat index texture width. Light indices for all tiles are written row-major into a
+# 2D RGBAF texture of this fixed width so we never approach the max-texture-width limit;
+# the shader reconstructs (x, y) from a flat offset with the same width.
+const INDEX_TEX_WIDTH := 2048
+
 var _texture: ImageTexture
 var _dummy: ImageTexture
+
+# Reused tile textures (header = (offset,count) per tile; indices = flat light list).
+var _tile_header_tex: ImageTexture
+var _tile_index_tex: ImageTexture
 
 
 ## Gather visible lights, pack them into the light-data texture, and publish the
@@ -76,9 +90,24 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	# Zero-light case: count 0 plus a 1x1 dummy, never a 4x0 image.
 	if count == 0:
 		RenderingServer.global_shader_parameter_set("lit_light_count", 0)
+		RenderingServer.global_shader_parameter_set("lit_directional_count", 0)
 		RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 		RenderingServer.global_shader_parameter_set("lit_light_data", _get_dummy())
+		_publish_empty_tiles(vp_size)
 		return
+
+	# Pack directional lights first (rows [0, dir_count)) so the shader's always-on
+	# directional loop runs just those rows and never scans the point/spot lights. Tile
+	# indices reference these same packed rows, so point/spot rows simply follow.
+	var directionals: Array = []
+	var positional: Array = []
+	for l in visible:
+		if l is LitDirectionalLight2D:
+			directionals.append(l)
+		else:
+			positional.append(l)
+	visible = directionals + positional
+	var dir_count := directionals.size()
 
 	# Pack each light into one row of the RGBAF image.
 	var img := Image.create(TEXELS_PER_LIGHT, count, false, Image.FORMAT_RGBAF)
@@ -94,8 +123,13 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 		_pack_point(img, i, visible[i] as LitPointLight2D, canvas_xform, vp_size)
 	_update_texture(img)
 
+	# Build the tile grid and publish its textures + metadata (Item 3a). Done after the
+	# pack so light row indices match the packed texture rows.
+	_build_tiles(visible, canvas_xform, vp_size)
+
 	# Publish globals.
 	RenderingServer.global_shader_parameter_set("lit_light_count", count)
+	RenderingServer.global_shader_parameter_set("lit_directional_count", dir_count)
 	RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 	RenderingServer.global_shader_parameter_set("lit_light_data", _texture)
 
@@ -180,6 +214,121 @@ func _pack_spot(img: Image, row: int, light: LitSpotLight2D, canvas_xform: Trans
 	img.set_pixel(3, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
 	# Texel 4: aim.x | aim.y | cos_outer | cos_inner
 	img.set_pixel(4, row, Color(aim_px.x, aim_px.y, cos_outer, cos_inner))
+
+
+# --- Tiled light culling (Phase 3, Item 3a) ----------------------------------
+#
+# Cost scales with screen coverage, not total light count. The build marks, for every
+# TILE_SIZE-px screen tile, which packed lights overlap it. A conservative screen AABB
+# (square, sized by the max canvas scale) is fine: a tile that includes a barely-
+# contributing light is caught by the Phase 1 contribution early-out, and over-coverage
+# never changes the result, only costs a few extra iterations. Directional lights have
+# no position, so they bypass tiling and run in a small always-on loop in the shader;
+# they're not written into any tile list here.
+
+## Build per-tile light-index lists and publish the header + index textures and the grid
+## metadata globals. `visible[i]` corresponds to packed light row `i`.
+func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2) -> void:
+	var tiles_x := int(ceil(vp_size.x / float(TILE_SIZE)))
+	var tiles_y := int(ceil(vp_size.y / float(TILE_SIZE)))
+	tiles_x = max(tiles_x, 1)
+	tiles_y = max(tiles_y, 1)
+	var tile_count := tiles_x * tiles_y
+
+	# Per-tile growable index lists.
+	var buckets: Array = []
+	buckets.resize(tile_count)
+	for t in tile_count:
+		buckets[t] = PackedInt32Array()
+
+	# Screen-space scale of the world->screen transform (editor zoom / camera zoom);
+	# world `range` becomes screen pixels via the larger axis scale, conservatively.
+	var sx := canvas_xform.x.length()
+	var sy := canvas_xform.y.length()
+	var scale := maxf(sx, sy)
+
+	for i in visible.size():
+		# Directional lights bypass tiling (handled by the shader's always-on loop).
+		if visible[i] is LitDirectionalLight2D:
+			continue
+
+		var light := visible[i] as Node2D
+		var center: Vector2 = canvas_xform * light.global_position
+		var light_range: float = float(light.get("range")) * scale
+
+		# Screen AABB -> inclusive tile range, clamped to the grid.
+		var tx0 := int(floor((center.x - light_range) / float(TILE_SIZE)))
+		var tx1 := int(floor((center.x + light_range) / float(TILE_SIZE)))
+		var ty0 := int(floor((center.y - light_range) / float(TILE_SIZE)))
+		var ty1 := int(floor((center.y + light_range) / float(TILE_SIZE)))
+		tx0 = clampi(tx0, 0, tiles_x - 1)
+		tx1 = clampi(tx1, 0, tiles_x - 1)
+		ty0 = clampi(ty0, 0, tiles_y - 1)
+		ty1 = clampi(ty1, 0, tiles_y - 1)
+		# Fully off-screen after clamping is impossible here (the gather already AABB-
+		# culled against the visible rect), but the clamp keeps a straddling light in-grid.
+
+		for ty in range(ty0, ty1 + 1):
+			var row_base := ty * tiles_x
+			for tx in range(tx0, tx1 + 1):
+				buckets[row_base + tx].push_back(i)
+
+	# Flatten buckets into a header texture ((offset,count) per tile) and a flat index
+	# texture, both RGBAF read with texelFetch in the shader.
+	var header_img := Image.create(tiles_x, tiles_y, false, Image.FORMAT_RGBAF)
+	var total_indices := 0
+	for t in tile_count:
+		total_indices += buckets[t].size()
+
+	# Index texture: row-major into a fixed-width 2D image, at least 1x1.
+	var idx_rows := int(ceil(float(maxi(total_indices, 1)) / float(INDEX_TEX_WIDTH)))
+	var index_img := Image.create(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF)
+
+	var offset := 0
+	for t in tile_count:
+		var bucket: PackedInt32Array = buckets[t]
+		var cnt := bucket.size()
+		var hx := t % tiles_x
+		var hy := t / tiles_x
+		header_img.set_pixel(hx, hy, Color(float(offset), float(cnt), 0.0, 0.0))
+		for j in cnt:
+			var flat := offset + j
+			index_img.set_pixel(flat % INDEX_TEX_WIDTH, flat / INDEX_TEX_WIDTH, Color(float(bucket[j]), 0.0, 0.0, 0.0))
+		offset += cnt
+
+	_tile_header_tex = _make_or_update(_tile_header_tex, header_img)
+	_tile_index_tex = _make_or_update(_tile_index_tex, index_img)
+
+	RenderingServer.global_shader_parameter_set("lit_tile_size", TILE_SIZE)
+	RenderingServer.global_shader_parameter_set("lit_tile_grid", Vector2i(tiles_x, tiles_y))
+	RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
+	RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
+
+
+## Publish a valid but empty tile grid for the zero-light case, so the shader's tile path
+## reads a defined (count 0 everywhere) structure rather than stale data.
+func _publish_empty_tiles(vp_size: Vector2) -> void:
+	var tiles_x := max(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
+	var tiles_y := max(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
+	var header_img := Image.create(tiles_x, tiles_y, false, Image.FORMAT_RGBAF)
+	header_img.fill(Color(0.0, 0.0, 0.0, 0.0))  # offset 0, count 0 in every tile
+	var index_img := Image.create(INDEX_TEX_WIDTH, 1, false, Image.FORMAT_RGBAF)
+
+	_tile_header_tex = _make_or_update(_tile_header_tex, header_img)
+	_tile_index_tex = _make_or_update(_tile_index_tex, index_img)
+
+	RenderingServer.global_shader_parameter_set("lit_tile_size", TILE_SIZE)
+	RenderingServer.global_shader_parameter_set("lit_tile_grid", Vector2i(tiles_x, tiles_y))
+	RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
+	RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
+
+
+## Create-or-update an ImageTexture, reallocating only when the size changes.
+func _make_or_update(tex: ImageTexture, img: Image) -> ImageTexture:
+	if tex == null or tex.get_size() != Vector2(img.get_size()):
+		return ImageTexture.create_from_image(img)
+	tex.update(img)
+	return tex
 
 
 ## True if a light's `range`-expanded AABB intersects the visible world rect.

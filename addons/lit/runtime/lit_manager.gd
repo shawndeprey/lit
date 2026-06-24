@@ -66,6 +66,8 @@ func _reload_quality_settings() -> void:
 	# Guard against nonsense values reaching the shader loop bound.
 	shadow_steps_max = clampi(shadow_steps_max, 1, 256)
 
-	# Mirror the shader-bound knob to its global uniform. At the default 64 this is the
-	# same value the shader already used, so it's pixel-neutral until Phase 3b reads it.
+	# Mirror the shader-bound knobs to their global uniforms. At the defaults (64 steps,
+	# scaling off) these are the same values the shader already used, so it's pixel-
+	# neutral until Phase 3b reads them.
 	RenderingServer.global_shader_parameter_set("lit_shadow_steps_max", shadow_steps_max)
+	RenderingServer.global_shader_parameter_set("lit_shadow_step_scaling", shadow_step_scaling)
