@@ -151,15 +151,16 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 position = Vector2(576, 324)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
-visible = false
 script = ExtResource("11_ngwpp")
-bloom_enabled = true
-bloom_threshold = 0.17
+bloom_threshold = 0.14
 bloom_intensity = 1.83
 bloom_radius = 3.56
-halation_enabled = true
-halation_threshold = 0.05
-halation_intensity = 1.39
+halation_threshold = 0.17
+halation_intensity = 0.59
 halation_radius = 5.04
 halation_tint = Color(0.8427926, 0.06220977, 0.55192626, 1)
+grade_enabled = true
+exposure = 2.12
+lut_preset = 7
+lut_amount = 0.77
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
