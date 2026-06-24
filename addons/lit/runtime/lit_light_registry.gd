@@ -9,11 +9,20 @@ class_name LitLightRegistry
 ## Each instance owns its own light-data texture, so the editor and a running game
 ## (separate processes and RenderingServer state) never collide.
 ##
-## Packs a per-light record. Texel 3.r is the type:
-##  0 point:       texel 0 is a screen-UV position.
-##  1 directional: texel 0 is a screen-space direction toward the light.
-##  2 spot:        texel 0 is a position (as a point); texel 4 adds the cone
+## Packs a per-light record. The cheap cull keys live in texel 0 so a masked-out or
+## wrong-type light bails after a single texelFetch (Phase 2, Item 2.1). Texel 0.r is
+## the type:
+##  0 point:       texel 1 is a screen-UV position.
+##  1 directional: texel 1 is a screen-space direction toward the light.
+##  2 spot:        texel 1 is a position (as a point); texel 4 adds the cone
 ##                 (aim direction plus the cosines of the inner and outer angles).
+##
+## Texel map (must stay in sync with the unpack in lit_receiver.gdshader):
+##  Texel 0: type | flags | light_mask | falloff   (cull keys, fetched first)
+##  Texel 1: uv.x/dir.x | uv.y/dir.y | range | energy
+##  Texel 2: color.r | color.g | color.b | height
+##  Texel 3: shadow_color.rgb | shadow_hardness
+##  Texel 4: aim.x | aim.y | cos_outer | cos_inner  (spot only)
 
 const TEXELS_PER_LIGHT := 5
 
@@ -102,14 +111,14 @@ func _pack_point(img: Image, row: int, light: LitPointLight2D, canvas_xform: Tra
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive
 	const TYPE_POINT := 0.0
 
-	# Texel 0: uv.x | uv.y | range | energy
-	img.set_pixel(0, row, Color(uv.x, uv.y, light.range, light.energy))
-	# Texel 1: color.r | color.g | color.b | height
-	img.set_pixel(1, row, Color(light.color.r, light.color.g, light.color.b, light.height))
-	# Texel 2: shadow_color.rgb | shadow_hardness
-	img.set_pixel(2, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
-	# Texel 3: type | flags | light_mask | falloff
-	img.set_pixel(3, row, Color(TYPE_POINT, flags, float(light.light_mask), light.falloff))
+	# Texel 0: type | flags | light_mask | falloff   (cull keys, fetched first)
+	img.set_pixel(0, row, Color(TYPE_POINT, flags, float(light.light_mask), light.falloff))
+	# Texel 1: uv.x | uv.y | range | energy
+	img.set_pixel(1, row, Color(uv.x, uv.y, light.range, light.energy))
+	# Texel 2: color.r | color.g | color.b | height
+	img.set_pixel(2, row, Color(light.color.r, light.color.g, light.color.b, light.height))
+	# Texel 3: shadow_color.rgb | shadow_hardness
+	img.set_pixel(3, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
 
 
 ## Pack one directional light into row `row`. Texel 0 carries a normalized direction
@@ -128,14 +137,14 @@ func _pack_directional(img: Image, row: int, light: LitDirectionalLight2D, canva
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive
 	const TYPE_DIRECTIONAL := 1.0
 
-	# Texel 0: dir.x | dir.y | (range unused) | energy
-	img.set_pixel(0, row, Color(dir_px.x, dir_px.y, 0.0, light.energy))
-	# Texel 1: color.r | color.g | color.b | height
-	img.set_pixel(1, row, Color(light.color.r, light.color.g, light.color.b, light.height))
-	# Texel 2: shadow_color.rgb | shadow_hardness
-	img.set_pixel(2, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
-	# Texel 3: type | flags | light_mask | (falloff unused)
-	img.set_pixel(3, row, Color(TYPE_DIRECTIONAL, flags, float(light.light_mask), 1.0))
+	# Texel 0: type | flags | light_mask | (falloff unused)   (cull keys, fetched first)
+	img.set_pixel(0, row, Color(TYPE_DIRECTIONAL, flags, float(light.light_mask), 1.0))
+	# Texel 1: dir.x | dir.y | (range unused) | energy
+	img.set_pixel(1, row, Color(dir_px.x, dir_px.y, 0.0, light.energy))
+	# Texel 2: color.r | color.g | color.b | height
+	img.set_pixel(2, row, Color(light.color.r, light.color.g, light.color.b, light.height))
+	# Texel 3: shadow_color.rgb | shadow_hardness
+	img.set_pixel(3, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
 
 
 ## Pack one spot light into row `row`: a point light (texels 0 to 3) plus a cone
@@ -161,14 +170,14 @@ func _pack_spot(img: Image, row: int, light: LitSpotLight2D, canvas_xform: Trans
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive
 	const TYPE_SPOT := 2.0
 
-	# Texel 0: uv.x | uv.y | range | energy
-	img.set_pixel(0, row, Color(uv.x, uv.y, light.range, light.energy))
-	# Texel 1: color.r | color.g | color.b | height
-	img.set_pixel(1, row, Color(light.color.r, light.color.g, light.color.b, light.height))
-	# Texel 2: shadow_color.rgb | shadow_hardness
-	img.set_pixel(2, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
-	# Texel 3: type | flags | light_mask | falloff
-	img.set_pixel(3, row, Color(TYPE_SPOT, flags, float(light.light_mask), light.falloff))
+	# Texel 0: type | flags | light_mask | falloff   (cull keys, fetched first)
+	img.set_pixel(0, row, Color(TYPE_SPOT, flags, float(light.light_mask), light.falloff))
+	# Texel 1: uv.x | uv.y | range | energy
+	img.set_pixel(1, row, Color(uv.x, uv.y, light.range, light.energy))
+	# Texel 2: color.r | color.g | color.b | height
+	img.set_pixel(2, row, Color(light.color.r, light.color.g, light.color.b, light.height))
+	# Texel 3: shadow_color.rgb | shadow_hardness
+	img.set_pixel(3, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
 	# Texel 4: aim.x | aim.y | cos_outer | cos_inner
 	img.set_pixel(4, row, Color(aim_px.x, aim_px.y, cos_outer, cos_inner))
 

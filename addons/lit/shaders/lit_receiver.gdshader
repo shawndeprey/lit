@@ -84,42 +84,47 @@ void fragment() {
 	float sdf_diag = length(screen_uv_to_sdf(vec2(1.0)) - screen_uv_to_sdf(vec2(0.0)));
 
 	for (int i = 0; i < lit_light_count; i++) {
-		// Unpack the per-light record.
-		vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0); // uv.xy | range | energy
-		vec4 t1 = texelFetch(lit_light_data, ivec2(1, i), 0); // color.rgb | height
-		vec4 t3 = texelFetch(lit_light_data, ivec2(3, i), 0); // type | flags | mask | falloff
-
-		vec2 light_uv = t0.xy;
-		float range = t0.z;
-		float energy = t0.w;
-		vec3 light_color = t1.rgb;
-		float height = t1.w;
-		float falloff = t3.w;
+		// Texel 0 carries the cheap cull keys (type | flags | mask | falloff), so it's
+		// fetched first and a masked-out light bails after a single texelFetch before
+		// paying for any further fetch, diffuse, specular or shadow work (Phase 2,
+		// Item 2.1). Texel map mirrors lit_light_registry.gd — keep in sync.
+		vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0); // type | flags | mask | falloff
 
 		// type: 0 = point, 1 = directional, 2 = spot. flags bit 0 = shadow_enabled,
 		// bit 1 = subtractive.
-		int type = int(round(t3.x));
+		int type = int(round(t0.x));
 		bool is_directional = type == 1;
 		bool is_spot = type == 2;
-		int flags = int(round(t3.y));
+		int flags = int(round(t0.y));
 		bool shadow_enabled = (flags & 1) != 0;
 		bool subtractive = (flags & 2) != 0;
+		float falloff = t0.w;
 
-		// Skip lights this receiver's mask doesn't share a bit with, before paying for
-		// any diffuse, specular or shadow work below.
-		int light_mask = int(round(t3.z));
+		// Skip lights this receiver's mask doesn't share a bit with, before fetching the
+		// rest of the record or paying for any diffuse, specular or shadow work below.
+		int light_mask = int(round(t0.z));
 		if ((light_mask & receiver_mask) == 0) {
 			continue;
 		}
+
+		// Passed the cull: fetch the remaining record.
+		vec4 t1 = texelFetch(lit_light_data, ivec2(1, i), 0); // uv.xy/dir.xy | range | energy
+		vec4 t2 = texelFetch(lit_light_data, ivec2(2, i), 0); // color.rgb | height
+
+		vec2 light_uv = t1.xy;
+		float range = t1.z;
+		float energy = t1.w;
+		vec3 light_color = t2.rgb;
+		float height = t2.w;
 
 		vec3 Ldir;
 		float atten;
 		vec2 shadow_dir_uv = vec2(0.0);          // toward-light dir in screen-UV space (directional only)
 
 		if (is_directional) {
-			// t0.xy is a unit screen-space direction toward the light. No position, no
+			// t1.xy is a unit screen-space direction toward the light. No position, no
 			// attenuation; `height` sets the elevation.
-			vec2 dir_px = t0.xy;
+			vec2 dir_px = t1.xy;
 			Ldir = normalize(vec3(dir_px * directional_horizontal_scale, height));
 			atten = 1.0;
 			shadow_dir_uv = dir_px / lit_viewport_size; // pixel dir to UV dir
@@ -188,7 +193,7 @@ void fragment() {
 		// tinted by shadow_color (black blocks the light entirely). Factor 1 is lit,
 		// 0 is occluded.
 		if (shadow_enabled) {
-			vec4 t2 = texelFetch(lit_light_data, ivec2(2, i), 0); // shadow_color.rgb | shadow_hardness
+			vec4 t3 = texelFetch(lit_light_data, ivec2(3, i), 0); // shadow_color.rgb | shadow_hardness
 			vec2 light_sdf;
 			if (is_directional) {
 				// March a fixed direction across the SDF. screen_uv_to_sdf is affine, so
@@ -200,8 +205,8 @@ void fragment() {
 				// Point and spot both march toward the light's screen position.
 				light_sdf = screen_uv_to_sdf(light_uv);
 			}
-			float s = lit_shadow(frag_sdf, light_sdf, t2.w);
-			contribution *= mix(t2.rgb, vec3(1.0), s);
+			float s = lit_shadow(frag_sdf, light_sdf, t3.w);
+			contribution *= mix(t3.rgb, vec3(1.0), s);
 		}
 
 		// Subtract mode is negative light: it carves darkness below ambient, and the
