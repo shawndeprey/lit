@@ -121,7 +121,7 @@ func _build_ui() -> void:
 	_stop_btn.pressed.connect(_teardown_to_idle)
 
 
-func _make_label(parent: Control, size: int, color: Color, align: int) -> Label:
+func _make_label(parent: Control, size: int, color: Color, align: HorizontalAlignment) -> Label:
 	var l := Label.new()
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
