@@ -157,11 +157,31 @@ void fragment() {
 		// Sharpened N.L lobe, tight and only where the surface tilts toward the light.
 		// Tinted by light_color so the highlight takes the light's hue instead of
 		// blowing out to white (SPECULAR_SHININESS.rgb is white when no specular map is
-		// set). pow(ndotl, ...) is already 0 when the surface faces away, so no extra
-		// gate is needed.
-		vec3 specular = light_color * spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
+		// set). pow(ndotl, ...) is already 0 when the surface faces away.
+		//
+		// Lossless gate (Phase 1, Item 1.1): the term is exactly vec3(0.0) when
+		// specular_strength is 0.0 (the common case) or when the spec/shininess map is
+		// pure black, so skipping it then can't change the pixel — but it avoids a
+		// needless pow() per in-range light. The spec-map test is kept conservative
+		// (dot == 0.0) so a dim-but-tinted highlight is never dropped.
+		vec3 specular = vec3(0.0);
+		if (specular_strength > 0.0 && dot(spec_shin, spec_shin) > 0.0) {
+			specular = light_color * spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
+		}
 
 		vec3 contribution = diffuse + specular;
+
+		// Lossless early-out (Phase 1, Item 1.2): lit_shadow() only ever *reduces*
+		// contribution (it multiplies by a factor in [0,1]). So if the unshadowed
+		// contribution already rounds to zero at 8-bit, shadowing cannot move the pixel
+		// — skip both the up-to-64-tap SDF march and the accumulation. The epsilon is
+		// tied to 8-bit quantization (0.5/255 ~= 0.002) with margin (0.004). Uses the
+		// max channel as the magnitude proxy; a subtractive light that rounds to zero
+		// likewise can't darken the result. This subsumes the cheaper atten <= 0.0 bail
+		// above for the shadow-march case.
+		if (max(contribution.r, max(contribution.g, contribution.b)) < 0.004) {
+			continue;
+		}
 
 		// Marched only for shadow-casting lights, so a light with shadows off pays
 		// nothing here, not even the texel-2 fetch. In shadow the contribution is
