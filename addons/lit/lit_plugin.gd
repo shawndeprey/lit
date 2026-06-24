@@ -47,6 +47,7 @@ var _refresh_accum := 0.0
 func _enter_tree() -> void:
 	_add_live_globals()       # session-only RenderingServer state, not serialized
 	_persist_globals()        # guarded: writes project.godot only if a key is missing
+	_persist_quality_settings()  # guarded: adds lit/quality/* defaults if missing
 	_ensure_autoload()        # guarded: adds only if not already registered
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
@@ -66,6 +67,7 @@ func _disable_plugin() -> void:
 	# Real deactivation, not just an editor close: drop the persistent entries.
 	remove_autoload_singleton(AUTOLOAD_NAME)
 	_unpersist_globals()
+	_unpersist_quality_settings()
 
 
 ## Register the runtime autoload, but only if it isn't already in project.godot.
@@ -173,6 +175,10 @@ func _ps_global_defs() -> Array:
 		{"name": "lit_viewport_size", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{"name": "lit_ambient_color", "def": {"type": "color", "value": Color(1, 1, 1, 1)}},
 		{"name": "lit_ambient_energy", "def": {"type": "float", "value": 1.0}},
+		# Backing uniform for lit/quality/shadow_steps_max. Registered in Phase 0 so the
+		# name exists; first consumed by the shadow march in Phase 3b. Default 64 matches
+		# today's fixed step count, so registering it changes no pixels.
+		{"name": "lit_shadow_steps_max", "def": {"type": "int", "value": 64}},
 	]
 
 
@@ -189,6 +195,7 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_viewport_size", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_ambient_color", "type": RenderingServer.GLOBAL_VAR_TYPE_COLOR, "value": Color(1, 1, 1, 1)},
 		{"name": "lit_ambient_energy", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
+		{"name": "lit_shadow_steps_max", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 64},
 	]
 
 
@@ -216,6 +223,73 @@ func _unpersist_globals() -> void:
 			ProjectSettings.set_setting(key, null)
 			ps_changed = true
 	if ps_changed:
+		ProjectSettings.save()
+
+
+# --- lit/quality/* runtime quality settings ----------------------------------
+#
+# The central home for runtime quality knobs (Phase 0). All default to current
+# behavior, so an existing project looks unchanged on upgrade. LitManager reads them at
+# startup and live-updates on ProjectSettings.settings_changed; the ones that reach the
+# shader are mirrored to global uniforms (e.g. lit_shadow_steps_max). Registered the
+# same guarded way as shader_globals so a normal editor open rewrites nothing.
+
+## Each entry: setting name, default value, and the property_info that gives the editor
+## a proper typed control (range hints for the numeric knobs).
+func _quality_setting_defs() -> Array:
+	return [
+		{
+			"name": "lit/quality/shadow_step_scaling",
+			"default": false,
+			"info": {"name": "lit/quality/shadow_step_scaling", "type": TYPE_BOOL},
+		},
+		{
+			"name": "lit/quality/shadow_steps_max",
+			"default": 64,
+			"info": {
+				"name": "lit/quality/shadow_steps_max",
+				"type": TYPE_INT,
+				"hint": PROPERTY_HINT_RANGE,
+				"hint_string": "1,256,1",
+			},
+		},
+		{
+			"name": "lit/quality/lighting_resolution_scale",
+			"default": 1.0,
+			"info": {
+				"name": "lit/quality/lighting_resolution_scale",
+				"type": TYPE_FLOAT,
+				"hint": PROPERTY_HINT_RANGE,
+				"hint_string": "0.25,1.0,0.05",
+			},
+		},
+	]
+
+
+## Persist the lit/quality defaults into project.godot. Idempotent: writes only missing
+## keys (so a user-edited value is never clobbered) and saves only if something changed.
+func _persist_quality_settings() -> void:
+	var changed := false
+	for d in _quality_setting_defs():
+		if not ProjectSettings.has_setting(d.name):
+			ProjectSettings.set_setting(d.name, d.default)
+			changed = true
+		# Always set defaults + property_info so the editor shows a typed control and
+		# "Revert" restores the documented default; these calls don't dirty the file.
+		ProjectSettings.set_initial_value(d.name, d.default)
+		ProjectSettings.add_property_info(d.info)
+	if changed:
+		ProjectSettings.save()
+
+
+## Remove the lit/quality settings from project.godot. Called from _disable_plugin only.
+func _unpersist_quality_settings() -> void:
+	var changed := false
+	for d in _quality_setting_defs():
+		if ProjectSettings.has_setting(d.name):
+			ProjectSettings.set_setting(d.name, null)
+			changed = true
+	if changed:
 		ProjectSettings.save()
 
 

@@ -64,3 +64,7 @@ lit_ambient_energy={
 "type": "float",
 "value": 1.0
 }
+lit_shadow_steps_max={
+"type": "int",
+"value": 64
+}
