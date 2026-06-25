@@ -7,6 +7,7 @@ extends EditorPlugin
 ##  - Register the `lit_*` global shader parameters so receiver shaders compile in the
 ##    editor and in exported builds (see the registration block below for why).
 ##  - Add the runtime `LitManager` autoload that drives the per-frame gather.
+##  - Persist the `lit/quality/*` project settings the shader's adaptive shadow march reads.
 ##  - Provide the "Make Selected Nodes Lit" tool and editor-live preview, driving the
 ##    shared gather against the 2D editor viewport (see _process).
 ##
@@ -37,22 +38,22 @@ var _refresh_accum := 0.0
 # _enter_tree and _exit_tree fire on every editor open and close, not just on
 # enable/disable, so writing project.godot from them churns the file. The split:
 #
-#  - Persistent project.godot entries (the autoload and `shader_globals/*`) are written
-#    in _enter_tree but guarded, so they're written only when missing, and removed only
-#    in _disable_plugin. A normal close never touches the file, yet the entries self-heal
-#    if they ever go missing.
+#  - Persistent project.godot entries (the autoload, `shader_globals/*`, and the
+#    `lit/quality/*` settings) are written in _enter_tree but guarded, so they're written
+#    only when missing, and removed only in _disable_plugin. A normal close never touches
+#    the file, yet the entries self-heal if they ever go missing.
 #  - Session state (live RenderingServer globals, the tool menu, the editor-live refresh)
 #    lives in _enter_tree / _exit_tree and touches no file.
 
 func _enter_tree() -> void:
-	_add_live_globals()       # session-only RenderingServer state, not serialized
-	_persist_globals()        # guarded: writes project.godot only if a key is missing
-	_ensure_autoload()        # guarded: adds only if not already registered
+	_add_live_globals()         # session-only RenderingServer state, not serialized
+	_persist_globals()          # guarded: writes project.godot only if a key is missing
+	_persist_quality_settings() # guarded: same, for the lit/quality/* settings
+	_ensure_autoload()          # guarded: adds only if not already registered
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
 	_registry = LitLightRegistryScript.new()
 	set_process(true)
-
 
 func _exit_tree() -> void:
 	# Session teardown only; no project.godot writes here.
@@ -61,12 +62,11 @@ func _exit_tree() -> void:
 	remove_tool_menu_item(TOOL_MENU_ITEM)
 	_remove_live_globals()
 
-
 func _disable_plugin() -> void:
 	# Real deactivation, not just an editor close: drop the persistent entries.
 	remove_autoload_singleton(AUTOLOAD_NAME)
 	_unpersist_globals()
-
+	_unpersist_quality_settings()
 
 ## Register the runtime autoload, but only if it isn't already in project.godot.
 ## add_autoload_singleton rewrites and saves the file, so guarding it keeps a normal
@@ -74,7 +74,6 @@ func _disable_plugin() -> void:
 func _ensure_autoload() -> void:
 	if not ProjectSettings.has_setting("autoload/" + AUTOLOAD_NAME):
 		add_autoload_singleton(AUTOLOAD_NAME, AUTOLOAD_PATH)
-
 
 # --- Editor-live preview -----------------------------------------------------
 #
@@ -94,7 +93,6 @@ func _process(delta: float) -> void:
 	if _registry == null or EditorInterface.get_edited_scene_root() == null:
 		return  # no scene open / nothing to light
 	_registry.refresh(get_tree(), EditorInterface.get_editor_viewport_2d())
-
 
 # --- "Make Selected Nodes Lit" tool ------------------------------------------
 #
@@ -142,7 +140,6 @@ func _make_selected_nodes_lit() -> void:
 			undo.add_undo_property(ci, "texture", tex)
 	undo.commit_action()
 
-
 # --- Global shader parameter registration -------------------------------------
 #
 # A receiver shader declares `global uniform ...` names, and those names must exist in
@@ -158,7 +155,8 @@ func _make_selected_nodes_lit() -> void:
 #     first plugin-enable wouldn't expose the names until a restart.
 #
 # On the next launch the persisted entries auto-register and the live-add is skipped
-# (we check the existing list first), so there's no double-add.
+# (we check the existing list first), so there's no double-add. The lit_tile_* and
+# lit_shadow_* entries feed the tiled light culling and adaptive shadow march.
 
 ## ProjectSettings serialization defs: each name plus the Dictionary stored under
 ## `shader_globals/<name>`. Built at call time because the values aren't constant
@@ -173,8 +171,20 @@ func _ps_global_defs() -> Array:
 		{"name": "lit_viewport_size", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{"name": "lit_ambient_color", "def": {"type": "color", "value": Color(1, 1, 1, 1)}},
 		{"name": "lit_ambient_energy", "def": {"type": "float", "value": 1.0}},
+		{"name": "lit_shadow_steps_max", "def": {"type": "int", "value": 64}},
+		{"name": "lit_shadow_step_scaling", "def": {"type": "bool", "value": false}},
+		{"name": "lit_tile_size", "def": {"type": "int", "value": 64}},
+		{"name": "lit_tile_grid", "def": {"type": "ivec2", "value": Vector2i.ZERO}},
+		{"name": "lit_directional_count", "def": {"type": "int", "value": 0}},
+		{
+			"name": "lit_tile_headers",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
+		{
+			"name": "lit_tile_indices",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
 	]
-
 
 ## RenderingServer live-add defs: name + GlobalShaderParameterType + default.
 ## `lit_ambient_color` uses COLOR to match the shader's `vec4 : source_color`.
@@ -189,8 +199,14 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_viewport_size", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_ambient_color", "type": RenderingServer.GLOBAL_VAR_TYPE_COLOR, "value": Color(1, 1, 1, 1)},
 		{"name": "lit_ambient_energy", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
+		{"name": "lit_shadow_steps_max", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 64},
+		{"name": "lit_shadow_step_scaling", "type": RenderingServer.GLOBAL_VAR_TYPE_BOOL, "value": false},
+		{"name": "lit_tile_size", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 64},
+		{"name": "lit_tile_grid", "type": RenderingServer.GLOBAL_VAR_TYPE_IVEC2, "value": Vector2i.ZERO},
+		{"name": "lit_directional_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
+		{"name": "lit_tile_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 	]
-
 
 ## Persist the shader_globals into project.godot. Idempotent: writes only the missing
 ## keys and saves only if something changed, so a normal editor open with the keys
@@ -205,7 +221,6 @@ func _persist_globals() -> void:
 	if ps_changed:
 		ProjectSettings.save()
 
-
 ## Remove the persisted shader_globals from project.godot. Called from
 ## _disable_plugin only (deactivating the plugin removes its features).
 func _unpersist_globals() -> void:
@@ -218,6 +233,51 @@ func _unpersist_globals() -> void:
 	if ps_changed:
 		ProjectSettings.save()
 
+## The lit/quality/* project settings, surfaced in Project Settings with typed hints so
+## they get a proper editor (a checkbox and a 1..256 range slider). LitManager reads
+## these at runtime and republishes them as the lit_shadow_* shader globals.
+func _quality_setting_defs() -> Array:
+	return [
+		{
+			"name": "lit/quality/shadow_step_scaling",
+			"default": false,
+			"info": {"name": "lit/quality/shadow_step_scaling", "type": TYPE_BOOL},
+		},
+		{
+			"name": "lit/quality/shadow_steps_max",
+			"default": 64,
+			"info": {
+				"name": "lit/quality/shadow_steps_max",
+				"type": TYPE_INT,
+				"hint": PROPERTY_HINT_RANGE,
+				"hint_string": "1,256,1",
+			},
+		},
+	]
+
+## Persist the lit/quality/* settings into project.godot, guarded like _persist_globals.
+## set_initial_value + add_property_info run every enable so the inspector keeps the
+## default and the typed editor even when the key already exists.
+func _persist_quality_settings() -> void:
+	var changed := false
+	for d in _quality_setting_defs():
+		if not ProjectSettings.has_setting(d.name):
+			ProjectSettings.set_setting(d.name, d.default)
+			changed = true
+		ProjectSettings.set_initial_value(d.name, d.default)
+		ProjectSettings.add_property_info(d.info)
+	if changed:
+		ProjectSettings.save()
+
+## Remove the persisted lit/quality/* settings. Called from _disable_plugin only.
+func _unpersist_quality_settings() -> void:
+	var changed := false
+	for d in _quality_setting_defs():
+		if ProjectSettings.has_setting(d.name):
+			ProjectSettings.set_setting(d.name, null)
+			changed = true
+	if changed:
+		ProjectSettings.save()
 
 ## Add the globals to the RenderingServer for this session, skipping any already present
 ## (for example auto-registered from persisted project.godot at engine init).
@@ -228,7 +288,6 @@ func _add_live_globals() -> void:
 		if not existing.has(g.name):
 			RenderingServer.global_shader_parameter_add(g.name, g.type, g.value)
 
-
 ## Remove the session's RenderingServer globals. On a normal editor close the
 ## persisted entries re-register at the next launch's engine init; on plugin
 ## disable, _unpersist_globals also drops the persisted copies. No file write.
@@ -237,7 +296,6 @@ func _remove_live_globals() -> void:
 	for g in _rs_global_defs():
 		if existing.has(g.name):
 			RenderingServer.global_shader_parameter_remove(g.name)
-
 
 ## A 1x1 float texture used only as the sampler global's default value; the manager
 ## overrides it with real light data every frame.

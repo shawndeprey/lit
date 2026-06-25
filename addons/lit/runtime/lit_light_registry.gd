@@ -9,20 +9,47 @@ class_name LitLightRegistry
 ## Each instance owns its own light-data texture, so the editor and a running game
 ## (separate processes and RenderingServer state) never collide.
 ##
-## Packs a per-light record. Texel 3.r is the type:
-##  0 point:       texel 0 is a screen-UV position.
-##  1 directional: texel 0 is a screen-space direction toward the light.
-##  2 spot:        texel 0 is a position (as a point); texel 4 adds the cone
+## Packs a per-light record into one row of an RGBAF texture. Texel 0.r is the type:
+##  0 point:       texel 1 is a screen-UV position.
+##  1 directional: texel 1 is a screen-space direction toward the light.
+##  2 spot:        texel 1 is a position (as a point); texel 4 adds the cone
 ##                 (aim direction plus the cosines of the inner and outer angles).
+## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range | energy,
+## t2 = color.rgb | height, t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone.
+## type/flags/mask sit in texel 0 so the shader can mask-reject after a single fetch.
 
 const TEXELS_PER_LIGHT := 5
+
+# Screen tile edge in pixels for the light-culling grid. Must match the shader's tile
+# math (it divides SCREEN_UV * viewport by lit_tile_size).
+const TILE_SIZE := 64
+
+# Width of the flat tile-index texture; a flat index maps to (i % WIDTH, i / WIDTH).
+# Must match LIT_INDEX_TEX_WIDTH in lit_receiver.gdshader.
+const INDEX_TEX_WIDTH := 2048
 
 var _texture: ImageTexture
 var _dummy: ImageTexture
 
+var _tile_header_tex: ImageTexture
+var _tile_index_tex: ImageTexture
 
-## Gather visible lights, pack them into the light-data texture, and publish the
-## global shader uniforms. Call once per frame.
+# Reused scratch for packing: write floats straight into _pack_buf and upload once,
+# instead of per-texel Image.set_pixel calls. _pack_img is kept across frames and only
+# reallocated when the light count changes.
+var _pack_buf: PackedFloat32Array = PackedFloat32Array()
+var _pack_img: Image
+var _pack_img_count: int = -1
+
+# Cached list of [node, kind] for the lit_lights group, rebuilt only when the tree
+# changes (see _get_cached_lights), so refresh() skips a group scan + type dispatch
+# every frame.
+var _light_cache: Array = []
+var _cache_dirty: bool = true
+var _cache_tree: SceneTree = null
+
+## Gather visible lights, pack them into the light-data texture, build the tile grid,
+## and publish the global shader uniforms. Call once per frame.
 func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	if tree == null or viewport == null:
 		return
@@ -41,58 +68,82 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	var canvas_xform := viewport.get_global_canvas_transform() * viewport.get_canvas_transform()
 	var world_rect := _visible_world_rect(canvas_xform, vp_size)
 
-	# Collect enabled, visible lights. Point and spot lights are AABB-culled against the
-	# visible world rect; directional lights are never positionally culled. Disabled or
-	# hidden lights (is_visible_in_tree respects hidden ancestors) are dropped here on
-	# the CPU, so they're never packed or iterated.
+	# Collect enabled, visible lights from the cache. Point and spot lights are
+	# AABB-culled against the visible world rect; directional lights are never
+	# positionally culled. A freed node marks the cache dirty so it rebuilds next frame.
+	var lights := _get_cached_lights(tree)
 	var visible: Array = []
-	for node in tree.get_nodes_in_group("lit_lights"):
-		var directional := node as LitDirectionalLight2D
-		if directional != null:
-			if directional.enabled and directional.is_visible_in_tree():
-				visible.append(directional)  # never positionally culled
+	for entry in lights:
+		var node: Node = entry[0]
+		if not is_instance_valid(node):
+			_cache_dirty = true
 			continue
-		var point := node as LitPointLight2D
-		if point != null:
+		var kind: int = entry[1]
+		if kind == 1:
+			var directional := node as LitDirectionalLight2D
+			if directional.enabled and directional.is_visible_in_tree():
+				visible.append(directional)
+		elif kind == 0:
+			var point := node as LitPointLight2D
 			if point.enabled and point.is_visible_in_tree() and _aabb_visible(point.global_position, point.range, world_rect):
 				visible.append(point)
-			continue
-		var spot := node as LitSpotLight2D
-		if spot != null and spot.enabled and spot.is_visible_in_tree():
-			if _aabb_visible(spot.global_position, spot.range, world_rect):
+		else:
+			var spot := node as LitSpotLight2D
+			if spot.enabled and spot.is_visible_in_tree() and _aabb_visible(spot.global_position, spot.range, world_rect):
 				visible.append(spot)
 
 	var count := visible.size()
 
-	# Zero-light case: count 0 plus a 1x1 dummy, never a 4x0 image.
+	# Zero-light case: count 0 plus a 1x1 dummy (never a 4x0 image) and empty tiles.
 	if count == 0:
 		RenderingServer.global_shader_parameter_set("lit_light_count", 0)
+		RenderingServer.global_shader_parameter_set("lit_directional_count", 0)
 		RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 		RenderingServer.global_shader_parameter_set("lit_light_data", _get_dummy())
+		_publish_empty_tiles(vp_size)
 		return
 
-	# Pack each light into one row of the RGBAF image.
-	var img := Image.create(TEXELS_PER_LIGHT, count, false, Image.FORMAT_RGBAF)
+	# Pack directionals into the leading rows, then positional lights. The shader shades
+	# rows [0, dir_count) for every fragment and finds the rest through the tile grid, so
+	# this ordering keeps row indices consistent between the data texture and the buckets.
+	var directionals: Array = []
+	var positional: Array = []
+	for l in visible:
+		if l is LitDirectionalLight2D:
+			directionals.append(l)
+		else:
+			positional.append(l)
+	visible = directionals + positional
+	var dir_count := directionals.size()
+
+	# Pack each light into one TEXELS_PER_LIGHT-wide row of the float buffer.
+	var floats_needed := count * TEXELS_PER_LIGHT * 4
+	if _pack_buf.size() != floats_needed:
+		_pack_buf.resize(floats_needed)
+	_pack_buf.fill(0.0)
 	for i in count:
 		var directional := visible[i] as LitDirectionalLight2D
 		if directional != null:
-			_pack_directional(img, i, directional, canvas_xform)
+			_pack_directional(i, directional, canvas_xform)
 			continue
 		var spot := visible[i] as LitSpotLight2D
 		if spot != null:
-			_pack_spot(img, i, spot, canvas_xform, vp_size)
+			_pack_spot(i, spot, canvas_xform, vp_size)
 			continue
-		_pack_point(img, i, visible[i] as LitPointLight2D, canvas_xform, vp_size)
-	_update_texture(img)
+		_pack_point(i, visible[i] as LitPointLight2D, canvas_xform, vp_size)
+	_upload_pack_buffer(count)
+
+	# Bin the positional lights into the screen-tile grid the shader culls against.
+	_build_tiles(visible, canvas_xform, vp_size)
 
 	# Publish globals.
 	RenderingServer.global_shader_parameter_set("lit_light_count", count)
+	RenderingServer.global_shader_parameter_set("lit_directional_count", dir_count)
 	RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 	RenderingServer.global_shader_parameter_set("lit_light_data", _texture)
 
-
-## Pack one point light into row `row`.
-func _pack_point(img: Image, row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
+## Pack one point light into the row starting at `row` in _pack_buf.
+func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
 	# Position to normalized screen UV, the one canonical space.
 	var screen_px: Vector2 = canvas_xform * light.global_position
 	var uv := screen_px / vp_size
@@ -102,20 +153,36 @@ func _pack_point(img: Image, row: int, light: LitPointLight2D, canvas_xform: Tra
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive
 	const TYPE_POINT := 0.0
 
-	# Texel 0: uv.x | uv.y | range | energy
-	img.set_pixel(0, row, Color(uv.x, uv.y, light.range, light.energy))
-	# Texel 1: color.r | color.g | color.b | height
-	img.set_pixel(1, row, Color(light.color.r, light.color.g, light.color.b, light.height))
-	# Texel 2: shadow_color.rgb | shadow_hardness
-	img.set_pixel(2, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
-	# Texel 3: type | flags | light_mask | falloff
-	img.set_pixel(3, row, Color(TYPE_POINT, flags, float(light.light_mask), light.falloff))
+	# Four floats per texel; o is the float offset of this light's first texel.
+	var o := row * TEXELS_PER_LIGHT * 4
 
+	# Texel 0: type | flags | light_mask | falloff
+	_pack_buf[o + 0] = TYPE_POINT
+	_pack_buf[o + 1] = flags
+	_pack_buf[o + 2] = float(light.light_mask)
+	_pack_buf[o + 3] = light.falloff
 
-## Pack one directional light into row `row`. Texel 0 carries a normalized direction
-## toward the light in screen-pixel space instead of a UV position; range and falloff
-## are unused.
-func _pack_directional(img: Image, row: int, light: LitDirectionalLight2D, canvas_xform: Transform2D) -> void:
+	# Texel 1: uv.x | uv.y | range | energy
+	_pack_buf[o + 4] = uv.x
+	_pack_buf[o + 5] = uv.y
+	_pack_buf[o + 6] = light.range
+	_pack_buf[o + 7] = light.energy
+
+	# Texel 2: color.rgb | height
+	_pack_buf[o + 8] = light.color.r
+	_pack_buf[o + 9] = light.color.g
+	_pack_buf[o + 10] = light.color.b
+	_pack_buf[o + 11] = light.height
+
+	# Texel 3: shadow_color.rgb | shadow_hardness
+	_pack_buf[o + 12] = light.shadow_color.r
+	_pack_buf[o + 13] = light.shadow_color.g
+	_pack_buf[o + 14] = light.shadow_color.b
+	_pack_buf[o + 15] = light.shadow_hardness
+
+## Pack one directional light. Texel 1 carries a normalized direction toward the light
+## in screen-pixel space instead of a UV position; range and falloff are unused.
+func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Transform2D) -> void:
 	# The node's local +X (its rotation) is the direction the light travels, so the
 	# direction toward the source is the opposite. Convert to screen space via the
 	# canvas basis, which carries camera rotation and zoom through.
@@ -128,19 +195,35 @@ func _pack_directional(img: Image, row: int, light: LitDirectionalLight2D, canva
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive
 	const TYPE_DIRECTIONAL := 1.0
 
-	# Texel 0: dir.x | dir.y | (range unused) | energy
-	img.set_pixel(0, row, Color(dir_px.x, dir_px.y, 0.0, light.energy))
-	# Texel 1: color.r | color.g | color.b | height
-	img.set_pixel(1, row, Color(light.color.r, light.color.g, light.color.b, light.height))
-	# Texel 2: shadow_color.rgb | shadow_hardness
-	img.set_pixel(2, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
-	# Texel 3: type | flags | light_mask | (falloff unused)
-	img.set_pixel(3, row, Color(TYPE_DIRECTIONAL, flags, float(light.light_mask), 1.0))
+	var o := row * TEXELS_PER_LIGHT * 4
 
+	# Texel 0: type | flags | light_mask | (falloff unused)
+	_pack_buf[o + 0] = TYPE_DIRECTIONAL
+	_pack_buf[o + 1] = flags
+	_pack_buf[o + 2] = float(light.light_mask)
+	_pack_buf[o + 3] = 1.0
 
-## Pack one spot light into row `row`: a point light (texels 0 to 3) plus a cone
-## (texel 4). The node's local +X (its rotation) is the direction the cone aims.
-func _pack_spot(img: Image, row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
+	# Texel 1: dir.x | dir.y | (range unused) | energy
+	_pack_buf[o + 4] = dir_px.x
+	_pack_buf[o + 5] = dir_px.y
+	_pack_buf[o + 6] = 0.0
+	_pack_buf[o + 7] = light.energy
+
+	# Texel 2: color.rgb | height
+	_pack_buf[o + 8] = light.color.r
+	_pack_buf[o + 9] = light.color.g
+	_pack_buf[o + 10] = light.color.b
+	_pack_buf[o + 11] = light.height
+
+	# Texel 3: shadow_color.rgb | shadow_hardness
+	_pack_buf[o + 12] = light.shadow_color.r
+	_pack_buf[o + 13] = light.shadow_color.g
+	_pack_buf[o + 14] = light.shadow_color.b
+	_pack_buf[o + 15] = light.shadow_hardness
+
+## Pack one spot light: a point light (texels 0 to 3) plus a cone (texel 4). The node's
+## local +X (its rotation) is the direction the cone aims.
+func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
 	var screen_px: Vector2 = canvas_xform * light.global_position
 	var uv := screen_px / vp_size
 
@@ -161,23 +244,147 @@ func _pack_spot(img: Image, row: int, light: LitSpotLight2D, canvas_xform: Trans
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive
 	const TYPE_SPOT := 2.0
 
-	# Texel 0: uv.x | uv.y | range | energy
-	img.set_pixel(0, row, Color(uv.x, uv.y, light.range, light.energy))
-	# Texel 1: color.r | color.g | color.b | height
-	img.set_pixel(1, row, Color(light.color.r, light.color.g, light.color.b, light.height))
-	# Texel 2: shadow_color.rgb | shadow_hardness
-	img.set_pixel(2, row, Color(light.shadow_color.r, light.shadow_color.g, light.shadow_color.b, light.shadow_hardness))
-	# Texel 3: type | flags | light_mask | falloff
-	img.set_pixel(3, row, Color(TYPE_SPOT, flags, float(light.light_mask), light.falloff))
-	# Texel 4: aim.x | aim.y | cos_outer | cos_inner
-	img.set_pixel(4, row, Color(aim_px.x, aim_px.y, cos_outer, cos_inner))
+	var o := row * TEXELS_PER_LIGHT * 4
 
+	# Texel 0: type | flags | light_mask | falloff
+	_pack_buf[o + 0] = TYPE_SPOT
+	_pack_buf[o + 1] = flags
+	_pack_buf[o + 2] = float(light.light_mask)
+	_pack_buf[o + 3] = light.falloff
+
+	# Texel 1: uv.x | uv.y | range | energy
+	_pack_buf[o + 4] = uv.x
+	_pack_buf[o + 5] = uv.y
+	_pack_buf[o + 6] = light.range
+	_pack_buf[o + 7] = light.energy
+
+	# Texel 2: color.rgb | height
+	_pack_buf[o + 8] = light.color.r
+	_pack_buf[o + 9] = light.color.g
+	_pack_buf[o + 10] = light.color.b
+	_pack_buf[o + 11] = light.height
+
+	# Texel 3: shadow_color.rgb | shadow_hardness
+	_pack_buf[o + 12] = light.shadow_color.r
+	_pack_buf[o + 13] = light.shadow_color.g
+	_pack_buf[o + 14] = light.shadow_color.b
+	_pack_buf[o + 15] = light.shadow_hardness
+
+	# Texel 4: aim.x | aim.y | cos_outer | cos_inner
+	_pack_buf[o + 16] = aim_px.x
+	_pack_buf[o + 17] = aim_px.y
+	_pack_buf[o + 18] = cos_outer
+	_pack_buf[o + 19] = cos_inner
+
+## Bin each positional light into the tiles its screen-space bounding box touches, then
+## upload a per-tile header (offset + count) and a flat index list of light rows. The
+## shader reads its own tile's header and shades only those rows. Directionals are skipped
+## (they're full-screen and shaded directly).
+func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2) -> void:
+	var tiles_x := int(ceil(vp_size.x / float(TILE_SIZE)))
+	var tiles_y := int(ceil(vp_size.y / float(TILE_SIZE)))
+	tiles_x = max(tiles_x, 1)
+	tiles_y = max(tiles_y, 1)
+	var tile_count := tiles_x * tiles_y
+
+	# One index bucket per tile, filled with the rows of the lights that reach it.
+	var buckets: Array = []
+	buckets.resize(tile_count)
+	for t in tile_count:
+		buckets[t] = PackedInt32Array()
+
+	# World range to screen pixels. Use the larger canvas-basis axis so a zoomed or
+	# non-uniformly scaled view over-includes rather than clips a light's footprint.
+	var sx := canvas_xform.x.length()
+	var sy := canvas_xform.y.length()
+	var scale := maxf(sx, sy)
+
+	for i in visible.size():
+		# Directionals aren't tiled; the shader sweeps them for every fragment.
+		if visible[i] is LitDirectionalLight2D:
+			continue
+
+		# range lives on each positional light type; fetch it dynamically.
+		var light := visible[i] as Node2D
+		var center: Vector2 = canvas_xform * light.global_position
+		var light_range: float = float(light.get("range")) * scale
+
+		# Tile span of the light's screen AABB, clamped to the grid.
+		var tx0 := int(floor((center.x - light_range) / float(TILE_SIZE)))
+		var tx1 := int(floor((center.x + light_range) / float(TILE_SIZE)))
+		var ty0 := int(floor((center.y - light_range) / float(TILE_SIZE)))
+		var ty1 := int(floor((center.y + light_range) / float(TILE_SIZE)))
+		tx0 = clampi(tx0, 0, tiles_x - 1)
+		tx1 = clampi(tx1, 0, tiles_x - 1)
+		ty0 = clampi(ty0, 0, tiles_y - 1)
+		ty1 = clampi(ty1, 0, tiles_y - 1)
+
+		for ty in range(ty0, ty1 + 1):
+			var row_base := ty * tiles_x
+			for tx in range(tx0, tx1 + 1):
+				buckets[row_base + tx].push_back(i)
+
+	# Header is one texel per tile; the index list is INDEX_TEX_WIDTH-wide and as many
+	# rows as it takes to hold every (tile, light) entry.
+	var header_img := Image.create(tiles_x, tiles_y, false, Image.FORMAT_RGBAF)
+	var total_indices := 0
+	for t in tile_count:
+		total_indices += buckets[t].size()
+
+	var idx_rows := int(ceil(float(maxi(total_indices, 1)) / float(INDEX_TEX_WIDTH)))
+	var index_img := Image.create(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF)
+
+	# Lay buckets out contiguously: each tile's header records its start offset and count.
+	var offset := 0
+	for t in tile_count:
+		var bucket: PackedInt32Array = buckets[t]
+		var cnt := bucket.size()
+		var hx := t % tiles_x
+		var hy := t / tiles_x
+		header_img.set_pixel(hx, hy, Color(float(offset), float(cnt), 0.0, 0.0))
+		for j in cnt:
+			var flat := offset + j
+			index_img.set_pixel(flat % INDEX_TEX_WIDTH, flat / INDEX_TEX_WIDTH, Color(float(bucket[j]), 0.0, 0.0, 0.0))
+		offset += cnt
+
+	_tile_header_tex = _make_or_update(_tile_header_tex, header_img)
+	_tile_index_tex = _make_or_update(_tile_index_tex, index_img)
+
+	RenderingServer.global_shader_parameter_set("lit_tile_size", TILE_SIZE)
+	RenderingServer.global_shader_parameter_set("lit_tile_grid", Vector2i(tiles_x, tiles_y))
+	RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
+	RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
+
+## Publish a valid but empty tile grid (all counts zero) for the zero-light case, so the
+## shader's tiling path stays valid and simply shades nothing.
+func _publish_empty_tiles(vp_size: Vector2) -> void:
+	var tiles_x := max(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
+	var tiles_y := max(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
+	var header_img := Image.create(tiles_x, tiles_y, false, Image.FORMAT_RGBAF)
+	header_img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var index_img := Image.create(INDEX_TEX_WIDTH, 1, false, Image.FORMAT_RGBAF)
+
+	_tile_header_tex = _make_or_update(_tile_header_tex, header_img)
+	_tile_index_tex = _make_or_update(_tile_index_tex, index_img)
+
+	RenderingServer.global_shader_parameter_set("lit_tile_size", TILE_SIZE)
+	RenderingServer.global_shader_parameter_set("lit_tile_grid", Vector2i(tiles_x, tiles_y))
+	RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
+	RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
+
+## Reuse an ImageTexture when the image size is unchanged; reallocate on resize.
+## ImageTexture.get_size() is Vector2 while Image.get_size() is Vector2i, so compare
+## in a single type.
+func _make_or_update(tex: ImageTexture, img: Image) -> ImageTexture:
+	if tex == null or tex.get_size() != Vector2(img.get_size()):
+		return ImageTexture.create_from_image(img)
+	tex.update(img)
+	return tex
 
 ## True if a light's `range`-expanded AABB intersects the visible world rect.
 func _aabb_visible(pos: Vector2, light_range: float, world_rect: Rect2) -> bool:
 	var aabb := Rect2(pos - Vector2(light_range, light_range), Vector2(light_range * 2.0, light_range * 2.0))
 	return world_rect.intersects(aabb)
-
 
 ## Visible screen rect transformed into world space.
 func _visible_world_rect(canvas_xform: Transform2D, vp_size: Vector2) -> Rect2:
@@ -188,17 +395,67 @@ func _visible_world_rect(canvas_xform: Transform2D, vp_size: Vector2) -> Rect2:
 	rect = rect.expand(inv * vp_size)
 	return rect
 
-
-## Reuse the ImageTexture when the light count is unchanged; reallocate on resize.
-## Note: ImageTexture.get_size() is Vector2 while Image.get_size() is Vector2i,
-## so compare in a single type.
-func _update_texture(img: Image) -> void:
-	if _texture == null or _texture.get_size() != Vector2(img.get_size()):
-		_texture = ImageTexture.create_from_image(img)
+## Upload _pack_buf (TEXELS_PER_LIGHT x count RGBAF) to the light-data texture, reusing
+## the Image and ImageTexture across frames and only reallocating when count changes.
+func _upload_pack_buffer(count: int) -> void:
+	var bytes := _pack_buf.to_byte_array()
+	if _pack_img == null or _pack_img_count != count:
+		_pack_img = Image.create_from_data(TEXELS_PER_LIGHT, count, false, Image.FORMAT_RGBAF, bytes)
+		_pack_img_count = count
 	else:
-		_texture.update(img)
+		_pack_img.set_data(TEXELS_PER_LIGHT, count, false, Image.FORMAT_RGBAF, bytes)
 
+	if _texture == null or _texture.get_size() != Vector2(TEXELS_PER_LIGHT, count):
+		_texture = ImageTexture.create_from_image(_pack_img)
+	else:
+		_texture.update(_pack_img)
 
+## Return the cached [node, kind] light list, rebinding tree-change signals and
+## rebuilding the cache only when the tree changed or a node entered/left it.
+func _get_cached_lights(tree: SceneTree) -> Array:
+	if tree != _cache_tree:
+		_bind_cache_tree(tree)
+		_cache_dirty = true
+	if _cache_dirty:
+		_rebuild_light_cache(tree)
+	return _light_cache
+
+## Move the node_added/node_removed subscriptions to `tree`, so any node entering or
+## leaving (lights included) marks the cache dirty for the next refresh.
+func _bind_cache_tree(tree: SceneTree) -> void:
+	if _cache_tree != null and is_instance_valid(_cache_tree):
+		if _cache_tree.node_added.is_connected(_on_tree_changed):
+			_cache_tree.node_added.disconnect(_on_tree_changed)
+		if _cache_tree.node_removed.is_connected(_on_tree_changed):
+			_cache_tree.node_removed.disconnect(_on_tree_changed)
+	_cache_tree = tree
+	if tree != null:
+		if not tree.node_added.is_connected(_on_tree_changed):
+			tree.node_added.connect(_on_tree_changed)
+		if not tree.node_removed.is_connected(_on_tree_changed):
+			tree.node_removed.connect(_on_tree_changed)
+
+func _on_tree_changed(_node: Node) -> void:
+	_cache_dirty = true
+
+## Rescan the lit_lights group and store [node, kind] (kind: 0 point, 1 directional,
+## 2 spot) so refresh() avoids the group scan and per-node type dispatch each frame.
+func _rebuild_light_cache(tree: SceneTree) -> void:
+	_light_cache.clear()
+	for node in tree.get_nodes_in_group("lit_lights"):
+		var kind := -1
+		if node is LitDirectionalLight2D:
+			kind = 1
+		elif node is LitPointLight2D:
+			kind = 0
+		elif node is LitSpotLight2D:
+			kind = 2
+		if kind >= 0:
+			_light_cache.append([node, kind])
+	_cache_dirty = false
+
+## 1x1 RGBAF texture published as the light data when there are no lights, so the
+## sampler global is always valid.
 func _get_dummy() -> ImageTexture:
 	if _dummy == null:
 		var img := Image.create(1, 1, false, Image.FORMAT_RGBAF)
