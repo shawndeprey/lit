@@ -3,6 +3,19 @@
 extends Node2D
 class_name LitCanvasModulate
 
+## Ambient / darkness source.
+##
+## Feeds ambient color and energy to receivers through the `lit_ambient_color` and
+## `lit_ambient_energy` global shader uniforms. Lights resolve together with ambient
+## inside the receiver, so they always punch through the darkness.
+##
+## This replaces the native CanvasModulate rather than accompanying it. A live native
+## CanvasModulate would multiply our already-correct output and double-darken, so we
+## warn at edit time and runtime if one is present.
+##
+## Only one active LitCanvasModulate is expected; if several exist, the last one to
+## enter the tree wins (each writes the globals on enter and on change).
+
 const GROUP := "lit_canvas_modulate"
 
 @export var color: Color = Color("#1a1a1a"):
@@ -15,18 +28,24 @@ const GROUP := "lit_canvas_modulate"
 		ambient_energy = value
 		_apply()
 
+
 func _enter_tree() -> void:
 	add_to_group(GROUP)
 	_apply()
 	_warn_if_conflicting()
 	update_configuration_warnings()
 
+
 func _exit_tree() -> void:
 	remove_from_group(GROUP)
 
+
+## Publish ambient to the global shader uniforms. Works at edit time too, tinting the
+## editor viewport for a live darkness preview.
 func _apply() -> void:
 	RenderingServer.global_shader_parameter_set("lit_ambient_color", color)
 	RenderingServer.global_shader_parameter_set("lit_ambient_energy", ambient_energy)
+
 
 func _warn_if_conflicting() -> void:
 	if Engine.is_editor_hint():
@@ -35,6 +54,7 @@ func _warn_if_conflicting() -> void:
 		push_warning("LitCanvasModulate: a native CanvasModulate is present and will double-darken Lit output. Remove it.")
 	if get_tree().get_nodes_in_group(GROUP).size() > 1:
 		push_warning("LitCanvasModulate: multiple instances found; the last one in the tree wins.")
+
 
 func _get_configuration_warnings() -> PackedStringArray:
 	var warnings: PackedStringArray = []
@@ -45,6 +65,7 @@ func _get_configuration_warnings() -> PackedStringArray:
 	if get_tree().get_nodes_in_group(GROUP).size() > 1:
 		warnings.append("Multiple LitCanvasModulate nodes found. Only one is expected; the last one in the tree wins.")
 	return warnings
+
 
 func _find_native_canvas_modulate() -> bool:
 	var root := get_tree().get_edited_scene_root() if Engine.is_editor_hint() else get_tree().get_root()
