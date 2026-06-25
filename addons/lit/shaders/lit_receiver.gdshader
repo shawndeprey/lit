@@ -63,12 +63,13 @@ uniform float directional_shadow_reach = 1.0;
 // of k * d / t for the penumbra. Returns 1 fully lit, 0 occluded. max_steps lets the
 // caller spend fewer iterations on short marches; the loop bound stays constant so it
 // can unroll.
-float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps) {
+float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps, bool frag_in_occluder) {
 	// Screen-space SDF has no notion of 2D draw order. A fragment sitting inside
 	// an occluder's footprint is treated as on top of it, so a sprite drawn over
 	// an occluder stays lit instead of self-shadowing. (Distinct occluders that
-	// lie between this fragment and the light still cast normally.)
-	if (texture_sdf(frag_sdf) <= 0.0) {
+	// lie between this fragment and the light still cast normally.) The sample is
+	// fragment-constant, so the caller passes it in.
+	if (frag_in_occluder) {
 		return 1.0;
 	}
 	vec2 delta = light_sdf - frag_sdf;
@@ -98,7 +99,7 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps) {
 // subtractive light). Called once per light affecting the fragment, from the directional
 // sweep and the per-tile loop in fragment().
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
-		vec2 frag_uv, vec2 frag_sdf, float sdf_diag) {
+		vec2 frag_uv, vec2 frag_sdf, float sdf_diag, bool frag_in_occluder) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
 	vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0);
@@ -148,7 +149,9 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			return vec3(0.0);                // beyond range
 		}
 		Ldir = normalize(vec3(to_light_px, height));
-		atten = pow(clamp(1.0 - dist / range, 0.0, 1.0), falloff);
+		// falloff is the attenuation-curve exponent; 1.0 is linear, so skip the pow.
+		float falloff_base = clamp(1.0 - dist / range, 0.0, 1.0);
+		atten = (falloff == 1.0) ? falloff_base : pow(falloff_base, falloff);
 
 		// A spot is a point light masked to a cone (texel 4): aim.xy is the
 		// screen-space direction it points. The fragment is lit if it falls inside
@@ -215,7 +218,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			steps = clamp(steps, 16, lit_shadow_steps_max);
 		}
 
-		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps);
+		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps, frag_in_occluder);
 		contribution *= mix(t3.rgb, vec3(1.0), s);
 	}
 
@@ -237,6 +240,10 @@ void fragment() {
 	vec2 frag_uv = SCREEN_UV;                     // canonical screen-UV space
 	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // shadow-march space
 
+	// Self-shadow guard (see lit_shadow): a fragment inside an occluder's own footprint
+	// stays lit. Fragment-constant, so sampled once here.
+	bool frag_in_occluder = texture_sdf(frag_sdf) <= 0.0;
+
 	// Screen diagonal in SDF units: the natural scale for a directional shadow's march
 	// distance, keeping the step budget well-sampled at any resolution.
 	float sdf_diag = length(screen_uv_to_sdf(vec2(1.0)) - screen_uv_to_sdf(vec2(0.0)));
@@ -249,7 +256,7 @@ void fragment() {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
 		// leading directional rows for every fragment.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag, frag_in_occluder);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -263,12 +270,12 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag, frag_in_occluder);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag, frag_in_occluder);
 		}
 	}
 

@@ -34,6 +34,17 @@ var _dummy: ImageTexture
 var _tile_header_tex: ImageTexture
 var _tile_index_tex: ImageTexture
 
+# Reused scratch for the tile grid, kept across frames. Header/index data is written into
+# the float buffers and uploaded via create_from_data/set_data. _tile_counts/_tile_offsets/
+# _tile_spans drive a counting sort: tally per tile, prefix-sum to offsets, scatter rows.
+var _tile_header_img: Image
+var _tile_index_img: Image
+var _tile_header_buf: PackedFloat32Array = PackedFloat32Array()
+var _tile_index_buf: PackedFloat32Array = PackedFloat32Array()
+var _tile_counts: PackedInt32Array = PackedInt32Array()
+var _tile_offsets: PackedInt32Array = PackedInt32Array()
+var _tile_spans: PackedInt32Array = PackedInt32Array()
+
 # Reused scratch for packing: write floats straight into _pack_buf and upload once,
 # instead of per-texel Image.set_pixel calls. _pack_img is kept across frames and only
 # reallocated when the light count changes.
@@ -281,27 +292,33 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 ## shader reads its own tile's header and shades only those rows. Directionals are skipped
 ## (they're full-screen and shaded directly).
 func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2) -> void:
-	var tiles_x := int(ceil(vp_size.x / float(TILE_SIZE)))
-	var tiles_y := int(ceil(vp_size.y / float(TILE_SIZE)))
-	tiles_x = max(tiles_x, 1)
-	tiles_y = max(tiles_y, 1)
+	var tiles_x := maxi(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
+	var tiles_y := maxi(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
 	var tile_count := tiles_x * tiles_y
 
-	# One index bucket per tile, filled with the rows of the lights that reach it.
-	var buckets: Array = []
-	buckets.resize(tile_count)
-	for t in tile_count:
-		buckets[t] = PackedInt32Array()
+	# Per-tile entry counts (how many lights touch each tile), reused across frames.
+	if _tile_counts.size() != tile_count:
+		_tile_counts.resize(tile_count)
+	_tile_counts.fill(0)
 
 	# World range to screen pixels. Use the larger canvas-basis axis so a zoomed or
 	# non-uniformly scaled view over-includes rather than clips a light's footprint.
-	var sx := canvas_xform.x.length()
-	var sy := canvas_xform.y.length()
-	var scale := maxf(sx, sy)
+	var scale := maxf(canvas_xform.x.length(), canvas_xform.y.length())
 
-	for i in visible.size():
-		# Directionals aren't tiled; the shader sweeps them for every fragment.
+	# Per-light clamped tile span, computed once here and reused by the scatter pass below.
+	# Four ints per light: tx0 | tx1 | ty0 | ty1. Directionals (and any empty span) are
+	# marked tx0 > tx1 so the scatter pass skips them without another type check.
+	var n := visible.size()
+	if _tile_spans.size() != n * 4:
+		_tile_spans.resize(n * 4)
+
+	# Pass 1: tally how many lights land in each tile, recording each light's span.
+	for i in n:
+		var so := i * 4
 		if visible[i] is LitDirectionalLight2D:
+			# Directionals aren't tiled; the shader sweeps them for every fragment.
+			_tile_spans[so] = 1      # tx0 > tx1 marks "skip"
+			_tile_spans[so + 1] = 0
 			continue
 
 		# range lives on each positional light type; fetch it dynamically.
@@ -310,45 +327,68 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2) -
 		var light_range: float = float(light.get("range")) * scale
 
 		# Tile span of the light's screen AABB, clamped to the grid.
-		var tx0 := int(floor((center.x - light_range) / float(TILE_SIZE)))
-		var tx1 := int(floor((center.x + light_range) / float(TILE_SIZE)))
-		var ty0 := int(floor((center.y - light_range) / float(TILE_SIZE)))
-		var ty1 := int(floor((center.y + light_range) / float(TILE_SIZE)))
-		tx0 = clampi(tx0, 0, tiles_x - 1)
-		tx1 = clampi(tx1, 0, tiles_x - 1)
-		ty0 = clampi(ty0, 0, tiles_y - 1)
-		ty1 = clampi(ty1, 0, tiles_y - 1)
+		var tx0 := clampi(int(floor((center.x - light_range) / float(TILE_SIZE))), 0, tiles_x - 1)
+		var tx1 := clampi(int(floor((center.x + light_range) / float(TILE_SIZE))), 0, tiles_x - 1)
+		var ty0 := clampi(int(floor((center.y - light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
+		var ty1 := clampi(int(floor((center.y + light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
+		_tile_spans[so] = tx0
+		_tile_spans[so + 1] = tx1
+		_tile_spans[so + 2] = ty0
+		_tile_spans[so + 3] = ty1
 
 		for ty in range(ty0, ty1 + 1):
 			var row_base := ty * tiles_x
 			for tx in range(tx0, tx1 + 1):
-				buckets[row_base + tx].push_back(i)
+				_tile_counts[row_base + tx] += 1
 
-	# Header is one texel per tile; the index list is INDEX_TEX_WIDTH-wide and as many
-	# rows as it takes to hold every (tile, light) entry.
-	var header_img := Image.create(tiles_x, tiles_y, false, Image.FORMAT_RGBAF)
-	var total_indices := 0
-	for t in tile_count:
-		total_indices += buckets[t].size()
-
-	var idx_rows := int(ceil(float(maxi(total_indices, 1)) / float(INDEX_TEX_WIDTH)))
-	var index_img := Image.create(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF)
-
-	# Lay buckets out contiguously: each tile's header records its start offset and count.
+	# Prefix-sum the counts into per-tile start offsets and write the header texel
+	# (offset | count) for each tile. _tile_offsets doubles as the scatter cursor below.
+	if _tile_header_buf.size() != tile_count * 4:
+		_tile_header_buf.resize(tile_count * 4)
+	if _tile_offsets.size() != tile_count:
+		_tile_offsets.resize(tile_count)
 	var offset := 0
 	for t in tile_count:
-		var bucket: PackedInt32Array = buckets[t]
-		var cnt := bucket.size()
-		var hx := t % tiles_x
-		var hy := t / tiles_x
-		header_img.set_pixel(hx, hy, Color(float(offset), float(cnt), 0.0, 0.0))
-		for j in cnt:
-			var flat := offset + j
-			index_img.set_pixel(flat % INDEX_TEX_WIDTH, flat / INDEX_TEX_WIDTH, Color(float(bucket[j]), 0.0, 0.0, 0.0))
+		var cnt := _tile_counts[t]
+		_tile_offsets[t] = offset
+		var ho := t * 4
+		_tile_header_buf[ho] = float(offset)
+		_tile_header_buf[ho + 1] = float(cnt)
+		_tile_header_buf[ho + 2] = 0.0
+		_tile_header_buf[ho + 3] = 0.0
 		offset += cnt
+	var total_indices := offset
 
-	_tile_header_tex = _make_or_update(_tile_header_tex, header_img)
-	_tile_index_tex = _make_or_update(_tile_index_tex, index_img)
+	# Flat index list: INDEX_TEX_WIDTH-wide, as many rows as it takes. Only each texel's
+	# .r is read, and only within a tile's [offset, offset+count) range; every such slot
+	# is written by the scatter below, so the buffer needs no clearing.
+	var idx_rows := int(ceil(float(maxi(total_indices, 1)) / float(INDEX_TEX_WIDTH)))
+	if _tile_index_buf.size() != INDEX_TEX_WIDTH * idx_rows * 4:
+		_tile_index_buf.resize(INDEX_TEX_WIDTH * idx_rows * 4)
+
+	# Pass 2: scatter each positional light's row into its tiles, advancing the cursor.
+	# A flat index maps to RGBAF float-buffer slot flat * 4 (the texel's .r channel).
+	for i in n:
+		var so := i * 4
+		var tx0 := _tile_spans[so]
+		var tx1 := _tile_spans[so + 1]
+		if tx0 > tx1:
+			continue
+		var ty0 := _tile_spans[so + 2]
+		var ty1 := _tile_spans[so + 3]
+		for ty in range(ty0, ty1 + 1):
+			var row_base := ty * tiles_x
+			for tx in range(tx0, tx1 + 1):
+				var t := row_base + tx
+				var pos := _tile_offsets[t]
+				_tile_offsets[t] = pos + 1
+				_tile_index_buf[pos * 4] = float(i)
+
+	# Upload via reused Image/ImageTexture.
+	_tile_header_img = _image_from_floats(_tile_header_img, tiles_x, tiles_y, _tile_header_buf)
+	_tile_index_img = _image_from_floats(_tile_index_img, INDEX_TEX_WIDTH, idx_rows, _tile_index_buf)
+	_tile_header_tex = _make_or_update(_tile_header_tex, _tile_header_img)
+	_tile_index_tex = _make_or_update(_tile_index_tex, _tile_index_img)
 
 	RenderingServer.global_shader_parameter_set("lit_tile_size", TILE_SIZE)
 	RenderingServer.global_shader_parameter_set("lit_tile_grid", Vector2i(tiles_x, tiles_y))
@@ -358,8 +398,8 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2) -
 ## Publish a valid but empty tile grid (all counts zero) for the zero-light case, so the
 ## shader's tiling path stays valid and simply shades nothing.
 func _publish_empty_tiles(vp_size: Vector2) -> void:
-	var tiles_x := max(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
-	var tiles_y := max(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
+	var tiles_x := maxi(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
+	var tiles_y := maxi(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
 	var header_img := Image.create(tiles_x, tiles_y, false, Image.FORMAT_RGBAF)
 	header_img.fill(Color(0.0, 0.0, 0.0, 0.0))
 	var index_img := Image.create(INDEX_TEX_WIDTH, 1, false, Image.FORMAT_RGBAF)
@@ -371,6 +411,16 @@ func _publish_empty_tiles(vp_size: Vector2) -> void:
 	RenderingServer.global_shader_parameter_set("lit_tile_grid", Vector2i(tiles_x, tiles_y))
 	RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
 	RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
+
+## Build or refresh a width x height RGBAF Image from a float buffer, reusing the Image
+## across frames and only reallocating when the dimensions change. The buffer must hold
+## width * height * 4 floats (RGBA row-major).
+func _image_from_floats(img: Image, width: int, height: int, buf: PackedFloat32Array) -> Image:
+	var bytes := buf.to_byte_array()
+	if img == null or img.get_width() != width or img.get_height() != height:
+		return Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, bytes)
+	img.set_data(width, height, false, Image.FORMAT_RGBAF, bytes)
+	return img
 
 ## Reuse an ImageTexture when the image size is unchanged; reallocate on resize.
 ## ImageTexture.get_size() is Vector2 while Image.get_size() is Vector2i, so compare
