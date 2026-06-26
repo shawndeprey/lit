@@ -13,7 +13,13 @@ class_name LitSprite2D
 ## receiver_mask) as @exports that proxy to this node's own ShaderMaterial, so every
 ## LitSprite2D can be tuned and masked independently.
 
-const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver.gdshader")
+# Loaded lazily in _init rather than via a top-level `const preload`. Because this script
+# has a `class_name`, the editor parses it at startup to build the global class list, and a
+# `preload` const would compile the receiver shader right then, before the plugin's
+# _enter_tree has registered the lit_* global uniforms. On a fresh install that produces a
+# benign "Global uniform does not exist" error. Deferring to _init means the shader isn't
+# compiled until a LitSprite2D is actually instantiated, by which point the globals exist.
+const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 
 ## Emissive strength: these pixels ignore the dark. Proxies to the material's
 ## `emissive_strength` uniform.
@@ -36,7 +42,7 @@ func _init() -> void:
 	# below, which is what we want.
 	if material == null:
 		var mat := ShaderMaterial.new()
-		mat.shader = RECEIVER_SHADER
+		mat.shader = load(RECEIVER_SHADER_PATH)
 		material = mat
 	if texture == null:
 		texture = CanvasTexture.new()
