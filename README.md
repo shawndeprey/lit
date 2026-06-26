@@ -2,7 +2,7 @@
   <img src="branding/Lit-Logo-Text.png" alt="Lit" width="220">
 </p>
 
-<p align="center"><b>Drop-in 2D lighting for Godot 4 — with no light limit.</b></p>
+<p align="center"><b>Drop-in 2D lighting for Godot 4 — with no light limit.</b> (<a href="https://fadinglantern.com/docs/lit">Docs</a>)</p>
 
 <p align="center">
   <img alt="Godot 4.4+" src="https://img.shields.io/badge/Godot-4.4%2B-478CBF?logo=godotengine&logoColor=white">
@@ -50,7 +50,7 @@ show off what you built? Come hang out in our Discord:
 
 ---
 
-## Quickstart
+## Quickstart ([Lit Docs](https://fadinglantern.com/docs/lit))
 
 1. **Enable the plugin.** Project → Project Settings → Plugins → turn on **Lit**. Reload
    the project if Godot asks.

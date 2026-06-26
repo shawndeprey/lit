@@ -1,6 +1,6 @@
 # Lit
 
-**Drop-in 2D lighting for Godot 4 — with no light limit.**
+**Drop-in 2D lighting for Godot 4 — with no light limit.** ([Docs](https://fadinglantern.com/docs/lit))
 
 Lit is an alongside replacement for Godot's built-in 2D lights. It keeps the parts you
 like (add a node, set some values, done) and fixes the part you don't: the hard cap of
@@ -26,7 +26,7 @@ Prefer videos? Subscribe on YouTube:
 
 ---
 
-## Quickstart
+## Quickstart ([Lit Docs](https://fadinglantern.com/docs/lit))
 
 1. **Enable the plugin.** Project → Project Settings → Plugins → turn on **Lit**. Reload
    the project if Godot asks.
