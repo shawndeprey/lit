@@ -68,6 +68,15 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	var canvas_xform := viewport.get_global_canvas_transform() * viewport.get_canvas_transform()
 	var world_rect := _visible_world_rect(canvas_xform, vp_size)
 
+	# World-to-screen pixel scale (camera/editor zoom). The shader does point/spot lighting
+	# in screen pixels, so it multiplies each light's world-space range and height by this
+	# to keep the math identical at any zoom. maxf of the basis axes matches the tiling
+	# scale below, so the shader's effective range never exceeds the tiled footprint (a
+	# smaller shader scale would just under-light; a larger one would cull lit tiles).
+	# Published before the early returns so the uniform is always fresh.
+	var canvas_scale := maxf(canvas_xform.x.length(), canvas_xform.y.length())
+	RenderingServer.global_shader_parameter_set("lit_canvas_scale", canvas_scale)
+
 	# Collect enabled, visible lights from the cache. Point and spot lights are
 	# AABB-culled against the visible world rect; directional lights are never
 	# positionally culled. A freed node marks the cache dirty so it rebuilds next frame.
@@ -134,7 +143,7 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	_upload_pack_buffer(count)
 
 	# Bin the positional lights into the screen-tile grid the shader culls against.
-	_build_tiles(visible, canvas_xform, vp_size)
+	_build_tiles(visible, canvas_xform, vp_size, canvas_scale)
 
 	# Publish globals.
 	RenderingServer.global_shader_parameter_set("lit_light_count", count)
@@ -280,7 +289,7 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 ## upload a per-tile header (offset + count) and a flat index list of light rows. The
 ## shader reads its own tile's header and shades only those rows. Directionals are skipped
 ## (they're full-screen and shaded directly).
-func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2) -> void:
+func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, scale: float) -> void:
 	var tiles_x := int(ceil(vp_size.x / float(TILE_SIZE)))
 	var tiles_y := int(ceil(vp_size.y / float(TILE_SIZE)))
 	tiles_x = max(tiles_x, 1)
@@ -293,11 +302,9 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2) -
 	for t in tile_count:
 		buckets[t] = PackedInt32Array()
 
-	# World range to screen pixels. Use the larger canvas-basis axis so a zoomed or
-	# non-uniformly scaled view over-includes rather than clips a light's footprint.
-	var sx := canvas_xform.x.length()
-	var sy := canvas_xform.y.length()
-	var scale := maxf(sx, sy)
+	# `scale` is the world-to-screen pixel factor (the larger canvas-basis axis, so a
+	# zoomed or non-uniformly scaled view over-includes rather than clips a light's
+	# footprint). It matches the shader's lit_canvas_scale, computed once in refresh().
 
 	for i in visible.size():
 		# Directionals aren't tiled; the shader sweeps them for every fragment.

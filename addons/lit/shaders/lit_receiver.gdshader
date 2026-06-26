@@ -8,6 +8,7 @@ global uniform sampler2D lit_light_data;
 global uniform int       lit_light_count;
 global uniform int       lit_directional_count;         // directionals occupy rows [0, this)
 global uniform vec2      lit_viewport_size;             // pixels
+global uniform float     lit_canvas_scale;              // world-to-screen px scale (camera/editor zoom)
 global uniform vec4      lit_ambient_color : source_color;
 global uniform float     lit_ambient_energy;
 
@@ -141,14 +142,19 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		atten = 1.0;
 		shadow_dir_uv = dir_px / lit_viewport_size; // pixel dir to UV dir
 	} else {
-		// Point or spot: work in pixels.
+		// Point or spot: work in screen pixels. `range` and `height` are authored in
+		// world units, so scale them by the world-to-screen factor (camera/editor zoom)
+		// into the same space as to_light_px below. The factor cancels in both dist/range
+		// and the Ldir normalize, so point/spot shading is identical at any zoom.
+		float range_px = range * lit_canvas_scale;
+		float height_px = height * lit_canvas_scale;
 		vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
 		float dist = length(to_light_px);
-		if (dist > range) {
+		if (dist > range_px) {
 			return vec3(0.0);                // beyond range
 		}
-		Ldir = normalize(vec3(to_light_px, height));
-		atten = pow(clamp(1.0 - dist / range, 0.0, 1.0), falloff);
+		Ldir = normalize(vec3(to_light_px, height_px));
+		atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
 
 		// A spot is a point light masked to a cone (texel 4): aim.xy is the
 		// screen-space direction it points. The fragment is lit if it falls inside
