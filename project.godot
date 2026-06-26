@@ -31,6 +31,10 @@ window/stretch/aspect="expand"
 
 enabled=PackedStringArray("res://addons/lit/plugin.cfg")
 
+[lit]
+
+render/lighting_model=1
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
@@ -99,4 +103,8 @@ lit_tile_indices={
 "repeat": "disable",
 "type": "sampler2D",
 "value": ""
+}
+lit_lighting_model={
+"type": "int",
+"value": 0
 }

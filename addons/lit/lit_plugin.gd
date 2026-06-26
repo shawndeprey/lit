@@ -7,7 +7,8 @@ extends EditorPlugin
 ##  - Register the `lit_*` global shader parameters so receiver shaders compile in the
 ##    editor and in exported builds (see the registration block below for why).
 ##  - Add the runtime `LitManager` autoload that drives the per-frame gather.
-##  - Persist the `lit/quality/*` project settings the shader's adaptive shadow march reads.
+##  - Persist the `lit/*` project settings (the `lit/render/lighting_model` selector and the
+##    `lit/quality/*` adaptive shadow march knobs) that the receiver shader reads.
 ##  - Provide the "Make Selected Nodes Lit" tool and editor-live preview, driving the
 ##    shared gather against the 2D editor viewport (see _process).
 ##
@@ -39,7 +40,7 @@ var _refresh_accum := 0.0
 # enable/disable, so writing project.godot from them churns the file. The split:
 #
 #  - Persistent project.godot entries (the autoload, `shader_globals/*`, and the
-#    `lit/quality/*` settings) are written in _enter_tree but guarded, so they're written
+#    `lit/*` settings) are written in _enter_tree but guarded, so they're written
 #    only when missing, and removed only in _disable_plugin. A normal close never touches
 #    the file, yet the entries self-heal if they ever go missing.
 #  - Session state (live RenderingServer globals, the tool menu, the editor-live refresh)
@@ -48,7 +49,7 @@ var _refresh_accum := 0.0
 func _enter_tree() -> void:
 	_add_live_globals()         # session-only RenderingServer state, not serialized
 	_persist_globals()          # guarded: writes project.godot only if a key is missing
-	_persist_quality_settings() # guarded: same, for the lit/quality/* settings
+	_persist_project_settings() # guarded: same, for the lit/* settings
 	_ensure_autoload()          # guarded: adds only if not already registered
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
@@ -66,7 +67,7 @@ func _disable_plugin() -> void:
 	# Real deactivation, not just an editor close: drop the persistent entries.
 	remove_autoload_singleton(AUTOLOAD_NAME)
 	_unpersist_globals()
-	_unpersist_quality_settings()
+	_unpersist_project_settings()
 
 ## Register the runtime autoload, but only if it isn't already in project.godot.
 ## add_autoload_singleton rewrites and saves the file, so guarding it keeps a normal
@@ -90,6 +91,12 @@ func _process(delta: float) -> void:
 	if _refresh_accum < EDITOR_REFRESH_INTERVAL:
 		return
 	_refresh_accum = 0.0
+	# Mirror the runtime LitManager: publish the selected lighting model so the editor
+	# preview reflects the lit/render/lighting_model setting. The autoload that does this
+	# at runtime doesn't run in the editor, so without this the preview would always be
+	# Phong (the global's default) regardless of the setting.
+	RenderingServer.global_shader_parameter_set("lit_lighting_model",
+		int(ProjectSettings.get_setting("lit/render/lighting_model", 0)))
 	if _registry == null or EditorInterface.get_edited_scene_root() == null:
 		return  # no scene open / nothing to light
 	_registry.refresh(get_tree(), EditorInterface.get_editor_viewport_2d())
@@ -177,6 +184,7 @@ func _ps_global_defs() -> Array:
 		{"name": "lit_tile_size", "def": {"type": "int", "value": 64}},
 		{"name": "lit_tile_grid", "def": {"type": "ivec2", "value": Vector2i.ZERO}},
 		{"name": "lit_directional_count", "def": {"type": "int", "value": 0}},
+		{"name": "lit_lighting_model", "def": {"type": "int", "value": 0}},
 		{
 			"name": "lit_tile_headers",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
@@ -206,6 +214,7 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_tile_size", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 64},
 		{"name": "lit_tile_grid", "type": RenderingServer.GLOBAL_VAR_TYPE_IVEC2, "value": Vector2i.ZERO},
 		{"name": "lit_directional_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
+		{"name": "lit_lighting_model", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_tile_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 	]
@@ -235,11 +244,30 @@ func _unpersist_globals() -> void:
 	if ps_changed:
 		ProjectSettings.save()
 
-## The lit/quality/* project settings, surfaced in Project Settings with typed hints so
-## they get a proper editor (a checkbox and a 1..256 range slider). LitManager reads
-## these at runtime and republishes them as the lit_shadow_* shader globals.
-func _quality_setting_defs() -> Array:
+## The lit/* project settings, surfaced in Project Settings with typed hints so they get
+## a proper editor (a dropdown, a checkbox, a 1..256 range slider). LitManager reads these
+## at runtime and republishes them as shader globals; the editor preview (_process) mirrors
+## the render model so authoring reflects the toggle.
+func _project_setting_defs() -> Array:
 	return [
+		{
+			# 0 = Blinn-Phong (ambient + Lambert + sharpened-N.L specular), 1 = PBR
+			# (metallic-roughness Cook-Torrance). Must match LIT_MODEL_* in the receiver
+			# shader and LitManager.LightingModel.
+			#
+			# The hint_string is the dropdown's only place to convey the tradeoffs: Godot has
+			# no per-option tooltip or description for custom project settings, so a short
+			# inline summary rides on each label. Labels are comma-delimited, so the inline
+			# bullets use ` · ` (never commas) to avoid splitting a label in two.
+			"name": "lit/render/lighting_model",
+			"default": 0,
+			"info": {
+				"name": "lit/render/lighting_model",
+				"type": TYPE_INT,
+				"hint": PROPERTY_HINT_ENUM,
+				"hint_string": "Blinn–Phong (BP) — faster · uses only the CanvasTexture · stylized highlights,Physically Based Rendering (PBR) — realistic surfaces · adds metallic/roughness/AO · slight perf cost",
+			},
+		},
 		{
 			"name": "lit/quality/shadow_step_scaling",
 			"default": false,
@@ -257,12 +285,12 @@ func _quality_setting_defs() -> Array:
 		},
 	]
 
-## Persist the lit/quality/* settings into project.godot, guarded like _persist_globals.
+## Persist the lit/* settings into project.godot, guarded like _persist_globals.
 ## set_initial_value + add_property_info run every enable so the inspector keeps the
 ## default and the typed editor even when the key already exists.
-func _persist_quality_settings() -> void:
+func _persist_project_settings() -> void:
 	var changed := false
-	for d in _quality_setting_defs():
+	for d in _project_setting_defs():
 		if not ProjectSettings.has_setting(d.name):
 			ProjectSettings.set_setting(d.name, d.default)
 			changed = true
@@ -271,10 +299,10 @@ func _persist_quality_settings() -> void:
 	if changed:
 		ProjectSettings.save()
 
-## Remove the persisted lit/quality/* settings. Called from _disable_plugin only.
-func _unpersist_quality_settings() -> void:
+## Remove the persisted lit/* settings. Called from _disable_plugin only.
+func _unpersist_project_settings() -> void:
 	var changed := false
-	for d in _quality_setting_defs():
+	for d in _project_setting_defs():
 		if ProjectSettings.has_setting(d.name):
 			ProjectSettings.set_setting(d.name, null)
 			changed = true

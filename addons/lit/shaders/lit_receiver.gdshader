@@ -12,6 +12,14 @@ global uniform float     lit_canvas_scale;              // world-to-screen px sc
 global uniform vec4      lit_ambient_color : source_color;
 global uniform float     lit_ambient_energy;
 
+// Lighting model selector, published by the manager (and the editor plugin) from the
+// lit/render/lighting_model project setting. 0 = Phong-style (the original ambient +
+// Lambert + sharpened-N.L specular), 1 = PBR (metallic-roughness Cook-Torrance). The
+// branch is on a global uniform, so every receiver honors the toggle live and all
+// fragments take the same path (coherent, cheap). When Phong is selected the PBR-only
+// material inputs are never sampled, so it costs nothing.
+global uniform int       lit_lighting_model;
+
 // Tiled light culling: the manager bins each positional light into a screen-tile grid
 // and uploads a per-tile header (offset + count into the index list) plus a flat index
 // list of light rows. A fragment then shades only the lights in its own tile instead of
@@ -35,6 +43,11 @@ const int LIT_INDEX_TEX_WIDTH = 2048;
 // is clamped to this on the CPU.
 const int LIT_MAX_SHADOW_STEPS = 256;
 
+// Values of lit_lighting_model; must match LightingModel in lit_manager.gd / lit_plugin.gd.
+const int   LIT_MODEL_PHONG = 0;
+const int   LIT_MODEL_PBR   = 1;
+const float LIT_PI = 3.14159265359;
+
 uniform float emissive_strength = 0.0;
 uniform sampler2D emissive_mask : hint_default_white;   // white default lets strength work alone
 
@@ -43,8 +56,24 @@ uniform sampler2D emissive_mask : hint_default_white;   // white default lets st
 // 2D-render-layers control.
 uniform int receiver_mask = 1;
 
+// Phong specular controls (LIT_MODEL_PHONG only). Ignored in PBR mode.
 uniform float specular_strength = 0.5;
 uniform float specular_k = 32.0;
+
+// --- PBR (metallic-roughness) material inputs ---------------------------------------
+// Sampled only when lit_lighting_model == LIT_MODEL_PBR. Each map multiplies its scalar,
+// and the maps default to white so an unassigned map falls back to the scalar alone:
+// leave the scalar and drop in a map, or skip the map and dial the scalar. Metallic 0 is
+// dielectric; roughness 1 is fully matte, the safe default that reads like the plain
+// diffuse look until dialed down. AO modulates the ambient term only. In Phong mode none
+// of these are read, so a PBR-authored material still renders correctly after switching
+// back to Phong (the extra data is simply ignored). Import metallic/roughness/AO maps as
+// linear (uncheck sRGB) for correct values.
+uniform sampler2D metallic_map : hint_default_white;
+uniform float metallic_value : hint_range(0.0, 1.0) = 0.0;
+uniform sampler2D roughness_map : hint_default_white;
+uniform float roughness_value : hint_range(0.0, 1.0) = 1.0;
+uniform sampler2D ao_map : hint_default_white;
 
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
@@ -95,10 +124,35 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps) {
 	return clamp(res, 0.0, 1.0);
 }
 
+// --- PBR helpers (Cook-Torrance microfacet BRDF) ------------------------------------
+// Trowbridge-Reitz / GGX normal distribution.
+float lit_d_ggx(float n_dot_h, float roughness) {
+	float a = roughness * roughness;
+	float a2 = a * a;
+	float d = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+	return a2 / max(LIT_PI * d * d, 1e-6);
+}
+
+// Smith geometry term (Schlick-GGX) using the direct-lighting k remap.
+float lit_g_smith(float n_dot_v, float n_dot_l, float roughness) {
+	float r = roughness + 1.0;
+	float k = (r * r) / 8.0;
+	float gv = n_dot_v / (n_dot_v * (1.0 - k) + k);
+	float gl = n_dot_l / (n_dot_l * (1.0 - k) + k);
+	return gv * gl;
+}
+
+// Schlick Fresnel approximation.
+vec3 lit_f_schlick(float v_dot_h, vec3 f0) {
+	return f0 + (1.0 - f0) * pow(clamp(1.0 - v_dot_h, 0.0, 1.0), 5.0);
+}
+
 // Shade this fragment by light row `i` and return its contribution (negative for a
 // subtractive light). Called once per light affecting the fragment, from the directional
-// sweep and the per-tile loop in fragment().
+// sweep and the per-tile loop in fragment(). metallic/roughness are sampled once per
+// fragment by the caller and used only in PBR mode.
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
+		float metallic, float roughness,
 		vec2 frag_uv, vec2 frag_sdf, float sdf_diag) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
@@ -175,17 +229,47 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 
 	float ndotl = max(dot(N, Ldir), 0.0);
 
-	vec3 diffuse = albedo * light_color * energy * ndotl * atten;
+	vec3 contribution;
+	if (lit_lighting_model == LIT_MODEL_PBR) {
+		// Orthographic 2D view: the eye looks straight down +Z at the canvas, so the view
+		// vector is a constant. This is the 2.5D PBR simplification; there's no per-pixel
+		// view ray, so the half-vector and Fresnel are evaluated against a fixed V.
+		vec3 V = vec3(0.0, 0.0, 1.0);
+		vec3 H = normalize(Ldir + V);
+		float n_dot_v = max(dot(N, V), 1e-4);
+		float n_dot_h = max(dot(N, H), 0.0);
+		float v_dot_h = max(dot(V, H), 0.0);
 
-	// Sharpened N.L lobe, tight and only where the surface tilts toward the light.
-	// Tinted by light_color so the highlight takes the light's hue instead of blowing
-	// out to white. Skipped entirely when there's no specular map or strength.
-	vec3 specular = vec3(0.0);
-	if (specular_strength > 0.0 && dot(spec_shin, spec_shin) > 0.0) {
-		specular = light_color * spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
+		// Dielectric reflectance is a flat 0.04; metals take their reflectance from albedo.
+		vec3 f0 = mix(vec3(0.04), albedo, metallic);
+		float D = lit_d_ggx(n_dot_h, roughness);
+		float G = lit_g_smith(n_dot_v, ndotl, roughness);
+		vec3 F = lit_f_schlick(v_dot_h, f0);
+
+		vec3 spec = (D * G * F) / max(4.0 * n_dot_v * ndotl, 1e-4);
+
+		// Energy left for diffuse after reflection; metals have no diffuse.
+		vec3 kd = (vec3(1.0) - F) * (1.0 - metallic);
+
+		// Lambert term. The canonical 1/PI is folded into the artist-authored light
+		// energy so PBR sits at a brightness comparable to Phong for the same light,
+		// keeping the toggle a look change rather than an exposure change.
+		vec3 diffuse = kd * albedo;
+
+		contribution = (diffuse + spec) * light_color * energy * ndotl * atten;
+	} else {
+		vec3 diffuse = albedo * light_color * energy * ndotl * atten;
+
+		// Sharpened N.L lobe, tight and only where the surface tilts toward the light.
+		// Tinted by light_color so the highlight takes the light's hue instead of blowing
+		// out to white. Skipped entirely when there's no specular map or strength.
+		vec3 specular = vec3(0.0);
+		if (specular_strength > 0.0 && dot(spec_shin, spec_shin) > 0.0) {
+			specular = light_color * spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
+		}
+
+		contribution = diffuse + specular;
 	}
-
-	vec3 contribution = diffuse + specular;
 
 	// Negligible contribution: bail before the expensive SDF shadow march. Below this
 	// the result is indistinguishable from black anyway.
@@ -237,8 +321,21 @@ void fragment() {
 	vec3 spec_shin = SPECULAR_SHININESS.rgb;
 	float shininess = SPECULAR_SHININESS.a;
 
-	// Ambient base: albedo lit by the (dark) ambient term.
-	vec3 lit = albedo * lit_ambient_color.rgb * lit_ambient_energy;
+	// PBR material inputs, sampled once per fragment and only in PBR mode. In Phong mode
+	// they stay at their neutral defaults (never read by lit_shade, and ao = 1 leaves the
+	// ambient term unchanged), so Phong pays for none of these fetches.
+	float metallic = 0.0;
+	float roughness = 1.0;
+	float ao = 1.0;
+	if (lit_lighting_model == LIT_MODEL_PBR) {
+		metallic = clamp(metallic_value * texture(metallic_map, UV).r, 0.0, 1.0);
+		roughness = clamp(roughness_value * texture(roughness_map, UV).r, 0.04, 1.0);
+		ao = texture(ao_map, UV).r;
+	}
+
+	// Ambient base: albedo lit by the (dark) ambient term, attenuated by AO in PBR
+	// (ao = 1 in Phong, so this is a no-op there).
+	vec3 lit = albedo * lit_ambient_color.rgb * lit_ambient_energy * ao;
 
 	vec2 frag_uv = SCREEN_UV;                     // canonical screen-UV space
 	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // shadow-march space
@@ -255,7 +352,7 @@ void fragment() {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
 		// leading directional rows for every fragment.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -269,12 +366,12 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
 		}
 	}
 
