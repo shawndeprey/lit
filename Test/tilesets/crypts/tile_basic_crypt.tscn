@@ -1,9 +1,20 @@
 [gd_scene format=3 uid="uid://d28fv3x2iqnq2"]
 
-[ext_resource type="Material" path="res://addons/lit/materials/lit_receiver_material.tres" id="1_b50dt"]
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="1_b50dt"]
 [ext_resource type="Texture2D" uid="uid://b5dynsun8hih6" path="res://Test/tilesets/crypts/ra_crypt/ra_crypt.png" id="2_pulpr"]
 [ext_resource type="Texture2D" uid="uid://cpxht66cg16wx" path="res://Test/tilesets/crypts/ra_crypt/ra_crypt_n.png" id="4_rcxug"]
 [ext_resource type="Script" uid="uid://c4ukaxjuidwha" path="res://Test/tilesets/game_tile.gd" id="5_vvk8t"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gg4cr"]
+shader = ExtResource("1_b50dt")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
 
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_va13o"]
 polygon = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
@@ -1235,7 +1246,7 @@ sources/1 = SubResource("TileSetAtlasSource_vcek0")
 
 [node name="TileBasicCrypt" type="TileMapLayer" unique_id=805693216]
 y_sort_enabled = true
-material = ExtResource("1_b50dt")
+material = SubResource("ShaderMaterial_gg4cr")
 tile_set = SubResource("TileSet_3f351")
 y_sort_origin = -1
 use_kinematic_bodies = true

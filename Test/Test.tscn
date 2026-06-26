@@ -9,7 +9,6 @@
 [ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="6_ngwpp"]
 [ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="7_iednq"]
 [ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="8_5ghie"]
-[ext_resource type="Material" path="res://addons/lit/materials/lit_receiver_material.tres" id="10_ngwpp"]
 [ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="11_ngwpp"]
 [ext_resource type="Script" uid="uid://divm48v4w4f4s" path="res://Test/lit_demo.gd" id="12_demo"]
 
@@ -73,7 +72,6 @@ tile_map_data = PackedByteArray("AAAAAAAAAQAGAAAAAAAAAAEAAQAGAAAAAAAAAAIAAQAGAAA
 
 [node name="GPUParticles2D" type="GPUParticles2D" parent="." unique_id=944146707]
 visible = false
-material = ExtResource("10_ngwpp")
 position = Vector2(579, 306)
 amount = 16
 texture = SubResource("GradientTexture2D_ywxc3")
