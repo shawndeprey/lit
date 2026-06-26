@@ -61,6 +61,15 @@ uniform int receiver_mask = 1;
 uniform float specular_strength = 0.5;
 uniform float specular_k = 32.0;
 
+// Per-instance: is a specular map actually present on this receiver? LitSprite2D
+// auto-detects it from the CanvasTexture's specular slot; other receiver types can set it
+// by hand. Godot reports the same SPECULAR_SHININESS for "no map" and "white map", so the
+// shader can't tell on its own. When true the Blinn-Phong path uses the true half-vector
+// specular (crisp, view-aware, shaped by the map). When false it falls back to the
+// original sharpened-N.L lobe, which stays well-behaved on flat, un-normal-mapped surfaces
+// where the half-vector would otherwise blow the highlight out. PBR mode ignores this.
+uniform bool has_specular_map = false;
+
 // --- PBR (metallic-roughness) material inputs ---------------------------------------
 // Sampled only when lit_lighting_model == LIT_MODEL_PBR. Each map multiplies its scalar,
 // and the maps default to white so an unassigned map falls back to the scalar alone:
@@ -261,19 +270,30 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	} else {
 		vec3 diffuse = albedo * light_color * energy * ndotl * atten;
 
-		// True (2.5D) Blinn-Phong specular: the half-vector between the light and the view.
-		// Same fixed orthographic view as the PBR path (the eye looks down +Z at the
-		// canvas, so V points toward the viewer), so the highlight sits where the surface
-		// reflects the light toward the eye rather than merely where it faces the light.
-		// Gated by ndotl so the lobe never appears on the side facing away from the light.
-		// Tinted by light_color so the highlight takes the light's hue instead of blowing
-		// out to white. Skipped entirely when there's no specular map or strength.
+		// Highlight tinted by light_color so it takes the light's hue instead of blowing
+		// out to white. Gated by ndotl so it never appears on the side facing away from
+		// the light, and skipped entirely when there's no specular strength or color.
 		vec3 specular = vec3(0.0);
 		if (specular_strength > 0.0 && ndotl > 0.0 && dot(spec_shin, spec_shin) > 0.0) {
-			vec3 V = vec3(0.0, 0.0, 1.0);
-			vec3 H = normalize(Ldir + V);
-			float n_dot_h = max(dot(N, H), 0.0);
-			specular = light_color * spec_shin * energy * atten * pow(n_dot_h, 1.0 + shininess * specular_k) * specular_strength;
+			float exponent = 1.0 + shininess * specular_k;
+			float lobe;
+			if (has_specular_map) {
+				// True (2.5D) Blinn-Phong: the half-vector between light and view. Same
+				// fixed orthographic view as the PBR path (the eye looks down +Z, so V
+				// points toward the viewer), so the highlight sits where the surface
+				// reflects the light toward the eye. A specular map shapes/masks it, which
+				// keeps it from blowing out on flat areas.
+				vec3 V = vec3(0.0, 0.0, 1.0);
+				vec3 H = normalize(Ldir + V);
+				lobe = pow(max(dot(N, H), 0.0), exponent);
+			} else {
+				// No specular map to shape the half-vector lobe, which would otherwise read
+				// as a flat blown-out wash on un-normal-mapped surfaces (H biases toward N).
+				// Fall back to the sharpened N.L lobe, which behaves with or without a
+				// normal map.
+				lobe = pow(ndotl, exponent);
+			}
+			specular = light_color * spec_shin * energy * atten * lobe * specular_strength;
 		}
 
 		contribution = diffuse + specular;

@@ -54,6 +54,7 @@ shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = true
 shader_parameter/metallic_value = 0.0
 shader_parameter/roughness_value = 1.0
 shader_parameter/ao_map = ExtResource("3_x1o0v")
