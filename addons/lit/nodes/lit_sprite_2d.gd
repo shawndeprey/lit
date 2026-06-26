@@ -36,6 +36,11 @@ const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 		_set_param("receiver_mask", value)
 
 
+# The CanvasTexture currently watched for specular-slot changes, so we can re-evaluate
+# has_specular_map live when the user assigns or clears a specular map in the inspector.
+var _watched_texture: CanvasTexture = null
+
+
 func _init() -> void:
 	# Pre-wire on creation without clobbering anything a saved scene or a user already
 	# assigned. The scene deserializer sets these after _init, overriding the defaults
@@ -49,6 +54,33 @@ func _init() -> void:
 	# Push the initial proxy values onto the freshly-made material.
 	_set_param("emissive_strength", emissive_strength)
 	_set_param("receiver_mask", receiver_mask)
+
+
+func _ready() -> void:
+	# Keep has_specular_map in sync so the Blinn-Phong path picks the half-vector specular
+	# only when a specular map is actually present (it blows out without one). texture_changed
+	# fires on texture swaps; we also subscribe to the CanvasTexture itself so assigning the
+	# specular map in the inspector updates live. Connect first, then evaluate once for the
+	# texture the scene deserializer already set.
+	if not texture_changed.is_connected(_on_texture_changed):
+		texture_changed.connect(_on_texture_changed)
+	_on_texture_changed()
+
+
+# Re-point the specular-slot subscription at the current CanvasTexture, then refresh the flag.
+func _on_texture_changed() -> void:
+	if _watched_texture != null and is_instance_valid(_watched_texture):
+		if _watched_texture.changed.is_connected(_update_specular_flag):
+			_watched_texture.changed.disconnect(_update_specular_flag)
+	_watched_texture = texture as CanvasTexture
+	if _watched_texture != null and not _watched_texture.changed.is_connected(_update_specular_flag):
+		_watched_texture.changed.connect(_update_specular_flag)
+	_update_specular_flag()
+
+
+func _update_specular_flag() -> void:
+	var present := _watched_texture != null and _watched_texture.specular_texture != null
+	_set_param("has_specular_map", present)
 
 
 func _set_param(param: String, value: Variant) -> void:
