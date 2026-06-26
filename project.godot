@@ -56,6 +56,10 @@ lit_viewport_size={
 "type": "vec2",
 "value": Vector2(0, 0)
 }
+lit_canvas_scale={
+"type": "float",
+"value": 1.0
+}
 lit_ambient_color={
 "type": "color",
 "value": Color(0.6378432, 0.6378432, 0.6378431, 1)
