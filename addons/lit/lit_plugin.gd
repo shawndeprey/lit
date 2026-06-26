@@ -251,7 +251,7 @@ func _unpersist_globals() -> void:
 func _project_setting_defs() -> Array:
 	return [
 		{
-			# 0 = Blinn-Phong (ambient + Lambert + sharpened-N.L specular), 1 = PBR
+			# 0 = Blinn-Phong (ambient + Lambert + half-vector specular), 1 = PBR
 			# (metallic-roughness Cook-Torrance). Must match LIT_MODEL_* in the receiver
 			# shader and LitManager.LightingModel.
 			#

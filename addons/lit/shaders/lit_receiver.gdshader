@@ -13,11 +13,11 @@ global uniform vec4      lit_ambient_color : source_color;
 global uniform float     lit_ambient_energy;
 
 // Lighting model selector, published by the manager (and the editor plugin) from the
-// lit/render/lighting_model project setting. 0 = Phong-style (the original ambient +
-// Lambert + sharpened-N.L specular), 1 = PBR (metallic-roughness Cook-Torrance). The
-// branch is on a global uniform, so every receiver honors the toggle live and all
-// fragments take the same path (coherent, cheap). When Phong is selected the PBR-only
-// material inputs are never sampled, so it costs nothing.
+// lit/render/lighting_model project setting. 0 = Blinn-Phong (ambient + Lambert +
+// half-vector specular), 1 = PBR (metallic-roughness Cook-Torrance). The branch is on a
+// global uniform, so every receiver honors the toggle live and all fragments take the
+// same path (coherent, cheap). When Blinn-Phong is selected the PBR-only material inputs
+// are never sampled, so it costs nothing.
 global uniform int       lit_lighting_model;
 
 // Tiled light culling: the manager bins each positional light into a screen-tile grid
@@ -56,7 +56,8 @@ uniform sampler2D emissive_mask : hint_default_white;   // white default lets st
 // 2D-render-layers control.
 uniform int receiver_mask = 1;
 
-// Phong specular controls (LIT_MODEL_PHONG only). Ignored in PBR mode.
+// Blinn-Phong specular controls (LIT_MODEL_PHONG only). Ignored in PBR mode.
+// specular_k scales how the CanvasTexture shininess maps to the half-vector exponent.
 uniform float specular_strength = 0.5;
 uniform float specular_k = 32.0;
 
@@ -260,12 +261,19 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	} else {
 		vec3 diffuse = albedo * light_color * energy * ndotl * atten;
 
-		// Sharpened N.L lobe, tight and only where the surface tilts toward the light.
+		// True (2.5D) Blinn-Phong specular: the half-vector between the light and the view.
+		// Same fixed orthographic view as the PBR path (the eye looks down +Z at the
+		// canvas, so V points toward the viewer), so the highlight sits where the surface
+		// reflects the light toward the eye rather than merely where it faces the light.
+		// Gated by ndotl so the lobe never appears on the side facing away from the light.
 		// Tinted by light_color so the highlight takes the light's hue instead of blowing
 		// out to white. Skipped entirely when there's no specular map or strength.
 		vec3 specular = vec3(0.0);
-		if (specular_strength > 0.0 && dot(spec_shin, spec_shin) > 0.0) {
-			specular = light_color * spec_shin * energy * atten * pow(ndotl, 1.0 + shininess * specular_k) * specular_strength;
+		if (specular_strength > 0.0 && ndotl > 0.0 && dot(spec_shin, spec_shin) > 0.0) {
+			vec3 V = vec3(0.0, 0.0, 1.0);
+			vec3 H = normalize(Ldir + V);
+			float n_dot_h = max(dot(N, H), 0.0);
+			specular = light_color * spec_shin * energy * atten * pow(n_dot_h, 1.0 + shininess * specular_k) * specular_strength;
 		}
 
 		contribution = diffuse + specular;
