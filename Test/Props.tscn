@@ -1,0 +1,2345 @@
+[gd_scene format=3 uid="uid://repp83rid7mc"]
+
+[ext_resource type="Texture2D" uid="uid://ba3hmlstw6c3s" path="res://Test/Wall_00.png" id="2_52gfs"]
+[ext_resource type="Texture2D" uid="uid://c3qatd5oirl7p" path="res://Test/Wall_00_n.png" id="3_hgfkl"]
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="4_6sgsk"]
+[ext_resource type="Texture2D" uid="uid://cy2uig61v03hs" path="res://Test/Wall_00_s.png" id="4_csvar"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="8_mnqrt"]
+[ext_resource type="Texture2D" uid="uid://bn37iodcwuxm7" path="res://Test/Wall_02.png" id="9_oy4qr"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="10_bf3a8"]
+[ext_resource type="Texture2D" uid="uid://cxwutcn67xwld" path="res://Test/Wall_02_n.png" id="10_g1gxh"]
+[ext_resource type="Texture2D" uid="uid://dysxc7ulipceg" path="res://Test/Wall_01.png" id="10_mnqrt"]
+[ext_resource type="Texture2D" uid="uid://b5cevevv4f7wu" path="res://Test/Wall_02_s.png" id="11_0r2ck"]
+[ext_resource type="Texture2D" uid="uid://cfj658c4r12as" path="res://Test/Wall_01_n.png" id="11_eh1i3"]
+[ext_resource type="Texture2D" uid="uid://dyfrgtejehoox" path="res://Test/Wall_01_s.png" id="12_4sp5r"]
+[ext_resource type="Texture2D" uid="uid://cfk28rh7a8cvj" path="res://Test/Wall_03.png" id="12_m70kv"]
+[ext_resource type="Texture2D" uid="uid://cvhjthy1kse2g" path="res://Test/Wall_03_n.png" id="13_bf3a8"]
+[ext_resource type="Texture2D" uid="uid://lja2655agu8t" path="res://Test/Wall_03_s.png" id="14_togdb"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="20_bt14p"]
+[ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="21_0x8ty"]
+[ext_resource type="Script" uid="uid://c5t8505pasp64" path="res://Test/gem_light_orbit.gd" id="22_gemorb"]
+[ext_resource type="Script" uid="uid://cyxjgoppnqgo2" path="res://Test/gem_showcase_motion.gd" id="23_gemmot"]
+[ext_resource type="Texture2D" uid="uid://r6g1gikvle14" path="res://Test/Gemstone_01.png" id="30_gem01d"]
+[ext_resource type="Texture2D" uid="uid://diqpqv1klmp12" path="res://Test/Gemstone_01_n.png" id="31_gem01n"]
+[ext_resource type="Texture2D" uid="uid://cixclarr65wdu" path="res://Test/Gemstone_01_s.png" id="32_gem01s"]
+[ext_resource type="Texture2D" uid="uid://dkrnl8kser0mh" path="res://Test/Gemstone_01_internal_n.png" id="33_gem01in"]
+[ext_resource type="Texture2D" uid="uid://doafv38xpgokm" path="res://Test/Gemstone_01_t.png" id="34_gem01t"]
+[ext_resource type="Texture2D" uid="uid://do2fnw54vtwsd" path="res://Test/Gemstone_02.png" id="40_gem02d"]
+[ext_resource type="Texture2D" uid="uid://dwrehpuhq5dpn" path="res://Test/Gemstone_02_n.png" id="41_gem02n"]
+[ext_resource type="Texture2D" uid="uid://bcemtoq6h4b7" path="res://Test/Gemstone_02_s.png" id="42_gem02s"]
+[ext_resource type="Texture2D" uid="uid://dppcayhdmn3h2" path="res://Test/Gemstone_02_internal_n.png" id="43_gem02in"]
+[ext_resource type="Texture2D" uid="uid://c3wkfgbt2h07y" path="res://Test/Gemstone_02_t.png" id="44_gem02t"]
+[ext_resource type="Texture2D" uid="uid://ceumedlx8eniq" path="res://Test/Gemstone_03.png" id="45_gem03d"]
+[ext_resource type="Texture2D" uid="uid://dty2o0vou41ii" path="res://Test/Gemstone_03_n.png" id="46_gem03n"]
+[ext_resource type="Texture2D" uid="uid://3hc230yeu1ay" path="res://Test/Gemstone_03_s.png" id="47_gem03s"]
+[ext_resource type="Texture2D" uid="uid://dgdaes4exx4c" path="res://Test/Gemstone_03_internal_n.png" id="48_gem03in"]
+[ext_resource type="Texture2D" uid="uid://fueuan5cdhs4" path="res://Test/Gemstone_03_t.png" id="49_gem03t"]
+[ext_resource type="Texture2D" uid="uid://75euoayarevy" path="res://Test/Gemstone_04.png" id="50_gem04d"]
+[ext_resource type="Texture2D" uid="uid://by838jmqvmo0e" path="res://Test/Gemstone_04_n.png" id="51_gem04n"]
+[ext_resource type="Texture2D" uid="uid://c85rmmcd1fdj2" path="res://Test/Gemstone_04_s.png" id="52_gem04s"]
+[ext_resource type="Texture2D" uid="uid://d1r7eqtofobqd" path="res://Test/Gemstone_04_internal_n.png" id="53_gem04in"]
+[ext_resource type="Texture2D" uid="uid://dl7ayumk25uyf" path="res://Test/Gemstone_04_t.png" id="54_gem04t"]
+[ext_resource type="Texture2D" uid="uid://ro1g6llcliml" path="res://Test/Gemstone_00.png" id="60_gem00d"]
+[ext_resource type="Texture2D" uid="uid://cpchsh4yv2npc" path="res://Test/Gemstone_00_n.png" id="61_gem00n"]
+[ext_resource type="Texture2D" uid="uid://soqflxxsvnnm" path="res://Test/Gemstone_00_s.png" id="62_gem00s"]
+[ext_resource type="Texture2D" uid="uid://bpx7sg7jtsbrn" path="res://Test/Gemstone_00_internal_n.png" id="63_gem00in"]
+[ext_resource type="Texture2D" uid="uid://rx3w7qcik04h" path="res://Test/Gemstone_00_t.png" id="64_gem00t"]
+[ext_resource type="Script" uid="uid://fpjynd74wgik" path="res://addons/lit/runtime/lit_tint_beams.gd" id="lit_tint_beams"]
+[ext_resource type="Script" uid="uid://lvgikjqjtf2g" path="res://addons/lit/runtime/lit_tint_buffer.gd" id="lit_tint_buffer"]
+[ext_resource type="Script" uid="uid://bepfe3nfmwujv" path="res://addons/lit/nodes/lit_tint_modifier.gd" id="lit_tint_modifier"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_backdrop"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = true
+shader_parameter/tint_strength = 0.5
+shader_parameter/tint_samples = 16
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.2
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 0.0
+shader_parameter/internal_k = 96.0
+shader_parameter/absorption_strength = 0.0
+shader_parameter/absorption_color = Color(0.2, 0, 0.15, 1)
+shader_parameter/dispersion_amount = 0.0
+shader_parameter/refraction_strength = 0.0
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.6
+shader_parameter/transmission_strength = 0.0
+shader_parameter/transmission_color = Color(1, 1, 1, 1)
+shader_parameter/transmission_alpha_amount = 0.0
+shader_parameter/transmission_wrap = 0.5
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_backdrop"]
+diffuse_texture = ExtResource("2_52gfs")
+normal_texture = ExtResource("3_hgfkl")
+specular_texture = ExtResource("4_csvar")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_dy4ol"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = true
+shader_parameter/tint_strength = 0.5
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 0.0
+shader_parameter/internal_k = 96.0
+shader_parameter/absorption_strength = 0.0
+shader_parameter/absorption_color = Color(0.2, 0, 0.15, 1)
+shader_parameter/dispersion_amount = 0.0
+shader_parameter/refraction_strength = 0.0
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.6
+shader_parameter/transmission_strength = 0.0
+shader_parameter/transmission_color = Color(1, 1, 1, 1)
+shader_parameter/transmission_alpha_amount = 1.0
+shader_parameter/transmission_wrap = 0.5
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_ow6xx"]
+diffuse_texture = ExtResource("2_52gfs")
+normal_texture = ExtResource("3_hgfkl")
+specular_texture = ExtResource("4_csvar")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_wn7ja"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = true
+shader_parameter/tint_strength = 0.5
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 0.0
+shader_parameter/internal_k = 96.0
+shader_parameter/absorption_strength = 0.0
+shader_parameter/absorption_color = Color(0.2, 0, 0.15, 1)
+shader_parameter/dispersion_amount = 0.0
+shader_parameter/refraction_strength = 0.0
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.6
+shader_parameter/transmission_strength = 0.0
+shader_parameter/transmission_color = Color(1, 1, 1, 1)
+shader_parameter/transmission_alpha_amount = 0.0
+shader_parameter/transmission_wrap = 0.5
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_v0rw4"]
+diffuse_texture = ExtResource("10_mnqrt")
+normal_texture = ExtResource("11_eh1i3")
+specular_texture = ExtResource("12_4sp5r")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vjysb"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = true
+shader_parameter/tint_strength = 0.5
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 0.0
+shader_parameter/internal_k = 96.0
+shader_parameter/absorption_strength = 0.0
+shader_parameter/absorption_color = Color(0.2, 0, 0.15, 1)
+shader_parameter/dispersion_amount = 0.0
+shader_parameter/refraction_strength = 0.0
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.6
+shader_parameter/transmission_strength = 0.0
+shader_parameter/transmission_color = Color(1, 1, 1, 1)
+shader_parameter/transmission_alpha_amount = 0.0
+shader_parameter/transmission_wrap = 0.5
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_5eeul"]
+diffuse_texture = ExtResource("9_oy4qr")
+normal_texture = ExtResource("10_g1gxh")
+specular_texture = ExtResource("11_0r2ck")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_dqclk"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = true
+shader_parameter/tint_strength = 0.5
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 0.0
+shader_parameter/internal_k = 96.0
+shader_parameter/absorption_strength = 0.0
+shader_parameter/absorption_color = Color(0.2, 0, 0.15, 1)
+shader_parameter/dispersion_amount = 0.0
+shader_parameter/refraction_strength = 0.0
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.6
+shader_parameter/transmission_strength = 0.0
+shader_parameter/transmission_color = Color(1, 1, 1, 1)
+shader_parameter/transmission_alpha_amount = 0.0
+shader_parameter/transmission_wrap = 0.5
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_bt14p"]
+diffuse_texture = ExtResource("12_m70kv")
+normal_texture = ExtResource("13_bf3a8")
+specular_texture = ExtResource("14_togdb")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI0"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("33_gem01in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.42, 0.021, 0.021, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(1, 0.15, 0.15, 1)
+shader_parameter/transmission_map = ExtResource("34_gem01t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_gem01"]
+diffuse_texture = ExtResource("30_gem01d")
+normal_texture = ExtResource("31_gem01n")
+specular_texture = ExtResource("32_gem01s")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI1"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("33_gem01in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.42, 0.1806, 0.021, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(1, 0.49, 0.15, 1)
+shader_parameter/transmission_map = ExtResource("34_gem01t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI2"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("33_gem01in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.42, 0.3402, 0.021, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(1, 0.83, 0.15, 1)
+shader_parameter/transmission_map = ExtResource("34_gem01t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI3"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("43_gem02in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.3402, 0.42, 0.021, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.83, 1, 0.15, 1)
+shader_parameter/transmission_map = ExtResource("44_gem02t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_gem02"]
+diffuse_texture = ExtResource("40_gem02d")
+normal_texture = ExtResource("41_gem02n")
+specular_texture = ExtResource("42_gem02s")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI4"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("43_gem02in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.1806, 0.42, 0.021, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.49, 1, 0.15, 1)
+shader_parameter/transmission_map = ExtResource("44_gem02t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI5"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("43_gem02in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.021, 0.42, 0.021, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.15, 1, 0.15, 1)
+shader_parameter/transmission_map = ExtResource("44_gem02t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI6"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("48_gem03in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.021, 0.42, 0.1806, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.15, 1, 0.49, 1)
+shader_parameter/transmission_map = ExtResource("49_gem03t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_gem03"]
+diffuse_texture = ExtResource("45_gem03d")
+normal_texture = ExtResource("46_gem03n")
+specular_texture = ExtResource("47_gem03s")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI7"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("48_gem03in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.021, 0.42, 0.3402, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.15, 1, 0.83, 1)
+shader_parameter/transmission_map = ExtResource("49_gem03t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI8"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("48_gem03in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.021, 0.3402, 0.42, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.15, 0.83, 1, 1)
+shader_parameter/transmission_map = ExtResource("49_gem03t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI9"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("53_gem04in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.021, 0.1806, 0.42, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.15, 0.49, 1, 1)
+shader_parameter/transmission_map = ExtResource("54_gem04t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_gem04"]
+diffuse_texture = ExtResource("50_gem04d")
+normal_texture = ExtResource("51_gem04n")
+specular_texture = ExtResource("52_gem04s")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI10"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("53_gem04in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.021, 0.021, 0.42, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.15, 0.15, 1, 1)
+shader_parameter/transmission_map = ExtResource("54_gem04t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI11"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("53_gem04in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.1806, 0.021, 0.42, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.49, 0.15, 1, 1)
+shader_parameter/transmission_map = ExtResource("54_gem04t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI12"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("63_gem00in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.3402, 0.021, 0.42, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(0.83, 0.15, 1, 1)
+shader_parameter/transmission_map = ExtResource("64_gem00t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_gem00"]
+diffuse_texture = ExtResource("60_gem00d")
+normal_texture = ExtResource("61_gem00n")
+specular_texture = ExtResource("62_gem00s")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI13"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("63_gem00in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.42, 0.021, 0.3402, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(1, 0.15, 0.83, 1)
+shader_parameter/transmission_map = ExtResource("64_gem00t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gemI14"]
+shader = ExtResource("4_6sgsk")
+shader_parameter/tint_enabled = false
+shader_parameter/tint_strength = 1.0
+shader_parameter/tint_samples = 12
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.65
+shader_parameter/specular_k = 32.0
+shader_parameter/internal_strength = 2.1
+shader_parameter/internal_normal_map = ExtResource("63_gem00in")
+shader_parameter/internal_k = 150.0
+shader_parameter/absorption_strength = 0.6
+shader_parameter/absorption_color = Color(0.42, 0.021, 0.1806, 1)
+shader_parameter/dispersion_amount = 0.5
+shader_parameter/refraction_strength = 0.3
+shader_parameter/refraction_amount = 0.03
+shader_parameter/refraction_tint = 0.8
+shader_parameter/transmission_strength = 0.7
+shader_parameter/transmission_color = Color(1, 0.15, 0.49, 1)
+shader_parameter/transmission_map = ExtResource("64_gem00t")
+shader_parameter/transmission_alpha_amount = 0.25
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[node name="Props" type="Node2D" unique_id=1250791965]
+
+[node name="TintBackdrop" type="Sprite2D" parent="." unique_id=1314149086]
+material = SubResource("ShaderMaterial_backdrop")
+position = Vector2(540, 960)
+scale = Vector2(60, 50)
+texture = SubResource("CanvasTexture_backdrop")
+
+[node name="Walls" type="Node2D" parent="." unique_id=1494345962]
+
+[node name="Wall_a" type="Sprite2D" parent="Walls" unique_id=277314175]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(80.00001, 80)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a7" type="Sprite2D" parent="Walls" unique_id=557397926]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(400, 400)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a3" type="Sprite2D" parent="Walls" unique_id=1115237696]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(1040, 240)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a2" type="Sprite2D" parent="Walls" unique_id=1225207195]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(720.00006, 80)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_b" type="Sprite2D" parent="Walls" unique_id=13258465]
+material = SubResource("ShaderMaterial_wn7ja")
+position = Vector2(400.00006, 160.00003)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_v0rw4")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_b3" type="Sprite2D" parent="Walls" unique_id=1213908296]
+material = SubResource("ShaderMaterial_wn7ja")
+position = Vector2(1040, 480)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_v0rw4")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c" type="Sprite2D" parent="Walls" unique_id=1917144160]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(240, 240)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c7" type="Sprite2D" parent="Walls" unique_id=406869404]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(880, 400)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c11" type="Sprite2D" parent="Walls" unique_id=156380331]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(1200, 400)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c12" type="Sprite2D" parent="Walls" unique_id=1938065352]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-80, 400)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c4" type="Sprite2D" parent="Walls" unique_id=226761632]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(1040, 80.000015)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c5" type="Sprite2D" parent="Walls" unique_id=375080238]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(1200, 80)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c2" type="Sprite2D" parent="Walls" unique_id=270561241]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-79.999985, 240)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c3" type="Sprite2D" parent="Walls" unique_id=327389851]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(560, 240.00002)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_d" type="Sprite2D" parent="Walls" unique_id=116749010]
+material = SubResource("ShaderMaterial_dqclk")
+position = Vector2(80.00001, 320)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_bt14p")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_d2" type="Sprite2D" parent="Walls" unique_id=1920836638]
+material = SubResource("ShaderMaterial_dqclk")
+position = Vector2(720, 320)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_bt14p")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a4" type="Sprite2D" parent="Walls" unique_id=121426588]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(80.00001, 560)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a8" type="Sprite2D" parent="Walls" unique_id=2017029290]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(400, 880)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a5" type="Sprite2D" parent="Walls" unique_id=1737647092]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(1040, 720)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a6" type="Sprite2D" parent="Walls" unique_id=978155437]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(720.00006, 560)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_b2" type="Sprite2D" parent="Walls" unique_id=2133437219]
+material = SubResource("ShaderMaterial_wn7ja")
+position = Vector2(400.00006, 640)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_v0rw4")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_b4" type="Sprite2D" parent="Walls" unique_id=612947589]
+material = SubResource("ShaderMaterial_wn7ja")
+position = Vector2(720, 1120)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_v0rw4")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_b7" type="Sprite2D" parent="Walls" unique_id=856528]
+material = SubResource("ShaderMaterial_wn7ja")
+position = Vector2(80, 800)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_v0rw4")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c6" type="Sprite2D" parent="Walls" unique_id=848044237]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(240, 720)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c8" type="Sprite2D" parent="Walls" unique_id=1990189054]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(1200, 560)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c9" type="Sprite2D" parent="Walls" unique_id=2000442228]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-79.999985, 720)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c25" type="Sprite2D" parent="Walls" unique_id=770591114]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-80.00001, 889)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c26" type="Sprite2D" parent="Walls" unique_id=1318843559]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(880, 880)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c27" type="Sprite2D" parent="Walls" unique_id=1131687344]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(400, 1040)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c10" type="Sprite2D" parent="Walls" unique_id=122273469]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(560, 720)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_d4" type="Sprite2D" parent="Walls" unique_id=1887110086]
+material = SubResource("ShaderMaterial_dqclk")
+position = Vector2(720, 800)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_bt14p")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a9" type="Sprite2D" parent="Walls" unique_id=1513792830]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(400, 1200)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a10" type="Sprite2D" parent="Walls" unique_id=402244864]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(1040, 1040)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_b5" type="Sprite2D" parent="Walls" unique_id=947490783]
+material = SubResource("ShaderMaterial_wn7ja")
+position = Vector2(1040, 1280)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_v0rw4")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c13" type="Sprite2D" parent="Walls" unique_id=2099583537]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(240, 1040)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c14" type="Sprite2D" parent="Walls" unique_id=884725809]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(880, 1200)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c15" type="Sprite2D" parent="Walls" unique_id=1348243093]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(1200, 1200)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c16" type="Sprite2D" parent="Walls" unique_id=856259619]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-80, 1200)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c17" type="Sprite2D" parent="Walls" unique_id=553786070]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(1040, 880)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c18" type="Sprite2D" parent="Walls" unique_id=21527688]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(1200, 880)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c19" type="Sprite2D" parent="Walls" unique_id=1754838661]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-79.999985, 1040)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c20" type="Sprite2D" parent="Walls" unique_id=1485354713]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(560, 1040)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_d5" type="Sprite2D" parent="Walls" unique_id=1170227046]
+material = SubResource("ShaderMaterial_dqclk")
+position = Vector2(80.00001, 1120)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_bt14p")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a12" type="Sprite2D" parent="Walls" unique_id=1171091918]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(80.00001, 1360)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a15" type="Sprite2D" parent="Walls" unique_id=1365995271]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(400, 1680)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a18" type="Sprite2D" parent="Walls" unique_id=1235903991]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(80, 1840)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a19" type="Sprite2D" parent="Walls" unique_id=416931466]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(240, 2000)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a20" type="Sprite2D" parent="Walls" unique_id=1763607024]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(880, 2000)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a17" type="Sprite2D" parent="Walls" unique_id=2045458920]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(880, 1840)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a16" type="Sprite2D" parent="Walls" unique_id=1728643662]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(1040, 1680)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a13" type="Sprite2D" parent="Walls" unique_id=1622355336]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(1040, 1520)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_a14" type="Sprite2D" parent="Walls" unique_id=1363563164]
+material = SubResource("ShaderMaterial_dy4ol")
+position = Vector2(720.00006, 1360)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_ow6xx")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+transmission_alpha_amount = 1.0
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_b6" type="Sprite2D" parent="Walls" unique_id=970274588]
+material = SubResource("ShaderMaterial_wn7ja")
+position = Vector2(400.00006, 1440)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_v0rw4")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c21" type="Sprite2D" parent="Walls" unique_id=1840681433]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(240, 1520)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c28" type="Sprite2D" parent="Walls" unique_id=1841337049]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(400, 1840)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c22" type="Sprite2D" parent="Walls" unique_id=1056026841]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(1200, 1360)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c23" type="Sprite2D" parent="Walls" unique_id=729185973]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-79.999985, 1520)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c29" type="Sprite2D" parent="Walls" unique_id=1707489120]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-80, 1680)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c30" type="Sprite2D" parent="Walls" unique_id=385582251]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(-80, 2000)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_c24" type="Sprite2D" parent="Walls" unique_id=1380232935]
+material = SubResource("ShaderMaterial_vjysb")
+position = Vector2(560, 1520)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_5eeul")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_d7" type="Sprite2D" parent="Walls" unique_id=217832348]
+material = SubResource("ShaderMaterial_dqclk")
+position = Vector2(80.00001, 1600)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_bt14p")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_d8" type="Sprite2D" parent="Walls" unique_id=401647504]
+material = SubResource("ShaderMaterial_dqclk")
+position = Vector2(720, 1600)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_bt14p")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_d9" type="Sprite2D" parent="Walls" unique_id=1659356245]
+material = SubResource("ShaderMaterial_dqclk")
+position = Vector2(1200, 1920)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_bt14p")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Wall_d10" type="Sprite2D" parent="Walls" unique_id=1804282815]
+material = SubResource("ShaderMaterial_dqclk")
+position = Vector2(560, 1920)
+scale = Vector2(10, 10)
+texture = SubResource("CanvasTexture_bt14p")
+script = ExtResource("8_mnqrt")
+transmission_color = Color(1, 1, 1, 1)
+transmission_wrap = 0.5
+internal_k = 96.0
+absorption_color = Color(0.2, 0, 0.15, 1)
+refraction_amount = 0.03
+refraction_tint = 0.6
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemBackBuffer" type="BackBufferCopy" parent="." unique_id=941226847]
+copy_mode = 2
+
+[node name="GemX0" type="Sprite2D" parent="." unique_id=941300000]
+modulate = Color(1, 0.15, 0.15, 1)
+material = SubResource("ShaderMaterial_gemI0")
+position = Vector2(345, 740)
+texture = SubResource("CanvasTexture_gem01")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(1, 0.15, 0.15, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("33_gem01in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.42, 0.021, 0.021, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX0" type="Node2D" parent="GemX0" unique_id=941300001]
+position = Vector2(-17.999998, -55.999996)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = 0.039
+bob_amount = Vector2(43.2, 32.4)
+bob_speed_x = 0.104
+bob_speed_y = 0.169
+breathe_amount = 0.0
+breathe_speed = 0.065
+home_position = Vector2(345, 740)
+
+[node name="LitTintModifier" type="Node2D" parent="GemX0" unique_id=317861798 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX1" type="Sprite2D" parent="." unique_id=941300002]
+modulate = Color(1, 0.49, 0.15, 1)
+material = SubResource("ShaderMaterial_gemI1")
+position = Vector2(345, 960)
+texture = SubResource("CanvasTexture_gem01")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(1, 0.49, 0.15, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("33_gem01in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.42, 0.1806, 0.021, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX1" type="Node2D" parent="GemX1" unique_id=941300003]
+position = Vector2(-17.999998, -95.99999)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = -0.052
+bob_amount = Vector2(52.65, 39.15)
+bob_speed_x = 0.117
+bob_speed_y = 0.182
+breathe_amount = 0.0
+breathe_speed = 0.078
+home_position = Vector2(345, 960)
+wander_seed = 1.37
+
+[node name="LitTintModifier" type="Node2D" parent="GemX1" unique_id=337249005 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX2" type="Sprite2D" parent="." unique_id=941300004]
+modulate = Color(1, 0.83, 0.15, 1)
+material = SubResource("ShaderMaterial_gemI2")
+position = Vector2(345, 1180)
+texture = SubResource("CanvasTexture_gem01")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(1, 0.83, 0.15, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("33_gem01in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.42, 0.3402, 0.021, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX2" type="Node2D" parent="GemX2" unique_id=941300005]
+position = Vector2(-17.999998, -135.99998)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = 0.065
+bob_amount = Vector2(62.1, 45.9)
+bob_speed_y = 0.195
+breathe_amount = 0.0
+home_position = Vector2(345, 1180)
+wander_seed = 2.74
+
+[node name="LitTintModifier" type="Node2D" parent="GemX2" unique_id=322971641 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX3" type="Sprite2D" parent="." unique_id=941300006]
+modulate = Color(0.83, 1, 0.15, 1)
+material = SubResource("ShaderMaterial_gemI3")
+position = Vector2(475, 740)
+texture = SubResource("CanvasTexture_gem02")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.83, 1, 0.15, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("43_gem02in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.3402, 0.42, 0.021, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX3" type="Node2D" parent="GemX3" unique_id=941300007]
+position = Vector2(-41.999996, -55.999996)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = -0.078
+bob_amount = Vector2(71.55, 52.65)
+bob_speed_x = 0.143
+bob_speed_y = 0.13
+breathe_amount = 0.0
+breathe_speed = 0.104
+home_position = Vector2(475, 740)
+wander_seed = 4.11
+
+[node name="LitTintModifier" type="Node2D" parent="GemX3" unique_id=75488817 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX4" type="Sprite2D" parent="." unique_id=941300008]
+modulate = Color(0.49, 1, 0.15, 1)
+material = SubResource("ShaderMaterial_gemI4")
+position = Vector2(475, 960)
+texture = SubResource("CanvasTexture_gem02")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.49, 1, 0.15, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("43_gem02in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.1806, 0.42, 0.021, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX4" type="Node2D" parent="GemX4" unique_id=941300009]
+position = Vector2(-41.999996, -95.99999)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = 0.091
+bob_amount = Vector2(81, 59.4)
+bob_speed_x = 0.156
+bob_speed_y = 0.143
+breathe_amount = 0.0
+breathe_speed = 0.117
+home_position = Vector2(475, 960)
+wander_seed = 5.48
+
+[node name="LitTintModifier" type="Node2D" parent="GemX4" unique_id=1541364002 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX5" type="Sprite2D" parent="." unique_id=941300010]
+modulate = Color(0.15, 1, 0.15, 1)
+material = SubResource("ShaderMaterial_gemI5")
+position = Vector2(475, 1180)
+texture = SubResource("CanvasTexture_gem02")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.15, 1, 0.15, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("43_gem02in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.021, 0.42, 0.021, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX5" type="Node2D" parent="GemX5" unique_id=941300011]
+position = Vector2(-41.999996, -135.99998)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = -0.039
+bob_amount = Vector2(90.45, 66.15)
+bob_speed_y = 0.156
+breathe_amount = 0.0
+breathe_speed = 0.065
+home_position = Vector2(475, 1180)
+wander_seed = 6.85
+
+[node name="LitTintModifier" type="Node2D" parent="GemX5" unique_id=1997936506 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX6" type="Sprite2D" parent="." unique_id=941300012]
+modulate = Color(0.15, 1, 0.49, 1)
+material = SubResource("ShaderMaterial_gemI6")
+position = Vector2(605, 740)
+texture = SubResource("CanvasTexture_gem03")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.15, 1, 0.49, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("48_gem03in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.021, 0.42, 0.1806, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX6" type="Node2D" parent="GemX6" unique_id=941300013]
+position = Vector2(-65.99999, -55.999996)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+bob_amount = Vector2(45.9, 72.9)
+bob_speed_x = 0.104
+bob_speed_y = 0.169
+breathe_amount = 0.0
+breathe_speed = 0.078
+home_position = Vector2(605, 740)
+wander_seed = 8.22
+
+[node name="LitTintModifier" type="Node2D" parent="GemX6" unique_id=1187728470 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX7" type="Sprite2D" parent="." unique_id=941300014]
+modulate = Color(0.15, 1, 0.83, 1)
+material = SubResource("ShaderMaterial_gemI7")
+position = Vector2(605, 960)
+texture = SubResource("CanvasTexture_gem03")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.15, 1, 0.83, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("48_gem03in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.021, 0.42, 0.3402, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX7" type="Node2D" parent="GemX7" unique_id=941300015]
+position = Vector2(-65.99999, -95.99999)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = -0.065
+bob_amount = Vector2(55.35, 79.65)
+bob_speed_x = 0.117
+bob_speed_y = 0.182
+breathe_amount = 0.0
+home_position = Vector2(605, 960)
+wander_seed = 9.59
+
+[node name="LitTintModifier" type="Node2D" parent="GemX7" unique_id=1478217155 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX8" type="Sprite2D" parent="." unique_id=941300016]
+modulate = Color(0.15, 0.83, 1, 1)
+material = SubResource("ShaderMaterial_gemI8")
+position = Vector2(605, 1180)
+texture = SubResource("CanvasTexture_gem03")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.15, 0.83, 1, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("48_gem03in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.021, 0.3402, 0.42, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX8" type="Node2D" parent="GemX8" unique_id=941300017]
+position = Vector2(-65.99999, -135.99998)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = 0.078
+bob_amount = Vector2(64.8, 37.8)
+bob_speed_y = 0.195
+breathe_amount = 0.0
+breathe_speed = 0.104
+home_position = Vector2(605, 1180)
+wander_seed = 10.96
+
+[node name="LitTintModifier" type="Node2D" parent="GemX8" unique_id=483582548 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX9" type="Sprite2D" parent="." unique_id=941300018]
+modulate = Color(0.15, 0.49, 1, 1)
+material = SubResource("ShaderMaterial_gemI9")
+position = Vector2(735, 740)
+texture = SubResource("CanvasTexture_gem04")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.15, 0.49, 1, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("53_gem04in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.021, 0.1806, 0.42, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX9" type="Node2D" parent="GemX9" unique_id=941300019]
+position = Vector2(-89.99999, -55.999996)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = -0.091
+bob_amount = Vector2(74.25, 44.55)
+bob_speed_x = 0.143
+bob_speed_y = 0.13
+breathe_amount = 0.0
+breathe_speed = 0.117
+home_position = Vector2(735, 740)
+wander_seed = 12.33
+
+[node name="LitTintModifier" type="Node2D" parent="GemX9" unique_id=184070440 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX10" type="Sprite2D" parent="." unique_id=941300020]
+modulate = Color(0.15, 0.15, 1, 1)
+material = SubResource("ShaderMaterial_gemI10")
+position = Vector2(735, 960)
+texture = SubResource("CanvasTexture_gem04")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.15, 0.15, 1, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("53_gem04in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.021, 0.021, 0.42, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX10" type="Node2D" parent="GemX10" unique_id=941300021]
+position = Vector2(-89.99999, -95.99999)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = 0.039
+bob_amount = Vector2(83.7, 51.3)
+bob_speed_x = 0.156
+bob_speed_y = 0.143
+breathe_amount = 0.0
+breathe_speed = 0.065
+home_position = Vector2(735, 960)
+wander_seed = 13.7
+
+[node name="LitTintModifier" type="Node2D" parent="GemX10" unique_id=462548333 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX11" type="Sprite2D" parent="." unique_id=941300022]
+modulate = Color(0.49, 0.15, 1, 1)
+material = SubResource("ShaderMaterial_gemI11")
+position = Vector2(735, 1180)
+texture = SubResource("CanvasTexture_gem04")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.49, 0.15, 1, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("53_gem04in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.1806, 0.021, 0.42, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX11" type="Node2D" parent="GemX11" unique_id=941300023]
+position = Vector2(-89.99999, -135.99998)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = -0.052
+bob_amount = Vector2(93.15, 58.05)
+bob_speed_y = 0.156
+breathe_amount = 0.0
+breathe_speed = 0.078
+home_position = Vector2(735, 1180)
+wander_seed = 15.07
+
+[node name="LitTintModifier" type="Node2D" parent="GemX11" unique_id=395444287 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX12" type="Sprite2D" parent="." unique_id=941300024]
+modulate = Color(0.83, 0.15, 1, 1)
+material = SubResource("ShaderMaterial_gemI12")
+position = Vector2(540, 740)
+texture = SubResource("CanvasTexture_gem00")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(0.83, 0.15, 1, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("63_gem00in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.3402, 0.021, 0.42, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX12" type="Node2D" parent="GemX12" unique_id=941300025]
+position = Vector2(-17.999998, -55.999996)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = 0.0455
+bob_amount = Vector2(54, 37.8)
+bob_speed_x = 0.117
+bob_speed_y = 0.156
+breathe_amount = 0.0
+breathe_speed = 0.0715
+home_position = Vector2(540, 740)
+wander_seed = 21.3
+
+[node name="LitTintModifier" type="Node2D" parent="GemX12" unique_id=157204528 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX13" type="Sprite2D" parent="." unique_id=941300026]
+modulate = Color(1, 0.15, 0.83, 1)
+material = SubResource("ShaderMaterial_gemI13")
+position = Vector2(540, 960)
+texture = SubResource("CanvasTexture_gem00")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(1, 0.15, 0.83, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("63_gem00in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.42, 0.021, 0.3402, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX13" type="Node2D" parent="GemX13" unique_id=941300027]
+position = Vector2(-53.999996, -95.99999)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = -0.0585
+bob_amount = Vector2(74.25, 48.6)
+bob_speed_x = 0.143
+bob_speed_y = 0.13
+breathe_amount = 0.0
+breathe_speed = 0.078
+home_position = Vector2(540, 960)
+wander_seed = 27.9
+
+[node name="LitTintModifier" type="Node2D" parent="GemX13" unique_id=822986073 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="GemX14" type="Sprite2D" parent="." unique_id=941300028]
+modulate = Color(1, 0.15, 0.49, 1)
+material = SubResource("ShaderMaterial_gemI14")
+position = Vector2(540, 1180)
+texture = SubResource("CanvasTexture_gem00")
+script = ExtResource("8_mnqrt")
+transmission_strength = 0.7
+transmission_color = Color(1, 0.15, 0.49, 1)
+transmission_wrap = 0.6
+transmission_alpha_amount = 0.25
+internal_strength = 2.1
+internal_normal_map = ExtResource("63_gem00in")
+internal_k = 150.0
+absorption_strength = 0.6
+absorption_color = Color(0.42, 0.021, 0.1806, 1)
+dispersion_amount = 0.5
+refraction_strength = 0.3
+refraction_amount = 0.03
+refraction_tint = 0.8
+receiver_mask = 1
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="GemMotionX14" type="Node2D" parent="GemX14" unique_id=941300029]
+position = Vector2(-35.999996, -75.99999)
+scale = Vector2(0.099999994, 0.099999994)
+script = ExtResource("23_gemmot")
+gem_path = NodePath("..")
+rotation_speed = 0.065
+bob_amount = Vector2(64.8, 43.2)
+bob_speed_y = 0.169
+breathe_amount = 0.0
+breathe_speed = 0.065
+home_position = Vector2(540, 1180)
+wander_seed = 34.1
+
+[node name="LitTintModifier" type="Node2D" parent="GemX14" unique_id=2096270122 node_paths=PackedStringArray("source")]
+script = ExtResource("lit_tint_modifier")
+source = NodePath("..")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1618820850]
+position = Vector2(540, 960)
+
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]
+visible = false
+position = Vector2(-9, 2)
+script = ExtResource("20_bt14p")
+color = Color(0, 0, 0, 1)
+ambient_energy = 0.0
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
+visible = false
+script = ExtResource("21_0x8ty")
+bloom_threshold = 0.14
+bloom_intensity = 1.83
+bloom_radius = 3.56
+halation_threshold = 0.17
+halation_intensity = 0.59
+halation_radius = 5.04
+halation_tint = Color(0.8427926, 0.06220977, 0.55192626, 1)
+grade_enabled = true
+exposure = 2.12
+lut_preset = 7
+lut_amount = 0.77
+metadata/_custom_type_script = "uid://djrtgftop1i8a"
+
+[node name="GemLightOrbit" type="Node2D" parent="." unique_id=2029040105]
+script = ExtResource("22_gemorb")
+
+[node name="LitPointLight2D" type="Node2D" parent="GemLightOrbit" unique_id=2029040104]
+position = Vector2(955.00006, 526)
+scale = Vector2(11, 11)
+script = ExtResource("10_bf3a8")
+range = 1024.0
+height = 45.0
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="GemLightOrbit2" type="Node2D" parent="." unique_id=2029040106]
+script = ExtResource("22_gemorb")
+orbit_radius = 520.0
+orbit_speed = -0.13
+range_center = 760.0
+range_amount = 300.0
+range_speed = 0.09
+height_center = 80.0
+height_amount = 50.0
+height_speed = 0.05
+
+[node name="LitPointLight2D2" type="Node2D" parent="GemLightOrbit2" unique_id=2029040107]
+position = Vector2(469, 234)
+scale = Vector2(11, 11)
+script = ExtResource("10_bf3a8")
+range = 760.0
+height = 80.0
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="GemLightOrbit3" type="Node2D" parent="." unique_id=2029040108]
+script = ExtResource("22_gemorb")
+orbit_radius = 280.0
+orbit_speed = 0.27
+range_center = 980.0
+range_amount = 420.0
+range_speed = 0.14
+height_center = 40.0
+height_amount = 30.0
+height_speed = 0.1
+
+[node name="LitPointLight2D3" type="Node2D" parent="GemLightOrbit3" unique_id=2029040109]
+position = Vector2(749, 754)
+scale = Vector2(11, 11)
+script = ExtResource("10_bf3a8")
+range = 980.0
+height = 40.0
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="GemLightOrbit4" type="Node2D" parent="." unique_id=2029040110]
+script = ExtResource("22_gemorb")
+orbit_radius = 640.0
+orbit_speed = -0.08
+range_center = 1100.0
+range_amount = 350.0
+range_speed = 0.06
+height_center = 100.0
+height_amount = 60.0
+height_speed = 0.09
+
+[node name="LitPointLight2D4" type="Node2D" parent="GemLightOrbit4" unique_id=2029040111]
+position = Vector2(469, 1394)
+scale = Vector2(11, 11)
+script = ExtResource("10_bf3a8")
+range = 1100.0
+height = 100.0
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LitTintBuffer" type="SubViewport" parent="." unique_id=2090310539]
+transparent_bg = true
+size = Vector2i(2560, 1377)
+render_target_update_mode = 4
+script = ExtResource("lit_tint_buffer")
+
+[node name="LitTintBeams" type="CanvasLayer" parent="." unique_id=1842805144]
+script = ExtResource("lit_tint_beams")
+intensity = 0.7

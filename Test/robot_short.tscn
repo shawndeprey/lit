@@ -1,0 +1,67 @@
+[gd_scene format=3 uid="uid://du2ncjm2fkmyv"]
+
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="1_mod"]
+[ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="2_post"]
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="2_vuq1s"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="3_litspr"]
+[ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="5_dir"]
+[ext_resource type="Script" uid="uid://n4us2x5l636w" path="res://Test/robot_walker_lit.gd" id="6_walker"]
+[ext_resource type="Texture2D" uid="uid://cot6hxtrmciim" path="res://Test/robot.png" id="7_robot_d"]
+[ext_resource type="Texture2D" uid="uid://dvccett47cpdk" path="res://Test/robot_s.png" id="7_vuq1s"]
+[ext_resource type="Texture2D" uid="uid://ceh75fbps4j17" path="res://Test/robot_n.png" id="8_robot_n"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_tg2op"]
+shader = ExtResource("2_vuq1s")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_robot"]
+diffuse_texture = ExtResource("7_robot_d")
+normal_texture = ExtResource("8_robot_n")
+specular_texture = ExtResource("7_vuq1s")
+
+[node name="RobotShort" type="Node2D" unique_id=1766660856]
+
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1227441669]
+script = ExtResource("1_mod")
+color = Color(0.02, 0.02, 0.04, 1)
+ambient_energy = 0.05
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=1726494829]
+script = ExtResource("2_post")
+bloom_threshold = 0.45
+bloom_intensity = 1.3
+bloom_radius = 3.0
+grade_enabled = true
+metadata/_custom_type_script = "uid://djrtgftop1i8a"
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1470066783]
+position = Vector2(540, 960)
+
+[node name="Robot" type="Node2D" parent="." unique_id=513085770]
+position = Vector2(40, 120)
+script = ExtResource("6_walker")
+
+[node name="LitSprite2D" type="Sprite2D" parent="Robot" unique_id=1346227912]
+texture_filter = 1
+material = SubResource("ShaderMaterial_tg2op")
+scale = Vector2(4, 4)
+texture = SubResource("CanvasTexture_robot")
+hframes = 14
+script = ExtResource("3_litspr")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="KeyLight" type="Node2D" parent="." unique_id=943251922]
+rotation = -4.537856
+script = ExtResource("5_dir")
+height = 22.0
+shadow_enabled = true
+shadow_hardness = 0.2
+metadata/_custom_type_script = "uid://7156lwdhmrod"

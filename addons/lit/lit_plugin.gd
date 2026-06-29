@@ -185,6 +185,14 @@ func _ps_global_defs() -> Array:
 			"name": "lit_tile_indices",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
 		},
+		{
+			"name": "lit_tint_buffer",
+			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
+		},
+		{
+			"name": "lit_tint_buffer_blurred",
+			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
+		},
 	]
 
 ## RenderingServer live-add defs: name + GlobalShaderParameterType + default.
@@ -208,6 +216,8 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_directional_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_tile_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_tint_buffer", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _tint_identity_texture()},
+		{"name": "lit_tint_buffer_blurred", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _tint_identity_texture()},
 	]
 
 ## Persist the shader_globals into project.godot. Idempotent: writes only the missing
@@ -302,6 +312,17 @@ func _remove_live_globals() -> void:
 ## A 1x1 float texture used only as the sampler global's default value; the manager
 ## overrides it with real light data every frame.
 func _placeholder_texture() -> ImageTexture:
+	var img := Image.create(1, 1, false, Image.FORMAT_RGBAF)
+	img.set_pixel(0, 0, Color(0, 0, 0, 0))
+	return ImageTexture.create_from_image(img)
+
+## The tint buffer's safe default: a 1x1 (1,1,1,0) texel — white tint, zero density — so a
+## scene with no LitTintBuffer reads it as a pure no-op (light is multiplied by white, never
+## blackened). LitTintBuffer overrides this with the real buffer once present.
+func _tint_identity_texture() -> ImageTexture:
+	# Default when no LitTintBuffer is published. The tint buffer is premultiplied additive
+	# (rgb = tint*density, a = density), so the no-op identity is all-zero: readers gate on
+	# a > 0 and skip a clear texel entirely.
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBAF)
 	img.set_pixel(0, 0, Color(0, 0, 0, 0))
 	return ImageTexture.create_from_image(img)
