@@ -79,6 +79,9 @@ That's it — everything updates live in the editor as you build.
 - **Three light types.** Point, Directional (a sun), and Spot (a cone).
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
 - **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` — no wiring.
+- **Blinn–Phong or PBR.** Pick the lighting model in Project Settings → Lit. PBR adds
+  optional metallic / roughness / AO inputs on the receiver material; switch back to
+  Blinn–Phong any time and the extra maps are simply ignored.
 - **Darkness & ambient.** One `LitCanvasModulate` node sets the mood for the whole scene.
 - **Light masks.** Make a light affect only the things you want it to.
 - **Negative lights.** Flip a light to *subtract* to carve pools of extra darkness.

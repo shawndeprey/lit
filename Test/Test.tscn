@@ -1,11 +1,14 @@
 [gd_scene format=4 uid="uid://dnpho6vflpb77"]
 
-[ext_resource type="Texture2D" uid="uid://d36w3i71oinw6" path="res://Test/cinderskull_preview.png" id="1_n8bxl"]
+[ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="1_n8bxl"]
 [ext_resource type="PackedScene" uid="uid://d28fv3x2iqnq2" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="1_un7ao"]
-[ext_resource type="Texture2D" uid="uid://00ekrajqf1ch" path="res://Test/cinderskull_preview_n.png" id="2_pyd3v"]
+[ext_resource type="Texture2D" uid="uid://5dyqhlg1hsbm" path="res://Test/cinderskull_preview_n.png" id="2_pyd3v"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_4l8u5"]
 [ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="3_es8hm"]
+[ext_resource type="Texture2D" uid="uid://ddmawqx8gjxf5" path="res://Test/cinderskull_preview_o.png" id="3_x1o0v"]
+[ext_resource type="Texture2D" uid="uid://cgevs35a2oh53" path="res://Test/cinderskull_preview_r.png" id="4_abemx"]
 [ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="4_lg8mm"]
+[ext_resource type="Texture2D" uid="uid://c2tvumpk2lm8k" path="res://Test/cinderskull_preview_s.png" id="6_abemx"]
 [ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="6_ngwpp"]
 [ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="7_iednq"]
 [ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="8_5ghie"]
@@ -52,6 +55,11 @@ shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = true
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_map = ExtResource("4_abemx")
+shader_parameter/roughness_value = 1.0
+shader_parameter/ao_map = ExtResource("3_x1o0v")
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
 shader_parameter/directional_horizontal_scale = 32.0
@@ -60,6 +68,7 @@ shader_parameter/directional_shadow_reach = 1.0
 [sub_resource type="CanvasTexture" id="CanvasTexture_x1o0v"]
 diffuse_texture = ExtResource("1_n8bxl")
 normal_texture = ExtResource("2_pyd3v")
+specular_texture = ExtResource("6_abemx")
 
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
 polygon = PackedVector2Array(-5.200012, -11.799999, -9.400017, -7.5999985, -9.600014, 1.5999947, -7.8000107, 7.200001, -3.0000153, 13.200001, 2.1999893, 12.999996, 6.599991, 7.999996, 8.399994, 1.5999947, 8.999992, -6.4000053, 6.799988, -10.600006, 2.399994, -12.000008)
@@ -80,7 +89,7 @@ process_material = SubResource("ParticleProcessMaterial_ynfqq")
 
 [node name="LitSprite2D" type="Sprite2D" parent="." unique_id=1127649428]
 material = SubResource("ShaderMaterial_s7aw1")
-position = Vector2(578, 326.00003)
+position = Vector2(586, 320.00003)
 scale = Vector2(5, 5)
 texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("6_ngwpp")
@@ -111,7 +120,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(572, 117.99997)
+position = Vector2(574, 122)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 2.5
@@ -122,7 +131,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights" unique_id=1063815886]
-position = Vector2(744, 442)
+position = Vector2(752, 429)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 3.0
@@ -149,6 +158,7 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 position = Vector2(576, 324)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
+visible = false
 script = ExtResource("11_ngwpp")
 bloom_threshold = 0.14
 bloom_intensity = 1.83
