@@ -17,6 +17,21 @@ const MAX_LIGHTS := 128
 const PROP_COUNT := 7
 const BRAND := Color("#ffca60")
 
+# Lighting models, mirroring LitManager.LightingModel / LIT_MODEL_* in the receiver shader.
+# The PBR stage flips the lit_lighting_model global directly on the RenderingServer for a
+# clean runtime toggle, then restores it on teardown so the rest of the reel stays Phong.
+const LIT_MODEL_PHONG := 0
+const LIT_MODEL_PBR := 1
+
+# Skull PBR material maps. The diffuse is left untouched; the normal feeds the CanvasTexture
+# normal slot, while roughness (derived 1 - specular) and AO (the old _o occlusion map) feed
+# the receiver's PBR uniforms. Bone is a dielectric, so metallic stays 0 via the scalar.
+# NOTE: import roughness/AO/normal as linear (sRGB unchecked); diffuse stays sRGB.
+const SKULL_DIFFUSE_PATH := "res://addons/lit/demo/cinderskull_preview.png"
+const SKULL_NORMAL_PATH := "res://addons/lit/demo/cinderskull_preview_n.png"
+const SKULL_ROUGHNESS_PATH := "res://addons/lit/demo/cinderskull_preview_r.png"
+const SKULL_AO_PATH := "res://addons/lit/demo/cinderskull_preview_o.png"
+
 # --- runtime state ---
 var _running := false
 var _stage_index := -1
@@ -38,6 +53,20 @@ var _orig_modulate_color := Color.BLACK
 var _post: Node = null
 var _post_orig := {}
 var _occluders: Array = []       # pre-existing scene occluders, disabled during the demo
+
+# The lighting model in effect before the demo touched it, captured on start and restored
+# on teardown. The PBR stage overrides the live global; everything else runs Phong.
+var _orig_lighting_model := LIT_MODEL_PHONG
+
+# Lazily-built skull prop maps, shared across the PBR stage's props.
+var _skull_diffuse: Texture2D = null
+var _skull_normal: Texture2D = null
+var _skull_roughness: Texture2D = null
+var _skull_ao: Texture2D = null
+
+# True while the PBR stage's skull props stand in for the standard white blocks, so the
+# next stage knows to restore the blocks.
+var _props_are_skulls := false
 
 # --- UI ---
 var _ui: CanvasLayer
@@ -61,6 +90,7 @@ var _stages := [
 	{"id": "negative",  "name": "Negative Lights",           "desc": "Subtract mode carves darkness",        "dur": 5.0,  "auto": true},
 	{"id": "masks",     "name": "Light Masks",               "desc": "Lights only touch matching objects",   "dur": 5.5,  "auto": true},
 	{"id": "stress",    "name": "Stress Test",               "desc": "Ramping up to 128 lights…",            "dur": 14.0, "auto": true},
+	{"id": "pbr",       "name": "PBR Materials",             "desc": "Metallic-roughness · normal, roughness & AO maps", "dur": 9.0, "auto": true},
 	{"id": "fx_bloom",     "name": "Post FX - Bloom",           "desc": "Glow on the brights",                 "dur": 4.0,  "auto": true},
 	{"id": "fx_halation",  "name": "Post FX - Bloom + Halation","desc": "Warm highlight bleed, pure fire",    "dur": 4.5,  "auto": true},
 	{"id": "fx_grade",     "name": "Post FX - Color Grade + LUT","desc": "Cinematic color",                     "dur": 4.0,  "auto": true},
@@ -201,6 +231,9 @@ func _teardown() -> void:
 		if is_instance_valid(o.node):
 			o.node.sdf_collision = o.sdf
 	_occluders.clear()
+	# Put the lighting model back the way the scene had it.
+	RenderingServer.global_shader_parameter_set("lit_lighting_model", _orig_lighting_model)
+	_props_are_skulls = false
 
 
 func _capture_scene_state() -> void:
@@ -208,6 +241,13 @@ func _capture_scene_state() -> void:
 	_orig_lights = get_tree().get_nodes_in_group("lit_lights").duplicate()
 	for l in _orig_lights:
 		l.enabled = false
+
+	# Remember the live lighting model so the PBR stage can override it and teardown can
+	# put it back. global_shader_parameter_get is editor-only (blocked at runtime), so read
+	# the project setting that LitManager publishes from, not the RenderingServer global.
+	# Setting the global at runtime is fine; only getting it is blocked.
+	_orig_lighting_model = clampi(int(ProjectSettings.get_setting(
+		"lit/render/lighting_model", LIT_MODEL_PHONG)), LIT_MODEL_PHONG, LIT_MODEL_PBR)
 
 	var scene := get_tree().current_scene
 	_modulate = _find_first(scene, LitCanvasModulate)
@@ -304,6 +344,76 @@ func _clear_props() -> void:
 		if is_instance_valid(p.root):
 			p.root.queue_free()
 	_props.clear()
+
+
+# Lazily load the skull maps once. Returns false if any required map is missing, so the
+# PBR stage can degrade gracefully instead of erroring on a half-installed demo.
+func _ensure_skull_textures() -> bool:
+	if _skull_diffuse == null and ResourceLoader.exists(SKULL_DIFFUSE_PATH):
+		_skull_diffuse = load(SKULL_DIFFUSE_PATH)
+	if _skull_normal == null and ResourceLoader.exists(SKULL_NORMAL_PATH):
+		_skull_normal = load(SKULL_NORMAL_PATH)
+	if _skull_roughness == null and ResourceLoader.exists(SKULL_ROUGHNESS_PATH):
+		_skull_roughness = load(SKULL_ROUGHNESS_PATH)
+	if _skull_ao == null and ResourceLoader.exists(SKULL_AO_PATH):
+		_skull_ao = load(SKULL_AO_PATH)
+	return _skull_diffuse != null and _skull_normal != null
+
+
+# A row of skull props centered in the play area. Each is identical material-wise; the
+# point is to see the PBR maps respond to the moving lights, not to vary the material.
+func _spawn_skull_grid() -> void:
+	if not _ensure_skull_textures():
+		# Maps not imported yet: fall back to the old white blocks so the stage still runs.
+		_spawn_props()
+		return
+	var count := 5
+	var spacing: float = min(_area_half.x * 2.0 / float(count + 1), 220.0)
+	var tex_scale := 3.0  # the maps are 32px; scale up so the surface detail is visible
+	for i in count:
+		var x := _area_center.x + (float(i) - float(count - 1) * 0.5) * spacing
+		var pos := Vector2(x, _area_center.y)
+		_make_skull_prop(pos, tex_scale)
+
+
+func _make_skull_prop(pos: Vector2, tex_scale: float) -> void:
+	var root := Node2D.new()
+	root.position = pos
+	add_child(root)
+
+	# Diffuse + normal ride together on a CanvasTexture: Godot feeds normal_texture into the
+	# shader's NORMAL, which the receiver uses in both Phong and PBR. The diffuse is the
+	# untouched original art.
+	var ctex := CanvasTexture.new()
+	ctex.diffuse_texture = _skull_diffuse
+	ctex.normal_texture = _skull_normal
+
+	var spr := Sprite2D.new()
+	spr.texture = ctex
+	spr.scale = Vector2(tex_scale, tex_scale)
+
+	var mat := ShaderMaterial.new()
+	mat.shader = RECEIVER_SHADER
+	# PBR material inputs. Roughness and AO are real maps; their scalars stay at 1 so the
+	# map drives the value. Metallic is 0 (bone is a dielectric) with no map needed.
+	mat.set_shader_parameter("roughness_map", _skull_roughness)
+	mat.set_shader_parameter("roughness_value", 1.0)
+	mat.set_shader_parameter("ao_map", _skull_ao)
+	mat.set_shader_parameter("metallic_value", 0.0)
+	spr.material = mat
+	root.add_child(spr)
+
+	# Occlude from the SDF using the sprite's footprint so the skulls cast shadows too.
+	var occ := LightOccluder2D.new()
+	var poly := OccluderPolygon2D.new()
+	var tex_size := _skull_diffuse.get_size() * tex_scale
+	var hw := tex_size.x * 0.5
+	var hh := tex_size.y * 0.5
+	poly.polygon = PackedVector2Array([Vector2(-hw, -hh), Vector2(hw, -hh), Vector2(hw, hh), Vector2(-hw, hh)])
+	occ.occluder = poly
+	root.add_child(occ)
+
+	_props.append({"root": root, "mat": mat})
 
 
 # =====================================================================================
@@ -412,6 +522,19 @@ func _enter_stage(idx: int) -> void:
 	if not String(s.id).begins_with("fx_") and s.id != "finale":
 		_post_all_off()
 
+	# Lighting model is Phong for the whole reel except the dedicated PBR stage, which
+	# flips the global on entry. Setting it on every stage (not just on the two
+	# transitions) keeps it correct when the user skips in or out of the PBR stage.
+	RenderingServer.global_shader_parameter_set(
+		"lit_lighting_model", LIT_MODEL_PBR if s.id == "pbr" else LIT_MODEL_PHONG)
+
+	# The PBR stage replaces the white-block props with skulls. When we leave it for any
+	# other stage, put the standard blocks back so the rest of the reel looks unchanged.
+	if s.id != "pbr" and _props_are_skulls:
+		_clear_props()
+		_spawn_props()
+		_props_are_skulls = false
+
 	match s.id:
 		"intro":
 			_clear_lights()
@@ -454,6 +577,29 @@ func _enter_stage(idx: int) -> void:
 				p.mat.set_shader_parameter("receiver_mask", 1)   # undo the mask split
 			_clear_lights()
 			_ensure_count(8, ["point", "spot", "point", "dir"], true)
+		"pbr":
+			# Swap the plain white occluder blocks for skull props that carry real
+			# normal / roughness / AO maps, so the PBR path has surface detail to act on.
+			# A pair of warm orbiting point lights rake across them; as they sweep, the
+			# normal map shapes the shading and the polished (low-roughness) ridges throw
+			# tight highlights the matte bone doesn't.
+			_clear_props()
+			_clear_lights()
+			_spawn_skull_grid()
+			_props_are_skulls = true
+			var pbr_a := _spawn_light("point", Color(1.0, 0.9, 0.72))
+			pbr_a.node.range = 520.0
+			pbr_a.node.energy = 2.0
+			pbr_a.base_energy = 2.0
+			pbr_a.pulse_speed = 0.0
+			pbr_a.hue = -1.0
+			var pbr_b := _spawn_light("point", Color(0.7, 0.82, 1.0))
+			pbr_b.node.range = 520.0
+			pbr_b.node.energy = 1.6
+			pbr_b.base_energy = 1.6
+			pbr_b.pulse_speed = 0.0
+			pbr_b.hue = -1.0
+			pbr_b.phase = PI            # orbit opposite the warm light so detail is raked from both sides
 		"fx_bloom":
 			_ensure_count(8, ["point", "spot", "point", "dir"], true)   # thin out so the FX aren't blown out
 			if _post:
