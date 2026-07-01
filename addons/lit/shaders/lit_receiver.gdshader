@@ -35,6 +35,16 @@ global uniform int       lit_tile_size;                 // tile edge in pixels
 global uniform int  lit_shadow_steps_max;
 global uniform bool lit_shadow_step_scaling;
 
+// Stained-glass tint buffer. A screen-space RGBA image where translucent occluders
+// (gems) have painted their body color (RGB) and how much they tint passing light (A).
+// When a shadow march crosses one of these, the blocked light is recolored by the tint
+// instead of going fully black, which is how a gem casts a colored glow of the light
+// shining through it. Published by whoever fills the buffer (the demo's SubViewport);
+// when nothing publishes it the default-black/zero-alpha texture leaves shadows neutral,
+// so this is a no-op for ordinary scenes. Sampled with screen UVs.
+global uniform sampler2D lit_tint_buffer;
+global uniform bool      lit_tint_enabled = false;
+
 // The index list is stored as a 2D texture this wide, so a flat index maps to
 // (idx % WIDTH, idx / WIDTH). Must match INDEX_TEX_WIDTH in the registry.
 const int LIT_INDEX_TEX_WIDTH = 2048;
@@ -84,6 +94,16 @@ uniform float metallic_value : hint_range(0.0, 1.0) = 0.0;
 uniform sampler2D roughness_map : hint_default_white;
 uniform float roughness_value : hint_range(0.0, 1.0) = 1.0;
 uniform sampler2D ao_map : hint_default_white;
+
+// --- Translucency / transmission -----------------------------------------------------
+// Subsurface-style wrap lighting: light striking the BACK of the surface (N.L < 0) bleeds
+// through and glows on the lit side, tinted by albedo. transmission_strength scales the
+// whole effect; the transmission_map masks it per-texel (thin/edge areas transmit more);
+// transmission_wrap softens how far past the terminator the glow reaches. Works in both
+// Phong and PBR. 0 strength is fully opaque (the original look), so this is opt-in.
+uniform float transmission_strength : hint_range(0.0, 4.0) = 0.0;
+uniform sampler2D transmission_map : hint_default_white;
+uniform float transmission_wrap : hint_range(0.0, 1.0) = 0.5;
 
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
@@ -162,7 +182,7 @@ vec3 lit_f_schlick(float v_dot_h, vec3 f0) {
 // sweep and the per-tile loop in fragment(). metallic/roughness are sampled once per
 // fragment by the caller and used only in PBR mode.
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
-		float metallic, float roughness,
+		float metallic, float roughness, vec3 transmission_col,
 		vec2 frag_uv, vec2 frag_sdf, float sdf_diag) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
@@ -299,6 +319,23 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		contribution = diffuse + specular;
 	}
 
+	// --- Translucency: light coming through the surface from behind ---------------------
+	// A wrapped back-light term. On the front face ndotl handles it; here we capture the
+	// light hitting the far side (dot(N, Ldir) < 0) and let it bleed through, softened by
+	// transmission_wrap so the glow eases past the terminator instead of switching on hard.
+	// Tinted by transmission_col (albedo * the _t map), so a red gem glows red where the
+	// light shines through it. Scaled by atten/energy/light_color like the direct terms, so
+	// it respects range, cone, and the light's hue.
+	if (transmission_strength > 0.0) {
+		float back = dot(N, Ldir);                       // negative on the far side
+		float wrap = mix(0.0, 1.0, transmission_wrap);
+		// Remap so the glow peaks when the light is straight behind the surface and fades
+		// to nothing as it comes around to the front.
+		float t_amount = clamp((-back + wrap) / (1.0 + wrap), 0.0, 1.0);
+		t_amount *= t_amount;                            // soften the falloff
+		contribution += transmission_col * light_color * energy * atten * t_amount * transmission_strength;
+	}
+
 	// Negligible contribution: bail before the expensive SDF shadow march. Below this
 	// the result is indistinguishable from black anyway.
 	if (max(contribution.r, max(contribution.g, contribution.b)) < 0.004) {
@@ -334,7 +371,33 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		}
 
 		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps);
-		contribution *= mix(t3.rgb, vec3(1.0), s);
+
+		// Stained-glass cast: where this fragment is shadowed, check whether the occluder
+		// between it and the light is a translucent tinted body (a gem). If so, the light
+		// it blocks doesn't go fully dark -- some passes through, recolored by the gem. We
+		// sample the tint buffer partway along the march (toward the light, where the
+		// caster sits) and, weighted by the tint's alpha, lift the shadowed result toward
+		// the light's hue times the gem color. Only runs when a tint buffer is published
+		// and this light is actually occluded, so unshadowed pixels and ordinary scenes
+		// pay nothing extra.
+		vec3 shadow_rgb = t3.rgb;
+		if (lit_tint_enabled && s < 0.999) {
+			// Sample a few points along the blocked ray and keep the strongest tint, so a
+			// thin gem between fragment and light is caught even if the midpoint misses it.
+			vec4 tint = vec4(0.0);
+			for (int ts = 1; ts <= 3; ts++) {
+				vec2 sample_uv = mix(frag_uv, light_uv, float(ts) * 0.25);
+				vec4 tt = texture(lit_tint_buffer, sample_uv);
+				if (tt.a > tint.a) {
+					tint = tt;
+				}
+			}
+			// The light that survives through the gem: its own hue, filtered by the gem
+			// color. Blend the normal shadow color toward this by the tint's coverage.
+			vec3 through = light_color * tint.rgb;
+			shadow_rgb = mix(shadow_rgb, through, tint.a);
+		}
+		contribution *= mix(shadow_rgb, vec3(1.0), s);
 	}
 
 	// Subtract mode is negative light: it carves darkness below ambient, and the
@@ -365,6 +428,14 @@ void fragment() {
 	// (ao = 1 in Phong, so this is a no-op there).
 	vec3 lit = albedo * lit_ambient_color.rgb * lit_ambient_energy * ao;
 
+	// Per-fragment transmission color: the gem's body color (albedo) masked by the _t map.
+	// Sampled once and handed to every light's lit_shade so the back-light glow is tinted
+	// per-texel. Skipped entirely when transmission is off (the common case).
+	vec3 transmission_col = vec3(0.0);
+	if (transmission_strength > 0.0) {
+		transmission_col = albedo * texture(transmission_map, UV).rgb;
+	}
+
 	vec2 frag_uv = SCREEN_UV;                     // canonical screen-UV space
 	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // shadow-march space
 
@@ -380,7 +451,7 @@ void fragment() {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
 		// leading directional rows for every fragment.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, frag_uv, frag_sdf, sdf_diag);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -394,12 +465,12 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, frag_uv, frag_sdf, sdf_diag);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, frag_uv, frag_sdf, sdf_diag);
 		}
 	}
 

@@ -193,6 +193,11 @@ func _ps_global_defs() -> Array:
 			"name": "lit_tile_indices",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
 		},
+		{
+			"name": "lit_tint_buffer",
+			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
+		},
+		{"name": "lit_tint_enabled", "def": {"type": "bool", "value": false}},
 	]
 
 ## RenderingServer live-add defs: name + GlobalShaderParameterType + default.
@@ -217,6 +222,8 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_lighting_model", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_tile_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_tint_buffer", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_tint_enabled", "type": RenderingServer.GLOBAL_VAR_TYPE_BOOL, "value": false},
 	]
 
 ## Persist the shader_globals into project.godot. Idempotent: writes only the missing

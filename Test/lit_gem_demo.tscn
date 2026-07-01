@@ -1,0 +1,601 @@
+[gd_scene format=3 uid="uid://bg3mqx7vn2lit"]
+
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="1_mod"]
+[ext_resource type="Script" uid="uid://svvpoft6ukc5" path="res://Test/lit_gem_demo.gd" id="2_demo"]
+[ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="2_ldop2"]
+[ext_resource type="Texture2D" uid="uid://dramr1he5cpx4" path="res://Test/Gemstone_00_ao.png" id="3_2snb8"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="3_sprite"]
+[ext_resource type="Texture2D" uid="uid://bseldk778wfh6" path="res://Test/Gemstone_00_m.png" id="4_ldop2"]
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="4_recv"]
+[ext_resource type="Texture2D" uid="uid://b11ixhedfufu5" path="res://Test/Gemstone_00_r.png" id="5_xuo4r"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="7_point"]
+[ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="8_spot"]
+[ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="9_dir"]
+[ext_resource type="Texture2D" uid="uid://gpspff0f8kbu" path="res://Test/Gemstone_01_ao.png" id="10_h28tp"]
+[ext_resource type="Texture2D" uid="uid://d2cbhgxuyxbq" path="res://Test/Gemstone_01_m.png" id="11_i4vcc"]
+[ext_resource type="Texture2D" uid="uid://qu1gthcfulbk" path="res://Test/Gemstone_01_r.png" id="12_ii7m3"]
+[ext_resource type="Texture2D" uid="uid://dumxghwpsy8xv" path="res://Test/Gemstone_02_ao.png" id="16_ufwtu"]
+[ext_resource type="Texture2D" uid="uid://ca0frrmnngsyn" path="res://Test/Gemstone_02_m.png" id="17_dns66"]
+[ext_resource type="Texture2D" uid="uid://bm4bbwujrnrwb" path="res://Test/Gemstone_02_r.png" id="18_52cly"]
+[ext_resource type="Texture2D" uid="uid://n7pn5tv64exs" path="res://Test/Gemstone_03_ao.png" id="22_7ugyc"]
+[ext_resource type="Texture2D" uid="uid://djtwgun2goqmb" path="res://Test/Gemstone_03_m.png" id="23_r7tgh"]
+[ext_resource type="Texture2D" uid="uid://gtngrfq46wje" path="res://Test/Gemstone_03_r.png" id="24_wptpr"]
+[ext_resource type="Texture2D" uid="uid://ctji58abh255l" path="res://Test/Gemstone_04_ao.png" id="28_rqkjk"]
+[ext_resource type="Texture2D" uid="uid://ds8hmfay6rb00" path="res://Test/Gemstone_04_m.png" id="29_3ddr1"]
+[ext_resource type="Texture2D" uid="uid://cpvat8v3ailuc" path="res://Test/Gemstone_04_r.png" id="30_tuyly"]
+[ext_resource type="Texture2D" uid="uid://dhyyeggds43wh" path="res://Test/Gemstone_00.png" id="d0"]
+[ext_resource type="Texture2D" uid="uid://begioq5l4hqpa" path="res://Test/Gemstone_01.png" id="d1"]
+[ext_resource type="Texture2D" uid="uid://ctxwsjy3fxfbb" path="res://Test/Gemstone_02.png" id="d2"]
+[ext_resource type="Texture2D" uid="uid://djdy8bd1yxkfx" path="res://Test/Gemstone_03.png" id="d3"]
+[ext_resource type="Texture2D" uid="uid://blvom12waivxc" path="res://Test/Gemstone_04.png" id="d4"]
+[ext_resource type="Texture2D" uid="uid://c50tlt8mhxot6" path="res://Test/Gemstone_00_n.png" id="n0"]
+[ext_resource type="Texture2D" uid="uid://ydxgbec3unl2" path="res://Test/Gemstone_01_n.png" id="n1"]
+[ext_resource type="Texture2D" uid="uid://dyjb38gke4gig" path="res://Test/Gemstone_02_n.png" id="n2"]
+[ext_resource type="Texture2D" uid="uid://buo4annyruon1" path="res://Test/Gemstone_03_n.png" id="n3"]
+[ext_resource type="Texture2D" uid="uid://d1ahefmw37gne" path="res://Test/Gemstone_00_t.png" id="t0"]
+[ext_resource type="Texture2D" uid="uid://cxee28wyxfar1" path="res://Test/Gemstone_01_t.png" id="t1"]
+[ext_resource type="Texture2D" uid="uid://clfaxvdsodqmb" path="res://Test/Gemstone_02_t.png" id="t2"]
+[ext_resource type="Texture2D" uid="uid://cl7yr3choyabc" path="res://Test/Gemstone_03_t.png" id="t3"]
+[ext_resource type="Texture2D" uid="uid://dl7ayumk25uyf" path="res://Test/Gemstone_04_t.png" id="t4"]
+
+[sub_resource type="ShaderMaterial" id="M00"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("4_ldop2")
+shader_parameter/metallic_value = 0.25
+shader_parameter/roughness_map = ExtResource("5_xuo4r")
+shader_parameter/roughness_value = 0.12
+shader_parameter/ao_map = ExtResource("3_2snb8")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t0")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CT_gem0"]
+diffuse_texture = ExtResource("d0")
+normal_texture = ExtResource("n0")
+
+[sub_resource type="ShaderMaterial" id="M01"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("11_i4vcc")
+shader_parameter/metallic_value = 0.4
+shader_parameter/roughness_map = ExtResource("12_ii7m3")
+shader_parameter/roughness_value = 0.1
+shader_parameter/ao_map = ExtResource("10_h28tp")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t1")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CT_gem1"]
+diffuse_texture = ExtResource("d1")
+normal_texture = ExtResource("n1")
+
+[sub_resource type="ShaderMaterial" id="M02"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("17_dns66")
+shader_parameter/metallic_value = 0.18
+shader_parameter/roughness_map = ExtResource("18_52cly")
+shader_parameter/roughness_value = 0.22
+shader_parameter/ao_map = ExtResource("16_ufwtu")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t2")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CT_gem2"]
+diffuse_texture = ExtResource("d2")
+normal_texture = ExtResource("n2")
+
+[sub_resource type="ShaderMaterial" id="M03"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("23_r7tgh")
+shader_parameter/metallic_value = 0.32
+shader_parameter/roughness_map = ExtResource("24_wptpr")
+shader_parameter/roughness_value = 0.16
+shader_parameter/ao_map = ExtResource("22_7ugyc")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t3")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CT_gem3"]
+diffuse_texture = ExtResource("d3")
+normal_texture = ExtResource("n3")
+
+[sub_resource type="ShaderMaterial" id="M04"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("29_3ddr1")
+shader_parameter/metallic_value = 0.22
+shader_parameter/roughness_map = ExtResource("30_tuyly")
+shader_parameter/roughness_value = 0.2
+shader_parameter/ao_map = ExtResource("28_rqkjk")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t4")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CT_gem4"]
+diffuse_texture = ExtResource("d4")
+normal_texture = ExtResource("n3")
+
+[sub_resource type="ShaderMaterial" id="M10"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("4_ldop2")
+shader_parameter/metallic_value = 0.45
+shader_parameter/roughness_map = ExtResource("5_xuo4r")
+shader_parameter/roughness_value = 0.09
+shader_parameter/ao_map = ExtResource("3_2snb8")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t0")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M11"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("11_i4vcc")
+shader_parameter/metallic_value = 0.2
+shader_parameter/roughness_map = ExtResource("12_ii7m3")
+shader_parameter/roughness_value = 0.25
+shader_parameter/ao_map = ExtResource("10_h28tp")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t1")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M12"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("17_dns66")
+shader_parameter/metallic_value = 0.35
+shader_parameter/roughness_map = ExtResource("18_52cly")
+shader_parameter/roughness_value = 0.14
+shader_parameter/ao_map = ExtResource("16_ufwtu")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t2")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M13"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("23_r7tgh")
+shader_parameter/metallic_value = 0.28
+shader_parameter/roughness_map = ExtResource("24_wptpr")
+shader_parameter/roughness_value = 0.18
+shader_parameter/ao_map = ExtResource("22_7ugyc")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t3")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M14"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("29_3ddr1")
+shader_parameter/metallic_value = 0.38
+shader_parameter/roughness_map = ExtResource("30_tuyly")
+shader_parameter/roughness_value = 0.11
+shader_parameter/ao_map = ExtResource("28_rqkjk")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t4")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M20"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("4_ldop2")
+shader_parameter/metallic_value = 0.3
+shader_parameter/roughness_map = ExtResource("5_xuo4r")
+shader_parameter/roughness_value = 0.15
+shader_parameter/ao_map = ExtResource("3_2snb8")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t0")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M21"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("11_i4vcc")
+shader_parameter/metallic_value = 0.42
+shader_parameter/roughness_map = ExtResource("12_ii7m3")
+shader_parameter/roughness_value = 0.1
+shader_parameter/ao_map = ExtResource("10_h28tp")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t1")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M22"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("17_dns66")
+shader_parameter/metallic_value = 0.24
+shader_parameter/roughness_map = ExtResource("18_52cly")
+shader_parameter/roughness_value = 0.2
+shader_parameter/ao_map = ExtResource("16_ufwtu")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t2")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M23"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("23_r7tgh")
+shader_parameter/metallic_value = 0.33
+shader_parameter/roughness_map = ExtResource("24_wptpr")
+shader_parameter/roughness_value = 0.13
+shader_parameter/ao_map = ExtResource("22_7ugyc")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t3")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="ShaderMaterial" id="M24"]
+shader = ExtResource("4_recv")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("29_3ddr1")
+shader_parameter/metallic_value = 0.2
+shader_parameter/roughness_map = ExtResource("30_tuyly")
+shader_parameter/roughness_value = 0.23
+shader_parameter/ao_map = ExtResource("28_rqkjk")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("t4")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[node name="GemDemo" type="Node2D" unique_id=797798064]
+
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=2081078479]
+script = ExtResource("1_mod")
+color = Color(0.02, 0.02, 0.035, 1)
+
+[node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=70221935]
+script = ExtResource("2_ldop2")
+bloom_threshold = 0.14
+bloom_intensity = 1.83
+bloom_radius = 3.56
+halation_threshold = 0.17
+halation_intensity = 0.59
+halation_radius = 5.04
+halation_tint = Color(0.8427926, 0.06220977, 0.55192626, 1)
+grade_enabled = true
+exposure = 2.12
+lut_preset = 7
+lut_amount = 0.77
+metadata/_custom_type_script = "uid://djrtgftop1i8a"
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=846220239]
+position = Vector2(576, 324)
+
+[node name="Gems" type="Node2D" parent="." unique_id=214736176]
+
+[node name="Gem00" type="Sprite2D" parent="Gems" unique_id=1102455263]
+modulate = Color(0.95, 0.2, 0.25, 1)
+texture_filter = 1
+material = SubResource("M00")
+position = Vector2(150, 130)
+rotation = 0.4
+scale = Vector2(1.8, 1.8)
+texture = SubResource("CT_gem0")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem01" type="Sprite2D" parent="Gems" unique_id=1185832835]
+modulate = Color(0.25, 0.85, 0.45, 1)
+texture_filter = 1
+material = SubResource("M01")
+position = Vector2(370, 175)
+rotation = -0.7
+scale = Vector2(1.3, 1.3)
+texture = SubResource("CT_gem1")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem02" type="Sprite2D" parent="Gems" unique_id=817081742]
+modulate = Color(0.3, 0.5, 0.95, 1)
+texture_filter = 1
+material = SubResource("M02")
+position = Vector2(580, 140)
+rotation = 1.2
+scale = Vector2(2.1, 2.1)
+texture = SubResource("CT_gem2")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem03" type="Sprite2D" parent="Gems" unique_id=2022080672]
+modulate = Color(0.95, 0.8, 0.2, 1)
+texture_filter = 1
+material = SubResource("M03")
+position = Vector2(790, 175)
+rotation = 2.5
+scale = Vector2(1.5, 1.5)
+texture = SubResource("CT_gem3")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem04" type="Sprite2D" parent="Gems" unique_id=1437633958]
+modulate = Color(0.8, 0.3, 0.9, 1)
+texture_filter = 1
+material = SubResource("M04")
+position = Vector2(1000, 145)
+rotation = -1.5
+scale = Vector2(1.6, 1.6)
+texture = SubResource("CT_gem4")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem10" type="Sprite2D" parent="Gems" unique_id=1659914643]
+modulate = Color(0.2, 0.9, 0.9, 1)
+texture_filter = 1
+material = SubResource("M10")
+position = Vector2(230, 320)
+rotation = 0.9
+scale = Vector2(2, 2)
+texture = SubResource("CT_gem0")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem11" type="Sprite2D" parent="Gems" unique_id=1906126986]
+modulate = Color(0.95, 0.5, 0.2, 1)
+texture_filter = 1
+material = SubResource("M11")
+position = Vector2(460, 340)
+rotation = -0.3
+scale = Vector2(1.4, 1.4)
+texture = SubResource("CT_gem1")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem12" type="Sprite2D" parent="Gems" unique_id=1946898243]
+modulate = Color(0.55, 0.25, 0.95, 1)
+texture_filter = 1
+material = SubResource("M12")
+position = Vector2(690, 310)
+rotation = 1.8
+scale = Vector2(1.7, 1.7)
+texture = SubResource("CT_gem2")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem13" type="Sprite2D" parent="Gems" unique_id=1608021237]
+modulate = Color(0.95, 0.9, 0.95, 1)
+texture_filter = 1
+material = SubResource("M13")
+position = Vector2(900, 335)
+rotation = 0.2
+scale = Vector2(1.9, 1.9)
+texture = SubResource("CT_gem3")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem14" type="Sprite2D" parent="Gems" unique_id=1879011405]
+modulate = Color(0.4, 0.95, 0.6, 1)
+texture_filter = 1
+material = SubResource("M14")
+position = Vector2(1080, 320)
+rotation = -2.2
+scale = Vector2(1.3, 1.3)
+texture = SubResource("CT_gem4")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem20" type="Sprite2D" parent="Gems" unique_id=1667881729]
+modulate = Color(0.95, 0.35, 0.55, 1)
+texture_filter = 1
+material = SubResource("M20")
+position = Vector2(160, 500)
+rotation = 1.4
+scale = Vector2(1.6, 1.6)
+texture = SubResource("CT_gem0")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem21" type="Sprite2D" parent="Gems" unique_id=64988394]
+modulate = Color(0.3, 0.7, 0.95, 1)
+texture_filter = 1
+material = SubResource("M21")
+position = Vector2(390, 520)
+rotation = -1.1
+scale = Vector2(2, 2)
+texture = SubResource("CT_gem1")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem22" type="Sprite2D" parent="Gems" unique_id=93159762]
+modulate = Color(0.85, 0.95, 0.3, 1)
+texture_filter = 1
+material = SubResource("M22")
+position = Vector2(620, 490)
+rotation = 0.6
+scale = Vector2(1.4, 1.4)
+texture = SubResource("CT_gem2")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem23" type="Sprite2D" parent="Gems" unique_id=432914850]
+modulate = Color(0.6, 0.4, 0.95, 1)
+texture_filter = 1
+material = SubResource("M23")
+position = Vector2(850, 515)
+rotation = 2.0
+scale = Vector2(1.7, 1.7)
+texture = SubResource("CT_gem3")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Gem24" type="Sprite2D" parent="Gems" unique_id=1629118073]
+modulate = Color(0.2, 0.95, 0.8, 1)
+texture_filter = 1
+material = SubResource("M24")
+position = Vector2(1060, 500)
+rotation = -0.5
+scale = Vector2(1.8, 1.8)
+texture = SubResource("CT_gem4")
+script = ExtResource("3_sprite")
+emissive_strength = 0.06
+
+[node name="Lights" type="Node2D" parent="." unique_id=1096834992]
+
+[node name="PointA" type="Node2D" parent="Lights" unique_id=714155644]
+position = Vector2(300, 250)
+script = ExtResource("7_point")
+energy = 2.2
+range = 480.0
+height = 45.0
+shadow_enabled = true
+shadow_hardness = 0.0
+
+[node name="PointB" type="Node2D" parent="Lights" unique_id=265099326]
+position = Vector2(820, 400)
+script = ExtResource("7_point")
+energy = 2.0
+range = 480.0
+height = 45.0
+shadow_enabled = true
+shadow_hardness = 0.0
+
+[node name="PointC" type="Node2D" parent="Lights" unique_id=2134638682]
+position = Vector2(576, 324)
+script = ExtResource("7_point")
+energy = 1.8
+range = 440.0
+height = 40.0
+shadow_enabled = true
+shadow_hardness = 0.0
+
+[node name="Spot" type="Node2D" parent="Lights" unique_id=1647983479]
+position = Vector2(576, 120)
+rotation = 1.5708
+script = ExtResource("8_spot")
+energy = 2.4
+range = 560.0
+spot_angle = 38.0
+spot_softness = 0.8
+height = 60.0
+shadow_enabled = true
+shadow_hardness = 0.0
+
+[node name="Sun" type="Node2D" parent="Lights" unique_id=2037410118]
+script = ExtResource("9_dir")
+energy = 0.6
+height = 18.0
+shadow_enabled = true
+shadow_hardness = 0.0
+
+[node name="GemShowcase" type="Node2D" parent="." unique_id=179444964]
+script = ExtResource("2_demo")

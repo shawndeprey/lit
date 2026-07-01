@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Lit"
-run/main_scene="uid://dnpho6vflpb77"
+run/main_scene="uid://bg3mqx7vn2lit"
 config/features=PackedStringArray("4.7", "Forward Plus")
 boot_splash/bg_color=Color(0, 0, 0, 1)
 config/icon="uid://b7egrpryv4f3y"
@@ -107,4 +107,14 @@ lit_tile_indices={
 "repeat": "disable",
 "type": "sampler2D",
 "value": ""
+}
+lit_tint_buffer={
+"filter": "linear",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
+lit_tint_enabled={
+"type": "bool",
+"value": false
 }
