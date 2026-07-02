@@ -772,6 +772,7 @@ position = Vector2(-51, 596)
 [node name="PointA" type="Node2D" parent="Lights" unique_id=714155644]
 position = Vector2(300, 250)
 script = ExtResource("7_point")
+color = Color(0, 0, 1, 1)
 energy = 2.2
 range = 480.0
 height = 45.0
@@ -781,6 +782,7 @@ shadow_hardness = 0.0
 [node name="PointB" type="Node2D" parent="Lights" unique_id=265099326]
 position = Vector2(820, 400)
 script = ExtResource("7_point")
+color = Color(1, 0, 1, 1)
 energy = 2.0
 range = 480.0
 height = 45.0
@@ -800,6 +802,7 @@ shadow_hardness = 0.0
 position = Vector2(576, 120)
 rotation = 1.5708
 script = ExtResource("8_spot")
+color = Color(0, 1, 0, 1)
 energy = 2.4
 range = 560.0
 spot_angle = 38.0
