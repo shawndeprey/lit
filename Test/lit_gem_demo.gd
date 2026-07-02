@@ -71,6 +71,12 @@ const GEM_TRANSMISSION_PATH := "res://Test/Gemstone_00_t.png"
 ## Polygon simplification for the traced occluders, in texels. Higher = fewer verts,
 ## chunkier silhouette; the SDF blurs sub-texel detail anyway so a few px is free.
 @export_range(0.5, 8.0) var occluder_epsilon: float = 2.0
+## Adaptive shadow march budgets (the lit/quality/shadow_step_scaling behaviour), set at
+## runtime so project.godot never needs editing. Short marches -- like this demo's, where
+## the key lights orbit inside the cluster -- drop to the 16-step floor instead of always
+## spending the full 64-step budget. Autoloads (LitManager) publish the globals before
+## scene _ready runs, so this override sticks for the session.
+@export var adaptive_shadow_steps: bool = true
 
 @export_group("Key & Fill Lighting")
 ## How many lights get shadows (and therefore stained-glass casts): spots are preferred
@@ -154,6 +160,8 @@ func _ready() -> void:
 	_collect_gems()
 	if generate_occluders:
 		_add_gem_occluders()
+	if adaptive_shadow_steps:
+		RenderingServer.global_shader_parameter_set("lit_shadow_step_scaling", true)
 	_register_lights()
 	_apply_transmission_to_gems()
 	_apply_wall_look()

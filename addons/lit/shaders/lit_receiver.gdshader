@@ -151,6 +151,22 @@ uniform sampler2D lit_screen_tex : hint_screen_texture;
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
 
+// --- Contribution-adaptive shadow budget --------------------------------------------
+// In dense multi-light scenes a fragment can be lit by dozens of shadow-casting lights,
+// but only its nearest/brightest few dominate the pixel; the rest are dim contributors
+// whose penumbra, while it must still EXIST, lands on an already-bright pixel and is
+// imperceptible at full sampling. When this is on, each light's shadow step budget is
+// scaled by that light's own (pre-shadow) contribution to THIS fragment relative to
+// shadow_budget_ref: a light at/above the reference marches at full quality, and dimmer
+// lights march coarser down to a floor of shadow_budget_min_steps. Every shadow still
+// renders (nothing is skipped); only the sample density of faint shadows is reduced,
+// where the error is below visible threshold. 0-cost and identical to before when off.
+// This composes with lit_shadow_step_scaling (length-based); the smaller of the two
+// budgets wins, so a march that is both short and faint is cheapest.
+uniform bool  shadow_budget_adaptive = false;
+uniform float shadow_budget_ref : hint_range(0.01, 4.0) = 0.5;
+uniform int   shadow_budget_min_steps : hint_range(4, 64) = 12;
+
 // --- Area-light soft shadows ----------------------------------------------------------
 // A single SDF march gives the IQ k*d/t penumbra, whose softness is capped by the
 // hardness constant and doesn't grow with occluder distance the way a real light's
@@ -163,6 +179,14 @@ uniform float shadow_min_step = 0.2;
 // receivers pay nothing. Works for directionals too (the offset reads as angular size).
 uniform float shadow_penumbra_px : hint_range(0.0, 128.0) = 0.0;
 uniform int   shadow_penumbra_taps : hint_range(1, 4) = 3;
+
+// --- Diagnostics ------------------------------------------------------------------------
+// Paint each fragment by its tile's light count instead of shading (green = few,
+// red = many, blue tint past 48). Flip on a receiver material at runtime to bisect
+// flicker: a light popping while the heat under it is steady exonerates the tile
+// binning/upload and points inside lit_shade; heat blinking in that tile convicts the
+// binning/upload. Zero cost when false (uniform branch).
+uniform bool debug_tile_heat = false;
 
 // Stained-glass shadow transmittance: what FRACTION of a blocked light passes through a
 // gem and lands as its colored shadow. A real gem absorbs most of the light hitting it and
@@ -231,6 +255,42 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps) {
 		t += max(d, shadow_min_step);
 	}
 	return clamp(res, 0.0, 1.0);
+}
+
+// Center-ray probe for the disc (area-light) shadow. Marches once and accumulates TWO
+// penumbra terms: .x is the ordinary IQ result for this ray, .y is a conservative
+// variant with the SDF shrunk by `radius`. The screen SDF is 1-Lipschitz, so any tap
+// ray displaced laterally by at most `radius` sees SDF >= (d - radius) at corresponding
+// points -- meaning if .y saturates at 1.0, EVERY tap of the disc is provably fully
+// lit and the caller can skip the remaining marches entirely. Fully lit fragments are
+// the expensive ones (their marches run the whole way to the light), so this collapses
+// the disc to one march exactly where the taps cost the most. Caller performs the
+// inside-own-occluder escape; this probe assumes texture_sdf(frag_sdf) > 0.
+vec2 lit_shadow_probe(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps, float radius) {
+	vec2 delta = light_sdf - frag_sdf;
+	float maxd = length(delta);
+	if (maxd < 0.0001) {
+		return vec2(1.0);                    // light is on the fragment
+	}
+	vec2 dir = delta / maxd;
+	float t = shadow_min_step;
+	float res = 1.0;
+	float res_disc = 1.0;
+	float k = mix(8.0, 256.0, hardness);
+	for (int s = 0; s < LIT_MAX_SHADOW_STEPS; s++) {
+		if (s >= max_steps || t >= maxd) {
+			break;
+		}
+		float d = texture_sdf(frag_sdf + dir * t);
+		if (d < 0.001) {
+			return vec2(0.0);                // center occluded; nothing certifiable
+		}
+		float k_over_t = k / t;              // shared by both penumbra terms
+		res = min(res, k_over_t * d);
+		res_disc = min(res_disc, k_over_t * (d - radius));
+		t += max(d, shadow_min_step);
+	}
+	return clamp(vec2(res, res_disc), 0.0, 1.0);
 }
 
 // --- PBR helpers (Cook-Torrance microfacet BRDF) ------------------------------------
@@ -408,7 +468,8 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	// it respects range, cone, and the light's hue.
 	if (transmission_strength > 0.0) {
 		float back = dot(N, Ldir);                       // negative on the far side
-		float wrap = mix(0.0, 1.0, transmission_wrap);
+		// mix(0,1,transmission_wrap) is exactly transmission_wrap.
+		float wrap = transmission_wrap;
 		// Remap so the glow peaks when the light is straight behind the surface and fades
 		// to nothing as it comes around to the front.
 		float t_amount = clamp((-back + wrap) / (1.0 + wrap), 0.0, 1.0);
@@ -468,29 +529,78 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			steps = clamp(steps, 16, lit_shadow_steps_max);
 		}
 
+		// Contribution-adaptive budget: fade the step count down for lights that contribute
+		// little to THIS fragment. `contribution` here is the pre-shadow lit color for this
+		// light; its peak channel is how bright the light's mark on this pixel would be if
+		// fully lit. A light at/above shadow_budget_ref keeps its full budget; dimmer lights
+		// scale linearly down to shadow_budget_min_steps. The shadow is never skipped -- a
+		// faint light still marches (>= the floor) and still darkens where occluded -- but a
+		// dim shadow on a bright pixel doesn't need dense sampling to look identical. Applied
+		// as a cap (min), so it only ever REDUCES the budget chosen above, never raises it.
+		if (shadow_budget_adaptive) {
+			float lum = max(contribution.r, max(contribution.g, contribution.b));
+			float q = clamp(lum / max(shadow_budget_ref, 1e-4), 0.0, 1.0);
+			int budget = int(ceil(mix(float(shadow_budget_min_steps), float(steps), q)));
+			steps = min(steps, max(budget, shadow_budget_min_steps));
+		}
+
 		float s;
 		if (shadow_penumbra_px > 0.0) {
-			// Disc light: spread the march targets across the light's width, perpendicular
-			// to the fragment->light ray. Tap positions are stratified across [-1, 1] and
-			// the whole comb slides by a per-fragment hash (a different seed than the tint
-			// jitter so the two noises don't correlate), turning the 3-4 discrete penumbra
-			// bands into smooth gradient noise.
-			vec2 ray = light_sdf - frag_sdf;
-			float rl = max(length(ray), 1e-4);
-			vec2 perp = vec2(-ray.y, ray.x) / rl;
-			// Screen pixels -> SDF units, via the diagonal ratio (screen_uv_to_sdf is affine).
-			float radius = shadow_penumbra_px * sdf_diag / length(lit_viewport_size);
-			float jj = fract(sin(dot(frag_uv, vec2(41.317, 17.923))) * 24571.213) - 0.5;
-			int taps = clamp(shadow_penumbra_taps, 1, 4);
-			s = 0.0;
-			for (int pt = 0; pt < 4; pt++) {
-				if (pt >= taps) {
-					break;                       // constant loop bound so it can unroll
+			// Disc light: average marches toward FIXED stratified points across the light's
+			// width, perpendicular to the fragment->light ray.
+			//
+			// Deliberately NOT jittered. A per-fragment random slide of the tap comb was the
+			// source of dithery dots: whenever the slide pushed one tap across a shadow
+			// edge, the average jumped by 1/taps -- a 25-33% brightness step scattered as
+			// white noise through every penumbra. Instead the taps stay fixed and the bands
+			// are blended analytically: each tap's own IQ penumbra is widened just enough
+			// (by capping its hardness) to span the pitch between neighbouring bands. Both
+			// the band pitch and the IQ penumbra width scale linearly with the fragment-to-
+			// occluder distance, so a single k cap dissolves the staircase at every
+			// distance -- smooth deterministic gradients, zero grain -- while contact edges
+			// stay crisp because both quantities shrink together near the caster.
+			//
+			// Cost model: the center probe below certifies most fully lit fragments with a
+			// single march (see lit_shadow_probe); umbra fragments terminate their marches
+			// at the first hit, which is cheap; only the shadow-edge band pays for the full
+			// tap set. The inside-own-occluder escape is hoisted here so it costs one SDF
+			// sample per light instead of one per tap.
+			if (texture_sdf(frag_sdf) <= 0.0) {
+				s = 1.0;
+			} else {
+				vec2 ray = light_sdf - frag_sdf;
+				float rl = max(length(ray), 1e-4);
+				vec2 perp = vec2(-ray.y, ray.x) / rl;
+				float radius = shadow_penumbra_px * sdf_diag / length(lit_viewport_size);
+				int taps = clamp(shadow_penumbra_taps, 1, 4);
+				// Bands merge when the per-tap IQ cone (width ~d/k) covers the band pitch
+				// (~2*radius*d/(taps*rl)): k <= taps*rl/(2*radius). Map that cap back through
+				// the k = mix(8, 256, hardness) curve lit_shadow uses.
+				float k_cap = float(taps) * rl / (2.0 * radius);
+				float tap_hardness = min(t3.w, clamp((k_cap - 8.0) / 248.0, 0.0, 1.0));
+				vec2 probe = lit_shadow_probe(frag_sdf, light_sdf, tap_hardness, steps, radius);
+				if (probe.y >= 1.0) {
+					s = 1.0;                     // whole disc certified clear: one march paid
+				} else {
+					// Odd tap counts place a tap exactly at u = 0, so the probe's ordinary
+					// result IS the middle tap -- penumbra fragments pay no extra march.
+					// (Even counts have no center tap; the probe is +1 march there, which
+					// still wins overall because certification skips far more than it adds.)
+					bool center_counted = (taps & 1) == 1;
+					s = center_counted ? probe.x : 0.0;
+					for (int pt = 0; pt < 4; pt++) {
+						if (pt >= taps) {
+							break;               // constant loop bound so it can unroll
+						}
+						float u = (float(pt) + 0.5) / float(taps) * 2.0 - 1.0;
+						if (center_counted && abs(u) < 1e-4) {
+							continue;            // middle tap already counted via the probe
+						}
+						s += lit_shadow(frag_sdf, light_sdf + perp * radius * u, tap_hardness, steps);
+					}
+					s /= float(taps);
 				}
-				float u = (float(pt) + 0.5 + jj) / float(taps) * 2.0 - 1.0;
-				s += lit_shadow(frag_sdf, light_sdf + perp * radius * u, t3.w, steps);
 			}
-			s /= float(taps);
 		} else {
 			s = lit_shadow(frag_sdf, light_sdf, t3.w, steps);
 		}
@@ -504,7 +614,10 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		// and this light is actually occluded, so unshadowed pixels and ordinary scenes
 		// pay nothing extra.
 		vec3 shadow_rgb = t3.rgb;
-		if (lit_tint_enabled && s < 0.999) {
+		if (lit_tint_enabled && s < 0.98) {
+			// Gate at 0.98 rather than "any shadow at all": the recolor is weighted by
+			// (1 - s), so at s = 0.99 it shifts the result by ~1% -- invisible -- but the
+			// march still cost 8-48 buffer taps for every penumbra-fringe pixel.
 			// March the blocked ray from fragment to light and treat every gem the ray
 			// crosses as a colored filter, the way real light travels through a stack of
 			// stained glass. Three discrete taps gave a cascade of shrinking copies with
@@ -544,18 +657,27 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			// Per-fragment jitter de-bands the discrete sampling. Each fixed fraction f
 			// projects an enlarged copy of the gem footprint about the light (scale
 			// 1/(1-f)); where consecutive copies of a small feature separate, the gaps
-			// read as a cascade of repeated silhouettes marching toward the light.
-			// Sliding every fragment's sample comb by a screen-hash phase decorrelates
-			// neighbouring fragments, turning those coherent gaps into sub-pixel noise.
-			float jitter = fract(sin(dot(frag_uv, vec2(12.9898, 78.233))) * 43758.5453);
+			// read as a cascade of repeated silhouettes marching toward the light, so the
+			// sample comb slides by a per-fragment phase to decorrelate neighbours.
+			// The phase uses interleaved gradient noise rather than a white sin-hash: IGN
+			// distributes error evenly across neighbouring pixels, so the residual reads
+			// as a fine uniform weave instead of clumped dots -- and the tint jitter's
+			// visible contrast is inherently low anyway (it only shifts hue mixing and
+			// coverage at cast boundaries), so IGN pushes it below notice.
+			vec2 ign_px = frag_uv * lit_viewport_size;
+			float jitter = fract(52.9829189 * fract(0.06711056 * ign_px.x + 0.00583715 * ign_px.y));
 			vec3 filtered = vec3(1.0);            // running transmitted color, starts clear
 			float ray_cov = 0.0;                  // strongest gem coverage along the ray
 			float hit_f = 1.0;                    // ray fraction of the FIRST gem crossing (1 = none)
+			float inv_steps1 = 1.0 / float(tint_steps + 1);
 			for (int ts = 1; ts <= LIT_TINT_MARCH_MAX; ts++) {
 				if (ts > tint_steps) {
 					break;                        // constant loop bound so it can unroll
 				}
-				float f = (float(ts) - jitter) / float(tint_steps + 1);
+				// f is computed directly from the loop index, not carried across iterations,
+				// so each texture fetch's address is independent and the GPU can issue them
+				// ahead of one another instead of serializing on a running sum.
+				float f = (float(ts) - jitter) * inv_steps1;
 				vec4 tt = texture(lit_tint_buffer, mix(frag_uv, tint_end, f));
 				// Per-sample filter: mix toward this gem's color by its coverage. A ray that
 				// grazes only the edge (low alpha) barely tints; a solid crossing tints fully.
@@ -665,6 +787,7 @@ void fragment() {
 	// Tiling is only used once the manager has published a grid; until then (and in the
 	// zero-light case) fall back to looping every light.
 	bool tiling_valid = lit_tile_grid.x > 0 && lit_tile_grid.y > 0 && lit_tile_size > 0;
+	int dbg_tile_count = -1;   // captured in the tile branch for debug_tile_heat
 
 	if (tiling_valid) {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
@@ -680,6 +803,7 @@ void fragment() {
 		vec4 header = texelFetch(lit_tile_headers, tile, 0); // offset | count
 		int offset = int(round(header.x));
 		int count = int(round(header.y));
+		dbg_tile_count = count;
 		for (int j = 0; j < count; j++) {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
@@ -768,5 +892,12 @@ void fragment() {
 		COLOR = vec4(glass_rgb, a);
 	} else {
 		COLOR = vec4(lit + emissive, tex.a * COLOR.a);
+	}
+
+	// Diagnostic overlay: replace the shaded result with the tile's light count.
+	// Applied last so it shows exactly what this fragment's shading loop iterated over.
+	if (debug_tile_heat) {
+		float h = clamp(float(dbg_tile_count) / 32.0, 0.0, 1.0);
+		COLOR = vec4(h, 1.0 - h, dbg_tile_count > 48 ? 1.0 : 0.0, 1.0);
 	}
 }

@@ -1,0 +1,35 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dxvjm5yqlwewu"]
+
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/transmission_strength = 0.0
+shader_parameter/transmission_wrap = 0.5
+shader_parameter/internal_strength = 0.0
+shader_parameter/internal_sharpness = 48.0
+shader_parameter/glass_strength = 0.0
+shader_parameter/glass_refraction = 0.04
+shader_parameter/glass_dispersion = 0.02
+shader_parameter/glass_tint_depth = 0.8
+shader_parameter/glass_opacity = 0.35
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_budget_adaptive = true
+shader_parameter/shadow_budget_ref = 4.0
+shader_parameter/shadow_budget_min_steps = 4
+shader_parameter/shadow_penumbra_px = 0.0
+shader_parameter/shadow_penumbra_taps = 3
+shader_parameter/debug_tile_heat = false
+shader_parameter/lit_shadow_transmittance = 0.35
+shader_parameter/tint_cast_falloff = 0.0
+shader_parameter/tint_shimmer = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
