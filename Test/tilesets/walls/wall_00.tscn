@@ -1,13 +1,13 @@
 [gd_scene format=3 uid="uid://732xef4i5anc"]
 
 [ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="1_anan8"]
-[ext_resource type="Texture2D" uid="uid://ba3hmlstw6c3s" path="res://Test/Wall_00.png" id="2_gmfao"]
-[ext_resource type="Texture2D" uid="uid://ct1e0wlak5luf" path="res://Test/Wall_00_ao.png" id="2_qujsi"]
-[ext_resource type="Texture2D" uid="uid://c3qatd5oirl7p" path="res://Test/Wall_00_n.png" id="3_7nfl4"]
-[ext_resource type="Texture2D" uid="uid://dlfcmqh22xjhs" path="res://Test/Wall_00_m.png" id="3_87qnw"]
-[ext_resource type="Texture2D" uid="uid://coweyse03vh76" path="res://Test/Wall_00_r.png" id="4_ho2lh"]
-[ext_resource type="Texture2D" uid="uid://cy2uig61v03hs" path="res://Test/Wall_00_s.png" id="4_qujsi"]
+[ext_resource type="Texture2D" uid="uid://ccuf4nwpt2f85" path="res://Test/tilesets/walls/Wall_00_ao.png" id="2_juw13"]
+[ext_resource type="Texture2D" uid="uid://c63hsk73s7ooa" path="res://Test/tilesets/walls/Wall_00_m.png" id="3_ggt8d"]
+[ext_resource type="Texture2D" uid="uid://jgwe2fxeda2t" path="res://Test/tilesets/walls/Wall_00_r.png" id="4_w031b"]
+[ext_resource type="Texture2D" uid="uid://b1fd0cltja2r6" path="res://Test/tilesets/walls/Wall_00.png" id="5_7eq21"]
 [ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="5_87qnw"]
+[ext_resource type="Texture2D" uid="uid://b6f6rt7d5l2sf" path="res://Test/tilesets/walls/Wall_00_n.png" id="6_univ3"]
+[ext_resource type="Texture2D" uid="uid://bcmm0ilfqkoyr" path="res://Test/tilesets/walls/Wall_00_s.png" id="7_2mg4c"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_dns66"]
 shader = ExtResource("1_anan8")
@@ -16,22 +16,34 @@ shader_parameter/receiver_mask = 1
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = true
-shader_parameter/metallic_map = ExtResource("3_87qnw")
+shader_parameter/metallic_map = ExtResource("3_ggt8d")
 shader_parameter/metallic_value = 0.0
-shader_parameter/roughness_map = ExtResource("4_ho2lh")
+shader_parameter/roughness_map = ExtResource("4_w031b")
 shader_parameter/roughness_value = 1.0
-shader_parameter/ao_map = ExtResource("2_qujsi")
+shader_parameter/ao_map = ExtResource("2_juw13")
 shader_parameter/transmission_strength = 0.0
 shader_parameter/transmission_wrap = 0.5
+shader_parameter/internal_strength = 0.0
+shader_parameter/internal_sharpness = 48.0
+shader_parameter/glass_strength = 0.0
+shader_parameter/glass_refraction = 0.04
+shader_parameter/glass_dispersion = 0.02
+shader_parameter/glass_tint_depth = 0.8
+shader_parameter/glass_opacity = 0.35
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_penumbra_px = 0.0
+shader_parameter/shadow_penumbra_taps = 3
+shader_parameter/lit_shadow_transmittance = 0.35
+shader_parameter/tint_cast_falloff = 0.0
+shader_parameter/tint_shimmer = 0.0
 shader_parameter/directional_horizontal_scale = 32.0
 shader_parameter/directional_shadow_reach = 1.0
 
 [sub_resource type="CanvasTexture" id="CanvasTexture_52cly"]
-diffuse_texture = ExtResource("2_gmfao")
-normal_texture = ExtResource("3_7nfl4")
-specular_texture = ExtResource("4_qujsi")
+diffuse_texture = ExtResource("5_7eq21")
+normal_texture = ExtResource("6_univ3")
+specular_texture = ExtResource("7_2mg4c")
 
 [node name="Wall_00" type="Sprite2D" unique_id=891773405]
 material = SubResource("ShaderMaterial_dns66")
