@@ -41,9 +41,21 @@ global uniform bool lit_shadow_step_scaling;
 // instead of going fully black, which is how a gem casts a colored glow of the light
 // shining through it. Published by whoever fills the buffer (the demo's SubViewport);
 // when nothing publishes it the default-black/zero-alpha texture leaves shadows neutral,
-// so this is a no-op for ordinary scenes. Sampled with screen UVs.
-global uniform sampler2D lit_tint_buffer;
+// so this is a no-op for ordinary scenes. Sampled with screen UVs. filter_linear so a
+// reduced-resolution buffer (the demo renders it at half res) reads as naturally soft
+// cast edges instead of blocky texels, regardless of the receiver's own texture filter.
+global uniform sampler2D lit_tint_buffer : filter_linear;
 global uniform bool      lit_tint_enabled = false;
+
+// Colored light projection (the "stained-glass pools" cast onto the background). Separate
+// from the shadow-recolor above: this is an ADDITIVE pass that throws each translucent
+// gem's body color onto nearby lit surfaces as a soft glowing pool, the way light through
+// coloured glass lands on a wall. It samples the tint buffer in a ring around each fragment
+// (so the colour bleeds outward from every gem, not only inside a hard shadow) and adds it,
+// scaled by lit_cast_strength, spread over lit_cast_radius screen-UV units. 0 strength =
+// off. The pools inherit the scene's light energy so they brighten with the lighting.
+global uniform float lit_cast_strength = 0.0;
+global uniform float lit_cast_radius = 0.06;
 
 // The index list is stored as a 2D texture this wide, so a flat index maps to
 // (idx % WIDTH, idx / WIDTH). Must match INDEX_TEX_WIDTH in the registry.
@@ -105,8 +117,75 @@ uniform float transmission_strength : hint_range(0.0, 4.0) = 0.0;
 uniform sampler2D transmission_map : hint_default_white;
 uniform float transmission_wrap : hint_range(0.0, 1.0) = 0.5;
 
+// --- Internal facets (refraction sparkle) -------------------------------------------
+// Gems read as gems because you see light bouncing off their INNER facets through the
+// body, not just off the outer surface. We fake that with a second normal map (the old
+// internal_n art) driving an extra specular lobe: bright, tight glints that sit under the
+// surface, tinted by the gem color and gated by transmission so they only appear where
+// the stone is translucent. internal_strength scales it; internal_sharpness controls how
+// tight the sparkle is (higher = smaller, brighter facets). This is a stylised effect,
+// not real refraction, but it restores the internal structure the flat outer normal loses.
+// 0 strength = off, so ordinary receivers are unaffected. Works in both lighting models.
+uniform float internal_strength : hint_range(0.0, 4.0) = 0.0;
+uniform sampler2D internal_normal_map : hint_normal;
+uniform float internal_sharpness : hint_range(1.0, 128.0) = 48.0;
+
+// --- Refractive glass (transparency + background refraction + dispersion) ------------
+// Turns the receiver from an opaque lit surface into a tinted glass body: the background
+// behind the gem is sampled from the screen, bent by the surface normal (refraction) and
+// split per-RGB-channel (chromatic dispersion / diffraction), then the lit gem is composed
+// over it. glass_strength is the master switch (0 = fully opaque, the original behaviour).
+// glass_refraction is how far the normal bends the background sample (in screen UVs);
+// glass_dispersion adds the rainbow channel split; glass_tint_depth controls how strongly
+// the gem body color filters what you see through it; glass_opacity is the gem's own
+// surface presence over the refracted background (higher = more solid/frosted). The screen
+// read uses hint_screen_texture, which Godot backs with a copy of the framebuffer behind
+// this draw, so gems must draw after the background (they do: they're in front).
+uniform float glass_strength : hint_range(0.0, 1.0) = 0.0;
+uniform float glass_refraction : hint_range(0.0, 0.2) = 0.04;
+uniform float glass_dispersion : hint_range(0.0, 0.1) = 0.02;
+uniform float glass_tint_depth : hint_range(0.0, 2.0) = 0.8;
+uniform float glass_opacity : hint_range(0.0, 1.0) = 0.35;
+uniform sampler2D lit_screen_tex : hint_screen_texture;
+
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
+
+// --- Area-light soft shadows ----------------------------------------------------------
+// A single SDF march gives the IQ k*d/t penumbra, whose softness is capped by the
+// hardness constant and doesn't grow with occluder distance the way a real light's
+// does. When shadow_penumbra_px > 0 the light is treated as a disc of that radius (in
+// screen pixels): several marches aim at points spread across the light's width,
+// perpendicular to the ray and jittered per fragment, and the results average. Shadows
+// then stay crisp where the caster touches the receiver and fan out with distance --
+// contact-hardening, the signature of area lighting. Cost is one full march per tap on
+// shadowed key lights only; 0 radius keeps the original single cheap march, so ordinary
+// receivers pay nothing. Works for directionals too (the offset reads as angular size).
+uniform float shadow_penumbra_px : hint_range(0.0, 128.0) = 0.0;
+uniform int   shadow_penumbra_taps : hint_range(1, 4) = 3;
+
+// Stained-glass shadow transmittance: what FRACTION of a blocked light passes through a
+// gem and lands as its colored shadow. A real gem absorbs most of the light hitting it and
+// transmits only a little, so its cast shadow is DIMMER than the fully-lit surface, just
+// tinted. Without this the colored shadow was lifted toward the light's full brightness
+// (light_color * gem_hue), so grazing a bright point light produced bright colored patches
+// instead of dim colored shadows -- the blown-out pools on the outer wall. 0 = opaque
+// (plain dark shadow, no color passes), 1 = fully transparent (no dimming). Keep it low;
+// the colored shadow should read as a shadow first, a color second.
+uniform float lit_shadow_transmittance : hint_range(0.0, 1.0) = 0.35;
+
+// Distance falloff of the colored cast along its streak, in screen pixels. Real caustic
+// pools are brightest just past the object and die off with distance; this measures the
+// ray distance from the shadowed fragment back to the FIRST gem crossing and attenuates
+// the transmitted color by exp(-dist / falloff). 0 disables (constant brightness along
+// the whole streak, the previous behaviour), so ordinary receivers are unaffected.
+uniform float tint_cast_falloff : hint_range(0.0, 4000.0) = 0.0;
+
+// Animated shimmer on the colored casts: two slow drifting sine bands multiplied into
+// the transmitted color, so the pools ripple faintly like light through imperfect glass.
+// Value is the peak amplitude as a fraction of cast brightness; 0 disables. Purely a
+// brightness modulation, so it can't push the cast negative or shift its hue.
+uniform float tint_shimmer : hint_range(0.0, 1.0) = 0.0;
 
 // Horizontal reach of a directional light's shading vector relative to its `height`;
 // elevation is atan(height / scale). The default gives about 27 degrees at height 16,
@@ -183,6 +262,7 @@ vec3 lit_f_schlick(float v_dot_h, vec3 f0) {
 // fragment by the caller and used only in PBR mode.
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float metallic, float roughness, vec3 transmission_col,
+		vec3 internal_N, float internal_amt,
 		vec2 frag_uv, vec2 frag_sdf, float sdf_diag) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
@@ -336,6 +416,24 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		contribution += transmission_col * light_color * energy * atten * t_amount * transmission_strength;
 	}
 
+	// --- Internal facets: sparkle off the inner normals seen through the body -----------
+	// A second Blinn-Phong-style specular lobe using internal_N (the internal_normal_map)
+	// instead of the surface normal N. The half-vector uses a straight-on 2D view (+Z), so
+	// this reads as tight glints from the gem's back facets. Tinted toward the gem color
+	// (transmission_col) so the sparkle carries the stone's hue, and scaled by internal_amt
+	// which the caller has already multiplied by the transmission mask, so inner facets only
+	// shine where the gem is actually translucent. Gated on both strengths for zero cost off.
+	if (internal_strength > 0.0 && internal_amt > 0.0) {
+		vec3 V = vec3(0.0, 0.0, 1.0);
+		vec3 H = normalize(Ldir + V);
+		float in_dot = max(dot(internal_N, H), 0.0);
+		float sparkle = pow(in_dot, internal_sharpness);
+		// Only when the light is on the front side of the internal facet.
+		float face = clamp(dot(internal_N, Ldir), 0.0, 1.0);
+		vec3 tint = mix(vec3(1.0), transmission_col, 0.6);   // mostly white glint, gem-tinted
+		contribution += tint * light_color * energy * atten * sparkle * face * internal_amt * internal_strength;
+	}
+
 	// Negligible contribution: bail before the expensive SDF shadow march. Below this
 	// the result is indistinguishable from black anyway.
 	if (max(contribution.r, max(contribution.g, contribution.b)) < 0.004) {
@@ -370,7 +468,32 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			steps = clamp(steps, 16, lit_shadow_steps_max);
 		}
 
-		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps);
+		float s;
+		if (shadow_penumbra_px > 0.0) {
+			// Disc light: spread the march targets across the light's width, perpendicular
+			// to the fragment->light ray. Tap positions are stratified across [-1, 1] and
+			// the whole comb slides by a per-fragment hash (a different seed than the tint
+			// jitter so the two noises don't correlate), turning the 3-4 discrete penumbra
+			// bands into smooth gradient noise.
+			vec2 ray = light_sdf - frag_sdf;
+			float rl = max(length(ray), 1e-4);
+			vec2 perp = vec2(-ray.y, ray.x) / rl;
+			// Screen pixels -> SDF units, via the diagonal ratio (screen_uv_to_sdf is affine).
+			float radius = shadow_penumbra_px * sdf_diag / length(lit_viewport_size);
+			float jj = fract(sin(dot(frag_uv, vec2(41.317, 17.923))) * 24571.213) - 0.5;
+			int taps = clamp(shadow_penumbra_taps, 1, 4);
+			s = 0.0;
+			for (int pt = 0; pt < 4; pt++) {
+				if (pt >= taps) {
+					break;                       // constant loop bound so it can unroll
+				}
+				float u = (float(pt) + 0.5 + jj) / float(taps) * 2.0 - 1.0;
+				s += lit_shadow(frag_sdf, light_sdf + perp * radius * u, t3.w, steps);
+			}
+			s /= float(taps);
+		} else {
+			s = lit_shadow(frag_sdf, light_sdf, t3.w, steps);
+		}
 
 		// Stained-glass cast: where this fragment is shadowed, check whether the occluder
 		// between it and the light is a translucent tinted body (a gem). If so, the light
@@ -382,20 +505,104 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		// pay nothing extra.
 		vec3 shadow_rgb = t3.rgb;
 		if (lit_tint_enabled && s < 0.999) {
-			// Sample a few points along the blocked ray and keep the strongest tint, so a
-			// thin gem between fragment and light is caught even if the midpoint misses it.
-			vec4 tint = vec4(0.0);
-			for (int ts = 1; ts <= 3; ts++) {
-				vec2 sample_uv = mix(frag_uv, light_uv, float(ts) * 0.25);
-				vec4 tt = texture(lit_tint_buffer, sample_uv);
-				if (tt.a > tint.a) {
-					tint = tt;
+			// March the blocked ray from fragment to light and treat every gem the ray
+			// crosses as a colored filter, the way real light travels through a stack of
+			// stained glass. Three discrete taps gave a cascade of shrinking copies with
+			// gaps between them (nothing was sampled between the fixed fractions); a dense
+			// walk samples the ray continuously so the colored shadow is unbroken.
+			//
+			// The march target depends on the light type. Point/spot lights have a screen
+			// position (light_uv). Directionals DON'T: their t1.xy is a unit screen-space
+			// direction, so treating it as a UV would march toward a fixed bogus point
+			// (e.g. (0.7, -0.7), off-screen) and paint garbage. Instead, walk along the
+			// same toward-light direction and reach the SDF shadow march uses, so the tint
+			// samples the exact corridor the occlusion came from.
+			vec2 tint_end;
+			if (is_directional) {
+				// shadow_dir_uv is a unit pixel direction expressed in UVs; scale by the
+				// screen diagonal in pixels for the same reach as the SDF march.
+				tint_end = frag_uv + shadow_dir_uv * length(lit_viewport_size) * directional_shadow_reach;
+			} else {
+				tint_end = light_uv;
+			}
+			//
+			// Filtering is MULTIPLICATIVE: transmitted light starts white and each gem the
+			// ray passes through multiplies it by that gem's body color (weighted by its
+			// coverage alpha). Overlapping gems therefore darken and saturate toward the
+			// product of their colors instead of summing toward white, which is how colored
+			// glass actually stacks. `ray_cov` tracks peak coverage so we know how much of
+			// the shadow to recolor vs. leave as the plain shadow color.
+			//
+			// Sample count scales with the segment length (aiming for a sample every
+			// ~12 px, clamped) so a directional's full-diagonal march doesn't step 50+ px
+			// at a time and skip small gems, while short fragment->light rays don't waste
+			// taps. Count-dependence of the result is negligible: the hue is renormalized
+			// below and coverage is a max, so only "which gems did the ray cross" matters.
+			const int LIT_TINT_MARCH_MAX = 48;
+			float seg_px = length((tint_end - frag_uv) * lit_viewport_size);
+			int tint_steps = clamp(int(ceil(seg_px / 12.0)), 8, LIT_TINT_MARCH_MAX);
+			// Per-fragment jitter de-bands the discrete sampling. Each fixed fraction f
+			// projects an enlarged copy of the gem footprint about the light (scale
+			// 1/(1-f)); where consecutive copies of a small feature separate, the gaps
+			// read as a cascade of repeated silhouettes marching toward the light.
+			// Sliding every fragment's sample comb by a screen-hash phase decorrelates
+			// neighbouring fragments, turning those coherent gaps into sub-pixel noise.
+			float jitter = fract(sin(dot(frag_uv, vec2(12.9898, 78.233))) * 43758.5453);
+			vec3 filtered = vec3(1.0);            // running transmitted color, starts clear
+			float ray_cov = 0.0;                  // strongest gem coverage along the ray
+			float hit_f = 1.0;                    // ray fraction of the FIRST gem crossing (1 = none)
+			for (int ts = 1; ts <= LIT_TINT_MARCH_MAX; ts++) {
+				if (ts > tint_steps) {
+					break;                        // constant loop bound so it can unroll
+				}
+				float f = (float(ts) - jitter) / float(tint_steps + 1);
+				vec4 tt = texture(lit_tint_buffer, mix(frag_uv, tint_end, f));
+				// Per-sample filter: mix toward this gem's color by its coverage. A ray that
+				// grazes only the edge (low alpha) barely tints; a solid crossing tints fully.
+				filtered *= mix(vec3(1.0), tt.rgb, tt.a);
+				ray_cov = max(ray_cov, tt.a);
+				// First substantive crossing, as a fraction of the march. Since the march runs
+				// fragment -> light, this is how far the caster sits from THIS fragment, which
+				// is exactly the distance a caustic pool fades over.
+				if (tt.a > 0.05) {
+					hit_f = min(hit_f, f);
 				}
 			}
-			// The light that survives through the gem: its own hue, filtered by the gem
-			// color. Blend the normal shadow color toward this by the tint's coverage.
-			vec3 through = light_color * tint.rgb;
-			shadow_rgb = mix(shadow_rgb, through, tint.a);
+			// Saturate the transmitted hue so a gem the ray only partly crossed still casts a
+			// readable color instead of a washed near-white. We renormalize `filtered` to its
+			// brightest channel (pushing it to a pure hue) and then reintroduce brightness via
+			// transmittance below. This is what stops the grazing-ray majority -- where the raw
+			// `filtered` stays near white -- from producing a colorless shadow.
+			float mx = max(filtered.r, max(filtered.g, filtered.b));
+			vec3 hue = (mx > 0.001) ? filtered / mx : vec3(1.0);
+			// Light that survives the stack: the light's hue, tinted to the gem hue, and
+			// ATTENUATED by transmittance so the colored shadow is DIMMER than the lit surface
+			// (a gem absorbs most of the light; only a fraction transmits). Brightness comes
+			// from transmittance; color comes from `hue`. Kept independent so the earlier bug --
+			// lifting the shadow toward full-brightness colored light and blowing out the wall --
+			// can't recur, while the tint stays vivid.
+			vec3 through = light_color * hue * lit_shadow_transmittance;
+			// Caustic falloff: the pool is brightest just past the gem and dies off along the
+			// streak. hit_f * seg_px is the pixel distance from this fragment back to the gem
+			// that cast on it. Gated so a scene that never sets the uniform pays nothing and
+			// keeps the constant-brightness streak.
+			if (tint_cast_falloff > 0.0) {
+				through *= exp(-(hit_f * seg_px) / tint_cast_falloff);
+			}
+			// Watery shimmer: two drifting sine bands at unrelated scales/speeds, multiplied
+			// into brightness only. Cheap (no texture), tiles nothing, and stays positive for
+			// any tint_shimmer <= 1 since the combined term is in [-2, 2] * 0.25.
+			if (tint_shimmer > 0.0) {
+				vec2 p = frag_uv * lit_viewport_size;
+				float n = sin(p.x * 0.021 + p.y * 0.017 + TIME * 1.3)
+						+ sin(p.x * 0.007 - p.y * 0.011 - TIME * 0.7);
+				through *= 1.0 + tint_shimmer * 0.25 * n;
+			}
+			// How much of THIS shadow is actually a gem-cast (vs. a plain occluder). Driven by
+			// the ray's peak coverage, so a ray that genuinely crossed a gem recolors fully and
+			// open stretches stay the plain shadow color. Grazing rays (low coverage) fade in
+			// smoothly rather than snapping off, keeping the streak edges soft.
+			shadow_rgb = mix(shadow_rgb, through, ray_cov);
 		}
 		contribution *= mix(shadow_rgb, vec3(1.0), s);
 	}
@@ -436,6 +643,18 @@ void fragment() {
 		transmission_col = albedo * texture(transmission_map, UV).rgb;
 	}
 
+	// Internal-facet normal + how much this texel sparkles. Decode the internal_normal_map
+	// (tangent-space RGB -> vector) and gate the effect by the transmission mask so inner
+	// facets only glint where the gem is translucent. Skipped when internal facets are off.
+	vec3 internal_N = N;
+	float internal_amt = 0.0;
+	if (internal_strength > 0.0) {
+		vec3 in_rgb = texture(internal_normal_map, UV).rgb;
+		internal_N = normalize(in_rgb * 2.0 - 1.0);
+		// Coverage: the transmission map doubles as "where is the gem body", so reuse it.
+		internal_amt = texture(transmission_map, UV).r;
+	}
+
 	vec2 frag_uv = SCREEN_UV;                     // canonical screen-UV space
 	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // shadow-march space
 
@@ -451,7 +670,7 @@ void fragment() {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
 		// leading directional rows for every fragment.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, internal_N, internal_amt, frag_uv, frag_sdf, sdf_diag);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -465,17 +684,89 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, internal_N, internal_amt, frag_uv, frag_sdf, sdf_diag);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, transmission_col, internal_N, internal_amt, frag_uv, frag_sdf, sdf_diag);
 		}
 	}
 
 	// Emissive ignores the dark and composes with ambient and lights by construction.
 	vec3 emissive = albedo * emissive_strength * texture(emissive_mask, UV).r;
 
-	COLOR = vec4(lit + emissive, tex.a * COLOR.a);
+	// NOTE: Colored "stained-glass pools" on the wall are produced entirely by the
+	// per-light shadow-tint march inside lit_shade (the block that samples lit_tint_buffer
+	// along the fragment->light ray and recolors the shadow). That is the physically
+	// correct projection: a wall fragment sitting behind a gem relative to the light has a
+	// ray that passes through the gem, picks up its color, and casts it onto the wall in the
+	// correct direction, streaking away from the light.
+	//
+	// A separate additive "cast" pass used to live here. It ring-sampled the tint buffer in
+	// 8 directions around each fragment with no knowledge of the light position, so it drew a
+	// direction-agnostic halo of each gem's own footprint (the ring of copies circling a lone
+	// gem) and blew out on the wall near any gem regardless of whether light actually passed
+	// through one. It was removed: it was never a light projection, just a proximity blur, and
+	// it fought the correct shadow-march result. lit_cast_strength / lit_cast_radius are now
+	// unused by the shader (kept as globals so the manager/demo don't error on the set calls).
+
+	// --- Refractive glass compositing --------------------------------------------------
+	// When glass is on, the gem stops being an opaque lit lump. We look at the background
+	// through it: sample the screen behind, bent by the surface normal so facets warp what's
+	// behind them, with a per-channel offset for chromatic dispersion (the rainbow diffraction
+	// the Blinn-Phong version had). The gem body color filters that view (colored glass), and
+	// the lit terms we already computed (specular, transmission glow, internal sparkle,
+	// emissive) add on top as surface light. Alpha stays high enough to read as a solid object
+	// but the refracted background is baked into RGB, so it looks see-through.
+	if (glass_strength > 0.0) {
+		// Bend the background sample by the surface normal's xy. Deeper (more tilted) facets
+		// refract more. Screen-space, so it warps whatever wall is behind the gem.
+		vec2 bend = N.xy * glass_refraction * glass_strength;
+		vec2 disp = N.xy * glass_dispersion * glass_strength;
+		// Per-channel offset = dispersion: R bent a touch more than B, so edges rainbow-split.
+		vec3 refracted;
+		refracted.r = texture(lit_screen_tex, SCREEN_UV + bend + disp).r;
+		refracted.g = texture(lit_screen_tex, SCREEN_UV + bend).g;
+		refracted.b = texture(lit_screen_tex, SCREEN_UV + bend - disp).b;
+
+		// Filter the view through the gem's body color (colored glass). glass_tint_depth
+		// controls how strongly the color absorbs the transmitted background. Up to 1.0 it
+		// blends white->albedo; past 1.0 it keeps darkening toward albedo^depth, so deeply
+		// tinted gems absorb more and stacked overlaps saturate like real stained glass
+		// instead of washing back toward the raw background.
+		float td = clamp(glass_tint_depth, 0.0, 2.0);
+		vec3 body = mix(vec3(1.0), albedo, min(td, 1.0));
+		if (td > 1.0) {
+			body *= mix(vec3(1.0), albedo, td - 1.0);   // extra absorption pass
+		}
+		vec3 through = refracted * body;
+		// A little of the gem's own transmission color adds saturation to the glass.
+		through += transmission_col * 0.15;
+
+		// The lit surface (specular highlights, internal sparkle, transmission wrap, emissive)
+		// sits ON TOP of the see-through body. The ambient/diffuse part of `lit` is folded in
+		// lightly via glass_opacity so the gem still has some body presence, not pure window.
+		vec3 surface = lit * glass_opacity + emissive;
+		// Specular/sparkle peaks should punch through, but they must NOT accumulate through the
+		// glass-layering back-buffer chain: each gem reads the gems behind it via lit_screen_tex,
+		// so a raw `+ surface` at every layer sums N surface terms across N overlapping gems and
+		// runs the overlaps (and the tilted edges, where specular peaks) to white. That feedback
+		// was the real blow-out. So we (a) tint the surface light by the gem body first, so it
+		// filters like the rest of the glass instead of adding neutral white, and (b) roll it off
+		// with a soft knee per channel so a bright layer over an already-bright background adds
+		// progressively less, converging instead of clipping. Single gems look the same; stacks
+		// now saturate toward the product of their colors.
+		vec3 surface_tinted = surface * mix(vec3(1.0), albedo, 0.5);
+		vec3 base = through * (1.0 - glass_opacity * 0.5);
+		vec3 headroom = max(vec3(1.0) - base, 0.0);        // how much room to white is left
+		vec3 glass_rgb = base + surface_tinted * headroom; // fades the add as the pixel fills up
+
+		// Alpha: glass is mostly opaque at the framebuffer (we've already composited the
+		// background into RGB), but we let the very thinnest edges fade a touch for softness.
+		float a = tex.a * COLOR.a;
+		COLOR = vec4(glass_rgb, a);
+	} else {
+		COLOR = vec4(lit + emissive, tex.a * COLOR.a);
+	}
 }

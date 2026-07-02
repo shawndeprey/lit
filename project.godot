@@ -22,8 +22,8 @@ LitManager="*uid://brf2hvdtyyw3q"
 
 [display]
 
-window/size/viewport_width=1920
-window/size/viewport_height=1080
+window/size/viewport_width=1080
+window/size/viewport_height=1920
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
@@ -117,4 +117,12 @@ lit_tint_buffer={
 lit_tint_enabled={
 "type": "bool",
 "value": false
+}
+lit_cast_strength={
+"type": "float",
+"value": 0.0
+}
+lit_cast_radius={
+"type": "float",
+"value": 0.06
 }

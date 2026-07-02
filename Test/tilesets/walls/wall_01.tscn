@@ -1,0 +1,41 @@
+[gd_scene format=3 uid="uid://b1tf786is27su"]
+
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="1_ko7ga"]
+[ext_resource type="Texture2D" uid="uid://2q4ywtg4xbjg" path="res://Test/Wall_01_ao.png" id="2_bt6q5"]
+[ext_resource type="Texture2D" uid="uid://dysxc7ulipceg" path="res://Test/Wall_01.png" id="2_l6p4k"]
+[ext_resource type="Texture2D" uid="uid://crrqkajj02mtq" path="res://Test/Wall_01_m.png" id="3_7tk6h"]
+[ext_resource type="Texture2D" uid="uid://cfj658c4r12as" path="res://Test/Wall_01_n.png" id="3_j7urp"]
+[ext_resource type="Texture2D" uid="uid://kwb1uulh40sg" path="res://Test/Wall_01_r.png" id="4_4g6na"]
+[ext_resource type="Texture2D" uid="uid://dyfrgtejehoox" path="res://Test/Wall_01_s.png" id="4_bt6q5"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="5_7tk6h"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ufwtu"]
+shader = ExtResource("1_ko7ga")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = true
+shader_parameter/metallic_map = ExtResource("3_7tk6h")
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_map = ExtResource("4_4g6na")
+shader_parameter/roughness_value = 1.0
+shader_parameter/ao_map = ExtResource("2_bt6q5")
+shader_parameter/transmission_strength = 0.0
+shader_parameter/transmission_wrap = 0.5
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_dns66"]
+diffuse_texture = ExtResource("2_l6p4k")
+normal_texture = ExtResource("3_j7urp")
+specular_texture = ExtResource("4_bt6q5")
+
+[node name="Wall_01" type="Sprite2D" unique_id=1960987179]
+material = SubResource("ShaderMaterial_ufwtu")
+scale = Vector2(5, 5)
+texture = SubResource("CanvasTexture_dns66")
+script = ExtResource("5_7tk6h")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"

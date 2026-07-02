@@ -3,360 +3,18 @@
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="1_mod"]
 [ext_resource type="Script" uid="uid://svvpoft6ukc5" path="res://Test/lit_gem_demo.gd" id="2_demo"]
 [ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="2_ldop2"]
-[ext_resource type="Texture2D" uid="uid://dramr1he5cpx4" path="res://Test/Gemstone_00_ao.png" id="3_2snb8"]
-[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="3_sprite"]
-[ext_resource type="Texture2D" uid="uid://bseldk778wfh6" path="res://Test/Gemstone_00_m.png" id="4_ldop2"]
-[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="4_recv"]
-[ext_resource type="Texture2D" uid="uid://b11ixhedfufu5" path="res://Test/Gemstone_00_r.png" id="5_xuo4r"]
 [ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="7_point"]
+[ext_resource type="PackedScene" uid="uid://c3fnd46f2bco1" path="res://Test/gemstones/gem_00.tscn" id="7_vatwg"]
+[ext_resource type="PackedScene" uid="uid://0y0h6clndltb" path="res://Test/gemstones/gem_01.tscn" id="8_bnkek"]
 [ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="8_spot"]
+[ext_resource type="PackedScene" uid="uid://be85uceg26ade" path="res://Test/gemstones/gem_02.tscn" id="9_cj3g6"]
 [ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="9_dir"]
-[ext_resource type="Texture2D" uid="uid://gpspff0f8kbu" path="res://Test/Gemstone_01_ao.png" id="10_h28tp"]
-[ext_resource type="Texture2D" uid="uid://d2cbhgxuyxbq" path="res://Test/Gemstone_01_m.png" id="11_i4vcc"]
-[ext_resource type="Texture2D" uid="uid://qu1gthcfulbk" path="res://Test/Gemstone_01_r.png" id="12_ii7m3"]
-[ext_resource type="Texture2D" uid="uid://dumxghwpsy8xv" path="res://Test/Gemstone_02_ao.png" id="16_ufwtu"]
-[ext_resource type="Texture2D" uid="uid://ca0frrmnngsyn" path="res://Test/Gemstone_02_m.png" id="17_dns66"]
-[ext_resource type="Texture2D" uid="uid://bm4bbwujrnrwb" path="res://Test/Gemstone_02_r.png" id="18_52cly"]
-[ext_resource type="Texture2D" uid="uid://n7pn5tv64exs" path="res://Test/Gemstone_03_ao.png" id="22_7ugyc"]
-[ext_resource type="Texture2D" uid="uid://djtwgun2goqmb" path="res://Test/Gemstone_03_m.png" id="23_r7tgh"]
-[ext_resource type="Texture2D" uid="uid://gtngrfq46wje" path="res://Test/Gemstone_03_r.png" id="24_wptpr"]
-[ext_resource type="Texture2D" uid="uid://ctji58abh255l" path="res://Test/Gemstone_04_ao.png" id="28_rqkjk"]
-[ext_resource type="Texture2D" uid="uid://ds8hmfay6rb00" path="res://Test/Gemstone_04_m.png" id="29_3ddr1"]
-[ext_resource type="Texture2D" uid="uid://cpvat8v3ailuc" path="res://Test/Gemstone_04_r.png" id="30_tuyly"]
-[ext_resource type="Texture2D" uid="uid://dhyyeggds43wh" path="res://Test/Gemstone_00.png" id="d0"]
-[ext_resource type="Texture2D" uid="uid://begioq5l4hqpa" path="res://Test/Gemstone_01.png" id="d1"]
-[ext_resource type="Texture2D" uid="uid://ctxwsjy3fxfbb" path="res://Test/Gemstone_02.png" id="d2"]
-[ext_resource type="Texture2D" uid="uid://djdy8bd1yxkfx" path="res://Test/Gemstone_03.png" id="d3"]
-[ext_resource type="Texture2D" uid="uid://blvom12waivxc" path="res://Test/Gemstone_04.png" id="d4"]
-[ext_resource type="Texture2D" uid="uid://c50tlt8mhxot6" path="res://Test/Gemstone_00_n.png" id="n0"]
-[ext_resource type="Texture2D" uid="uid://ydxgbec3unl2" path="res://Test/Gemstone_01_n.png" id="n1"]
-[ext_resource type="Texture2D" uid="uid://dyjb38gke4gig" path="res://Test/Gemstone_02_n.png" id="n2"]
-[ext_resource type="Texture2D" uid="uid://buo4annyruon1" path="res://Test/Gemstone_03_n.png" id="n3"]
-[ext_resource type="Texture2D" uid="uid://d1ahefmw37gne" path="res://Test/Gemstone_00_t.png" id="t0"]
-[ext_resource type="Texture2D" uid="uid://cxee28wyxfar1" path="res://Test/Gemstone_01_t.png" id="t1"]
-[ext_resource type="Texture2D" uid="uid://clfaxvdsodqmb" path="res://Test/Gemstone_02_t.png" id="t2"]
-[ext_resource type="Texture2D" uid="uid://cl7yr3choyabc" path="res://Test/Gemstone_03_t.png" id="t3"]
-[ext_resource type="Texture2D" uid="uid://dl7ayumk25uyf" path="res://Test/Gemstone_04_t.png" id="t4"]
-
-[sub_resource type="ShaderMaterial" id="M00"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("4_ldop2")
-shader_parameter/metallic_value = 0.25
-shader_parameter/roughness_map = ExtResource("5_xuo4r")
-shader_parameter/roughness_value = 0.12
-shader_parameter/ao_map = ExtResource("3_2snb8")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t0")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="CanvasTexture" id="CT_gem0"]
-diffuse_texture = ExtResource("d0")
-normal_texture = ExtResource("n0")
-
-[sub_resource type="ShaderMaterial" id="M01"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("11_i4vcc")
-shader_parameter/metallic_value = 0.4
-shader_parameter/roughness_map = ExtResource("12_ii7m3")
-shader_parameter/roughness_value = 0.1
-shader_parameter/ao_map = ExtResource("10_h28tp")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t1")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="CanvasTexture" id="CT_gem1"]
-diffuse_texture = ExtResource("d1")
-normal_texture = ExtResource("n1")
-
-[sub_resource type="ShaderMaterial" id="M02"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("17_dns66")
-shader_parameter/metallic_value = 0.18
-shader_parameter/roughness_map = ExtResource("18_52cly")
-shader_parameter/roughness_value = 0.22
-shader_parameter/ao_map = ExtResource("16_ufwtu")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t2")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="CanvasTexture" id="CT_gem2"]
-diffuse_texture = ExtResource("d2")
-normal_texture = ExtResource("n2")
-
-[sub_resource type="ShaderMaterial" id="M03"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("23_r7tgh")
-shader_parameter/metallic_value = 0.32
-shader_parameter/roughness_map = ExtResource("24_wptpr")
-shader_parameter/roughness_value = 0.16
-shader_parameter/ao_map = ExtResource("22_7ugyc")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t3")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="CanvasTexture" id="CT_gem3"]
-diffuse_texture = ExtResource("d3")
-normal_texture = ExtResource("n3")
-
-[sub_resource type="ShaderMaterial" id="M04"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("29_3ddr1")
-shader_parameter/metallic_value = 0.22
-shader_parameter/roughness_map = ExtResource("30_tuyly")
-shader_parameter/roughness_value = 0.2
-shader_parameter/ao_map = ExtResource("28_rqkjk")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t4")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="CanvasTexture" id="CT_gem4"]
-diffuse_texture = ExtResource("d4")
-normal_texture = ExtResource("n3")
-
-[sub_resource type="ShaderMaterial" id="M10"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("4_ldop2")
-shader_parameter/metallic_value = 0.45
-shader_parameter/roughness_map = ExtResource("5_xuo4r")
-shader_parameter/roughness_value = 0.09
-shader_parameter/ao_map = ExtResource("3_2snb8")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t0")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M11"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("11_i4vcc")
-shader_parameter/metallic_value = 0.2
-shader_parameter/roughness_map = ExtResource("12_ii7m3")
-shader_parameter/roughness_value = 0.25
-shader_parameter/ao_map = ExtResource("10_h28tp")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t1")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M12"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("17_dns66")
-shader_parameter/metallic_value = 0.35
-shader_parameter/roughness_map = ExtResource("18_52cly")
-shader_parameter/roughness_value = 0.14
-shader_parameter/ao_map = ExtResource("16_ufwtu")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t2")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M13"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("23_r7tgh")
-shader_parameter/metallic_value = 0.28
-shader_parameter/roughness_map = ExtResource("24_wptpr")
-shader_parameter/roughness_value = 0.18
-shader_parameter/ao_map = ExtResource("22_7ugyc")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t3")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M14"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("29_3ddr1")
-shader_parameter/metallic_value = 0.38
-shader_parameter/roughness_map = ExtResource("30_tuyly")
-shader_parameter/roughness_value = 0.11
-shader_parameter/ao_map = ExtResource("28_rqkjk")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t4")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M20"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("4_ldop2")
-shader_parameter/metallic_value = 0.3
-shader_parameter/roughness_map = ExtResource("5_xuo4r")
-shader_parameter/roughness_value = 0.15
-shader_parameter/ao_map = ExtResource("3_2snb8")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t0")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M21"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("11_i4vcc")
-shader_parameter/metallic_value = 0.42
-shader_parameter/roughness_map = ExtResource("12_ii7m3")
-shader_parameter/roughness_value = 0.1
-shader_parameter/ao_map = ExtResource("10_h28tp")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t1")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M22"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("17_dns66")
-shader_parameter/metallic_value = 0.24
-shader_parameter/roughness_map = ExtResource("18_52cly")
-shader_parameter/roughness_value = 0.2
-shader_parameter/ao_map = ExtResource("16_ufwtu")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t2")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M23"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("23_r7tgh")
-shader_parameter/metallic_value = 0.33
-shader_parameter/roughness_map = ExtResource("24_wptpr")
-shader_parameter/roughness_value = 0.13
-shader_parameter/ao_map = ExtResource("22_7ugyc")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t3")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
-
-[sub_resource type="ShaderMaterial" id="M24"]
-shader = ExtResource("4_recv")
-shader_parameter/emissive_strength = 0.06
-shader_parameter/receiver_mask = 1
-shader_parameter/specular_strength = 0.5
-shader_parameter/specular_k = 32.0
-shader_parameter/has_specular_map = false
-shader_parameter/metallic_map = ExtResource("29_3ddr1")
-shader_parameter/metallic_value = 0.2
-shader_parameter/roughness_map = ExtResource("30_tuyly")
-shader_parameter/roughness_value = 0.23
-shader_parameter/ao_map = ExtResource("28_rqkjk")
-shader_parameter/transmission_strength = 1.6
-shader_parameter/transmission_map = ExtResource("t4")
-shader_parameter/transmission_wrap = 0.6
-shader_parameter/shadow_steps = 64
-shader_parameter/shadow_min_step = 0.2
-shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
+[ext_resource type="PackedScene" uid="uid://bwsntx1yxtkyg" path="res://Test/gemstones/gem_03.tscn" id="10_qct4s"]
+[ext_resource type="PackedScene" uid="uid://de08dglamscso" path="res://Test/gemstones/gem_04.tscn" id="11_xg1wh"]
+[ext_resource type="PackedScene" uid="uid://732xef4i5anc" path="res://Test/tilesets/walls/wall_00.tscn" id="38_ii7m3"]
+[ext_resource type="PackedScene" uid="uid://b1tf786is27su" path="res://Test/tilesets/walls/wall_01.tscn" id="39_h28tp"]
+[ext_resource type="PackedScene" uid="uid://bor5mb55xnbu7" path="res://Test/tilesets/walls/wall_02.tscn" id="40_dns66"]
+[ext_resource type="PackedScene" uid="uid://beox6aym06g1s" path="res://Test/tilesets/walls/wall_03.tscn" id="41_ii7m3"]
 
 [node name="GemDemo" type="Node2D" unique_id=797798064]
 
@@ -366,190 +24,750 @@ color = Color(0.02, 0.02, 0.035, 1)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=70221935]
 script = ExtResource("2_ldop2")
-bloom_threshold = 0.14
-bloom_intensity = 1.83
-bloom_radius = 3.56
-halation_threshold = 0.17
-halation_intensity = 0.59
-halation_radius = 5.04
-halation_tint = Color(0.8427926, 0.06220977, 0.55192626, 1)
-grade_enabled = true
-exposure = 2.12
+bloom_enabled = true
+bloom_threshold = 0.94
+bloom_intensity = 1.0
+halation_threshold = 0.47
+halation_intensity = 0.21
+halation_radius = 1.04
+halation_tint = Color(1, 1, 1, 1)
+lut_enabled = true
 lut_preset = 7
-lut_amount = 0.77
+lut_amount = 0.75
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
 
+[node name="Background" type="Node2D" parent="." unique_id=1191615144]
+
+[node name="Wall_00" parent="Background" unique_id=891773405 instance=ExtResource("38_ii7m3")]
+position = Vector2(99.999985, 19.999996)
+
+[node name="Wall_01" parent="Background" unique_id=1960987179 instance=ExtResource("39_h28tp")]
+position = Vector2(260.00003, 59.999992)
+
+[node name="Wall_02" parent="Background" unique_id=1108497446 instance=ExtResource("40_dns66")]
+position = Vector2(340.00003, 20)
+
+[node name="Wall_03" parent="Background" unique_id=2091380711 instance=ExtResource("41_ii7m3")]
+position = Vector2(420.00003, 60)
+
+[node name="Wall_04" parent="Background" unique_id=1350825667 instance=ExtResource("38_ii7m3")]
+position = Vector2(580.00006, 20)
+
+[node name="Wall_05" parent="Background" unique_id=260827761 instance=ExtResource("38_ii7m3")]
+position = Vector2(819.99994, 20.000004)
+
+[node name="Wall_06" parent="Background" unique_id=986170099 instance=ExtResource("39_h28tp")]
+position = Vector2(979.99994, 60)
+
+[node name="Wall_07" parent="Background" unique_id=1916468470 instance=ExtResource("40_dns66")]
+position = Vector2(1060, 20.000008)
+
+[node name="Wall_08" parent="Background" unique_id=1783358745 instance=ExtResource("38_ii7m3")]
+position = Vector2(20.000008, 100.00003)
+
+[node name="Wall_09" parent="Background" unique_id=417236740 instance=ExtResource("39_h28tp")]
+position = Vector2(180.00003, 140.00003)
+
+[node name="Wall_10" parent="Background" unique_id=1467782441 instance=ExtResource("40_dns66")]
+position = Vector2(260.00003, 180)
+
+[node name="Wall_11" parent="Background" unique_id=1893442476 instance=ExtResource("41_ii7m3")]
+position = Vector2(340.00003, 140)
+
+[node name="Wall_12" parent="Background" unique_id=975395833 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 100)
+
+[node name="Wall_13" parent="Background" unique_id=1479862216 instance=ExtResource("38_ii7m3")]
+position = Vector2(500.0001, 180.00002)
+
+[node name="Wall_14" parent="Background" unique_id=726999750 instance=ExtResource("39_h28tp")]
+position = Vector2(820, 140.00002)
+
+[node name="Wall_15" parent="Background" unique_id=1679406035 instance=ExtResource("40_dns66")]
+position = Vector2(499.99997, 100.00001)
+
+[node name="Wall_16" parent="Background" unique_id=1545152104 instance=ExtResource("41_ii7m3")]
+position = Vector2(900, 140)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_17" parent="Background" unique_id=64402716 instance=ExtResource("38_ii7m3")]
+position = Vector2(1059.9999, 180.00002)
+
+[node name="Wall_18" parent="Background" unique_id=998876164 instance=ExtResource("38_ii7m3")]
+position = Vector2(1140.0001, 100.00001)
+
+[node name="Wall_19" parent="Background" unique_id=383220517 instance=ExtResource("40_dns66")]
+position = Vector2(740, 180.00002)
+
+[node name="Wall_20" parent="Background" unique_id=18123150 instance=ExtResource("41_ii7m3")]
+position = Vector2(660, 220)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_21" parent="Background" unique_id=518372375 instance=ExtResource("41_ii7m3")]
+position = Vector2(20, 220)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_22" parent="Background" unique_id=1980291754 instance=ExtResource("40_dns66")]
+position = Vector2(100, 180.00002)
+
+[node name="Wall_23" parent="Background" unique_id=561251940 instance=ExtResource("38_ii7m3")]
+position = Vector2(180.00002, 260.00003)
+
+[node name="Wall_24" parent="Background" unique_id=1329866185 instance=ExtResource("39_h28tp")]
+position = Vector2(260.00003, 379.99997)
+
+[node name="Wall_46" parent="Background" unique_id=794764999 instance=ExtResource("39_h28tp")]
+position = Vector2(500, 300)
+
+[node name="Wall_25" parent="Background" unique_id=1922777386 instance=ExtResource("40_dns66")]
+position = Vector2(340, 260)
+
+[node name="Wall_26" parent="Background" unique_id=1966036546 instance=ExtResource("41_ii7m3")]
+position = Vector2(420, 300)
+
+[node name="Wall_27" parent="Background" unique_id=1345966984 instance=ExtResource("38_ii7m3")]
+position = Vector2(420.00006, 500)
+
+[node name="Wall_98" parent="Background" unique_id=1917202933 instance=ExtResource("38_ii7m3")]
+position = Vector2(340.00003, 580.00006)
+
+[node name="Wall_99" parent="Background" unique_id=2142357643 instance=ExtResource("38_ii7m3")]
+position = Vector2(-59.99997, 580.00006)
+
+[node name="Wall_47" parent="Background" unique_id=1904115152 instance=ExtResource("38_ii7m3")]
+position = Vector2(100.00003, 340)
+
+[node name="Wall_28" parent="Background" unique_id=1274435507 instance=ExtResource("38_ii7m3")]
+position = Vector2(820, 260)
+
+[node name="Wall_29" parent="Background" unique_id=940759393 instance=ExtResource("39_h28tp")]
+position = Vector2(980, 300)
+
+[node name="Wall_30" parent="Background" unique_id=1223845737 instance=ExtResource("40_dns66")]
+position = Vector2(1060, 260)
+
+[node name="Wall_31" parent="Background" unique_id=379752390 instance=ExtResource("38_ii7m3")]
+position = Vector2(20, 420)
+
+[node name="Wall_32" parent="Background" unique_id=1304501289 instance=ExtResource("39_h28tp")]
+position = Vector2(180.00003, 460)
+
+[node name="Wall_33" parent="Background" unique_id=877403033 instance=ExtResource("40_dns66")]
+position = Vector2(260.00003, 499.99997)
+
+[node name="Wall_34" parent="Background" unique_id=2130343238 instance=ExtResource("41_ii7m3")]
+position = Vector2(340, 380)
+
+[node name="Wall_35" parent="Background" unique_id=1953449701 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 340)
+
+[node name="Wall_36" parent="Background" unique_id=348155272 instance=ExtResource("38_ii7m3")]
+position = Vector2(500.0001, 420)
+
+[node name="Wall_37" parent="Background" unique_id=806868106 instance=ExtResource("39_h28tp")]
+position = Vector2(820, 380)
+
+[node name="Wall_38" parent="Background" unique_id=1932674418 instance=ExtResource("40_dns66")]
+position = Vector2(580, 260.00003)
+
+[node name="Wall_39" parent="Background" unique_id=564048583 instance=ExtResource("41_ii7m3")]
+position = Vector2(899.99994, 380)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_40" parent="Background" unique_id=69973127 instance=ExtResource("38_ii7m3")]
+position = Vector2(1060, 420)
+
+[node name="Wall_41" parent="Background" unique_id=1665852510 instance=ExtResource("38_ii7m3")]
+position = Vector2(1140.0002, 340)
+
+[node name="Wall_42" parent="Background" unique_id=832207796 instance=ExtResource("40_dns66")]
+position = Vector2(740, 420)
+
+[node name="Wall_43" parent="Background" unique_id=435231433 instance=ExtResource("41_ii7m3")]
+position = Vector2(659.99994, 460)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_44" parent="Background" unique_id=667587234 instance=ExtResource("41_ii7m3")]
+position = Vector2(100, 540)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_45" parent="Background" unique_id=877955983 instance=ExtResource("40_dns66")]
+position = Vector2(180, 580.00006)
+
+[node name="Wall_100" parent="Background" unique_id=1217363303 instance=ExtResource("40_dns66")]
+position = Vector2(20.000017, 500.00006)
+
+[node name="Wall_48" parent="Background" unique_id=242985167 instance=ExtResource("38_ii7m3")]
+position = Vector2(99.999985, 659.99994)
+
+[node name="Wall_49" parent="Background" unique_id=1367814787 instance=ExtResource("39_h28tp")]
+position = Vector2(260.00003, 699.99994)
+
+[node name="Wall_50" parent="Background" unique_id=1706308726 instance=ExtResource("40_dns66")]
+position = Vector2(340.00003, 659.99994)
+
+[node name="Wall_97" parent="Background" unique_id=874817594 instance=ExtResource("40_dns66")]
+position = Vector2(500, 580.00006)
+
+[node name="Wall_51" parent="Background" unique_id=330305160 instance=ExtResource("41_ii7m3")]
+position = Vector2(420.00003, 699.99994)
+
+[node name="Wall_52" parent="Background" unique_id=1496101846 instance=ExtResource("38_ii7m3")]
+position = Vector2(580.00006, 659.99994)
+
+[node name="Wall_53" parent="Background" unique_id=1454378696 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 580)
+
+[node name="Wall_104" parent="Background" unique_id=920727071 instance=ExtResource("38_ii7m3")]
+position = Vector2(819.99994, 500.00006)
+
+[node name="Wall_105" parent="Background" unique_id=1847154253 instance=ExtResource("38_ii7m3")]
+position = Vector2(980, 580.00006)
+
+[node name="Wall_106" parent="Background" unique_id=977394724 instance=ExtResource("38_ii7m3")]
+position = Vector2(1060, 500.00006)
+
+[node name="Wall_54" parent="Background" unique_id=738637483 instance=ExtResource("39_h28tp")]
+position = Vector2(979.99994, 699.99994)
+
+[node name="Wall_55" parent="Background" unique_id=1674230731 instance=ExtResource("40_dns66")]
+position = Vector2(1060, 659.99994)
+
+[node name="Wall_56" parent="Background" unique_id=454755162 instance=ExtResource("38_ii7m3")]
+position = Vector2(20.000008, 739.99994)
+
+[node name="Wall_57" parent="Background" unique_id=987053667 instance=ExtResource("39_h28tp")]
+position = Vector2(180.00003, 779.99994)
+
+[node name="Wall_58" parent="Background" unique_id=1741563757 instance=ExtResource("40_dns66")]
+position = Vector2(260.00003, 819.99994)
+
+[node name="Wall_59" parent="Background" unique_id=1188549972 instance=ExtResource("41_ii7m3")]
+position = Vector2(340.00003, 779.99994)
+
+[node name="Wall_60" parent="Background" unique_id=697670001 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 739.99994)
+
+[node name="Wall_61" parent="Background" unique_id=900468170 instance=ExtResource("38_ii7m3")]
+position = Vector2(500.0001, 819.99994)
+
+[node name="Wall_62" parent="Background" unique_id=723120939 instance=ExtResource("39_h28tp")]
+position = Vector2(820, 779.99994)
+
+[node name="Wall_63" parent="Background" unique_id=702537202 instance=ExtResource("40_dns66")]
+position = Vector2(499.99997, 739.99994)
+
+[node name="Wall_96" parent="Background" unique_id=765304271 instance=ExtResource("40_dns66")]
+position = Vector2(580.00006, 500.0001)
+
+[node name="Wall_64" parent="Background" unique_id=394541762 instance=ExtResource("41_ii7m3")]
+position = Vector2(900, 780.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_102" parent="Background" unique_id=950402276 instance=ExtResource("41_ii7m3")]
+position = Vector2(820, 620.00006)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_65" parent="Background" unique_id=1072518403 instance=ExtResource("38_ii7m3")]
+position = Vector2(1059.9999, 819.99994)
+
+[node name="Wall_66" parent="Background" unique_id=1623924705 instance=ExtResource("38_ii7m3")]
+position = Vector2(1140.0001, 739.99994)
+
+[node name="Wall_67" parent="Background" unique_id=1601968023 instance=ExtResource("40_dns66")]
+position = Vector2(740, 819.99994)
+
+[node name="Wall_101" parent="Background" unique_id=425316443 instance=ExtResource("40_dns66")]
+position = Vector2(740.00006, 660)
+
+[node name="Wall_103" parent="Background" unique_id=1925585062 instance=ExtResource("40_dns66")]
+position = Vector2(900, 660)
+
+[node name="Wall_68" parent="Background" unique_id=1690237918 instance=ExtResource("41_ii7m3")]
+position = Vector2(660, 860.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_69" parent="Background" unique_id=996747473 instance=ExtResource("41_ii7m3")]
+position = Vector2(20, 860.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_70" parent="Background" unique_id=1396423774 instance=ExtResource("40_dns66")]
+position = Vector2(100, 819.99994)
+
+[node name="Wall_71" parent="Background" unique_id=545462047 instance=ExtResource("38_ii7m3")]
+position = Vector2(180.00002, 899.99994)
+
+[node name="Wall_72" parent="Background" unique_id=173946515 instance=ExtResource("39_h28tp")]
+position = Vector2(260.00003, 1019.99994)
+
+[node name="Wall_73" parent="Background" unique_id=1419170070 instance=ExtResource("39_h28tp")]
+position = Vector2(500, 939.99994)
+
+[node name="Wall_74" parent="Background" unique_id=1076991288 instance=ExtResource("40_dns66")]
+position = Vector2(340, 899.99994)
+
+[node name="Wall_75" parent="Background" unique_id=1193697368 instance=ExtResource("41_ii7m3")]
+position = Vector2(420, 939.99994)
+
+[node name="Wall_76" parent="Background" unique_id=2044733147 instance=ExtResource("38_ii7m3")]
+position = Vector2(420.00006, 1140)
+
+[node name="Wall_77" parent="Background" unique_id=2104689767 instance=ExtResource("38_ii7m3")]
+position = Vector2(100.00003, 979.99994)
+
+[node name="Wall_78" parent="Background" unique_id=261989707 instance=ExtResource("38_ii7m3")]
+position = Vector2(820, 899.99994)
+
+[node name="Wall_79" parent="Background" unique_id=818824021 instance=ExtResource("39_h28tp")]
+position = Vector2(980, 939.99994)
+
+[node name="Wall_80" parent="Background" unique_id=1760446314 instance=ExtResource("40_dns66")]
+position = Vector2(1060, 899.99994)
+
+[node name="Wall_81" parent="Background" unique_id=1147190497 instance=ExtResource("38_ii7m3")]
+position = Vector2(20, 1060)
+
+[node name="Wall_82" parent="Background" unique_id=267221387 instance=ExtResource("39_h28tp")]
+position = Vector2(180.00003, 1100)
+
+[node name="Wall_83" parent="Background" unique_id=972367849 instance=ExtResource("40_dns66")]
+position = Vector2(260.00003, 1140)
+
+[node name="Wall_84" parent="Background" unique_id=1599348408 instance=ExtResource("41_ii7m3")]
+position = Vector2(340, 1019.99994)
+
+[node name="Wall_85" parent="Background" unique_id=372569019 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 979.99994)
+
+[node name="Wall_86" parent="Background" unique_id=1123206703 instance=ExtResource("38_ii7m3")]
+position = Vector2(500.0001, 1060)
+
+[node name="Wall_87" parent="Background" unique_id=313616182 instance=ExtResource("39_h28tp")]
+position = Vector2(740, 1100.0001)
+
+[node name="Wall_88" parent="Background" unique_id=942328314 instance=ExtResource("40_dns66")]
+position = Vector2(580, 899.99994)
+
+[node name="Wall_89" parent="Background" unique_id=835707346 instance=ExtResource("41_ii7m3")]
+position = Vector2(899.99994, 1020)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_90" parent="Background" unique_id=1638166793 instance=ExtResource("38_ii7m3")]
+position = Vector2(1060, 1060)
+
+[node name="Wall_91" parent="Background" unique_id=1004410901 instance=ExtResource("38_ii7m3")]
+position = Vector2(1140.0002, 979.99994)
+
+[node name="Wall_92" parent="Background" unique_id=1620787087 instance=ExtResource("40_dns66")]
+position = Vector2(820, 980)
+
+[node name="Wall_94" parent="Background" unique_id=266174497 instance=ExtResource("40_dns66")]
+position = Vector2(820.00006, 1060.0001)
+
+[node name="Wall_93" parent="Background" unique_id=1521357822 instance=ExtResource("41_ii7m3")]
+position = Vector2(659.99994, 1100)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_95" parent="Background" unique_id=1181568241 instance=ExtResource("40_dns66")]
+position = Vector2(99.99999, 1140)
+
+[node name="Wall_107" parent="Background" unique_id=2104062069 instance=ExtResource("38_ii7m3")]
+position = Vector2(99.999985, 1219.9998)
+
+[node name="Wall_175" parent="Background" unique_id=544322629 instance=ExtResource("38_ii7m3")]
+position = Vector2(-59.99997, 1140.0001)
+
+[node name="Wall_108" parent="Background" unique_id=983924981 instance=ExtResource("39_h28tp")]
+position = Vector2(260.00003, 1259.9998)
+
+[node name="Wall_109" parent="Background" unique_id=1810030352 instance=ExtResource("40_dns66")]
+position = Vector2(340.00003, 1219.9998)
+
+[node name="Wall_172" parent="Background" unique_id=859402352 instance=ExtResource("40_dns66")]
+position = Vector2(580.00006, 1140.0001)
+
+[node name="Wall_110" parent="Background" unique_id=1853736636 instance=ExtResource("41_ii7m3")]
+position = Vector2(420.00003, 1259.9998)
+
+[node name="Wall_111" parent="Background" unique_id=1805218 instance=ExtResource("38_ii7m3")]
+position = Vector2(580.00006, 1219.9998)
+
+[node name="Wall_112" parent="Background" unique_id=398888927 instance=ExtResource("38_ii7m3")]
+position = Vector2(819.99994, 1219.9998)
+
+[node name="Wall_181" parent="Background" unique_id=195737722 instance=ExtResource("38_ii7m3")]
+position = Vector2(900, 1140.0001)
+
+[node name="Wall_183" parent="Background" unique_id=872565465 instance=ExtResource("38_ii7m3")]
+position = Vector2(1140, 1140.0001)
+
+[node name="Wall_113" parent="Background" unique_id=1033132774 instance=ExtResource("39_h28tp")]
+position = Vector2(979.99994, 1259.9998)
+
+[node name="Wall_114" parent="Background" unique_id=1584930126 instance=ExtResource("40_dns66")]
+position = Vector2(1060, 1219.9998)
+
+[node name="Wall_115" parent="Background" unique_id=340419304 instance=ExtResource("38_ii7m3")]
+position = Vector2(20.000015, 1299.9998)
+
+[node name="Wall_116" parent="Background" unique_id=1376407499 instance=ExtResource("39_h28tp")]
+position = Vector2(180.00003, 1339.9998)
+
+[node name="Wall_117" parent="Background" unique_id=127621971 instance=ExtResource("40_dns66")]
+position = Vector2(260.00003, 1379.9998)
+
+[node name="Wall_118" parent="Background" unique_id=7064637 instance=ExtResource("41_ii7m3")]
+position = Vector2(340.00003, 1339.9998)
+
+[node name="Wall_119" parent="Background" unique_id=454530938 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 1299.9998)
+
+[node name="Wall_120" parent="Background" unique_id=1624718559 instance=ExtResource("38_ii7m3")]
+position = Vector2(500.00006, 1379.9998)
+
+[node name="Wall_121" parent="Background" unique_id=1022161752 instance=ExtResource("39_h28tp")]
+position = Vector2(820, 1339.9998)
+
+[node name="Wall_122" parent="Background" unique_id=601191280 instance=ExtResource("40_dns66")]
+position = Vector2(499.99994, 1299.9998)
+
+[node name="Wall_123" parent="Background" unique_id=1639290315 instance=ExtResource("41_ii7m3")]
+position = Vector2(900, 1340.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_124" parent="Background" unique_id=1229553673 instance=ExtResource("38_ii7m3")]
+position = Vector2(1059.9999, 1379.9998)
+
+[node name="Wall_125" parent="Background" unique_id=1920784589 instance=ExtResource("38_ii7m3")]
+position = Vector2(1140.0001, 1299.9998)
+
+[node name="Wall_126" parent="Background" unique_id=2064654137 instance=ExtResource("40_dns66")]
+position = Vector2(740, 1379.9998)
+
+[node name="Wall_127" parent="Background" unique_id=651150487 instance=ExtResource("41_ii7m3")]
+position = Vector2(660, 1420.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_128" parent="Background" unique_id=1217204222 instance=ExtResource("41_ii7m3")]
+position = Vector2(20, 1420.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_129" parent="Background" unique_id=21588147 instance=ExtResource("40_dns66")]
+position = Vector2(100, 1379.9998)
+
+[node name="Wall_130" parent="Background" unique_id=490237538 instance=ExtResource("38_ii7m3")]
+position = Vector2(180.00002, 1459.9998)
+
+[node name="Wall_131" parent="Background" unique_id=2110266563 instance=ExtResource("39_h28tp")]
+position = Vector2(260.00003, 1579.9998)
+
+[node name="Wall_132" parent="Background" unique_id=524575074 instance=ExtResource("39_h28tp")]
+position = Vector2(500, 1499.9998)
+
+[node name="Wall_133" parent="Background" unique_id=1515688567 instance=ExtResource("40_dns66")]
+position = Vector2(340, 1459.9998)
+
+[node name="Wall_134" parent="Background" unique_id=1587392968 instance=ExtResource("41_ii7m3")]
+position = Vector2(420, 1499.9998)
+
+[node name="Wall_135" parent="Background" unique_id=81850559 instance=ExtResource("38_ii7m3")]
+position = Vector2(420.00006, 1699.9998)
+
+[node name="Wall_136" parent="Background" unique_id=36602257 instance=ExtResource("38_ii7m3")]
+position = Vector2(340.00003, 1779.9998)
+
+[node name="Wall_137" parent="Background" unique_id=394201302 instance=ExtResource("38_ii7m3")]
+position = Vector2(-59.99997, 1779.9998)
+
+[node name="Wall_138" parent="Background" unique_id=895131973 instance=ExtResource("38_ii7m3")]
+position = Vector2(100.00003, 1539.9998)
+
+[node name="Wall_139" parent="Background" unique_id=1757602822 instance=ExtResource("38_ii7m3")]
+position = Vector2(820, 1459.9998)
+
+[node name="Wall_140" parent="Background" unique_id=2098069059 instance=ExtResource("39_h28tp")]
+position = Vector2(980, 1499.9998)
+
+[node name="Wall_141" parent="Background" unique_id=314201981 instance=ExtResource("40_dns66")]
+position = Vector2(1060, 1459.9998)
+
+[node name="Wall_142" parent="Background" unique_id=1257569480 instance=ExtResource("38_ii7m3")]
+position = Vector2(20, 1619.9998)
+
+[node name="Wall_143" parent="Background" unique_id=879026085 instance=ExtResource("39_h28tp")]
+position = Vector2(180.00003, 1659.9998)
+
+[node name="Wall_144" parent="Background" unique_id=1417616813 instance=ExtResource("40_dns66")]
+position = Vector2(260.00003, 1699.9998)
+
+[node name="Wall_145" parent="Background" unique_id=1835560926 instance=ExtResource("41_ii7m3")]
+position = Vector2(340, 1579.9998)
+
+[node name="Wall_146" parent="Background" unique_id=1313721167 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 1539.9998)
+
+[node name="Wall_147" parent="Background" unique_id=137583949 instance=ExtResource("38_ii7m3")]
+position = Vector2(500.00006, 1619.9998)
+
+[node name="Wall_148" parent="Background" unique_id=1156589111 instance=ExtResource("39_h28tp")]
+position = Vector2(820, 1579.9998)
+
+[node name="Wall_149" parent="Background" unique_id=501022004 instance=ExtResource("40_dns66")]
+position = Vector2(580, 1459.9998)
+
+[node name="Wall_150" parent="Background" unique_id=210777928 instance=ExtResource("41_ii7m3")]
+position = Vector2(900, 1580.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_151" parent="Background" unique_id=1019828726 instance=ExtResource("38_ii7m3")]
+position = Vector2(1060, 1619.9998)
+
+[node name="Wall_152" parent="Background" unique_id=220316879 instance=ExtResource("38_ii7m3")]
+position = Vector2(1140.0002, 1539.9998)
+
+[node name="Wall_153" parent="Background" unique_id=1763505524 instance=ExtResource("40_dns66")]
+position = Vector2(740, 1619.9998)
+
+[node name="Wall_154" parent="Background" unique_id=1025152452 instance=ExtResource("41_ii7m3")]
+position = Vector2(659.99994, 1660.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_155" parent="Background" unique_id=1731142853 instance=ExtResource("41_ii7m3")]
+position = Vector2(100, 1740.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_156" parent="Background" unique_id=1511625287 instance=ExtResource("40_dns66")]
+position = Vector2(180, 1779.9998)
+
+[node name="Wall_157" parent="Background" unique_id=1593386252 instance=ExtResource("40_dns66")]
+position = Vector2(20.000015, 1699.9998)
+
+[node name="Wall_158" parent="Background" unique_id=615785677 instance=ExtResource("38_ii7m3")]
+position = Vector2(99.999985, 1859.9998)
+
+[node name="Wall_159" parent="Background" unique_id=713220056 instance=ExtResource("39_h28tp")]
+position = Vector2(260.00003, 1899.9998)
+
+[node name="Wall_160" parent="Background" unique_id=1215623403 instance=ExtResource("40_dns66")]
+position = Vector2(340.00003, 1859.9998)
+
+[node name="Wall_161" parent="Background" unique_id=1688658541 instance=ExtResource("40_dns66")]
+position = Vector2(500, 1779.9998)
+
+[node name="Wall_162" parent="Background" unique_id=204656575 instance=ExtResource("41_ii7m3")]
+position = Vector2(420.00003, 1899.9998)
+
+[node name="Wall_163" parent="Background" unique_id=1048436623 instance=ExtResource("38_ii7m3")]
+position = Vector2(580.00006, 1859.9998)
+
+[node name="Wall_164" parent="Background" unique_id=1615782515 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 1779.9998)
+
+[node name="Wall_165" parent="Background" unique_id=2083769050 instance=ExtResource("38_ii7m3")]
+position = Vector2(819.99994, 1699.9998)
+
+[node name="Wall_166" parent="Background" unique_id=480782500 instance=ExtResource("38_ii7m3")]
+position = Vector2(980, 1779.9998)
+
+[node name="Wall_167" parent="Background" unique_id=1676672863 instance=ExtResource("38_ii7m3")]
+position = Vector2(1060, 1699.9998)
+
+[node name="Wall_168" parent="Background" unique_id=1026927978 instance=ExtResource("39_h28tp")]
+position = Vector2(979.99994, 1899.9998)
+
+[node name="Wall_169" parent="Background" unique_id=815702026 instance=ExtResource("40_dns66")]
+position = Vector2(1060, 1859.9998)
+
+[node name="Wall_170" parent="Background" unique_id=1992437795 instance=ExtResource("38_ii7m3")]
+position = Vector2(20.000015, 1939.9998)
+
+[node name="Wall_171" parent="Background" unique_id=429491117 instance=ExtResource("39_h28tp")]
+position = Vector2(180.00003, 1979.9998)
+
+[node name="Wall_173" parent="Background" unique_id=1338532753 instance=ExtResource("41_ii7m3")]
+position = Vector2(340.00003, 1979.9998)
+
+[node name="Wall_174" parent="Background" unique_id=379865845 instance=ExtResource("38_ii7m3")]
+position = Vector2(660, 1939.9998)
+
+[node name="Wall_176" parent="Background" unique_id=1336437793 instance=ExtResource("39_h28tp")]
+position = Vector2(820, 1979.9998)
+
+[node name="Wall_177" parent="Background" unique_id=1550890951 instance=ExtResource("40_dns66")]
+position = Vector2(499.99994, 1939.9998)
+
+[node name="Wall_178" parent="Background" unique_id=1058159532 instance=ExtResource("40_dns66")]
+position = Vector2(580.00006, 1699.9998)
+
+[node name="Wall_179" parent="Background" unique_id=938660474 instance=ExtResource("41_ii7m3")]
+position = Vector2(900, 1980.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_180" parent="Background" unique_id=1757664106 instance=ExtResource("41_ii7m3")]
+position = Vector2(820, 1820.0001)
+scale = Vector2(4.9999995, 4.9999995)
+
+[node name="Wall_182" parent="Background" unique_id=246890309 instance=ExtResource("38_ii7m3")]
+position = Vector2(1140.0001, 1939.9998)
+
+[node name="Wall_184" parent="Background" unique_id=327981368 instance=ExtResource("40_dns66")]
+position = Vector2(740.00006, 1859.9998)
+
+[node name="Wall_185" parent="Background" unique_id=256008532 instance=ExtResource("40_dns66")]
+position = Vector2(900, 1859.9998)
+
 [node name="Camera2D" type="Camera2D" parent="." unique_id=846220239]
-position = Vector2(576, 324)
+position = Vector2(540, 960)
 
 [node name="Gems" type="Node2D" parent="." unique_id=214736176]
+position = Vector2(-51, 596)
 
-[node name="Gem00" type="Sprite2D" parent="Gems" unique_id=1102455263]
+[node name="Gem00" parent="Gems" unique_id=500000000 instance=ExtResource("7_vatwg")]
 modulate = Color(0.95, 0.2, 0.25, 1)
-texture_filter = 1
-material = SubResource("M00")
-position = Vector2(150, 130)
-rotation = 0.4
-scale = Vector2(1.8, 1.8)
-texture = SubResource("CT_gem0")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+position = Vector2(358.1, 152.8)
+rotation = 2.664
+scale = Vector2(3.769, 3.769)
 
-[node name="Gem01" type="Sprite2D" parent="Gems" unique_id=1185832835]
-modulate = Color(0.25, 0.85, 0.45, 1)
-texture_filter = 1
-material = SubResource("M01")
-position = Vector2(370, 175)
-rotation = -0.7
-scale = Vector2(1.3, 1.3)
-texture = SubResource("CT_gem1")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem01" parent="Gems" unique_id=500000001 instance=ExtResource("8_bnkek")]
+modulate = Color(0.98, 0.45, 0.15, 1)
+position = Vector2(452.3, 154.1)
+rotation = -1.9803
+scale = Vector2(3.945, 3.945)
 
-[node name="Gem02" type="Sprite2D" parent="Gems" unique_id=817081742]
-modulate = Color(0.3, 0.5, 0.95, 1)
-texture_filter = 1
-material = SubResource("M02")
-position = Vector2(580, 140)
-rotation = 1.2
-scale = Vector2(2.1, 2.1)
-texture = SubResource("CT_gem2")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem02" parent="Gems" unique_id=500000002 instance=ExtResource("9_cj3g6")]
+modulate = Color(0.98, 0.82, 0.2, 1)
+position = Vector2(549.3, 163.8)
+rotation = -2.5489
+scale = Vector2(3.158, 3.158)
 
-[node name="Gem03" type="Sprite2D" parent="Gems" unique_id=2022080672]
-modulate = Color(0.95, 0.8, 0.2, 1)
-texture_filter = 1
-material = SubResource("M03")
-position = Vector2(790, 175)
-rotation = 2.5
-scale = Vector2(1.5, 1.5)
-texture = SubResource("CT_gem3")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem03" parent="Gems" unique_id=500000003 instance=ExtResource("10_qct4s")]
+modulate = Color(0.55, 0.9, 0.25, 1)
+position = Vector2(619.4, 164.5)
+rotation = 1.2148
+scale = Vector2(2.171, 2.171)
 
-[node name="Gem04" type="Sprite2D" parent="Gems" unique_id=1437633958]
-modulate = Color(0.8, 0.3, 0.9, 1)
-texture_filter = 1
-material = SubResource("M04")
-position = Vector2(1000, 145)
-rotation = -1.5
-scale = Vector2(1.6, 1.6)
-texture = SubResource("CT_gem4")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem04" parent="Gems" unique_id=500000004 instance=ExtResource("11_xg1wh")]
+modulate = Color(0.2, 0.85, 0.45, 1)
+position = Vector2(747.5, 171.8)
+rotation = 0.9666
+scale = Vector2(4.335, 4.335)
 
-[node name="Gem10" type="Sprite2D" parent="Gems" unique_id=1659914643]
-modulate = Color(0.2, 0.9, 0.9, 1)
-texture_filter = 1
-material = SubResource("M10")
-position = Vector2(230, 320)
-rotation = 0.9
-scale = Vector2(2, 2)
-texture = SubResource("CT_gem0")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem05" parent="Gems" unique_id=500000005 instance=ExtResource("7_vatwg")]
+modulate = Color(0.15, 0.9, 0.8, 1)
+position = Vector2(806.1, 127.2)
+rotation = 0.1782
+scale = Vector2(2.236, 2.236)
 
-[node name="Gem11" type="Sprite2D" parent="Gems" unique_id=1906126986]
-modulate = Color(0.95, 0.5, 0.2, 1)
-texture_filter = 1
-material = SubResource("M11")
-position = Vector2(460, 340)
-rotation = -0.3
-scale = Vector2(1.4, 1.4)
-texture = SubResource("CT_gem1")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem06" parent="Gems" unique_id=500000006 instance=ExtResource("8_bnkek")]
+modulate = Color(0.25, 0.75, 0.98, 1)
+position = Vector2(347.5, 244.6)
+rotation = -2.9511
+scale = Vector2(3.764, 3.764)
 
-[node name="Gem12" type="Sprite2D" parent="Gems" unique_id=1946898243]
-modulate = Color(0.55, 0.25, 0.95, 1)
-texture_filter = 1
-material = SubResource("M12")
-position = Vector2(690, 310)
-rotation = 1.8
-scale = Vector2(1.7, 1.7)
-texture = SubResource("CT_gem2")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem07" parent="Gems" unique_id=500000007 instance=ExtResource("9_cj3g6")]
+modulate = Color(0.25, 0.45, 0.98, 1)
+position = Vector2(449.6, 272.7)
+rotation = 0.1201
+scale = Vector2(4.428, 4.428)
 
-[node name="Gem13" type="Sprite2D" parent="Gems" unique_id=1608021237]
-modulate = Color(0.95, 0.9, 0.95, 1)
-texture_filter = 1
-material = SubResource("M13")
-position = Vector2(900, 335)
-rotation = 0.2
-scale = Vector2(1.9, 1.9)
-texture = SubResource("CT_gem3")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem08" parent="Gems" unique_id=500000008 instance=ExtResource("10_qct4s")]
+modulate = Color(0.45, 0.3, 0.95, 1)
+position = Vector2(544, 264.3)
+rotation = -0.268
+scale = Vector2(3.062, 3.062)
 
-[node name="Gem14" type="Sprite2D" parent="Gems" unique_id=1879011405]
-modulate = Color(0.4, 0.95, 0.6, 1)
-texture_filter = 1
-material = SubResource("M14")
-position = Vector2(1080, 320)
-rotation = -2.2
-scale = Vector2(1.3, 1.3)
-texture = SubResource("CT_gem4")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem09" parent="Gems" unique_id=500000009 instance=ExtResource("11_xg1wh")]
+modulate = Color(0.65, 0.3, 0.95, 1)
+position = Vector2(656.1, 279.9)
+rotation = 2.1366
+scale = Vector2(4.684, 4.684)
 
-[node name="Gem20" type="Sprite2D" parent="Gems" unique_id=1667881729]
-modulate = Color(0.95, 0.35, 0.55, 1)
-texture_filter = 1
-material = SubResource("M20")
-position = Vector2(160, 500)
-rotation = 1.4
-scale = Vector2(1.6, 1.6)
-texture = SubResource("CT_gem0")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem10" parent="Gems" unique_id=500000010 instance=ExtResource("7_vatwg")]
+modulate = Color(0.85, 0.3, 0.92, 1)
+position = Vector2(720.5, 244)
+rotation = -1.3248
+scale = Vector2(2.277, 2.277)
 
-[node name="Gem21" type="Sprite2D" parent="Gems" unique_id=64988394]
-modulate = Color(0.3, 0.7, 0.95, 1)
-texture_filter = 1
-material = SubResource("M21")
-position = Vector2(390, 520)
-rotation = -1.1
-scale = Vector2(2, 2)
-texture = SubResource("CT_gem1")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem11" parent="Gems" unique_id=500000011 instance=ExtResource("8_bnkek")]
+modulate = Color(0.98, 0.35, 0.65, 1)
+position = Vector2(830.8, 252)
+rotation = 2.1765
+scale = Vector2(3.472, 3.472)
 
-[node name="Gem22" type="Sprite2D" parent="Gems" unique_id=93159762]
-modulate = Color(0.85, 0.95, 0.3, 1)
-texture_filter = 1
-material = SubResource("M22")
-position = Vector2(620, 490)
-rotation = 0.6
-scale = Vector2(1.4, 1.4)
-texture = SubResource("CT_gem2")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem12" parent="Gems" unique_id=500000012 instance=ExtResource("9_cj3g6")]
+modulate = Color(0.9, 0.95, 0.98, 1)
+position = Vector2(378.5, 379.6)
+rotation = -3.1366
+scale = Vector2(2.805, 2.805)
 
-[node name="Gem23" type="Sprite2D" parent="Gems" unique_id=432914850]
-modulate = Color(0.6, 0.4, 0.95, 1)
-texture_filter = 1
-material = SubResource("M23")
-position = Vector2(850, 515)
-rotation = 2.0
-scale = Vector2(1.7, 1.7)
-texture = SubResource("CT_gem3")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem13" parent="Gems" unique_id=500000013 instance=ExtResource("10_qct4s")]
+modulate = Color(0.3, 0.95, 0.62, 1)
+position = Vector2(468.6, 361.9)
+rotation = 3.0167
+scale = Vector2(3.512, 3.512)
 
-[node name="Gem24" type="Sprite2D" parent="Gems" unique_id=1629118073]
-modulate = Color(0.2, 0.95, 0.8, 1)
-texture_filter = 1
-material = SubResource("M24")
-position = Vector2(1060, 500)
-rotation = -0.5
-scale = Vector2(1.8, 1.8)
-texture = SubResource("CT_gem4")
-script = ExtResource("3_sprite")
-emissive_strength = 0.06
+[node name="Gem14" parent="Gems" unique_id=500000014 instance=ExtResource("11_xg1wh")]
+modulate = Color(0.95, 0.2, 0.25, 1)
+position = Vector2(526.7, 369.4)
+rotation = 1.749
+scale = Vector2(3.032, 3.032)
+
+[node name="Gem15" parent="Gems" unique_id=500000015 instance=ExtResource("7_vatwg")]
+modulate = Color(0.98, 0.45, 0.15, 1)
+position = Vector2(619.3, 355.5)
+rotation = 2.9144
+scale = Vector2(4.873, 4.873)
+
+[node name="Gem16" parent="Gems" unique_id=500000016 instance=ExtResource("8_bnkek")]
+modulate = Color(0.98, 0.82, 0.2, 1)
+position = Vector2(712.5, 351.4)
+rotation = -2.5054
+scale = Vector2(2.239, 2.239)
+
+[node name="Gem17" parent="Gems" unique_id=500000017 instance=ExtResource("9_cj3g6")]
+modulate = Color(0.55, 0.9, 0.25, 1)
+position = Vector2(832, 348.2)
+rotation = 0.3724
+scale = Vector2(3.701, 3.701)
+
+[node name="Gem18" parent="Gems" unique_id=500000018 instance=ExtResource("10_qct4s")]
+modulate = Color(0.2, 0.85, 0.45, 1)
+position = Vector2(347.5, 480.9)
+rotation = -2.3175
+scale = Vector2(4.443, 4.443)
+
+[node name="Gem19" parent="Gems" unique_id=500000019 instance=ExtResource("11_xg1wh")]
+modulate = Color(0.15, 0.9, 0.8, 1)
+position = Vector2(436.5, 466.3)
+rotation = -1.8032
+scale = Vector2(3.032, 3.032)
+
+[node name="Gem20" parent="Gems" unique_id=500000020 instance=ExtResource("7_vatwg")]
+modulate = Color(0.25, 0.75, 0.98, 1)
+position = Vector2(563.1, 484.2)
+rotation = -1.23
+scale = Vector2(5.351, 5.351)
+
+[node name="Gem21" parent="Gems" unique_id=500000021 instance=ExtResource("8_bnkek")]
+modulate = Color(0.25, 0.45, 0.98, 1)
+position = Vector2(624.3, 465)
+rotation = 2.2255
+scale = Vector2(4.435, 4.435)
+
+[node name="Gem22" parent="Gems" unique_id=500000022 instance=ExtResource("9_cj3g6")]
+modulate = Color(0.45, 0.3, 0.95, 1)
+position = Vector2(711.8, 493)
+rotation = -1.8008
+scale = Vector2(2.986, 2.986)
+
+[node name="Gem23" parent="Gems" unique_id=500000023 instance=ExtResource("10_qct4s")]
+modulate = Color(0.65, 0.3, 0.95, 1)
+position = Vector2(831, 462)
+rotation = -1.2791
+scale = Vector2(2.29, 2.29)
 
 [node name="Lights" type="Node2D" parent="." unique_id=1096834992]
+position = Vector2(-51, 596)
 
 [node name="PointA" type="Node2D" parent="Lights" unique_id=714155644]
 position = Vector2(300, 250)
@@ -597,5 +815,12 @@ height = 18.0
 shadow_enabled = true
 shadow_hardness = 0.0
 
-[node name="GemShowcase" type="Node2D" parent="." unique_id=179444964]
+[node name="GemShowcase" type="Node2D" parent="." unique_id=179444964 node_paths=PackedStringArray("gems_root", "lights_root", "walls_root")]
 script = ExtResource("2_demo")
+gems_root = NodePath("../Gems")
+lights_root = NodePath("../Lights")
+gem_spin = 1.75
+gem_drift = 75.0
+gem_drift_speed = 0.75
+max_shadow_lights = 4
+walls_root = NodePath("../Background")

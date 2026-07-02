@@ -1,0 +1,52 @@
+[gd_scene format=3 uid="uid://bwsntx1yxtkyg"]
+
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="1_18dj4"]
+[ext_resource type="Texture2D" uid="uid://n7pn5tv64exs" path="res://Test/gemstones/Gemstone_03_ao.png" id="2_p0hwk"]
+[ext_resource type="Texture2D" uid="uid://dovi5wah4ccit" path="res://Test/gemstones/Gemstone_03_internal_n.png" id="3_3ts3t"]
+[ext_resource type="Texture2D" uid="uid://djtwgun2goqmb" path="res://Test/gemstones/Gemstone_03_m.png" id="4_68bl5"]
+[ext_resource type="Texture2D" uid="uid://gtngrfq46wje" path="res://Test/gemstones/Gemstone_03_r.png" id="5_dyba7"]
+[ext_resource type="Texture2D" uid="uid://cl7yr3choyabc" path="res://Test/gemstones/Gemstone_03_t.png" id="6_eq1y0"]
+[ext_resource type="Texture2D" uid="uid://djdy8bd1yxkfx" path="res://Test/gemstones/Gemstone_03.png" id="7_pf046"]
+[ext_resource type="Texture2D" uid="uid://buo4annyruon1" path="res://Test/gemstones/Gemstone_03_n.png" id="8_m2oc4"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="9_xwcmm"]
+
+[sub_resource type="ShaderMaterial" id="M03"]
+shader = ExtResource("1_18dj4")
+shader_parameter/emissive_strength = 0.06
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("4_68bl5")
+shader_parameter/metallic_value = 0.32
+shader_parameter/roughness_map = ExtResource("5_dyba7")
+shader_parameter/roughness_value = 0.16
+shader_parameter/ao_map = ExtResource("2_p0hwk")
+shader_parameter/transmission_strength = 1.6
+shader_parameter/transmission_map = ExtResource("6_eq1y0")
+shader_parameter/transmission_wrap = 0.6
+shader_parameter/internal_strength = 1.8
+shader_parameter/internal_normal_map = ExtResource("3_3ts3t")
+shader_parameter/internal_sharpness = 40.0
+shader_parameter/glass_strength = 1.0
+shader_parameter/glass_refraction = 0.05
+shader_parameter/glass_dispersion = 0.03
+shader_parameter/glass_tint_depth = 0.8
+shader_parameter/glass_opacity = 0.3
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CT_gem3"]
+diffuse_texture = ExtResource("7_pf046")
+normal_texture = ExtResource("8_m2oc4")
+
+[node name="Gem03" type="Sprite2D" unique_id=439482212]
+texture_filter = 1
+material = SubResource("M03")
+rotation = 2.5
+scale = Vector2(1.5, 1.5)
+texture = SubResource("CT_gem3")
+script = ExtResource("9_xwcmm")
+emissive_strength = 0.06
