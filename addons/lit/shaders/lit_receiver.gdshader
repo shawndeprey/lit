@@ -343,8 +343,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 }
 
 void fragment() {
-	vec4 tex = texture(TEXTURE, UV);
-	vec3 albedo = tex.rgb * COLOR.rgb;
+	vec3 albedo = COLOR.rgb;
 	vec3 N = normalize(NORMAL);                  // from the CanvasTexture normal map; faces out when absent
 	vec3 spec_shin = SPECULAR_SHININESS.rgb;
 	float shininess = SPECULAR_SHININESS.a;
@@ -406,5 +405,5 @@ void fragment() {
 	// Emissive ignores the dark and composes with ambient and lights by construction.
 	vec3 emissive = albedo * emissive_strength * texture(emissive_mask, UV).r;
 
-	COLOR = vec4(lit + emissive, tex.a * COLOR.a);
+	COLOR = vec4(lit + emissive, COLOR.a);
 }
