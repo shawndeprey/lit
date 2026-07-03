@@ -31,6 +31,10 @@ window/stretch/aspect="expand"
 
 enabled=PackedStringArray("res://addons/lit/plugin.cfg")
 
+[lit]
+
+render/lighting_model=1
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
@@ -62,7 +66,7 @@ lit_canvas_scale={
 }
 lit_ambient_color={
 "type": "color",
-"value": Color(0.6378432, 0.6378432, 0.6378431, 1)
+"value": Color(1, 1, 1, 1)
 }
 lit_ambient_energy={
 "type": "float",
@@ -85,6 +89,10 @@ lit_tile_grid={
 "value": Vector2i(0, 0)
 }
 lit_directional_count={
+"type": "int",
+"value": 0
+}
+lit_lighting_model={
 "type": "int",
 "value": 0
 }
