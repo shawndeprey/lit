@@ -1,0 +1,79 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://weather/RainSystem.gd" id="1_rainsys"]
+[ext_resource type="Shader" path="res://weather/rain_streak.gdshader" id="2_streaksh"]
+[ext_resource type="Shader" path="res://weather/droplet_overlay.gdshader" id="3_dropsh"]
+[ext_resource type="Shader" path="res://weather/fog.gdshader" id="4_fogsh"]
+
+[sub_resource type="ShaderMaterial" id="mat_rain"]
+shader = ExtResource("2_streaksh")
+shader_parameter/intensity = 0.6
+shader_parameter/streak_color = Color(0.72, 0.82, 1, 0.85)
+shader_parameter/pixel_size = 2.0
+shader_parameter/fall_speed = 1.6
+shader_parameter/slant = 0.18
+shader_parameter/streak_len = 0.055
+shader_parameter/columns = Vector2(90, 1)
+shader_parameter/aspect = 1.777
+
+[sub_resource type="ShaderMaterial" id="mat_drop"]
+shader = ExtResource("3_dropsh")
+shader_parameter/intensity = 0.6
+shader_parameter/pixel_size = 2.0
+shader_parameter/drop_tint = Color(0.82, 0.88, 0.98, 0.5)
+shader_parameter/density = 40.0
+
+[sub_resource type="ShaderMaterial" id="mat_fog"]
+shader = ExtResource("4_fogsh")
+shader_parameter/intensity = 0.4
+shader_parameter/fog_color = Color(0.62, 0.67, 0.78, 1)
+shader_parameter/pixel_size = 3.0
+shader_parameter/drift_speed = 1.0
+
+[node name="RainSystem" type="CanvasLayer"]
+layer = 10
+script = ExtResource("1_rainsys")
+intensity = 0.6
+wind = 0.18
+
+[node name="Screen" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="Fog" type="ColorRect" parent="Screen"]
+material = SubResource("mat_fog")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
+[node name="Rain" type="ColorRect" parent="Screen"]
+material = SubResource("mat_rain")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
+[node name="Droplets" type="ColorRect" parent="Screen"]
+material = SubResource("mat_drop")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
+[node name="Flash" type="ColorRect" parent="Screen"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(1, 1, 1, 0)

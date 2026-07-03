@@ -1,0 +1,106 @@
+[gd_scene load_steps=8 format=3 uid="uid://bstormmech0001"]
+
+[ext_resource type="Script" path="res://StormMech.gd" id="1_storm"]
+[ext_resource type="PackedScene" uid="uid://cemr58p1w0lg0" path="res://mech/mech.tscn" id="2_mech"]
+[ext_resource type="PackedScene" uid="uid://d28fv3x2iqnq2" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="3_tile"]
+[ext_resource type="PackedScene" path="res://weather/RainSystem.tscn" id="4_rain"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="5_ambient"]
+[ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="6_sky"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="7_point"]
+
+[sub_resource type="LabelSettings" id="ls_phase"]
+font_size = 34
+outline_size = 6
+outline_color = Color(0, 0, 0, 0.7)
+
+[sub_resource type="LabelSettings" id="ls_info"]
+font_size = 16
+outline_size = 4
+outline_color = Color(0, 0, 0, 0.7)
+
+[node name="StormMech" type="Node2D"]
+script = ExtResource("1_storm")
+
+[node name="Ground" type="ColorRect" parent="."]
+z_index = -10
+offset_left = -960.0
+offset_top = -540.0
+offset_right = 960.0
+offset_bottom = 540.0
+color = Color(0.12, 0.13, 0.15, 1)
+
+[node name="Floor" parent="." instance=ExtResource("3_tile")]
+position = Vector2(-384, -288)
+scale = Vector2(3, 3)
+
+[node name="Mech" parent="." instance=ExtResource("2_mech")]
+scale = Vector2(2, 2)
+
+[node name="Lit" type="Node2D" parent="."]
+
+[node name="LitCanvasModulate" type="Node2D" parent="Lit"]
+script = ExtResource("5_ambient")
+color = Color(0.2, 0.23, 0.3, 1)
+ambient_energy = 1.0
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="SkyLight" type="Node2D" parent="Lit"]
+rotation = 2.0943952
+script = ExtResource("6_sky")
+color = Color(0.6, 0.68, 0.85, 1)
+energy = 0.35
+height = 22.0
+shadow_enabled = true
+shadow_hardness = 0.2
+metadata/_custom_type_script = "uid://7156lwdhmrod"
+
+[node name="LampLeft" type="Node2D" parent="Lit"]
+position = Vector2(-260, -140)
+script = ExtResource("7_point")
+color = Color(1, 0.62, 0.28, 1)
+energy = 1.4
+range = 420.0
+height = 40.0
+shadow_enabled = true
+shadow_hardness = 0.15
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LampRight" type="Node2D" parent="Lit"]
+position = Vector2(280, 120)
+script = ExtResource("7_point")
+color = Color(0.3, 0.55, 1, 1)
+energy = 1.2
+range = 400.0
+height = 40.0
+shadow_enabled = true
+shadow_hardness = 0.15
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="Camera2D" type="Camera2D" parent="."]
+
+[node name="RainSystem" parent="." instance=ExtResource("4_rain")]
+intensity = 0.0
+wind = 0.0
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Phase" type="Label" parent="UI"]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 24.0
+offset_right = 300.0
+offset_bottom = 70.0
+grow_horizontal = 2
+horizontal_alignment = 1
+text = "Gathering clouds..."
+label_settings = SubResource("ls_phase")
+
+[node name="Info" type="Label" parent="UI"]
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 860.0
+offset_bottom = 100.0
+text = "Rain"
+label_settings = SubResource("ls_info")
