@@ -1,7 +1,7 @@
 [gd_scene format=4 uid="uid://dnpho6vflpb77"]
 
 [ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="1_n8bxl"]
-[ext_resource type="PackedScene" uid="uid://d28fv3x2iqnq2" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="1_un7ao"]
+[ext_resource type="PackedScene" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="1_un7ao"]
 [ext_resource type="Texture2D" uid="uid://pfbeg7uspbx7" path="res://Test/cinderskull_preview_n.png" id="2_pyd3v"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_4l8u5"]
 [ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="3_es8hm"]
@@ -71,8 +71,12 @@ shader_parameter/glass_tint_depth = 0.8
 shader_parameter/glass_opacity = 0.35
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_budget_adaptive = true
+shader_parameter/shadow_budget_ref = 4.0
+shader_parameter/shadow_budget_min_steps = 4
 shader_parameter/shadow_penumbra_px = 0.0
 shader_parameter/shadow_penumbra_taps = 3
+shader_parameter/debug_tile_heat = false
 shader_parameter/lit_shadow_transmittance = 0.35
 shader_parameter/tint_cast_falloff = 0.0
 shader_parameter/tint_shimmer = 0.0

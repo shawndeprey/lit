@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Lit"
-run/main_scene="uid://bg3mqx7vn2lit"
+run/main_scene="uid://dnpho6vflpb77"
 config/features=PackedStringArray("4.7", "Forward Plus")
 boot_splash/bg_color=Color(0, 0, 0, 1)
 config/icon="uid://b7egrpryv4f3y"
