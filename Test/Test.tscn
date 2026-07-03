@@ -1,7 +1,7 @@
 [gd_scene format=4 uid="uid://dnpho6vflpb77"]
 
 [ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="1_n8bxl"]
-[ext_resource type="PackedScene" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="1_un7ao"]
+[ext_resource type="PackedScene" uid="uid://d28fv3x2iqnq2" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="1_un7ao"]
 [ext_resource type="Texture2D" uid="uid://pfbeg7uspbx7" path="res://Test/cinderskull_preview_n.png" id="2_pyd3v"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_4l8u5"]
 [ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="3_es8hm"]
@@ -141,7 +141,6 @@ metadata/_custom_type_script = "uid://7156lwdhmrod"
 position = Vector2(574, 122)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
-energy = 2.5
 range = 1024.0
 height = 45.0
 shadow_enabled = true
@@ -152,7 +151,7 @@ metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 position = Vector2(752, 429)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
-energy = 3.0
+energy = 1.5
 range = 1024.0
 shadow_enabled = true
 shadow_hardness = 0.0
@@ -163,7 +162,7 @@ position = Vector2(390, 455.00003)
 rotation = -0.6769053
 script = ExtResource("8_5ghie")
 color = Color(0, 0, 1, 1)
-energy = 3.0
+energy = 1.5
 range = 1024.0
 spot_angle = 90.0
 spot_softness = 1.0

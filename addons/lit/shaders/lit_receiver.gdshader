@@ -735,8 +735,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 }
 
 void fragment() {
-	vec4 tex = texture(TEXTURE, UV);
-	vec3 albedo = tex.rgb * COLOR.rgb;
+	vec3 albedo = COLOR.rgb;
 	vec3 N = normalize(NORMAL);                  // from the CanvasTexture normal map; faces out when absent
 	vec3 spec_shin = SPECULAR_SHININESS.rgb;
 	float shininess = SPECULAR_SHININESS.a;
@@ -888,10 +887,9 @@ void fragment() {
 
 		// Alpha: glass is mostly opaque at the framebuffer (we've already composited the
 		// background into RGB), but we let the very thinnest edges fade a touch for softness.
-		float a = tex.a * COLOR.a;
-		COLOR = vec4(glass_rgb, a);
+		COLOR = vec4(glass_rgb, COLOR.a);
 	} else {
-		COLOR = vec4(lit + emissive, tex.a * COLOR.a);
+		COLOR = vec4(lit + emissive, COLOR.a);
 	}
 
 	// Diagnostic overlay: replace the shaded result with the tile's light count.
