@@ -11,6 +11,7 @@
 [ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="9_dir"]
 [ext_resource type="PackedScene" uid="uid://bwsntx1yxtkyg" path="res://Test/gemstones/gem_03.tscn" id="10_qct4s"]
 [ext_resource type="PackedScene" uid="uid://de08dglamscso" path="res://Test/gemstones/gem_04.tscn" id="11_xg1wh"]
+[ext_resource type="PackedScene" uid="uid://cemr58p1w0lg0" path="res://Test/mech/mech.tscn" id="16_bnkek"]
 [ext_resource type="PackedScene" uid="uid://732xef4i5anc" path="res://Test/tilesets/walls/wall_00.tscn" id="38_ii7m3"]
 [ext_resource type="PackedScene" uid="uid://b1tf786is27su" path="res://Test/tilesets/walls/wall_01.tscn" id="39_h28tp"]
 [ext_resource type="PackedScene" uid="uid://bor5mb55xnbu7" path="res://Test/tilesets/walls/wall_02.tscn" id="40_dns66"]
@@ -827,3 +828,9 @@ gem_drift = 75.0
 gem_drift_speed = 0.75
 max_shadow_lights = 4
 walls_root = NodePath("../Background")
+
+[node name="Objects" type="Node2D" parent="." unique_id=660748431]
+
+[node name="Mech" parent="Objects" unique_id=422106223 instance=ExtResource("16_bnkek")]
+position = Vector2(576, 534)
+scale = Vector2(5, 5)

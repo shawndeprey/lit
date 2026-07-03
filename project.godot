@@ -22,8 +22,8 @@ LitManager="*uid://brf2hvdtyyw3q"
 
 [display]
 
-window/size/viewport_width=1080
-window/size/viewport_height=1920
+window/size/viewport_width=1920
+window/size/viewport_height=1080
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
@@ -42,7 +42,6 @@ render/lighting_model=1
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-rendering_device/driver.windows="d3d12"
 
 [shader_globals]
 
