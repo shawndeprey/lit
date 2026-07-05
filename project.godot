@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Lit"
-run/main_scene="uid://clegxvf15em53"
+run/main_scene="uid://b47i3ihj7mry7"
 config/features=PackedStringArray("4.7", "Forward Plus")
 boot_splash/bg_color=Color(0, 0, 0, 1)
 config/icon="uid://b7egrpryv4f3y"
@@ -22,10 +22,14 @@ LitManager="*uid://brf2hvdtyyw3q"
 
 [display]
 
-window/size/viewport_width=1920
-window/size/viewport_height=1080
+window/size/viewport_width=1080
+window/size/viewport_height=1920
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[editor]
+
+movie_writer/movie_file="C:\\Users\\Justin\\Videos\\PBR_Short\\frame.png"
 
 [editor_plugins]
 

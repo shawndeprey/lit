@@ -1,0 +1,32 @@
+[gd_scene load_steps=8 format=3 uid="uid://scifibg0001"]
+
+[ext_resource type="TileSet" uid="uid://scifitileset01" path="res://scifi_tiles/scifi_tileset.tres" id="1_tileset"]
+[ext_resource type="Script" path="res://scifi_background.gd" id="2_bg"]
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="3_shader"]
+[ext_resource type="Texture2D" path="res://scifi_tiles/tiles_m.png" id="4_met"]
+[ext_resource type="Texture2D" path="res://scifi_tiles/tiles_r.png" id="5_rough"]
+[ext_resource type="Texture2D" path="res://scifi_tiles/tiles_ao.png" id="6_ao"]
+
+[sub_resource type="ShaderMaterial" id="mat_tiles"]
+shader = ExtResource("3_shader")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("4_met")
+shader_parameter/metallic_value = 1.0
+shader_parameter/roughness_map = ExtResource("5_rough")
+shader_parameter/roughness_value = 1.0
+shader_parameter/ao_map = ExtResource("6_ao")
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[node name="ScifiBackground" type="TileMapLayer"]
+material = SubResource("mat_tiles")
+tile_set = ExtResource("1_tileset")
+script = ExtResource("2_bg")
+room_w = 30
+room_h = 20

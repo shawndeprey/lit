@@ -1,8 +1,8 @@
-[gd_scene load_steps=8 format=3 uid="uid://bstormmech0001"]
+[gd_scene format=3 uid="uid://clegxvf15em53"]
 
-[ext_resource type="Script" path="res://StormMech.gd" id="1_storm"]
+[ext_resource type="Script" uid="uid://bco0j3amhd3bn" path="res://StormMech.gd" id="1_storm"]
 [ext_resource type="PackedScene" uid="uid://cemr58p1w0lg0" path="res://mech/mech.tscn" id="2_mech"]
-[ext_resource type="PackedScene" uid="uid://d28fv3x2iqnq2" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="3_tile"]
+[ext_resource type="PackedScene" uid="uid://scifibg0001" path="res://ScifiBackground.tscn" id="3_bg"]
 [ext_resource type="PackedScene" path="res://weather/RainSystem.tscn" id="4_rain"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="5_ambient"]
 [ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="6_sky"]
@@ -14,37 +14,27 @@ outline_size = 6
 outline_color = Color(0, 0, 0, 0.7)
 
 [sub_resource type="LabelSettings" id="ls_info"]
-font_size = 16
 outline_size = 4
 outline_color = Color(0, 0, 0, 0.7)
 
-[node name="StormMech" type="Node2D"]
+[node name="StormMech" type="Node2D" unique_id=1788904695]
 script = ExtResource("1_storm")
 
-[node name="Ground" type="ColorRect" parent="."]
+[node name="Background" parent="." unique_id=426249180 instance=ExtResource("3_bg")]
 z_index = -10
-offset_left = -960.0
-offset_top = -540.0
-offset_right = 960.0
-offset_bottom = 540.0
-color = Color(0.12, 0.13, 0.15, 1)
+position = Vector2(-960, -640)
 
-[node name="Floor" parent="." instance=ExtResource("3_tile")]
-position = Vector2(-384, -288)
-scale = Vector2(3, 3)
-
-[node name="Mech" parent="." instance=ExtResource("2_mech")]
+[node name="Mech" parent="." unique_id=1340696462 instance=ExtResource("2_mech")]
 scale = Vector2(2, 2)
 
-[node name="Lit" type="Node2D" parent="."]
+[node name="Lit" type="Node2D" parent="." unique_id=756965428]
 
-[node name="LitCanvasModulate" type="Node2D" parent="Lit"]
+[node name="LitCanvasModulate" type="Node2D" parent="Lit" unique_id=558547511]
 script = ExtResource("5_ambient")
 color = Color(0.2, 0.23, 0.3, 1)
-ambient_energy = 1.0
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
-[node name="SkyLight" type="Node2D" parent="Lit"]
+[node name="SkyLight" type="Node2D" parent="Lit" unique_id=915028539]
 rotation = 2.0943952
 script = ExtResource("6_sky")
 color = Color(0.6, 0.68, 0.85, 1)
@@ -54,7 +44,7 @@ shadow_enabled = true
 shadow_hardness = 0.2
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
-[node name="LampLeft" type="Node2D" parent="Lit"]
+[node name="LampLeft" type="Node2D" parent="Lit" unique_id=1712274172]
 position = Vector2(-260, -140)
 script = ExtResource("7_point")
 color = Color(1, 0.62, 0.28, 1)
@@ -65,7 +55,7 @@ shadow_enabled = true
 shadow_hardness = 0.15
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
-[node name="LampRight" type="Node2D" parent="Lit"]
+[node name="LampRight" type="Node2D" parent="Lit" unique_id=185160012]
 position = Vector2(280, 120)
 script = ExtResource("7_point")
 color = Color(0.3, 0.55, 1, 1)
@@ -76,15 +66,15 @@ shadow_enabled = true
 shadow_hardness = 0.15
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=295381807]
 
-[node name="RainSystem" parent="." instance=ExtResource("4_rain")]
+[node name="RainSystem" parent="." unique_id=87027779 instance=ExtResource("4_rain")]
 intensity = 0.0
 wind = 0.0
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1253264327]
 
-[node name="Phase" type="Label" parent="UI"]
+[node name="Phase" type="Label" parent="UI" unique_id=670735626]
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
@@ -93,11 +83,11 @@ offset_top = 24.0
 offset_right = 300.0
 offset_bottom = 70.0
 grow_horizontal = 2
-horizontal_alignment = 1
 text = "Gathering clouds..."
 label_settings = SubResource("ls_phase")
+horizontal_alignment = 1
 
-[node name="Info" type="Label" parent="UI"]
+[node name="Info" type="Label" parent="UI" unique_id=1454702908]
 offset_left = 16.0
 offset_top = 12.0
 offset_right = 860.0

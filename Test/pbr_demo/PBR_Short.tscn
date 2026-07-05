@@ -1,0 +1,95 @@
+[gd_scene format=3 uid="uid://b47i3ihj7mry7"]
+
+[ext_resource type="Script" uid="uid://bu5vb702rqkne" path="res://Test/pbr_demo/PbrShort.gd" id="1_drive"]
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="1_recv"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="2_sprite"]
+[ext_resource type="Texture2D" uid="uid://cbdlde5e85b37" path="res://Test/pbr_demo/T_Panel_01_Albedo.png" id="3_albedo"]
+[ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="3_c8eji"]
+[ext_resource type="Texture2D" uid="uid://1kmpmuhas1v4" path="res://Test/pbr_demo/T_Panel_01_Emissive.png" id="4_emis"]
+[ext_resource type="Texture2D" uid="uid://bf323d26gks4" path="res://Test/pbr_demo/T_Panel_01_Normal.png" id="5_normal"]
+[ext_resource type="Texture2D" uid="uid://dxfg2ag44nr1l" path="res://Test/pbr_demo/T_Panel_01_Metallic.png" id="6_metal"]
+[ext_resource type="Texture2D" uid="uid://dyp0ecfvm47hs" path="res://Test/pbr_demo/T_Panel_01_Roughness.png" id="7_rough"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="8_mod"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="9_point"]
+[ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="10_dir"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_panel"]
+shader = ExtResource("1_recv")
+shader_parameter/emissive_strength = 1.0
+shader_parameter/emissive_mask = ExtResource("4_emis")
+shader_parameter/receiver_mask = 1
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_map = ExtResource("6_metal")
+shader_parameter/metallic_value = 1.0
+shader_parameter/roughness_map = ExtResource("7_rough")
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_panel"]
+diffuse_texture = ExtResource("3_albedo")
+normal_texture = ExtResource("5_normal")
+texture_filter = 4
+
+[node name="PbrShort" type="Node2D" unique_id=2127598882]
+script = ExtResource("1_drive")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=2687074]
+position = Vector2(540, 960)
+
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1207559068]
+script = ExtResource("8_mod")
+color = Color(0, 0, 0, 1)
+
+[node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=2007239561]
+script = ExtResource("3_c8eji")
+bloom_enabled = true
+bloom_threshold = 0.15
+bloom_intensity = 3.9
+bloom_radius = 5.5
+halation_enabled = true
+lut_enabled = true
+lut_preset = 7
+metadata/_custom_type_script = "uid://djrtgftop1i8a"
+
+[node name="Panel" type="Sprite2D" parent="." unique_id=586883536]
+material = SubResource("ShaderMaterial_panel")
+position = Vector2(540, 960)
+scale = Vector2(0.24, 0.24)
+texture = SubResource("CanvasTexture_panel")
+script = ExtResource("2_sprite")
+emissive_strength = 1.0
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Lights" type="Node2D" parent="." unique_id=920937304]
+
+[node name="Key" type="Node2D" parent="Lights" unique_id=1471686385]
+script = ExtResource("10_dir")
+color = Color(0.55, 0.6, 0.75, 1)
+energy = 0.35
+height = 22.0
+metadata/_custom_type_script = "uid://7156lwdhmrod"
+
+[node name="Warm" type="Node2D" parent="Lights" unique_id=1265946335]
+position = Vector2(840, 960)
+script = ExtResource("9_point")
+color = Color(1, 0.62, 0.28, 1)
+energy = 2.2
+range = 900.0
+falloff = 1.3
+height = 26.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="Cool" type="Node2D" parent="Lights" unique_id=1536340385]
+position = Vector2(240, 960)
+script = ExtResource("9_point")
+color = Color(0.3, 0.7, 1, 1)
+energy = 1.7
+range = 900.0
+falloff = 1.3
+height = 26.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
