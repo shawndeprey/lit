@@ -40,7 +40,9 @@ Prefer videos? Subscribe on YouTube:
    color, energy, and range to taste.
 5. **Want shadows?** On the light, tick **Shadow Enabled**. Then give the world something to
    block the light: add a `LightOccluder2D` to a sprite, or for tiles enable **SDF
-   Collision** on your TileSet's occlusion layer.
+   Collision** on your TileSet's occlusion layer. A `LitSprite2D` never shadows itself —
+   its occluder's shadow falls behind it (flip **Self Shadow** on the sprite if you want
+   plain SDF shadowing back).
 6. **Want a look?** Add a **`LitPostProcess`** node and switch on bloom, color grade, CRT,
    or any of the other effects.
 
@@ -53,6 +55,8 @@ That's it — everything updates live in the editor as you build.
 - **Uncapped lights & Shadows.** No 15-light limit. Use as many as your scene needs.
 - **Three light types.** Point, Directional (a sun), and Spot (a cone).
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
+- **No self-shadowing.** A sprite's own occluder casts behind it, not onto it, so you
+  don't have to trace silhouette-perfect polygons. Per-sprite **Self Shadow** toggle.
 - **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` — no wiring.
 - **Blinn–Phong or PBR.** Pick the lighting model in Project Settings → Lit. PBR adds
   optional metallic / roughness / AO inputs on the receiver material; switch back to

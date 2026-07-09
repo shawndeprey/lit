@@ -35,6 +35,14 @@ const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 		receiver_mask = value
 		_set_param("receiver_mask", value)
 
+## Self-shadowing: when off (the default), occluders inside this sprite's own rect can't
+## cast onto it — its shadow renders behind it. Occluders outside the rect still shadow
+## it normally. Proxies to `self_shadow`.
+@export var self_shadow: bool = false:
+	set(value):
+		self_shadow = value
+		_set_param("self_shadow", value)
+
 
 # The CanvasTexture currently watched for specular-slot changes, so we can re-evaluate
 # has_specular_map live when the user assigns or clears a specular map in the inspector.
@@ -54,6 +62,7 @@ func _init() -> void:
 	# Push the initial proxy values onto the freshly-made material.
 	_set_param("emissive_strength", emissive_strength)
 	_set_param("receiver_mask", receiver_mask)
+	_set_param("self_shadow", self_shadow)
 
 
 func _ready() -> void:
@@ -65,6 +74,12 @@ func _ready() -> void:
 	if not texture_changed.is_connected(_on_texture_changed):
 		texture_changed.connect(_on_texture_changed)
 	_on_texture_changed()
+
+	# Keep the shader's self-shadow rect synced (item_rect_changed covers texture,
+	# centered, offset, region, and frames).
+	if not item_rect_changed.is_connected(_update_self_rect):
+		item_rect_changed.connect(_update_self_rect)
+	_update_self_rect()
 
 
 # Re-point the specular-slot subscription at the current CanvasTexture, then refresh the flag.
@@ -81,6 +96,12 @@ func _on_texture_changed() -> void:
 func _update_specular_flag() -> void:
 	var present := _watched_texture != null and _watched_texture.specular_texture != null
 	_set_param("has_specular_map", present)
+
+
+# Push the local rect as min.xy | max.xy; the shader treats an empty rect as off.
+func _update_self_rect() -> void:
+	var r := get_rect()
+	_set_param("self_rect", Vector4(r.position.x, r.position.y, r.end.x, r.end.y))
 
 
 func _set_param(param: String, value: Variant) -> void:
