@@ -53,6 +53,8 @@ emission_curve = SubResource("CurveTexture_abemx")
 shader = ExtResource("3_es8hm")
 shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
+shader_parameter/self_shadow = false
+shader_parameter/self_rect = Vector4(-16, -16, 16, 16)
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = true
@@ -70,8 +72,8 @@ diffuse_texture = ExtResource("1_n8bxl")
 normal_texture = ExtResource("2_pyd3v")
 specular_texture = ExtResource("6_abemx")
 
-[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
-polygon = PackedVector2Array(-5.200012, -11.799999, -9.400017, -7.5999985, -9.600014, 1.5999947, -7.8000107, 7.200001, -3.0000153, 13.200001, 2.1999893, 12.999996, 6.599991, 7.999996, 8.399994, 1.5999947, 8.999992, -6.4000053, 6.799988, -10.600006, 2.399994, -12.000008)
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ynfqq"]
+polygon = PackedVector2Array(-7.199997, 5.5999985, 6.2000046, 5.5999985, 2.600006, 12.799995, -3.7999954, 12.799995)
 
 [node name="Test" type="Node2D" unique_id=1250791965]
 
@@ -88,6 +90,7 @@ lifetime = 2.0
 process_material = SubResource("ParticleProcessMaterial_ynfqq")
 
 [node name="LitSprite2D" type="Sprite2D" parent="." unique_id=1127649428]
+z_index = 1
 material = SubResource("ShaderMaterial_s7aw1")
 position = Vector2(586, 320.00003)
 scale = Vector2(5, 5)
@@ -95,11 +98,9 @@ texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("6_ngwpp")
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="LightOccluder2D" type="LightOccluder2D" parent="LitSprite2D" unique_id=1876398662]
+[node name="LightOccluder2D2" type="LightOccluder2D" parent="LitSprite2D" unique_id=204842395]
 z_index = -1
-position = Vector2(1.5258789e-05, -0.3999977)
-scale = Vector2(0.99999994, 0.99999994)
-occluder = SubResource("OccluderPolygon2D_ywxc3")
+occluder = SubResource("OccluderPolygon2D_ynfqq")
 
 [node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]
 script = ExtResource("3_4l8u5")
@@ -120,7 +121,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(574, 122)
+position = Vector2(582, 161)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0

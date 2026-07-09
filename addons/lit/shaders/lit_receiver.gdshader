@@ -56,6 +56,12 @@ uniform sampler2D emissive_mask : hint_default_white;   // white default lets st
 // 2D-render-layers control.
 uniform int receiver_mask = 1;
 
+// Self-shadow exclusion: when self_shadow is off, shadow-march hits inside self_rect
+// (this item's local rect) are ignored, so a sprite's own occluder casts behind it, not
+// onto it. LitSprite2D syncs self_rect; the empty default disables the test entirely.
+uniform bool self_shadow = false;
+uniform vec4 self_rect = vec4(0.0);  // local-space min.xy | max.xy; empty = off
+
 // Blinn-Phong specular controls (LIT_MODEL_PHONG only). Ignored in PBR mode.
 // specular_k scales how the CanvasTexture shininess maps to the half-vector exponent.
 uniform float specular_strength = 0.5;
@@ -98,12 +104,27 @@ uniform float directional_horizontal_scale = 32.0;
 // well-sampled; a fixed huge distance would under-sample the penumbra.
 uniform float directional_shadow_reach = 1.0;
 
+// Fragment position in the item's local space, for the self-shadow rect test.
+varying vec2 v_local;
+
+void vertex() {
+	v_local = VERTEX;
+}
+
+// True when a local-space march sample falls inside this item's own rect.
+bool lit_in_self(vec2 p_local) {
+	return p_local.x >= self_rect.x && p_local.y >= self_rect.y
+			&& p_local.x <= self_rect.z && p_local.y <= self_rect.w;
+}
+
 // Soft-shadow march of Godot's screen-space SDF (the IQ technique). Works in SDF
 // space, marching from the fragment toward the light and tracking the running minimum
 // of k * d / t for the penumbra. Returns 1 fully lit, 0 occluded. max_steps lets the
 // caller spend fewer iterations on short marches; the loop bound stays constant so it
-// can unroll.
-float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps) {
+// can unroll. When self_ex is true, hits inside the receiver's own rect (mapped via
+// self_local + sdf_to_local) are stepped through instead of occluding.
+float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
+		bool self_ex, vec2 self_local, mat2 sdf_to_local) {
 	// Screen-space SDF has no notion of 2D draw order. A fragment sitting inside
 	// an occluder's footprint is treated as on top of it, so a sprite drawn over
 	// an occluder stays lit instead of self-shadowing. (Distinct occluders that
@@ -124,11 +145,24 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps) {
 		if (s >= max_steps || t >= maxd) {
 			break;
 		}
-		float d = texture_sdf(frag_sdf + dir * t);
-		if (d < 0.001) {
-			return 0.0;                      // fully occluded
+		vec2 offset = dir * t;
+		float d = texture_sdf(frag_sdf + offset);
+		float cand = k * d / t;
+		// Test self-exclusion only when the sample matters (hit or lower penumbra).
+		if (d < 0.001 || cand < res) {
+			if (self_ex && lit_in_self(self_local + sdf_to_local * offset)) {
+				if (d < 0.001) {
+					// Cross the excluded occluder: -d is the distance to its far edge.
+					t += max(-d, shadow_min_step);
+					continue;
+				}
+			} else {
+				if (d < 0.001) {
+					return 0.0;              // fully occluded
+				}
+				res = cand;                  // penumbra accumulation
+			}
 		}
-		res = min(res, k * d / t);           // penumbra accumulation
 		t += max(d, shadow_min_step);
 	}
 	return clamp(res, 0.0, 1.0);
@@ -163,7 +197,8 @@ vec3 lit_f_schlick(float v_dot_h, vec3 f0) {
 // fragment by the caller and used only in PBR mode.
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float metallic, float roughness,
-		vec2 frag_uv, vec2 frag_sdf, float sdf_diag) {
+		vec2 frag_uv, vec2 frag_sdf, float sdf_diag,
+		bool self_ex, vec2 self_local, mat2 sdf_to_local) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
 	vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0);
@@ -333,7 +368,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			steps = clamp(steps, 16, lit_shadow_steps_max);
 		}
 
-		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps);
+		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps, self_ex, self_local, sdf_to_local);
 		contribution *= mix(t3.rgb, vec3(1.0), s);
 	}
 
@@ -371,6 +406,20 @@ void fragment() {
 	// distance, keeping the step budget well-sampled at any resolution.
 	float sdf_diag = length(screen_uv_to_sdf(vec2(1.0)) - screen_uv_to_sdf(vec2(0.0)));
 
+	// Self-shadow basis: map SDF-space march offsets to local space. Both spaces are
+	// affine images of the screen, so probing one pixel step in each and composing is
+	// exact. The uniform condition keeps the derivative calls in uniform control flow.
+	bool self_ex = !self_shadow && self_rect.z > self_rect.x && self_rect.w > self_rect.y;
+	mat2 sdf_to_local = mat2(vec2(0.0), vec2(0.0));
+	if (self_ex) {
+		// Columns: per-pixel-step delta of each space, in x and y.
+		mat2 px_to_sdf = mat2(
+				screen_uv_to_sdf(SCREEN_UV + vec2(SCREEN_PIXEL_SIZE.x, 0.0)) - frag_sdf,
+				screen_uv_to_sdf(SCREEN_UV + vec2(0.0, SCREEN_PIXEL_SIZE.y)) - frag_sdf);
+		mat2 px_to_local = mat2(dFdx(v_local), dFdy(v_local));
+		sdf_to_local = px_to_local * inverse(px_to_sdf);
+	}
+
 	// Tiling is only used once the manager has published a grid; until then (and in the
 	// zero-light case) fall back to looping every light.
 	bool tiling_valid = lit_tile_grid.x > 0 && lit_tile_grid.y > 0 && lit_tile_size > 0;
@@ -379,7 +428,7 @@ void fragment() {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
 		// leading directional rows for every fragment.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -393,12 +442,12 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local);
 		}
 	}
 
