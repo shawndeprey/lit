@@ -49,12 +49,16 @@ scale_max = 0.5
 color_ramp = SubResource("GradientTexture1D_o2bho")
 emission_curve = SubResource("CurveTexture_abemx")
 
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ynfqq"]
+polygon = PackedVector2Array(-5.199997, 7.199997, 6.4000015, 7.199997, 2.800003, 12.599998, -1.9999924, 12.599998)
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_s7aw1"]
 shader = ExtResource("3_es8hm")
 shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false
-shader_parameter/self_rect = Vector4(-16, -16, 16, 16)
+shader_parameter/self_rect_count = 1
+shader_parameter/self_rects = PackedVector4Array(-6.1999965, 6.999992, 5.400001, 12.399993, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = true
@@ -64,6 +68,7 @@ shader_parameter/roughness_value = 1.0
 shader_parameter/ao_map = ExtResource("3_x1o0v")
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
+shader_parameter/footprint_shadow = 16.0
 shader_parameter/directional_horizontal_scale = 32.0
 shader_parameter/directional_shadow_reach = 1.0
 
@@ -71,9 +76,6 @@ shader_parameter/directional_shadow_reach = 1.0
 diffuse_texture = ExtResource("1_n8bxl")
 normal_texture = ExtResource("2_pyd3v")
 specular_texture = ExtResource("6_abemx")
-
-[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ynfqq"]
-polygon = PackedVector2Array(-7.199997, 5.5999985, 6.2000046, 5.5999985, 2.600006, 12.799995, -3.7999954, 12.799995)
 
 [node name="Test" type="Node2D" unique_id=1250791965]
 
@@ -89,7 +91,15 @@ texture = SubResource("GradientTexture2D_ywxc3")
 lifetime = 2.0
 process_material = SubResource("ParticleProcessMaterial_ynfqq")
 
-[node name="LitSprite2D" type="Sprite2D" parent="." unique_id=1127649428]
+[node name="LightOccluder2D3" type="LightOccluder2D" parent="." unique_id=1989510638]
+z_index = -1
+position = Vector2(495.00006, 206.00002)
+scale = Vector2(5, 5)
+occluder = SubResource("OccluderPolygon2D_ynfqq")
+
+[node name="Skeleton" type="Node2D" parent="." unique_id=1155335731]
+
+[node name="LitSprite2D" type="Sprite2D" parent="Skeleton" unique_id=1127649428]
 z_index = 1
 material = SubResource("ShaderMaterial_s7aw1")
 position = Vector2(586, 320.00003)
@@ -98,8 +108,9 @@ texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("6_ngwpp")
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="LightOccluder2D2" type="LightOccluder2D" parent="LitSprite2D" unique_id=204842395]
+[node name="LightOccluder2D2" type="LightOccluder2D" parent="Skeleton/LitSprite2D" unique_id=204842395]
 z_index = -1
+position = Vector2(-0.9999988, -0.20000845)
 occluder = SubResource("OccluderPolygon2D_ynfqq")
 
 [node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]

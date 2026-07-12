@@ -39,10 +39,10 @@ Prefer videos? Subscribe on YouTube:
 4. **Add a light.** Drop a **`LitPointLight2D`** over your art and watch it light up. Tweak
    color, energy, and range to taste.
 5. **Want shadows?** On the light, tick **Shadow Enabled**. Then give the world something to
-   block the light: add a `LightOccluder2D` to a sprite, or for tiles enable **SDF
-   Collision** on your TileSet's occlusion layer. A `LitSprite2D` never shadows itself —
-   its occluder's shadow falls behind it (flip **Self Shadow** on the sprite if you want
-   plain SDF shadowing back).
+   block the light: add a `LightOccluder2D` to a sprite (as a child, or as a sibling on
+   the object's root), or for tiles enable **SDF Collision** on your TileSet's occlusion
+   layer. A `LitSprite2D` never shadows itself — its own occluders' shadows fall behind
+   it (flip **Self Shadow** on the sprite if you want plain SDF shadowing back).
 6. **Want a look?** Add a **`LitPostProcess`** node and switch on bloom, color grade, CRT,
    or any of the other effects.
 
@@ -55,8 +55,10 @@ That's it — everything updates live in the editor as you build.
 - **Uncapped lights & Shadows.** No 15-light limit. Use as many as your scene needs.
 - **Three light types.** Point, Directional (a sun), and Spot (a cone).
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
-- **No self-shadowing.** A sprite's own occluder casts behind it, not onto it, so you
-  don't have to trace silhouette-perfect polygons. Per-sprite **Self Shadow** toggle.
+- **No self-shadowing.** A sprite's own occluders — `LightOccluder2D` nodes that are its
+  children or its direct siblings — cast behind it, not onto it, so layered-sprite
+  objects need just one occluder on the object root and no silhouette-perfect polygons.
+  Every other occluder still shadows it normally. Per-sprite **Self Shadow** toggle.
 - **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` — no wiring.
 - **Blinn–Phong or PBR.** Pick the lighting model in Project Settings → Lit. PBR adds
   optional metallic / roughness / AO inputs on the receiver material; switch back to
@@ -92,6 +94,17 @@ That's it — everything updates live in the editor as you build.
   `Light2D`. The two systems live side by side, so you can convert a project piece by piece.
 - For **tilemaps to cast shadows**, the TileSet's occlusion layer needs **SDF Collision**
   turned on (it's off by default).
+- **Shadows pass through occluders.** An occluder casts from its light-facing edge, and
+  the shadow crosses the shape's own footprint and continues beyond it as one volume —
+  the body itself never blocks anything. On the footprint, every light's shadow builds
+  up from the edge it enters through, at a rate set by that light's proximity: a nearby
+  light stamps its shadow across the footprint, a distant one bleeds its light onto it,
+  so overlapping lights blend by distance instead of one overriding another. Tune the
+  ramp with the receiver material's **footprint_shadow** (higher lands own shadows
+  harder). Shadows from *other* occluders land on a footprint normally from every
+  direction. You can also author a bare casting edge — untick **Closed** on the
+  `OccluderPolygon2D` and keep just the edge's points — for a lone face (a ledge lip, a
+  wall edge) with no footprint at all.
 
 ---
 
