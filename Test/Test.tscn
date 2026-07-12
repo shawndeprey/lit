@@ -14,6 +14,8 @@
 [ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="8_5ghie"]
 [ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="11_ngwpp"]
 [ext_resource type="Script" uid="uid://divm48v4w4f4s" path="res://Test/lit_demo.gd" id="12_demo"]
+[ext_resource type="Texture2D" uid="uid://b30ucg36gqkch" path="res://Test/tilesets/walls/Wall Test.png" id="15_cn6ic"]
+[ext_resource type="Texture2D" uid="uid://curwvsf6r7r2d" path="res://Test/tilesets/walls/Wall Test_n.png" id="16_mm28q"]
 
 [sub_resource type="Gradient" id="Gradient_s7aw1"]
 colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0)
@@ -49,7 +51,7 @@ scale_max = 0.5
 color_ramp = SubResource("GradientTexture1D_o2bho")
 emission_curve = SubResource("CurveTexture_abemx")
 
-[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ynfqq"]
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_abemx"]
 polygon = PackedVector2Array(-5.199997, 7.199997, 6.4000015, 7.199997, 2.800003, 12.599998, -1.9999924, 12.599998)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_s7aw1"]
@@ -77,6 +79,34 @@ diffuse_texture = ExtResource("1_n8bxl")
 normal_texture = ExtResource("2_pyd3v")
 specular_texture = ExtResource("6_abemx")
 
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ynfqq"]
+polygon = PackedVector2Array(-5.199997, 7.199997, 6.4000015, 7.199997, 2.800003, 12.599998, -1.9999924, 12.599998)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_aici6"]
+shader = ExtResource("3_es8hm")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 1
+shader_parameter/self_rects = PackedVector4Array(-16, -16, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/footprint_shadow = 16.0
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_lng6l"]
+diffuse_texture = ExtResource("15_cn6ic")
+normal_texture = ExtResource("16_mm28q")
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
+polygon = PackedVector2Array(-16, -16, -16, 16, 16, 16, 16, -16)
+
 [node name="Test" type="Node2D" unique_id=1250791965]
 
 [node name="TileBasicCrypt" parent="." unique_id=805693216 instance=ExtResource("1_un7ao")]
@@ -92,18 +122,19 @@ lifetime = 2.0
 process_material = SubResource("ParticleProcessMaterial_ynfqq")
 
 [node name="LightOccluder2D3" type="LightOccluder2D" parent="." unique_id=1989510638]
+visible = false
 z_index = -1
-position = Vector2(495.00006, 206.00002)
+position = Vector2(688, 196)
 scale = Vector2(5, 5)
-occluder = SubResource("OccluderPolygon2D_ynfqq")
+occluder = SubResource("OccluderPolygon2D_abemx")
 
 [node name="Skeleton" type="Node2D" parent="." unique_id=1155335731]
+position = Vector2(577, 324)
+scale = Vector2(5, 5)
 
 [node name="LitSprite2D" type="Sprite2D" parent="Skeleton" unique_id=1127649428]
 z_index = 1
 material = SubResource("ShaderMaterial_s7aw1")
-position = Vector2(586, 320.00003)
-scale = Vector2(5, 5)
 texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("6_ngwpp")
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
@@ -114,6 +145,7 @@ position = Vector2(-0.9999988, -0.20000845)
 occluder = SubResource("OccluderPolygon2D_ynfqq")
 
 [node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]
+position = Vector2(10, 9)
 script = ExtResource("3_4l8u5")
 color = Color(0, 0, 0, 1)
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
@@ -132,7 +164,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(582, 161)
+position = Vector2(575, 152)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0
@@ -142,7 +174,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights" unique_id=1063815886]
-position = Vector2(752, 429)
+position = Vector2(733, 450)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 1.5
@@ -152,7 +184,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights" unique_id=1682313072]
-position = Vector2(390, 455.00003)
+position = Vector2(413, 469)
 rotation = -0.6769053
 script = ExtResource("8_5ghie")
 color = Color(0, 0, 1, 1)
@@ -183,3 +215,18 @@ exposure = 2.12
 lut_preset = 7
 lut_amount = 0.77
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
+
+[node name="Walls" type="Node2D" parent="." unique_id=2022145144]
+visible = false
+
+[node name="Wall1" type="Sprite2D" parent="Walls" unique_id=1067797917]
+material = SubResource("ShaderMaterial_aici6")
+position = Vector2(454, 224.5)
+scale = Vector2(1, 2.96875)
+texture = SubResource("CanvasTexture_lng6l")
+script = ExtResource("6_ngwpp")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="LightOccluder2D" type="LightOccluder2D" parent="Walls/Wall1" unique_id=1361232975]
+z_index = -1
+occluder = SubResource("OccluderPolygon2D_ywxc3")
