@@ -37,9 +37,8 @@ const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 
 ## Self-shadowing: when off (the default), this sprite's own occluders can't cast onto
 ## it — their shadows render behind it. "Own" means LightOccluder2D nodes that are
-## descendants of this sprite or its direct siblings, so one occluder on an object root
-## serves every sprite layer of the object. All other occluders still shadow this sprite
-## normally. Proxies to `self_shadow`.
+## descendants of this sprite or its direct siblings. All other occluders still shadow
+## this sprite normally. Proxies to `self_shadow`.
 @export var self_shadow: bool = false:
 	set(value):
 		self_shadow = value
@@ -50,9 +49,8 @@ const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 # has_specular_map live when the user assigns or clears a specular map in the inspector.
 var _watched_texture: CanvasTexture = null
 
-# Owned occluders (descendants and direct siblings), cached so the per-frame bounds
-# refresh doesn't rescan the tree. Rebuilt when children of this sprite or of its
-# parent change.
+# Owned occluders (descendants and direct siblings); rebuilt when children of this
+# sprite or of its parent change.
 var _self_occluders: Array = []
 
 
@@ -82,8 +80,7 @@ func _ready() -> void:
 		texture_changed.connect(_on_texture_changed)
 	_on_texture_changed()
 
-	# Re-list the owned occluders when occluders come and go, both below this sprite and
-	# among its siblings (the parent's children).
+	# Rebuild the occluder cache when children of this sprite or its parent change.
 	if not child_entered_tree.is_connected(_on_children_changed):
 		child_entered_tree.connect(_on_children_changed)
 	if not child_exiting_tree.is_connected(_on_children_changed):
@@ -97,9 +94,7 @@ func _ready() -> void:
 	_refresh_occluder_cache()
 	_update_self_rect()
 
-	# Refresh the bounds every frame so occluders that move relative to this sprite
-	# (animated rigs, editor drags) stay claimed. The cached occluder list keeps this to
-	# a few vector transforms per sprite.
+	# Refresh the bounds every frame so moving occluders stay claimed.
 	set_process(true)
 
 
@@ -139,10 +134,8 @@ func _refresh_occluder_cache() -> void:
 				_self_occluders.append(sibling)
 
 
-# Push one local-space box (min.xy | max.xy) per owned occluder — descendants of this
-# sprite plus direct siblings. Per-occluder boxes (not one union) keep the claimed space
-# tight, so a foreign occluder overlapping the sprite still shadows it. The shader takes
-# up to 4 boxes; extras are unioned into the last. Count 0 turns the exclusion off.
+# Push one local-space box (min.xy | max.xy) per owned occluder. The shader takes up
+# to 4 boxes; extras are unioned into the last. Count 0 turns the exclusion off.
 func _update_self_rect() -> void:
 	if not is_inside_tree():
 		return

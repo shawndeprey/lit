@@ -57,10 +57,9 @@ uniform sampler2D emissive_mask : hint_default_white;   // white default lets st
 uniform int receiver_mask = 1;
 
 // Self-shadow exclusion: when self_shadow is off, shadow-march hits inside the
-// receiver's own occluder bounds are ignored, so a sprite's own occluders cast behind
-// it, not onto it, while foreign occluders (even ones overlapping the sprite) still
-// cast normally. LitSprite2D syncs one local-space box per owned occluder (descendants
-// and direct siblings), unioning extras into the last slot; count 0 disables the test.
+// receiver's own occluder bounds are ignored, so its own occluders cast behind it, not
+// onto it. LitSprite2D syncs one local-space box per owned occluder, unioning extras
+// into the last slot; count 0 disables the test.
 uniform bool self_shadow = false;
 uniform int  self_rect_count = 0;
 uniform vec4 self_rects[4];  // local-space min.xy | max.xy each
@@ -97,14 +96,9 @@ uniform sampler2D ao_map : hint_default_white;
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
 
-// How strongly a shape's own through-shadow lands on its footprint. The shadow builds
-// up with the depth it has crossed inside the shape, scaled by the light's distance:
-// block = footprint_shadow * depth / light_distance, clamped to 1. A nearby light
-// saturates within a few pixels, stamping its shadow across the footprint at full
-// strength; a distant light's ramp is shallow, so some of its light bleeds across the
-// footprint. Overlapping casts from several lights therefore blend by proximity
-// instead of one light's result overriding another's. The ratio is dimensionless, so
-// the look is camera-zoom independent.
+// How strongly an occluder's own shadow lands on its footprint:
+// block = footprint_shadow * depth crossed / light distance, clamped to 1. Higher
+// values darken footprints sooner. Dimensionless, so zoom does not change the look.
 uniform float footprint_shadow = 16.0;
 
 // Horizontal reach of a directional light's shading vector relative to its `height`;
@@ -124,9 +118,8 @@ void vertex() {
 	v_local = VERTEX;
 }
 
-// Slack for the self-bounds test, in SDF units: the screen-space SDF is generated at
-// reduced resolution, so an occluder's zero level sits a texel or two outside its true
-// polygon and boundary hits would otherwise escape an exact test.
+// Slack for the self-bounds test, in SDF units: the SDF is generated at reduced
+// resolution, so an outline's zero level sits a texel or two outside its polygon.
 const float LIT_SELF_PAD_SDF = 2.0;
 
 // Distance from a local-space point to the nearest self box (0 inside any).
@@ -142,27 +135,15 @@ float lit_self_dist(vec2 p_local) {
 	return best;
 }
 
-// Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf|: the
-// distance field of the occluders' OUTLINES. A shape casts from its light-facing
-// silhouette and the shadow passes straight through the body as one continuous volume;
-// the body itself never blocks anything — only faces matter.
-//
-// The shape's own footprint is the one place that needs a rule of its own. Each
-// light's through-shadow builds up across the footprint from that light's side: zero
-// at the face it enters through, ramping with the depth crossed, at a rate set by the
-// light's proximity (footprint_shadow * depth / light_distance). Every light applies
-// this simultaneously, so overlapping casts blend — a near light stamps its shadow
-// across the footprint while a far light bleeds light onto it — rather than any one
-// light's result overriding another's. Foreign occluders shade the footprint normally
-// from every direction — only the containing shape uses the ramp.
-// Receding rays never darken (|d| grows at least as fast as t, keeping k*|d|/t >= k),
-// which keeps surfaces between an occluder and the light lit up to the edge itself.
+// Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| —
+// the distance field of occluder outlines — so a shape casts from its light-facing
+// silhouette and the shadow passes through its body. A fragment starting inside a
+// shape takes that shape's shadow via the footprint_shadow ramp instead of a hard hit.
 // Returns 1 fully lit, 0 occluded. max_steps lets the caller spend fewer iterations on
 // short marches; the loop bound stays constant so it can unroll. When self_ex is true,
-// samples whose nearest outline may belong to the receiver's own occluders (self
-// bounds within |d| of the sample, plus pad) are stepped through instead of occluding;
-// self_local and sdf_to_local map SDF-space march offsets into local space, and
-// self_scale is the local length of one SDF unit.
+// samples whose nearest outline may belong to the receiver's own occluders are stepped
+// through instead of occluding; self_local and sdf_to_local map SDF-space march
+// offsets into local space, and self_scale is the local length of one SDF unit.
 float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
 		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	vec2 delta = light_sdf - frag_sdf;
@@ -175,15 +156,10 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
 	float res = 1.0;
 	float k = mix(8.0, 256.0, hardness);     // low hardness is soft, high is crisp
 	float prev_d = texture_sdf(frag_sdf);    // signed; tracks outline crossings
-	// Footprint handling: a fragment starting inside a shape marches out of it without
-	// treating its own outline as ordinary hits. The containing shape's through-shadow
-	// is applied at the exit, ramping with the depth crossed (t at exit) scaled by the
-	// light's distance — see footprint_shadow. Depth 0 at the light-side face keeps the
-	// footprint continuous with the lit floor on that side.
+	// A fragment starting inside a shape marches out of it without treating its own
+	// outline as hits; the shape's shadow is applied once, at the exit.
 	bool grace = prev_d < 0.0;
-	// After the exit, the exited edge sits just behind the ray; while |d| is still
-	// growing the nearest outline can only be that edge, so penumbra accumulation
-	// stays muted until the ray approaches something new or crosses a fresh outline.
+	// Mutes penumbra accumulation while the ray is still receding from the exited edge.
 	bool receding = false;
 	float prev_ad = 0.0;
 	for (int s = 0; s < LIT_MAX_SHADOW_STEPS; s++) {
@@ -199,10 +175,8 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
 				t += max(-d, shadow_min_step);     // -d is the distance to the far edge
 				continue;
 			}
-			// First exit from the containing shape: land its through-shadow, unless
-			// the shape is the receiver's own occluder (Self Shadow off exempts it).
-			// t is the depth the shadow has crossed to reach the fragment; dividing by
-			// maxd makes proximity the win strength, and keeps the ratio zoom-free.
+			// First exit from the containing shape: apply its shadow, ramped by depth
+			// crossed over light distance, unless it is an owned occluder.
 			grace = false;
 			receding = true;
 			prev_ad = ad;
@@ -212,15 +186,14 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
 				float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
 				res = min(res, 1.0 - own_block);
 				if (res <= 0.0) {
-					return 0.0;              // ramp saturated: solid through-shadow
+					return 0.0;              // fully occluded
 				}
 			}
 			t += max(ad, shadow_min_step);
 			continue;
 		}
-		// The outline itself has zero width, so a min-step advance can land past it
-		// without ad ever reaching the hit threshold; a sign flip between consecutive
-		// samples catches every crossing.
+		// A sign flip between consecutive samples catches crossings a min-step
+		// advance can hop over.
 		bool hit = ad < 0.001 || (d < 0.0) != (prev_d < 0.0);
 		prev_d = d;
 		if (receding) {
@@ -229,13 +202,12 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
 				t += max(ad, shadow_min_step);
 				continue;
 			}
-			receding = false;                      // approaching (or crossing) something new
+			receding = false;
 		}
 		float cand = k * ad / t;
 		// Test self-exclusion only when the sample matters (hit or lower penumbra).
 		// The nearest outline may be the receiver's own whenever the self bounds lie
-		// within |d| of the sample; that also mutes the penumbra a grazing pass would
-		// otherwise smear across the sprite.
+		// within |d| of the sample.
 		if (hit || cand < res) {
 			if (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
 					<= (ad + LIT_SELF_PAD_SDF) * self_scale) {
