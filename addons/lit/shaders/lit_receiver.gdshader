@@ -180,6 +180,12 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps, f
 	if (!self_ex) {
 		int s = 0;
 		max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);  // keep the compile-time cap
+		// Once the grace phase (if any) has exited its containing shape, every sample the
+		// receding/steady loops keep marching from is non-negative: a negative d IS a sign
+		// flip, so the full loop's hit test (|d| < 0.001 || sign flip vs the previous
+		// sample) collapses to a single d < 0.001 compare, and prev_d/abs() drop out of
+		// the per-step work entirely. The state-machine loop below still needs both, since
+		// self-excluded crossings march on through their shape's interior.
 		if (grace) {
 			// Grace phase: march out of the containing shape without treating its
 			// outline as hits; apply its footprint shadow once, at the exit sample.
@@ -187,21 +193,19 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps, f
 			float prev_ad = 0.0;
 			for (; s < max_steps && t < maxd; s++) {
 				float d = texture_sdf(frag_sdf + dir * t); // signed: negative inside a shape
-				prev_d = d;
 				if (d < 0.0) {
 					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
 					continue;
 				}
 				// First exit: the shape's shadow, ramped by depth crossed over light
 				// distance (never exempt here - there are no owned occluders).
-				float ad = abs(d);
 				float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
 				res = min(res, 1.0 - own_block);
 				if (res <= 0.0) {
 					return 0.0;                            // fully occluded
 				}
-				prev_ad = ad;
-				t += max(ad, shadow_min_step);
+				prev_ad = d;
+				t += max(d, shadow_min_step);
 				s++;                                       // this sample consumed a step
 				receding = true;
 				break;
@@ -212,38 +216,39 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps, f
 			if (receding) {
 				for (; s < max_steps && t < maxd; s++) {
 					float d = texture_sdf(frag_sdf + dir * t);
-					float ad = abs(d);
-					bool hit = ad < 0.001 || (d < 0.0) != (prev_d < 0.0);
-					prev_d = d;
-					if (!hit && ad >= prev_ad) {
-						prev_ad = ad;
-						t += max(ad, shadow_min_step);
+					if (d >= 0.001 && d >= prev_ad) {
+						prev_ad = d;
+						t += max(d, shadow_min_step);
 						continue;
 					}
-					if (hit) {
+					if (d < 0.001) {
 						return 0.0;                        // fully occluded
 					}
-					res = min(res, k * ad / t);
-					t += max(ad, shadow_min_step);
+					res = min(res, k * d / t);
+					t += max(d, shadow_min_step);
 					s++;                                   // this sample consumed a step
 					break;
 				}
 			}
 		}
-		// Steady state: the bare IQ march on |sdf|.
+		// Steady state: the bare IQ march, hit test folded to one compare (see above).
+		// The penumbra term only needs the minimum of d/t over the march, and t is
+		// strictly positive, so track the minimizing (d, t) pair by cross-multiplied
+		// comparison and defer the division to a single one after the loop.
+		float best_d = 1e20;
+		float best_t = 1.0;
 		for (; s < max_steps && t < maxd; s++) {
-			float d = texture_sdf(frag_sdf + dir * t);     // signed: negative inside a shape
-			float ad = abs(d);                             // distance to the nearest outline
-			// A sign flip between consecutive samples catches crossings a min-step
-			// advance can hop over.
-			if (ad < 0.001 || (d < 0.0) != (prev_d < 0.0)) {
-				return 0.0;                  // fully occluded
+			float d = texture_sdf(frag_sdf + dir * t);
+			if (d < 0.001) {
+				return 0.0;                  // fully occluded: inside, on, or across an outline
 			}
-			prev_d = d;
-			res = min(res, k * ad / t);      // penumbra accumulation
-			t += max(ad, shadow_min_step);
+			if (d * best_t < best_d * t) {   // d/t < best_d/best_t, division-free
+				best_d = d;
+				best_t = t;
+			}
+			t += max(d, shadow_min_step);    // sphere-trace advance
 		}
-		return clamp(res, 0.0, 1.0);
+		return clamp(min(res, k * best_d / best_t), 0.0, 1.0);
 	}
 
 	// Mutes penumbra accumulation while the ray is still receding from the exited edge.
@@ -405,7 +410,10 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 
 		// A spot is a point light masked to a cone (texel 4): aim.xy is the
 		// screen-space direction it points. The fragment is lit if it falls inside
-		// the cone, with a soft edge between the inner and outer angle.
+		// the cone, with a soft edge between the inner and outer angle. (Testing the
+		// cone before the normalize/pow above and early-returning measured slower,
+		// same as the cookie branch: the extra exit costs every light more than the
+		// skipped math saves.)
 		if (is_spot) {
 			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // aim.xy | cos_outer | cos_inner
 			vec2 dir_to_frag = (dist > 0.0001) ? (-to_light_px / dist) : t4.xy;
