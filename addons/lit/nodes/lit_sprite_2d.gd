@@ -35,9 +35,10 @@ const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 		receiver_mask = value
 		_set_param("receiver_mask", value)
 
-## Self-shadowing: when off (the default), occluders inside this sprite's own rect can't
-## cast onto it — its shadow renders behind it. Occluders outside the rect still shadow
-## it normally. Proxies to `self_shadow`.
+## Self-shadowing: when off (the default), this sprite's own occluders can't cast onto
+## it — their shadows render behind it. "Own" means LightOccluder2D nodes that are
+## descendants of this sprite or its direct siblings. All other occluders still shadow
+## this sprite normally. Proxies to `self_shadow`.
 @export var self_shadow: bool = false:
 	set(value):
 		self_shadow = value
@@ -47,6 +48,10 @@ const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 # The CanvasTexture currently watched for specular-slot changes, so we can re-evaluate
 # has_specular_map live when the user assigns or clears a specular map in the inspector.
 var _watched_texture: CanvasTexture = null
+
+# Owned occluders (descendants and direct siblings); rebuilt when children of this
+# sprite or of its parent change.
+var _self_occluders: Array = []
 
 
 func _init() -> void:
@@ -75,11 +80,22 @@ func _ready() -> void:
 		texture_changed.connect(_on_texture_changed)
 	_on_texture_changed()
 
-	# Keep the shader's self-shadow rect synced (item_rect_changed covers texture,
-	# centered, offset, region, and frames).
-	if not item_rect_changed.is_connected(_update_self_rect):
-		item_rect_changed.connect(_update_self_rect)
+	# Rebuild the occluder cache when children of this sprite or its parent change.
+	if not child_entered_tree.is_connected(_on_children_changed):
+		child_entered_tree.connect(_on_children_changed)
+	if not child_exiting_tree.is_connected(_on_children_changed):
+		child_exiting_tree.connect(_on_children_changed)
+	var parent := get_parent()
+	if parent != null:
+		if not parent.child_entered_tree.is_connected(_on_children_changed):
+			parent.child_entered_tree.connect(_on_children_changed)
+		if not parent.child_exiting_tree.is_connected(_on_children_changed):
+			parent.child_exiting_tree.connect(_on_children_changed)
+	_refresh_occluder_cache()
 	_update_self_rect()
+
+	# Refresh the bounds every frame so moving occluders stay claimed.
+	set_process(true)
 
 
 # Re-point the specular-slot subscription at the current CanvasTexture, then refresh the flag.
@@ -98,10 +114,53 @@ func _update_specular_flag() -> void:
 	_set_param("has_specular_map", present)
 
 
-# Push the local rect as min.xy | max.xy; the shader treats an empty rect as off.
+func _process(_delta: float) -> void:
+	_update_self_rect()
+
+
+func _on_children_changed(_child: Node) -> void:
+	# Deferred: an exiting child is still in the tree during this signal.
+	_refresh_occluder_cache.call_deferred()
+
+
+func _refresh_occluder_cache() -> void:
+	_self_occluders.clear()
+	for child in find_children("*", "LightOccluder2D", true, false):
+		_self_occluders.append(child)
+	var parent := get_parent()
+	if parent != null:
+		for sibling in parent.get_children():
+			if sibling is LightOccluder2D:
+				_self_occluders.append(sibling)
+
+
+# Push one local-space box (min.xy | max.xy) per owned occluder. The shader takes up
+# to 4 boxes; extras are unioned into the last. Count 0 turns the exclusion off.
 func _update_self_rect() -> void:
-	var r := get_rect()
-	_set_param("self_rect", Vector4(r.position.x, r.position.y, r.end.x, r.end.y))
+	if not is_inside_tree():
+		return
+	var to_local := global_transform.affine_inverse()
+	var rects: Array[Rect2] = []
+	for node in _self_occluders:
+		if not is_instance_valid(node):
+			continue
+		var occ := node as LightOccluder2D
+		if occ == null or not occ.is_inside_tree() \
+				or occ.occluder == null or occ.occluder.polygon.is_empty():
+			continue
+		var xf := to_local * occ.global_transform
+		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
+		for p in occ.occluder.polygon:
+			r = r.expand(xf * p)
+		rects.append(r)
+	while rects.size() > 4:
+		rects[3] = rects[3].merge(rects.pop_back())
+	var packed := PackedVector4Array()
+	packed.resize(4)
+	for i in rects.size():
+		packed[i] = Vector4(rects[i].position.x, rects[i].position.y, rects[i].end.x, rects[i].end.y)
+	_set_param("self_rects", packed)
+	_set_param("self_rect_count", rects.size())
 
 
 func _set_param(param: String, value: Variant) -> void:

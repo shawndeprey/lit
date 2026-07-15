@@ -56,11 +56,13 @@ uniform sampler2D emissive_mask : hint_default_white;   // white default lets st
 // 2D-render-layers control.
 uniform int receiver_mask = 1;
 
-// Self-shadow exclusion: when self_shadow is off, shadow-march hits inside self_rect
-// (this item's local rect) are ignored, so a sprite's own occluder casts behind it, not
-// onto it. LitSprite2D syncs self_rect; the empty default disables the test entirely.
+// Self-shadow exclusion: when self_shadow is off, shadow-march hits inside the
+// receiver's own occluder bounds are ignored, so its own occluders cast behind it, not
+// onto it. LitSprite2D syncs one local-space box per owned occluder, unioning extras
+// into the last slot; count 0 disables the test.
 uniform bool self_shadow = false;
-uniform vec4 self_rect = vec4(0.0);  // local-space min.xy | max.xy; empty = off
+uniform int  self_rect_count = 0;
+uniform vec4 self_rects[4];  // local-space min.xy | max.xy each
 
 // Blinn-Phong specular controls (LIT_MODEL_PHONG only). Ignored in PBR mode.
 // specular_k scales how the CanvasTexture shininess maps to the half-vector exponent.
@@ -94,6 +96,11 @@ uniform sampler2D ao_map : hint_default_white;
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
 
+// How strongly an occluder's own shadow lands on its footprint:
+// block = footprint_shadow * depth crossed / light distance, clamped to 1. Higher
+// values darken footprints sooner. Dimensionless, so zoom does not change the look.
+uniform float footprint_shadow = 16.0;
+
 // Horizontal reach of a directional light's shading vector relative to its `height`;
 // elevation is atan(height / scale). The default gives about 27 degrees at height 16,
 // so the direction reads clearly. Larger is more grazing.
@@ -104,34 +111,41 @@ uniform float directional_horizontal_scale = 32.0;
 // well-sampled; a fixed huge distance would under-sample the penumbra.
 uniform float directional_shadow_reach = 1.0;
 
-// Fragment position in the item's local space, for the self-shadow rect test.
+// Fragment position in the item's local space, for the self-shadow bounds test.
 varying vec2 v_local;
 
 void vertex() {
 	v_local = VERTEX;
 }
 
-// True when a local-space march sample falls inside this item's own rect.
-bool lit_in_self(vec2 p_local) {
-	return p_local.x >= self_rect.x && p_local.y >= self_rect.y
-			&& p_local.x <= self_rect.z && p_local.y <= self_rect.w;
+// Slack for the self-bounds test, in SDF units: the SDF is generated at reduced
+// resolution, so an outline's zero level sits a texel or two outside its polygon.
+const float LIT_SELF_PAD_SDF = 2.0;
+
+// Distance from a local-space point to the nearest self box (0 inside any).
+float lit_self_dist(vec2 p_local) {
+	float best = 1e20;
+	for (int i = 0; i < 4; i++) {
+		if (i >= self_rect_count) {
+			break;
+		}
+		vec2 dv = max(max(self_rects[i].xy - p_local, vec2(0.0)), p_local - self_rects[i].zw);
+		best = min(best, length(dv));
+	}
+	return best;
 }
 
-// Soft-shadow march of Godot's screen-space SDF (the IQ technique). Works in SDF
-// space, marching from the fragment toward the light and tracking the running minimum
-// of k * d / t for the penumbra. Returns 1 fully lit, 0 occluded. max_steps lets the
-// caller spend fewer iterations on short marches; the loop bound stays constant so it
-// can unroll. When self_ex is true, hits inside the receiver's own rect (mapped via
-// self_local + sdf_to_local) are stepped through instead of occluding.
+// Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| —
+// the distance field of occluder outlines — so a shape casts from its light-facing
+// silhouette and the shadow passes through its body. A fragment starting inside a
+// shape takes that shape's shadow via the footprint_shadow ramp instead of a hard hit.
+// Returns 1 fully lit, 0 occluded. max_steps lets the caller spend fewer iterations on
+// short marches; the loop bound stays constant so it can unroll. When self_ex is true,
+// samples whose nearest outline may belong to the receiver's own occluders are stepped
+// through instead of occluding; self_local and sdf_to_local map SDF-space march
+// offsets into local space, and self_scale is the local length of one SDF unit.
 float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
-		bool self_ex, vec2 self_local, mat2 sdf_to_local) {
-	// Screen-space SDF has no notion of 2D draw order. A fragment sitting inside
-	// an occluder's footprint is treated as on top of it, so a sprite drawn over
-	// an occluder stays lit instead of self-shadowing. (Distinct occluders that
-	// lie between this fragment and the light still cast normally.)
-	if (texture_sdf(frag_sdf) <= 0.0) {
-		return 1.0;
-	}
+		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	vec2 delta = light_sdf - frag_sdf;
 	float maxd = length(delta);
 	if (maxd < 0.0001) {
@@ -141,29 +155,76 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
 	float t = shadow_min_step;
 	float res = 1.0;
 	float k = mix(8.0, 256.0, hardness);     // low hardness is soft, high is crisp
+	float prev_d = texture_sdf(frag_sdf);    // signed; tracks outline crossings
+	// A fragment starting inside a shape marches out of it without treating its own
+	// outline as hits; the shape's shadow is applied once, at the exit.
+	bool grace = prev_d < 0.0;
+	// Mutes penumbra accumulation while the ray is still receding from the exited edge.
+	bool receding = false;
+	float prev_ad = 0.0;
 	for (int s = 0; s < LIT_MAX_SHADOW_STEPS; s++) {
 		if (s >= max_steps || t >= maxd) {
 			break;
 		}
 		vec2 offset = dir * t;
-		float d = texture_sdf(frag_sdf + offset);
-		float cand = k * d / t;
+		float d = texture_sdf(frag_sdf + offset);  // signed: negative inside a shape
+		float ad = abs(d);                         // distance to the nearest outline
+		if (grace) {
+			prev_d = d;
+			if (d < 0.0) {
+				t += max(-d, shadow_min_step);     // -d is the distance to the far edge
+				continue;
+			}
+			// First exit from the containing shape: apply its shadow, ramped by depth
+			// crossed over light distance, unless it is an owned occluder.
+			grace = false;
+			receding = true;
+			prev_ad = ad;
+			bool own_exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
+			if (!own_exempt) {
+				float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+				res = min(res, 1.0 - own_block);
+				if (res <= 0.0) {
+					return 0.0;              // fully occluded
+				}
+			}
+			t += max(ad, shadow_min_step);
+			continue;
+		}
+		// A sign flip between consecutive samples catches crossings a min-step
+		// advance can hop over.
+		bool hit = ad < 0.001 || (d < 0.0) != (prev_d < 0.0);
+		prev_d = d;
+		if (receding) {
+			if (!hit && ad >= prev_ad) {
+				prev_ad = ad;
+				t += max(ad, shadow_min_step);
+				continue;
+			}
+			receding = false;
+		}
+		float cand = k * ad / t;
 		// Test self-exclusion only when the sample matters (hit or lower penumbra).
-		if (d < 0.001 || cand < res) {
-			if (self_ex && lit_in_self(self_local + sdf_to_local * offset)) {
-				if (d < 0.001) {
-					// Cross the excluded occluder: -d is the distance to its far edge.
+		// The nearest outline may be the receiver's own whenever the self bounds lie
+		// within |d| of the sample.
+		if (hit || cand < res) {
+			if (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (ad + LIT_SELF_PAD_SDF) * self_scale) {
+				if (hit) {
+					// Crossing an owned occluder: inside it, -d is the distance to
+					// the far edge.
 					t += max(-d, shadow_min_step);
 					continue;
 				}
 			} else {
-				if (d < 0.001) {
+				if (hit) {
 					return 0.0;              // fully occluded
 				}
 				res = cand;                  // penumbra accumulation
 			}
 		}
-		t += max(d, shadow_min_step);
+		t += max(ad, shadow_min_step);
 	}
 	return clamp(res, 0.0, 1.0);
 }
@@ -198,7 +259,7 @@ vec3 lit_f_schlick(float v_dot_h, vec3 f0) {
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float metallic, float roughness,
 		vec2 frag_uv, vec2 frag_sdf, float sdf_diag,
-		bool self_ex, vec2 self_local, mat2 sdf_to_local) {
+		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
 	vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0);
@@ -368,7 +429,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			steps = clamp(steps, 16, lit_shadow_steps_max);
 		}
 
-		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps, self_ex, self_local, sdf_to_local);
+		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps, self_ex, self_local, sdf_to_local, self_scale);
 		contribution *= mix(t3.rgb, vec3(1.0), s);
 	}
 
@@ -409,8 +470,9 @@ void fragment() {
 	// Self-shadow basis: map SDF-space march offsets to local space. Both spaces are
 	// affine images of the screen, so probing one pixel step in each and composing is
 	// exact. The uniform condition keeps the derivative calls in uniform control flow.
-	bool self_ex = !self_shadow && self_rect.z > self_rect.x && self_rect.w > self_rect.y;
+	bool self_ex = !self_shadow && self_rect_count > 0;
 	mat2 sdf_to_local = mat2(vec2(0.0), vec2(0.0));
+	float self_scale = 0.0;
 	if (self_ex) {
 		// Columns: per-pixel-step delta of each space, in x and y.
 		mat2 px_to_sdf = mat2(
@@ -418,6 +480,8 @@ void fragment() {
 				screen_uv_to_sdf(SCREEN_UV + vec2(0.0, SCREEN_PIXEL_SIZE.y)) - frag_sdf);
 		mat2 px_to_local = mat2(dFdx(v_local), dFdy(v_local));
 		sdf_to_local = px_to_local * inverse(px_to_sdf);
+		// Local length of one SDF unit, for comparing SDF distances against the bounds.
+		self_scale = max(length(sdf_to_local[0]), length(sdf_to_local[1]));
 	}
 
 	// Tiling is only used once the manager has published a grid; until then (and in the
@@ -428,7 +492,7 @@ void fragment() {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
 		// leading directional rows for every fragment.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local, self_scale);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -442,12 +506,12 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local, self_scale);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local, self_scale);
 		}
 	}
 
