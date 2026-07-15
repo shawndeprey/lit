@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://d28fv3x2iqnq2"]
+[gd_scene format=4 uid="uid://d28fv3x2iqnq2"]
 
 [ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="1_b50dt"]
 [ext_resource type="Texture2D" uid="uid://bcoyinyc7nquk" path="res://Test/tilesets/crypts/ra_crypt/ra_crypt.png" id="2_pulpr"]
@@ -9,10 +9,17 @@
 shader = ExtResource("1_b50dt")
 shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
+shader_parameter/footprint_shadow = 16.0
 shader_parameter/directional_horizontal_scale = 32.0
 shader_parameter/directional_shadow_reach = 1.0
 
