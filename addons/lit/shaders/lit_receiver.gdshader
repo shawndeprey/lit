@@ -146,11 +146,13 @@ float lit_self_dist(vec2 p_local) {
 // silhouette and the shadow passes through its body. A fragment starting inside a
 // shape takes that shape's shadow via the footprint_shadow ramp instead of a hard hit.
 // Returns 1 fully lit, 0 occluded. max_steps lets the caller spend fewer iterations on
-// short marches; the loop bound stays constant so it can unroll. When self_ex is true,
-// samples whose nearest outline may belong to the receiver's own occluders are stepped
-// through instead of occluding; self_local and sdf_to_local map SDF-space march
-// offsets into local space, and self_scale is the local length of one SDF unit.
-float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
+// short marches; the loop bound stays constant so it can unroll. frag_d is
+// texture_sdf(frag_sdf), sampled once per fragment by the caller and shared across
+// every light's march. When self_ex is true, samples whose nearest outline may belong
+// to the receiver's own occluders are stepped through instead of occluding; self_local
+// and sdf_to_local map SDF-space march offsets into local space, and self_scale is the
+// local length of one SDF unit.
+float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps, float frag_d,
 		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	vec2 delta = light_sdf - frag_sdf;
 	float maxd = length(delta);
@@ -161,10 +163,89 @@ float lit_shadow(vec2 frag_sdf, vec2 light_sdf, float hardness, int max_steps,
 	float t = shadow_min_step;
 	float res = 1.0;
 	float k = mix(8.0, 256.0, hardness);     // low hardness is soft, high is crisp
-	float prev_d = texture_sdf(frag_sdf);    // signed; tracks outline crossings
+	float prev_d = frag_d;                   // signed; tracks outline crossings
 	// A fragment starting inside a shape marches out of it without treating its own
 	// outline as hits; the shape's shadow is applied once, at the exit.
 	bool grace = prev_d < 0.0;
+
+	// Fast path. With no self-exclusion, every self test in the full loop below is
+	// short-circuited, and the march's three phases each run at most once, strictly in
+	// order: grace (only while still inside the shape the fragment started in),
+	// receding (only right after a grace exit), then steady state until the ray
+	// resolves. So instead of testing the phase flags on every step of one big loop,
+	// run each phase as its own minimal loop sharing the step budget and ray state -
+	// identical samples, identical math, none of the dead per-step bookkeeping. The
+	// march runs per light per fragment, so the lean bodies are worth the extra loop
+	// copies. The full state-machine loop below remains for self-excluding receivers.
+	if (!self_ex) {
+		int s = 0;
+		max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);  // keep the compile-time cap
+		if (grace) {
+			// Grace phase: march out of the containing shape without treating its
+			// outline as hits; apply its footprint shadow once, at the exit sample.
+			bool receding = false;
+			float prev_ad = 0.0;
+			for (; s < max_steps && t < maxd; s++) {
+				float d = texture_sdf(frag_sdf + dir * t); // signed: negative inside a shape
+				prev_d = d;
+				if (d < 0.0) {
+					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
+					continue;
+				}
+				// First exit: the shape's shadow, ramped by depth crossed over light
+				// distance (never exempt here - there are no owned occluders).
+				float ad = abs(d);
+				float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+				res = min(res, 1.0 - own_block);
+				if (res <= 0.0) {
+					return 0.0;                            // fully occluded
+				}
+				prev_ad = ad;
+				t += max(ad, shadow_min_step);
+				s++;                                       // this sample consumed a step
+				receding = true;
+				break;
+			}
+			// Receding phase: mute penumbra accumulation while the ray still recedes
+			// from the exited edge; the sample that breaks the recession is processed
+			// with the steady-state rules, exactly like the state-machine loop.
+			if (receding) {
+				for (; s < max_steps && t < maxd; s++) {
+					float d = texture_sdf(frag_sdf + dir * t);
+					float ad = abs(d);
+					bool hit = ad < 0.001 || (d < 0.0) != (prev_d < 0.0);
+					prev_d = d;
+					if (!hit && ad >= prev_ad) {
+						prev_ad = ad;
+						t += max(ad, shadow_min_step);
+						continue;
+					}
+					if (hit) {
+						return 0.0;                        // fully occluded
+					}
+					res = min(res, k * ad / t);
+					t += max(ad, shadow_min_step);
+					s++;                                   // this sample consumed a step
+					break;
+				}
+			}
+		}
+		// Steady state: the bare IQ march on |sdf|.
+		for (; s < max_steps && t < maxd; s++) {
+			float d = texture_sdf(frag_sdf + dir * t);     // signed: negative inside a shape
+			float ad = abs(d);                             // distance to the nearest outline
+			// A sign flip between consecutive samples catches crossings a min-step
+			// advance can hop over.
+			if (ad < 0.001 || (d < 0.0) != (prev_d < 0.0)) {
+				return 0.0;                  // fully occluded
+			}
+			prev_d = d;
+			res = min(res, k * ad / t);      // penumbra accumulation
+			t += max(ad, shadow_min_step);
+		}
+		return clamp(res, 0.0, 1.0);
+	}
+
 	// Mutes penumbra accumulation while the ray is still receding from the exited edge.
 	bool receding = false;
 	float prev_ad = 0.0;
@@ -264,7 +345,7 @@ vec3 lit_f_schlick(float v_dot_h, vec3 f0) {
 // fragment by the caller and used only in PBR mode.
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float metallic, float roughness,
-		vec2 frag_uv, vec2 frag_sdf, float sdf_diag,
+		vec2 frag_uv, vec2 frag_sdf, float sdf_diag, float frag_d,
 		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
@@ -451,7 +532,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			steps = clamp(steps, 16, lit_shadow_steps_max);
 		}
 
-		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps, self_ex, self_local, sdf_to_local, self_scale);
+		float s = lit_shadow(frag_sdf, light_sdf, t3.w, steps, frag_d, self_ex, self_local, sdf_to_local, self_scale);
 		contribution *= mix(t3.rgb, vec3(1.0), s);
 	}
 
@@ -485,6 +566,9 @@ void fragment() {
 	vec2 frag_uv = SCREEN_UV;                     // canonical screen-UV space
 	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // shadow-march space
 
+	// The fragment's own SDF sample, shared by every light's shadow march.
+	float frag_d = texture_sdf(frag_sdf);
+
 	// Screen diagonal in SDF units: the natural scale for a directional shadow's march
 	// distance, keeping the step budget well-sampled at any resolution.
 	float sdf_diag = length(screen_uv_to_sdf(vec2(1.0)) - screen_uv_to_sdf(vec2(0.0)));
@@ -514,7 +598,7 @@ void fragment() {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
 		// leading directional rows for every fragment.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local, self_scale);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_local, sdf_to_local, self_scale);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -528,17 +612,22 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local, self_scale);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_local, sdf_to_local, self_scale);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, self_ex, v_local, sdf_to_local, self_scale);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_local, sdf_to_local, self_scale);
 		}
 	}
 
 	// Emissive ignores the dark and composes with ambient and lights by construction.
-	vec3 emissive = albedo * emissive_strength * texture(emissive_mask, UV).r;
+	// Zero strength zeroes the term regardless of the mask, so skip the fetch entirely
+	// on the (common) non-emissive receiver.
+	vec3 emissive = vec3(0.0);
+	if (emissive_strength != 0.0) {
+		emissive = albedo * emissive_strength * texture(emissive_mask, UV).r;
+	}
 
 	COLOR = vec4(lit + emissive, COLOR.a);
 }
