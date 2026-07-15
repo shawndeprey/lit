@@ -193,6 +193,11 @@ func _ps_global_defs() -> Array:
 			"name": "lit_tile_indices",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
 		},
+		{
+			# Sampled (not texelFetch), so it filters linearly.
+			"name": "lit_cookie_atlas",
+			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
+		},
 	]
 
 ## RenderingServer live-add defs: name + GlobalShaderParameterType + default.
@@ -217,6 +222,7 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_lighting_model", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_tile_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_cookie_atlas", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 	]
 
 ## Persist the shader_globals into project.godot. Idempotent: writes only the missing
@@ -281,6 +287,17 @@ func _project_setting_defs() -> Array:
 				"type": TYPE_INT,
 				"hint": PROPERTY_HINT_RANGE,
 				"hint_string": "1,256,1",
+			},
+		},
+		{
+			# Max edge (pixels) of the cookie atlas; cookies that don't fit are skipped.
+			"name": "lit/quality/cookie_atlas_max_size",
+			"default": 2048,
+			"info": {
+				"name": "lit/quality/cookie_atlas_max_size",
+				"type": TYPE_INT,
+				"hint": PROPERTY_HINT_RANGE,
+				"hint_string": "256,8192,64",
 			},
 		},
 	]

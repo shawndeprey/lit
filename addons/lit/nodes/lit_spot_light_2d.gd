@@ -16,6 +16,9 @@ class_name LitSpotLight2D
 
 enum BlendMode { ADD, SUBTRACT }
 
+## Sizing mode for the cookie `texture`; mirrors LitPointLight2D.
+enum TextureSizeMode { NATIVE, FIT_RANGE }
+
 @export var enabled: bool = true
 @export var color: Color = Color.WHITE
 @export var energy: float = 1.0
@@ -25,6 +28,19 @@ enum BlendMode { ADD, SUBTRACT }
 @export var range: float = 256.0
 ## Attenuation curve exponent.
 @export var falloff: float = 1.0
+
+@export_group("Texture")
+## Optional cookie: modulates the light and composes with the cone, centered on the
+## node and rotating with it. RGB tints, alpha shapes; outside the texture the light
+## is dark. Clipped to `range`.
+@export var texture: Texture2D
+## Multiplier on the cookie's footprint.
+@export var texture_scale: float = 1.0
+## NATIVE: the cookie spans the texture's pixel size and follows node scale.
+## FIT_RANGE: it spans the `range` footprint and ignores node scale.
+@export var texture_size_mode: TextureSizeMode = TextureSizeMode.NATIVE
+## Currently unused; not wired up yet.
+@export var texture_offset: Vector2 = Vector2.ZERO
 
 @export_group("Cone")
 ## Half-angle from the aim direction to the cone edge, in degrees.

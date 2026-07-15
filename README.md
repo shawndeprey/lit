@@ -77,6 +77,8 @@ That's it — everything updates live in the editor as you build.
 
 - **Uncapped lights & shadows.** No 15-light limit. Use as many as your scene needs.
 - **Three light types.** Point, Directional (a sun), and Spot (a cone).
+- **Light textures (cookies).** Drop a texture on a point or spot light to shape it —
+  window panes, canopy dapple, blinds — just like the engine's `PointLight2D` texture.
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
 - **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` — no wiring.
 - **Blinn–Phong or PBR.** Pick the lighting model in Project Settings → Lit. PBR adds

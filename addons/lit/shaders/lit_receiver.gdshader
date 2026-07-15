@@ -20,6 +20,11 @@ global uniform float     lit_ambient_energy;
 // are never sampled, so it costs nothing.
 global uniform int       lit_lighting_model;
 
+// Atlas of the lights' cookie textures. A textured light (flags bit 2) carries its
+// atlas UV rect in texel 5 and its screen-px-to-cookie-UV matrix in texel 6. No
+// mipmaps; sampled with textureLod so the fetch is legal in divergent control flow.
+global uniform sampler2D lit_cookie_atlas;
+
 // Tiled light culling: the manager bins each positional light into a screen-tile grid
 // and uploads a per-tile header (offset + count into the index list) plus a flat index
 // list of light rows. A fragment then shades only the lights in its own tile instead of
@@ -293,6 +298,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	vec3 Ldir;
 	float atten;
 	vec2 shadow_dir_uv = vec2(0.0);          // toward-light dir in screen-UV space (directional only)
+	vec2 to_light_px = vec2(0.0);            // fragment-to-light in screen pixels (point/spot only)
 
 	if (is_directional) {
 		// t1.xy is a unit screen-space direction toward the light. No position, no
@@ -308,7 +314,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		// and the Ldir normalize, so point/spot shading is identical at any zoom.
 		float range_px = range * lit_canvas_scale;
 		float height_px = height * lit_canvas_scale;
-		vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
+		to_light_px = (light_uv - frag_uv) * lit_viewport_size;
 		float dist = length(to_light_px);
 		if (dist > range_px) {
 			return vec3(0.0);                // beyond range
@@ -331,6 +337,19 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	// and no shadow to march.
 	if (atten <= 0.0) {
 		return vec3(0.0);
+	}
+
+	// Cookie (flags bit 2, point/spot only): modulate the light by its texture. RGB
+	// tints, alpha shapes; outside the texture the light is dark.
+	if ((flags & 4) != 0) {
+		vec4 t5 = texelFetch(lit_light_data, ivec2(5, i), 0); // atlas rect: min.xy | size.xy
+		vec4 t6 = texelFetch(lit_light_data, ivec2(6, i), 0); // px-to-UV matrix columns
+		vec2 cookie_uv = vec2(0.5) + mat2(t6.xy, t6.zw) * (-to_light_px);
+		if (any(lessThan(cookie_uv, vec2(0.0))) || any(greaterThan(cookie_uv, vec2(1.0)))) {
+			return vec3(0.0);                // beyond the cookie's footprint
+		}
+		vec4 cookie = textureLod(lit_cookie_atlas, t5.xy + cookie_uv * t5.zw, 0.0);
+		light_color *= cookie.rgb * cookie.a;
 	}
 
 	float ndotl = max(dot(N, Ldir), 0.0);

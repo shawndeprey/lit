@@ -16,6 +16,11 @@
 [ext_resource type="Script" uid="uid://divm48v4w4f4s" path="res://Test/lit_demo.gd" id="12_demo"]
 [ext_resource type="Texture2D" uid="uid://b30ucg36gqkch" path="res://Test/tilesets/walls/Wall Test.png" id="15_cn6ic"]
 [ext_resource type="Texture2D" uid="uid://curwvsf6r7r2d" path="res://Test/tilesets/walls/Wall Test_n.png" id="16_mm28q"]
+[ext_resource type="Texture2D" uid="uid://f0ddx8tv10pd" path="res://Test/textures/cookies/cookie_window.png" id="17_ckwin"]
+[ext_resource type="Texture2D" uid="uid://5xbbnlsjeyea" path="res://Test/textures/cookies/cookie_blinds.png" id="18_ckbld"]
+[ext_resource type="Texture2D" uid="uid://besj6u4u3bv3s" path="res://Test/textures/cookies/cookie_canopy.png" id="19_ckcnp"]
+[ext_resource type="Texture2D" uid="uid://da61vnu6320gl" path="res://Test/textures/cookies/cookie_flashlight.png" id="20_ckfls"]
+[ext_resource type="Texture2D" uid="uid://cn88c0ur3ngfe" path="res://Test/textures/cookies/cookie_soft_radial.png" id="21_ckrad"]
 
 [sub_resource type="Gradient" id="Gradient_s7aw1"]
 colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0)
@@ -193,6 +198,74 @@ range = 1024.0
 spot_angle = 90.0
 spot_softness = 1.0
 height = 64.0
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://blronx1n8oliq"
+
+[node name="LitPointCookieWindow" type="Node2D" parent="LitLights" unique_id=1402938501]
+position = Vector2(259, 181)
+script = ExtResource("4_lg8mm")
+color = Color(1, 0.87, 0.65, 1)
+energy = 1.7
+range = 300.0
+falloff = 0.0
+texture = ExtResource("17_ckwin")
+texture_scale = 1.3
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LitPointCookieBlinds" type="Node2D" parent="LitLights" unique_id=733214890]
+position = Vector2(208.00002, 478)
+rotation = 0.2617994
+script = ExtResource("4_lg8mm")
+color = Color(1, 0.95, 0.85, 1)
+energy = 1.6
+range = 280.0
+falloff = 0.0
+texture = ExtResource("18_ckbld")
+texture_scale = 1.2
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LitPointCookieCanopy" type="Node2D" parent="LitLights" unique_id=1577760143]
+position = Vector2(946, 160)
+script = ExtResource("4_lg8mm")
+color = Color(0.75, 1, 0.7, 1)
+energy = 1.6
+range = 240.0
+falloff = 0.0
+texture = ExtResource("19_ckcnp")
+texture_size_mode = 1
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LitPointCookieFlashlight" type="Node2D" parent="LitLights" unique_id=358129416]
+position = Vector2(937, 475)
+script = ExtResource("4_lg8mm")
+color = Color(0.85, 0.92, 1, 1)
+energy = 1.7
+range = 200.0
+falloff = 0.0
+texture = ExtResource("20_ckfls")
+shadow_enabled = true
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LitSpotCookieRadial" type="Node2D" parent="LitLights" unique_id=1934750217]
+position = Vector2(581, 564)
+rotation = -1.5707964
+script = ExtResource("8_5ghie")
+color = Color(1, 1, 0.9, 1)
+energy = 1.8
+range = 400.0
+falloff = 0.0
+texture = ExtResource("21_ckrad")
+texture_size_mode = 1
+spot_angle = 25.0
+spot_softness = 0.6
 shadow_enabled = true
 shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://blronx1n8oliq"
