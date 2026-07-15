@@ -108,3 +108,9 @@ lit_tile_indices={
 "type": "sampler2D",
 "value": ""
 }
+lit_cookie_atlas={
+"filter": "linear",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}

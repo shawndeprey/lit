@@ -14,6 +14,7 @@ extends Node2D
 const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver.gdshader")
 
 const MAX_LIGHTS := 128
+const COOKIE_MAX_LIGHTS := 64
 const PROP_COUNT := 7
 const BRAND := Color("#ffca60")
 
@@ -22,6 +23,14 @@ const BRAND := Color("#ffca60")
 # clean runtime toggle, then restores it on teardown so the rest of the reel stays Phong.
 const LIT_MODEL_PHONG := 0
 const LIT_MODEL_PBR := 1
+
+# Cookie textures for the Light Textures stage; loaded lazily, and the stage falls
+# back to plain point lights if none import.
+const COOKIE_DIR := "res://Test/textures/cookies/"
+const COOKIE_FILES := [
+	"cookie_window.png", "cookie_blinds.png", "cookie_canopy.png",
+	"cookie_flashlight.png", "cookie_soft_radial.png",
+]
 
 # Skull PBR material maps. The diffuse is left untouched; the normal feeds the CanvasTexture
 # normal slot, while roughness (derived 1 - specular) and AO (the old _o occlusion map) feed
@@ -58,6 +67,9 @@ var _occluders: Array = []       # pre-existing scene occluders, disabled during
 # on teardown. The PBR stage overrides the live global; everything else runs Phong.
 var _orig_lighting_model := LIT_MODEL_PHONG
 
+# Loaded cookie textures.
+var _cookie_textures: Array = []
+
 # Lazily-built skull prop maps, shared across the PBR stage's props.
 var _skull_diffuse: Texture2D = null
 var _skull_normal: Texture2D = null
@@ -90,6 +102,7 @@ var _stages := [
 	{"id": "negative",  "name": "Negative Lights",           "desc": "Subtract mode carves darkness",        "dur": 5.0,  "auto": true},
 	{"id": "masks",     "name": "Light Masks",               "desc": "Lights only touch matching objects",   "dur": 5.5,  "auto": true},
 	{"id": "stress",    "name": "Stress Test",               "desc": "Ramping up to 128 lights…",            "dur": 14.0, "auto": true},
+	{"id": "cookies",   "name": "Light Textures",            "desc": "Cookie-shaped lights • ramping to 64, full soft shadows", "dur": 14.0, "auto": true},
 	{"id": "pbr",       "name": "PBR Materials",             "desc": "Metallic-roughness · normal, roughness & AO maps", "dur": 9.0, "auto": true},
 	{"id": "fx_bloom",     "name": "Post FX - Bloom",           "desc": "Glow on the brights",                 "dur": 4.0,  "auto": true},
 	{"id": "fx_halation",  "name": "Post FX - Bloom + Halation","desc": "Warm highlight bleed, pure fire",    "dur": 4.5,  "auto": true},
@@ -346,6 +359,16 @@ func _clear_props() -> void:
 	_props.clear()
 
 
+# Load the cookie textures once; false when none exist.
+func _ensure_cookie_textures() -> bool:
+	if _cookie_textures.is_empty():
+		for f in COOKIE_FILES:
+			var path: String = COOKIE_DIR + f
+			if ResourceLoader.exists(path):
+				_cookie_textures.append(load(path))
+	return not _cookie_textures.is_empty()
+
+
 # Lazily load the skull maps once. Returns false if any required map is missing, so the
 # PBR stage can degrade gracefully instead of erroring on a half-installed demo.
 func _ensure_skull_textures() -> bool:
@@ -423,6 +446,16 @@ func _make_skull_prop(pos: Vector2, tex_scale: float) -> void:
 func _spawn_light(kind: String, col: Color, hue_cycle := false) -> Dictionary:
 	var n
 	match kind:
+		"cookie":
+			# Point light shaped by a random cookie; falloff 0 leaves the falloff to the
+			# texture, and the scale range keeps most cookies inside the range circle.
+			n = LitPointLight2D.new()
+			n.range = randf_range(220, 380)
+			n.height = randf_range(12, 26)
+			n.falloff = 0.0
+			n.texture = _cookie_textures.pick_random()
+			n.texture_size_mode = LitPointLight2D.TextureSizeMode.FIT_RANGE
+			n.texture_scale = randf_range(0.72, 1.0)
 		"spot":
 			n = LitSpotLight2D.new()
 			n.range = randf_range(280, 460)
@@ -487,6 +520,8 @@ func _update_lights() -> void:
 			n.position = p
 			if d.kind == "spot":
 				n.rotation = (_area_center - p).angle()
+			elif d.kind == "cookie":
+				n.rotation = d.phase + _clock * d.dir_speed   # slow spin
 		if d.pulse_speed > 0.0:
 			n.energy = d.base_energy * (0.72 + 0.28 * sin(_clock * d.pulse_speed + d.phase))
 		if d.hue >= 0.0:
@@ -577,6 +612,10 @@ func _enter_stage(idx: int) -> void:
 				p.mat.set_shader_parameter("receiver_mask", 1)   # undo the mask split
 			_clear_lights()
 			_ensure_count(8, ["point", "spot", "point", "dir"], true)
+		"cookies":
+			# Textured lights, ramping to COOKIE_MAX_LIGHTS in _update_stage.
+			_clear_lights()
+			_ensure_count(8, _cookie_kinds(), true)
 		"pbr":
 			# Swap the plain white occluder blocks for skull props that carry real
 			# normal / roughness / AO maps, so the PBR path has surface detail to act on.
@@ -653,13 +692,27 @@ func _enter_stage(idx: int) -> void:
 				_post.bloom_enabled = true
 
 
+# Spawn kind for the cookie stage: cookies when the textures load, plain points otherwise.
+func _cookie_kinds() -> Array:
+	return ["cookie"] if _ensure_cookie_textures() else ["point"]
+
+
 func _update_stage(t: float) -> void:
-	if _stages[_stage_index].id == "stress":
-		var s = _stages[_stage_index]
+	# Ramping stages grow the light count over the first 75% of their duration.
+	var s = _stages[_stage_index]
+	var ramp_kinds: Array = []
+	var ramp_max := 0
+	if s.id == "stress":
+		ramp_kinds = ["point", "spot", "point", "dir"]
+		ramp_max = MAX_LIGHTS
+	elif s.id == "cookies":
+		ramp_kinds = _cookie_kinds()
+		ramp_max = COOKIE_MAX_LIGHTS
+	if ramp_max > 0:
 		var frac: float = clampf(t / (s.dur * 0.75), 0.0, 1.0)
-		var target := int(lerp(8.0, float(MAX_LIGHTS), frac))
+		var target := int(lerp(8.0, float(ramp_max), frac))
 		if target != _lights.size():
-			_ensure_count(target, ["point", "spot", "point", "dir"], true)
+			_ensure_count(target, ramp_kinds, true)
 
 
 func _next_stage() -> void:

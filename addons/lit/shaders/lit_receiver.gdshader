@@ -20,6 +20,12 @@ global uniform float     lit_ambient_energy;
 // are never sampled, so it costs nothing.
 global uniform int       lit_lighting_model;
 
+// Atlas of the lights' cookie textures. A textured light (flags bit 2) carries its
+// atlas UV rect in texel 5 and its screen-px-to-cookie-UV matrix in texel 6. Linear
+// filtered, no mipmaps, sampled with textureLod so the read is legal in divergent
+// control flow.
+global uniform sampler2D lit_cookie_atlas;
+
 // Tiled light culling: the manager bins each positional light into a screen-tile grid
 // and uploads a per-tile header (offset + count into the index list) plus a flat index
 // list of light rows. A fragment then shades only the lights in its own tile instead of
@@ -331,6 +337,22 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	// and no shadow to march.
 	if (atten <= 0.0) {
 		return vec3(0.0);
+	}
+
+	// Cookie (flags bit 2, point/spot only): modulate the light by its texture. RGB
+	// tints, alpha shapes; outside the texture the light is masked to zero, which the
+	// negligible-contribution bail below turns into a full skip. Single-exit on
+	// purpose: an early return around the atlas read measurably slows every light,
+	// textured or not.
+	if ((flags & 4) != 0) {
+		vec4 t6 = texelFetch(lit_light_data, ivec2(6, i), 0); // px-to-UV matrix columns
+		vec2 off_px = (frag_uv - light_uv) * lit_viewport_size;
+		vec2 cookie_uv = vec2(0.5) + vec2(dot(t6.xz, off_px), dot(t6.yw, off_px));
+		vec2 cl = clamp(cookie_uv, vec2(0.0), vec2(1.0));
+		float inside = all(equal(cl, cookie_uv)) ? 1.0 : 0.0;
+		vec4 t5 = texelFetch(lit_light_data, ivec2(5, i), 0); // atlas UV rect: min.xy | size.xy
+		vec4 cookie = textureLod(lit_cookie_atlas, t5.xy + cl * t5.zw, 0.0);
+		light_color *= cookie.rgb * (cookie.a * inside);
 	}
 
 	float ndotl = max(dot(N, Ldir), 0.0);

@@ -15,10 +15,14 @@ class_name LitLightRegistry
 ##  2 spot:        texel 1 is a position (as a point); texel 4 adds the cone
 ##                 (aim direction plus the cosines of the inner and outer angles).
 ## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range | energy,
-## t2 = color.rgb | height, t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone.
-## type/flags/mask sit in texel 0 so the shader can mask-reject after a single fetch.
+## t2 = color.rgb | height, t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
+## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
+## when flags bit 2 is set). type/flags/mask sit in texel 0 so the shader can
+## mask-reject after a single fetch.
 
-const TEXELS_PER_LIGHT := 5
+const LitCookieAtlasScript := preload("res://addons/lit/runtime/lit_cookie_atlas.gd")
+
+const TEXELS_PER_LIGHT := 7
 
 # Screen tile edge in pixels for the light-culling grid. Must match the shader's tile
 # math (it divides SCREEN_UV * viewport by lit_tile_size).
@@ -33,6 +37,13 @@ var _dummy: ImageTexture
 
 var _tile_header_tex: ImageTexture
 var _tile_index_tex: ImageTexture
+
+# Atlas for the lights' cookie textures. _cookies_active is false when no visible light
+# has a texture this frame, letting _pack_cookie bail before any property access;
+# _published_cookie_tex gates the global publish to actual atlas changes.
+var _cookie_atlas: LitCookieAtlas = LitCookieAtlasScript.new()
+var _cookies_active := false
+var _published_cookie_tex: Texture2D = null
 
 # Reused scratch for packing: write floats straight into _pack_buf and upload once,
 # instead of per-texel Image.set_pixel calls. _pack_img is kept across frames and only
@@ -109,6 +120,9 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 		RenderingServer.global_shader_parameter_set("lit_directional_count", 0)
 		RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 		RenderingServer.global_shader_parameter_set("lit_light_data", _get_dummy())
+		_cookie_atlas.refresh([])
+		_cookies_active = false
+		_publish_cookie_atlas()
 		_publish_empty_tiles(vp_size)
 		return
 
@@ -124,6 +138,16 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 			positional.append(l)
 	visible = directionals + positional
 	var dir_count := directionals.size()
+
+	# Refresh and publish the cookie atlas before packing, which reads its rects.
+	var cookie_textures: Array = []
+	for l in positional:
+		var cookie: Texture2D = l.texture
+		if cookie != null and not cookie_textures.has(cookie):
+			cookie_textures.append(cookie)
+	_cookie_atlas.refresh(cookie_textures)
+	_cookies_active = not cookie_textures.is_empty()
+	_publish_cookie_atlas()
 
 	# Pack each light into one TEXELS_PER_LIGHT-wide row of the float buffer.
 	var floats_needed := count * TEXELS_PER_LIGHT * 4
@@ -157,13 +181,14 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	var screen_px: Vector2 = canvas_xform * light.global_position
 	var uv := screen_px / vp_size
 
-	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
-	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive
-	const TYPE_POINT := 0.0
-
 	# Four floats per texel; o is the float offset of this light's first texel.
 	var o := row * TEXELS_PER_LIGHT * 4
+
+	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
+	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
+	var textured := _pack_cookie(o, light, canvas_xform)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured)
+	const TYPE_POINT := 0.0
 
 	# Texel 0: type | flags | light_mask | falloff
 	_pack_buf[o + 0] = TYPE_POINT
@@ -249,11 +274,12 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	if cos_inner <= cos_outer:
 		cos_inner = cos_outer + 0.0001
 
-	var subtractive := 1.0 if light.blend_mode == LitSpotLight2D.BlendMode.SUBTRACT else 0.0
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive
-	const TYPE_SPOT := 2.0
-
 	var o := row * TEXELS_PER_LIGHT * 4
+
+	var subtractive := 1.0 if light.blend_mode == LitSpotLight2D.BlendMode.SUBTRACT else 0.0
+	var textured := _pack_cookie(o, light, canvas_xform)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured)
+	const TYPE_SPOT := 2.0
 
 	# Texel 0: type | flags | light_mask | falloff
 	_pack_buf[o + 0] = TYPE_SPOT
@@ -284,6 +310,62 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 17] = aim_px.y
 	_pack_buf[o + 18] = cos_outer
 	_pack_buf[o + 19] = cos_inner
+
+## Pack the cookie fields (texels 5-6) for the point/spot light whose row starts at
+## float offset `o`. Returns true when the light has a packed cookie; the caller sets
+## flags bit 2. Texel 5 is the atlas UV rect. Texel 6 is the 2x2 matrix taking a
+## screen-pixel offset from the light's center to a cookie-UV offset around 0.5.
+## `light` is accessed dynamically: the cookie properties live on both LitPointLight2D
+## and LitSpotLight2D.
+func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> bool:
+	if not _cookies_active:
+		return false
+	var tex: Texture2D = light.get("texture")
+	if tex == null or not _cookie_atlas.has(tex):
+		return false
+
+	# Footprint half-extents in world units plus the basis it rotates with. NATIVE (0):
+	# the texture's pixel size under the node's full transform. FIT_RANGE (1): spans
+	# 2*range, rotates with the node, ignores node scale. Values match TextureSizeMode
+	# on the light nodes.
+	var half: Vector2
+	var basis: Transform2D
+	if int(light.get("texture_size_mode")) == 1:
+		var r: float = float(light.get("range"))
+		half = Vector2(r, r) * float(light.get("texture_scale"))
+		basis = canvas_xform * Transform2D(light.global_rotation, Vector2.ZERO)
+	else:
+		half = Vector2(tex.get_size()) * 0.5 * float(light.get("texture_scale"))
+		basis = canvas_xform * light.get_global_transform()
+	basis = Transform2D(basis.x, basis.y, Vector2.ZERO)  # offsets only; drop translation
+	if half.x <= 0.0 or half.y <= 0.0 or absf(basis.determinant()) < 1e-8:
+		return false  # degenerate footprint
+
+	# cookie_uv_offset = diag(1 / (2 * half)) * basis^-1 * screen_px_offset
+	var inv := basis.affine_inverse()
+	var sx := 0.5 / half.x
+	var sy := 0.5 / half.y
+
+	# Texel 5: atlas UV rect - min.x | min.y | size.x | size.y
+	var rect := _cookie_atlas.get_uv_rect(tex)
+	_pack_buf[o + 20] = rect.position.x
+	_pack_buf[o + 21] = rect.position.y
+	_pack_buf[o + 22] = rect.size.x
+	_pack_buf[o + 23] = rect.size.y
+
+	# Texel 6: matrix columns - x.x | x.y | y.x | y.y (the diagonal scales rows)
+	_pack_buf[o + 24] = inv.x.x * sx
+	_pack_buf[o + 25] = inv.x.y * sy
+	_pack_buf[o + 26] = inv.y.x * sx
+	_pack_buf[o + 27] = inv.y.y * sy
+	return true
+
+## Publish the cookie atlas global only when the atlas texture object changed.
+func _publish_cookie_atlas() -> void:
+	var tex := _cookie_atlas.get_texture()
+	if tex != _published_cookie_tex:
+		_published_cookie_tex = tex
+		RenderingServer.global_shader_parameter_set("lit_cookie_atlas", tex)
 
 ## Bin each positional light into the tiles its screen-space bounding box touches, then
 ## upload a per-tile header (offset + count) and a flat index list of light rows. The
