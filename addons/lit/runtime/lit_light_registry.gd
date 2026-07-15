@@ -38,8 +38,12 @@ var _dummy: ImageTexture
 var _tile_header_tex: ImageTexture
 var _tile_index_tex: ImageTexture
 
-# Atlas for the lights' cookie textures.
+# Atlas for the lights' cookie textures. _cookies_active is false when no visible light
+# has a texture this frame, letting _pack_cookie bail before any property access;
+# _published_cookie_tex gates the global publish to actual atlas changes.
 var _cookie_atlas: LitCookieAtlas = LitCookieAtlasScript.new()
+var _cookies_active := false
+var _published_cookie_tex: Texture2D = null
 
 # Reused scratch for packing: write floats straight into _pack_buf and upload once,
 # instead of per-texel Image.set_pixel calls. _pack_img is kept across frames and only
@@ -117,7 +121,8 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 		RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 		RenderingServer.global_shader_parameter_set("lit_light_data", _get_dummy())
 		_cookie_atlas.refresh([])
-		RenderingServer.global_shader_parameter_set("lit_cookie_atlas", _cookie_atlas.get_texture())
+		_cookies_active = false
+		_publish_cookie_atlas()
 		_publish_empty_tiles(vp_size)
 		return
 
@@ -134,14 +139,15 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 	visible = directionals + positional
 	var dir_count := directionals.size()
 
-	# Refresh and publish the cookie atlas before packing, which reads its UV rects.
+	# Refresh and publish the cookie atlas before packing, which reads its rects.
 	var cookie_textures: Array = []
 	for l in positional:
 		var cookie: Texture2D = l.texture
 		if cookie != null and not cookie_textures.has(cookie):
 			cookie_textures.append(cookie)
 	_cookie_atlas.refresh(cookie_textures)
-	RenderingServer.global_shader_parameter_set("lit_cookie_atlas", _cookie_atlas.get_texture())
+	_cookies_active = not cookie_textures.is_empty()
+	_publish_cookie_atlas()
 
 	# Pack each light into one TEXELS_PER_LIGHT-wide row of the float buffer.
 	var floats_needed := count * TEXELS_PER_LIGHT * 4
@@ -312,6 +318,8 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 ## `light` is accessed dynamically: the cookie properties live on both LitPointLight2D
 ## and LitSpotLight2D.
 func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> bool:
+	if not _cookies_active:
+		return false
 	var tex: Texture2D = light.get("texture")
 	if tex == null or not _cookie_atlas.has(tex):
 		return false
@@ -351,6 +359,13 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> bool:
 	_pack_buf[o + 26] = inv.y.x * sx
 	_pack_buf[o + 27] = inv.y.y * sy
 	return true
+
+## Publish the cookie atlas global only when the atlas texture object changed.
+func _publish_cookie_atlas() -> void:
+	var tex := _cookie_atlas.get_texture()
+	if tex != _published_cookie_tex:
+		_published_cookie_tex = tex
+		RenderingServer.global_shader_parameter_set("lit_cookie_atlas", tex)
 
 ## Bin each positional light into the tiles its screen-space bounding box touches, then
 ## upload a per-tile header (offset + count) and a flat index list of light rows. The
