@@ -52,9 +52,7 @@ var _pack_buf: PackedFloat32Array = PackedFloat32Array()
 var _pack_img: Image
 var _pack_img_count: int = -1
 
-# Reused scratch for the tile build: per-tile counts (then write cursors), the accepted
-# (tile, light-row) pairs, and the float pixel buffers behind the header/index textures.
-# All kept across frames so the per-frame tile build allocates nothing at steady state.
+# Reused tile-build scratch, kept across frames so steady state allocates nothing.
 var _tile_counts: PackedInt32Array = PackedInt32Array()
 var _pair_tiles: PackedInt32Array = PackedInt32Array()
 var _pair_rows: PackedInt32Array = PackedInt32Array()
@@ -379,15 +377,10 @@ func _publish_cookie_atlas() -> void:
 		RenderingServer.global_shader_parameter_set("lit_cookie_atlas", tex)
 
 ## Bin each positional light into the tiles its screen footprint touches, then upload a
-## per-tile header (offset + count) and a flat index list of light rows. The shader reads
+## per-tile header (offset | count) and a flat index list of light rows. The shader reads
 ## its own tile's header and shades only those rows. Directionals are skipped (they're
-## full-screen and shaded directly).
-##
-## Culling per tile is exact-but-conservative: a tile is included only if the light's
-## range circle overlaps it (not just its square AABB), and a spot's cone must also
-## overlap. Excluded (tile, light) pairs are ones the shader would resolve to exactly
-## zero anyway (beyond `range`, or where the cone smoothstep is 0), so tightening the
-## lists never changes the image - it only removes per-fragment work.
+## full-screen and shaded directly). Culling is conservative: only (tile, light) pairs
+## the shader would shade to exactly zero are dropped, so it never changes the image.
 func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, scale: float) -> void:
 	var tiles_x := int(ceil(vp_size.x / float(TILE_SIZE)))
 	var tiles_y := int(ceil(vp_size.y / float(TILE_SIZE)))
@@ -395,9 +388,8 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, s
 	tiles_y = max(tiles_y, 1)
 	var tile_count := tiles_x * tiles_y
 
-	# Accepted (tile, light-row) pairs plus per-tile counts, gathered flat and then
-	# counting-sorted into the contiguous per-tile layout. No per-tile arrays and no
-	# per-pair Image.set_pixel: everything lands in reused packed buffers.
+	# Gather accepted (tile, light-row) pairs flat, then counting-sort them into the
+	# contiguous per-tile layout.
 	if _tile_counts.size() != tile_count:
 		_tile_counts.resize(tile_count)
 	_tile_counts.fill(0)
@@ -408,8 +400,7 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, s
 	# zoomed or non-uniformly scaled view over-includes rather than clips a light's
 	# footprint). It matches the shader's lit_canvas_scale, computed once in refresh().
 
-	# Conservative slack, in screen pixels, absorbing any CPU/GPU float disagreement at
-	# a footprint's exact boundary (where the shader's contribution is 0 regardless).
+	# Slack in screen px for CPU/GPU float disagreement at a footprint's exact boundary.
 	const CULL_PAD := 2.0
 
 	for i in visible.size():
@@ -423,11 +414,9 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, s
 		var light_range: float = float(light.get("range")) * scale + CULL_PAD
 		var range_sq := light_range * light_range
 
-		# A spot only reaches the wedge around its aim (the same aim/cos_outer the
-		# shader tests); for a half-angle safely under 90 degrees the wedge is the
-		# intersection of two half-planes through the light. A tile fully outside
-		# either half-plane can't intersect the cone. The angle is padded so the CPU
-		# never culls a fragment the GPU would light.
+		# A spot's cone (half-angle under 90 degrees) is the intersection of two
+		# half-planes through the light; a tile fully outside either can't intersect it.
+		# The angle is padded so the CPU never culls a fragment the GPU would light.
 		var spot := visible[i] as LitSpotLight2D
 		var cone_valid := false
 		var n_plus := Vector2.ZERO
@@ -442,10 +431,8 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, s
 					n_minus = Vector2.from_angle(phi - half_angle + PI * 0.5)
 					cone_valid = true
 
-		# Vertical tile span of the light's screen AABB, clamped to the grid. Within a
-		# row, the circle's horizontal reach at that row (half = sqrt(r^2 - dy^2), with
-		# dy the row band's closest approach to the center) gives the exact tile span
-		# the range circle touches, so no per-tile distance test is needed.
+		# Per tile row, the circle's horizontal reach (sqrt(r^2 - dy^2), dy = the row
+		# band's closest approach) gives the exact tile span; no per-tile distance test.
 		var ty0 := clampi(int(floor((center.y - light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
 		var ty1 := clampi(int(floor((center.y + light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
 
@@ -461,10 +448,9 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, s
 			var tx1 := clampi(int(floor((center.x + half) / float(TILE_SIZE))), 0, tiles_x - 1)
 			var row_base := ty * tiles_x
 			for tx in range(tx0, tx1 + 1):
-				# Cone vs tile rect: fully outside either wedge half-plane means no
-				# overlap. dot() is linear over the rect, so its maximum sits at the
-				# corner picked by the normal's signs; a tile containing the light
-				# itself always passes (the corners straddle any line through it).
+				# Cone vs tile rect: dot() is linear over the rect, so its maximum sits
+				# at the corner picked by the normal's signs; a tile containing the
+				# light always passes.
 				if cone_valid:
 					var x0 := float(tx * TILE_SIZE)
 					var x1 := x0 + float(TILE_SIZE)
@@ -481,8 +467,7 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, s
 				_pair_rows.push_back(i)
 				_tile_counts[row_base + tx] += 1
 
-	# Header is one texel per tile (offset | count); the index list is INDEX_TEX_WIDTH
-	# wide and as many rows as it takes to hold every accepted pair.
+	# Header: one texel per tile (offset | count); index list: as many rows as needed.
 	var total_indices := _pair_tiles.size()
 	var idx_rows := int(ceil(float(maxi(total_indices, 1)) / float(INDEX_TEX_WIDTH)))
 
@@ -493,11 +478,10 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, s
 	var index_floats := INDEX_TEX_WIDTH * idx_rows * 4
 	if _index_buf.size() != index_floats:
 		_index_buf.resize(index_floats)
-	# Stale entries past total_indices are never read (each tile's count bounds the
-	# shader's loop), so the index buffer doesn't need clearing.
+	# Entries past total_indices are never read (counts bound the shader's loop), so
+	# the index buffer needs no clearing.
 
-	# Prefix-sum the counts into per-tile start offsets, writing the header as we go;
-	# _tile_counts then serves as each tile's write cursor for the scatter pass.
+	# Prefix-sum counts into start offsets; _tile_counts becomes the scatter cursor.
 	var offset := 0
 	for t in tile_count:
 		var cnt := _tile_counts[t]
@@ -519,9 +503,7 @@ func _build_tiles(visible: Array, canvas_xform: Transform2D, vp_size: Vector2, s
 	RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
 	RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
 
-## Upload the header/index float buffers, reusing the Images and ImageTextures across
-## frames and reallocating only when a dimension changes (same pattern as the light
-## data upload).
+## Upload the header/index buffers, reusing Images/ImageTextures until a size changes.
 func _upload_tile_textures(tiles_x: int, tiles_y: int, idx_rows: int) -> void:
 	var header_bytes := _header_buf.to_byte_array()
 	if _header_img == null or _header_img.get_width() != tiles_x or _header_img.get_height() != tiles_y:

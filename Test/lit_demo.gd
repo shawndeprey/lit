@@ -11,8 +11,7 @@ extends Node2D
 ## Everything is spawned at runtime and torn down on stop, so it never touches the saved
 ## scene. All demo lights run full soft shadows (shadow_hardness = 0).
 
-# Fast variant: the demo's spawned receivers are plain sprites with no owned occluders,
-# so the self-shadow exclusion the fast shader compiles out could never run for them.
+# Fast variant: the demo's receivers never use self-shadow exclusion.
 const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
 
 const MAX_LIGHTS := 128
@@ -50,8 +49,7 @@ var _stage_time := 0.0
 var _clock := 0.0
 var _perf_accum := 0.0
 
-# Measured render times accumulated per frame between perf-panel refreshes, so the
-# panel shows a window average (like LITBENCH) instead of a single frame's sample.
+# Per-frame render-time sums, so the perf panel shows a window average.
 var _perf_frames := 0
 var _perf_cpu_sum := 0.0
 var _perf_gpu_sum := 0.0
@@ -127,9 +125,8 @@ var _stages := [
 # =====================================================================================
 
 func _ready() -> void:
-	# Same conditions the stress bench (stress_test.gd) measures under: vsync off so
-	# frame times are real and uncapped, and per-viewport render-time measurement on so
-	# the perf panel can report the same render CPU / GPU milliseconds LITBENCH prints.
+	# Vsync off for uncapped frame times; render-time measurement feeds the perf panel
+	# the same CPU/GPU ms the stress bench reports.
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 
@@ -213,8 +210,7 @@ func _set_ui_state(state: String) -> void:
 	_feature_lbl.visible = running
 	_desc_lbl.visible = running
 	_counter_lbl.visible = running
-	# The perf panel stays up in every state: the demo scene doubles as the manual
-	# performance test, so idle poking around should show real numbers too.
+	# Always visible: the demo scene doubles as the manual performance test.
 	_perf_lbl.visible = true
 
 
@@ -759,9 +755,7 @@ func _process(dt: float) -> void:
 
 
 func _update_perf(dt: float) -> void:
-	# Accumulate the measured render times every frame; refresh the panel 5x/s with the
-	# window average. CPU/GPU are the same numbers the stress bench reports as LITBENCH
-	# render_cpu_ms / render_gpu_ms (GPU is the one to watch - the engine is GPU-bound).
+	# Refresh the panel 5x/s with window-averaged render times.
 	var vp_rid := get_viewport().get_viewport_rid()
 	_perf_frames += 1
 	_perf_cpu_sum += RenderingServer.viewport_get_measured_render_time_cpu(vp_rid)
@@ -783,8 +777,7 @@ func _update_perf(dt: float) -> void:
 			% [int(round(fps)), ms, cpu_ms, gpu_ms, light_count, draws]
 
 
-# Enabled, visible lights in the scene, for the perf panel outside a demo run (while
-# running, the demo's own spawned-light list is the accurate count).
+# Enabled, visible scene lights, for the perf panel outside a demo run.
 func _enabled_scene_lights() -> int:
 	var n := 0
 	for l in get_tree().get_nodes_in_group("lit_lights"):

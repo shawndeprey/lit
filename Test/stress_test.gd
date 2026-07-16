@@ -1,29 +1,19 @@
 extends Node2D
 
-## Standalone Lit stress-test benchmark, split out of lit_demo.gd's "stress" stage.
+## Standalone Lit stress-test benchmark: instances the Test scene, strips the demo, and
+## spawns LIGHT_COUNT deterministic (seeded) moving lights with full soft shadows.
+## Warms up, measures, prints LITBENCH stats to stdout, and quits.
 ##
-## Instances the regular Test scene, strips its interactive demo, then reproduces the
-## demo's stress stage exactly: near-black ambient, the demo's 7 white-block occluder
-## props, and LIGHT_COUNT moving/pulsing/hue-cycling lights (point/spot/point/dir mix)
-## with full soft shadows (shadow_hardness = 0), Phong model.
-##
-## Unlike the demo reel it skips the ramp: all lights spawn up front, the scene warms up
-## for WARMUP_SEC, then frame times are collected for MEASURE_SEC and a summary is
-## printed to stdout (lines prefixed LITBENCH) before quitting. Deterministic: light
-## parameters come from a fixed RNG seed, so every run renders the same thing.
-##
-## Run fullscreen with vsync off for true (uncapped) frame times:
+## Run fullscreen for true (uncapped) frame times:
 ##   godot --path . res://Test/StressTest.tscn --fullscreen
 
 const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
 
 const LIGHT_COUNT := 128
-# Test-only overrides for cost attribution, passed after "--" on the CLI:
-#   shadows=off   spawn all lights with shadows disabled
-#   kinds=point   spawn only point lights (also: spot, dir, mix)
-#   lights=N      override light count
-#   capture=PATH  after measuring, render one deterministic frame (fixed clock) and
-#                 save it to PATH for pixel-diff verification between builds
+# Overrides for cost attribution, passed after "--" on the CLI:
+#   shadows=off   kinds=point|spot|dir|cookie|mix   lights=N   warmup=N   measure=N
+#   sdf=25|50|100 (SDF scale probe)
+#   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
 var _opt_shadows := true
 var _opt_kinds := ["point", "spot", "point", "dir"]
 var _opt_light_count := LIGHT_COUNT
@@ -76,8 +66,7 @@ func _ready() -> void:
 			"warmup":
 				_opt_warmup = float(kv[1])
 			"sdf":
-				# Probe: SDF texture scale (100, 50, 25). Changes shadow fidelity, so
-				# it's for cost attribution only, never for A/B output comparison.
+				# Changes shadow fidelity: attribution only, never for A/B comparison.
 				var scales := {100: RenderingServer.VIEWPORT_SDF_SCALE_100_PERCENT,
 						50: RenderingServer.VIEWPORT_SDF_SCALE_50_PERCENT,
 						25: RenderingServer.VIEWPORT_SDF_SCALE_25_PERCENT}
@@ -134,8 +123,7 @@ func _setup() -> void:
 	for occ in _find_all(scene, LightOccluder2D):
 		occ.sdf_collision = false
 
-	# Particles are nondeterministic frame to frame; hide them so benchmark runs and
-	# capture frames are comparable between builds.
+	# Particles are nondeterministic; hide them so runs and captures are comparable.
 	for part in _find_all(scene, GPUParticles2D):
 		part.visible = false
 
@@ -325,14 +313,13 @@ func _process(dt: float) -> void:
 			get_tree().quit()
 
 
-## Render one deterministic frame (fixed light clock, seeded params) and save it, so two
-## builds of the lighting code can be pixel-diffed against each other.
+## Render one deterministic frame (fixed clock, seeded params) and save it for
+## pixel-diffing builds.
 func _capture_and_quit() -> void:
 	_clock = CAPTURE_CLOCK
 	_update_lights()
 	_hud.visible = false
-	# Two full frames so the light registry repacks from the fixed state and the result
-	# is presented before we read the viewport back.
+	# Two frames: the registry repacks from the fixed state, then the result presents.
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()

@@ -20,12 +20,9 @@ class_name LitSprite2D
 # benign "Global uniform does not exist" error. Deferring to _init means the shader isn't
 # compiled until a LitSprite2D is actually instantiated, by which point the globals exist.
 #
-# Two receiver variants, same feature contract: the fast one has the self-shadow
-# exclusion march compiled out (measurably cheaper for every light's shadow march), the
-# full one carries it. _update_self_rect swaps to the full shader exactly while the
-# exclusion is active (owned occluders present and self_shadow off) and back to the fast
-# one otherwise; shader parameters are stored on the material by name, so they survive
-# the swap. Materials whose shader isn't one of these two are never touched.
+# Two variants, same features: fast has the self-shadow exclusion compiled out.
+# _update_self_rect keeps the material on the full shader exactly while exclusion is
+# active; parameters are stored on the material by name, so they survive the swap.
 const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
 const RECEIVER_SHADER_FAST_PATH := "res://addons/lit/shaders/lit_receiver_fast.gdshader"
 
@@ -68,9 +65,7 @@ func _init() -> void:
 	# below, which is what we want.
 	if material == null:
 		var mat := ShaderMaterial.new()
-		# Fast variant by default: a fresh LitSprite2D has no owned occluders, so the
-		# self-exclusion march can't be active; _update_self_rect swaps in the full
-		# shader if that changes.
+		# Fast by default: a fresh LitSprite2D has no owned occluders.
 		mat.shader = load(RECEIVER_SHADER_FAST_PATH)
 		material = mat
 	if texture == null:
@@ -173,13 +168,12 @@ func _update_self_rect() -> void:
 	_set_param("self_rects", packed)
 	_set_param("self_rect_count", rects.size())
 
-	# Keep the material on the cheapest receiver variant that provides the features in
-	# use: the full shader only while the self-exclusion march can actually run.
+	# Full shader only while the self-exclusion march can actually run.
 	_apply_shader_variant(rects.size() > 0 and not self_shadow)
 
 
-# Swap between the fast and full receiver shaders. Only materials already using one of
-# the two Lit variants are touched, so a user-assigned custom shader is left alone.
+# Swap between the fast and full receiver shaders. Only materials already on one of the
+# two Lit variants are touched; a custom shader is left alone.
 func _apply_shader_variant(wants_full: bool) -> void:
 	var mat := material as ShaderMaterial
 	if mat == null or mat.shader == null:

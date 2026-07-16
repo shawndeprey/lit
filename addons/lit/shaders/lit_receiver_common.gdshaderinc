@@ -1,15 +1,8 @@
-﻿// Shared body of the Lit receiver shader. Included by two thin front-ends:
-//   lit_receiver.gdshader      - defines LIT_SELF_EXCLUSION: full feature set, including
-//                                the self-shadow exclusion march.
-//   lit_receiver_fast.gdshader - leaves it undefined: self_ex folds to a constant false,
-//                                so the compiler strips the exclusion state machine, the
-//                                per-fragment self basis, and lit_self_dist entirely.
-//                                Measurably faster for every receiver that never
-//                                populates self_rects (anything that isn't a LitSprite2D
-//                                with owned occluders); output is identical for them
-//                                because that code was unreachable anyway.
-// LitSprite2D swaps its material between the two automatically; the self_* uniforms are
-// declared in both variants so shader parameters survive the swap.
+﻿// Shared body of the Lit receiver shader. lit_receiver.gdshader defines
+// LIT_SELF_EXCLUSION (full feature set); lit_receiver_fast.gdshader leaves it undefined,
+// compiling the self-shadow exclusion out for a measurable speedup - identical output
+// for materials that never populate self_rects. LitSprite2D swaps variants
+// automatically; the self_* uniforms exist in both so parameters survive the swap.
 
 // Transport: global uniforms plus the per-frame light-data texture, packed by the
 // manager. Read via texelFetch (integer coords, no filtering), so the texture's
@@ -151,20 +144,16 @@ float lit_self_dist(vec2 p_local) {
 	return best;
 }
 
-// Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| â€”
-// the distance field of occluder outlines â€” so a shape casts from its light-facing
+// Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| -
+// the distance field of occluder outlines - so a shape casts from its light-facing
 // silhouette and the shadow passes through its body. A fragment starting inside a
 // shape takes that shape's shadow via the footprint_shadow ramp instead of a hard hit.
-// Returns 1 fully lit, 0 occluded. The caller passes the unit march direction and the
-// march length (`dir`, `maxd`, both in SDF space): a directional light knows both by
-// construction, so deriving them here from an endpoint would redo a length and a
-// divide per light for nothing (measured ~5% of GPU time in the directional-heavy
-// stress test). max_steps lets the caller spend fewer iterations on short marches; the
-// loop bound stays constant so it can unroll. frag_d is texture_sdf(frag_sdf), sampled
-// once per fragment by the caller and shared across every light's march. When self_ex
-// is true, samples whose nearest outline may belong to the receiver's own occluders
-// are stepped through instead of occluding; self_local and sdf_to_local map SDF-space
-// march offsets into local space, and self_scale is the local length of one SDF unit.
+// Returns 1 fully lit, 0 occluded. The caller passes the unit march direction and
+// length (dir, maxd, SDF space) and frag_d, its own texture_sdf sample, shared by
+// every light's march. When self_ex is true, samples whose nearest outline may belong
+// to the receiver's own occluders are stepped through instead of occluding; self_local
+// and sdf_to_local map SDF-space march offsets into local space, and self_scale is the
+// local length of one SDF unit.
 float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float hardness, int max_steps, float frag_d,
 		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	float t = shadow_min_step;
@@ -175,27 +164,18 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float hardness, int max_st
 	// outline as hits; the shape's shadow is applied once, at the exit.
 	bool grace = prev_d < 0.0;
 
-	// Fast path. With no self-exclusion, every self test in the full loop below is
-	// short-circuited, and the march's three phases each run at most once, strictly in
-	// order: grace (only while still inside the shape the fragment started in),
-	// receding (only right after a grace exit), then steady state until the ray
-	// resolves. So instead of testing the phase flags on every step of one big loop,
-	// run each phase as its own minimal loop sharing the step budget and ray state -
-	// identical samples, identical math, none of the dead per-step bookkeeping. The
-	// march runs per light per fragment, so the lean bodies are worth the extra loop
-	// copies. The full state-machine loop below remains for self-excluding receivers.
+	// Fast path (no self-exclusion): the three phases - grace, receding, steady - each
+	// run at most once, in order, so run each as its own minimal loop sharing the step
+	// budget: identical samples, none of the per-step phase bookkeeping. Past the grace
+	// exit every sample is non-negative, so the full loop's hit test (|d| < 0.001 ||
+	// sign flip) collapses to d < 0.001 and prev_d/abs() drop out. The state-machine
+	// loop below remains for self-excluding receivers.
 	if (!self_ex) {
 		int s = 0;
 		max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);  // keep the compile-time cap
-		// Once the grace phase (if any) has exited its containing shape, every sample the
-		// receding/steady loops keep marching from is non-negative: a negative d IS a sign
-		// flip, so the full loop's hit test (|d| < 0.001 || sign flip vs the previous
-		// sample) collapses to a single d < 0.001 compare, and prev_d/abs() drop out of
-		// the per-step work entirely. The state-machine loop below still needs both, since
-		// self-excluded crossings march on through their shape's interior.
 		if (grace) {
-			// Grace phase: march out of the containing shape without treating its
-			// outline as hits; apply its footprint shadow once, at the exit sample.
+			// Grace: march out of the containing shape without treating its outline as
+			// hits; apply its footprint shadow once, at the exit sample.
 			bool receding = false;
 			float prev_ad = 0.0;
 			for (; s < max_steps && t < maxd; s++) {
@@ -204,8 +184,6 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float hardness, int max_st
 					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
 					continue;
 				}
-				// First exit: the shape's shadow, ramped by depth crossed over light
-				// distance (never exempt here - there are no owned occluders).
 				float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
 				res = min(res, 1.0 - own_block);
 				if (res <= 0.0) {
@@ -217,9 +195,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float hardness, int max_st
 				receding = true;
 				break;
 			}
-			// Receding phase: mute penumbra accumulation while the ray still recedes
-			// from the exited edge; the sample that breaks the recession is processed
-			// with the steady-state rules, exactly like the state-machine loop.
+			// Receding: mute penumbra accumulation until the ray stops receding from
+			// the exited edge; the breaking sample follows the steady-state rules.
 			if (receding) {
 				for (; s < max_steps && t < maxd; s++) {
 					float d = texture_sdf(frag_sdf + dir * t);
@@ -238,10 +215,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float hardness, int max_st
 				}
 			}
 		}
-		// Steady state: the bare IQ march, hit test folded to one compare (see above).
-		// The penumbra term only needs the minimum of d/t over the march, and t is
-		// strictly positive, so track the minimizing (d, t) pair by cross-multiplied
-		// comparison and defer the division to a single one after the loop.
+		// Steady state: bare IQ march. Track the minimizing (d, t) pair with a
+		// cross-multiplied compare and divide once after the loop.
 		float best_d = 1e20;
 		float best_t = 1.0;
 		for (; s < max_steps && t < maxd; s++) {
@@ -259,13 +234,11 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float hardness, int max_st
 	}
 
 	// Mutes penumbra accumulation while the ray is still receding from the exited edge.
-	// Dynamic loop bounds on purpose (not the constant LIT_MAX_SHADOW_STEPS with a
-	// break): a constant bound tempts the compiler into unrolling this fat body, which
-	// measurably taxes the whole shader even on fragments that never take this path.
-	// max_steps is already clamped to LIT_MAX_SHADOW_STEPS below, keeping the cap.
 	bool receding = false;
 	float prev_ad = 0.0;
 	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+	// Dynamic loop bounds on purpose: a constant bound invites unrolling this body,
+	// which taxes the whole shader even on fragments that never take this path.
 	for (int s = 0; s < max_steps && t < maxd; s++) {
 		vec2 offset = dir * t;
 		float d = texture_sdf(frag_sdf + offset);  // signed: negative inside a shape
@@ -419,10 +392,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 
 		// A spot is a point light masked to a cone (texel 4): aim.xy is the
 		// screen-space direction it points. The fragment is lit if it falls inside
-		// the cone, with a soft edge between the inner and outer angle. (Testing the
-		// cone before the normalize/pow above and early-returning measured slower,
-		// same as the cookie branch: the extra exit costs every light more than the
-		// skipped math saves.)
+		// the cone, with a soft edge between the inner and outer angle.
 		if (is_spot) {
 			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // aim.xy | cos_outer | cos_inner
 			vec2 dir_to_frag = (dist > 0.0001) ? (-to_light_px / dist) : t4.xy;
@@ -531,10 +501,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		if (is_directional) {
 			// March a fixed direction across the SDF. screen_uv_to_sdf is affine, so
 			// the SDF-space direction comes from offsetting the fragment UV along the
-			// toward-light dir; the distance scales with the screen. (Passing dir and
-			// length directly instead of an endpoint skips a redundant length + divide
-			// per light in lit_shadow; it shifts the march vector by sub-ulp amounts,
-			// which can move isolated penumbra-boundary pixels by a few /255.)
+			// toward-light dir; the distance scales with the screen.
 			march_dir = normalize(screen_uv_to_sdf(frag_uv + shadow_dir_uv) - frag_sdf);
 			march_len = sdf_diag * directional_shadow_reach;
 		} else {
@@ -554,7 +521,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			steps = clamp(steps, 16, lit_shadow_steps_max);
 		}
 
-		// march_len < 0.0001 means the light sits on the fragment: fully lit, no march.
+		// A light sitting on the fragment is fully lit, no march.
 		float s = march_len < 0.0001 ? 1.0
 				: lit_shadow(frag_sdf, march_dir, march_len, t3.w, steps, frag_d, self_ex, self_local, sdf_to_local, self_scale);
 		contribution *= mix(t3.rgb, vec3(1.0), s);
@@ -603,10 +570,8 @@ void fragment() {
 #ifdef LIT_SELF_EXCLUSION
 	bool self_ex = !self_shadow && self_rect_count > 0;
 #else
-	// Fast variant: fold the whole self-exclusion feature away at compile time. The
-	// constant false lets the compiler delete the exclusion march, the self basis
-	// below, and lit_self_dist; that shrinks the compiled shader enough to measurably
-	// speed up the shadow marches everywhere else.
+	// Fast variant: the constant false compiles the exclusion march, the self basis
+	// below, and lit_self_dist out of the shader.
 	bool self_ex = false;
 #endif
 	mat2 sdf_to_local = mat2(vec2(0.0), vec2(0.0));
@@ -628,9 +593,8 @@ void fragment() {
 
 	if (tiling_valid) {
 		// Directional lights cover the whole screen, so they're never tiled: shade the
-		// leading directional rows for every fragment. Kept as its own loop (not merged
-		// with the tile loop below): the row index here is wave-uniform, and folding it
-		// into the tile loop's divergent indexing measured slower.
+		// leading directional rows for every fragment. Kept separate from the tile loop
+		// so the row index stays wave-uniform.
 		for (int i = 0; i < lit_directional_count; i++) {
 			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_local, sdf_to_local, self_scale);
 		}
@@ -656,8 +620,7 @@ void fragment() {
 	}
 
 	// Emissive ignores the dark and composes with ambient and lights by construction.
-	// Zero strength zeroes the term regardless of the mask, so skip the fetch entirely
-	// on the (common) non-emissive receiver.
+	// Zero strength skips the mask fetch.
 	vec3 emissive = vec3(0.0);
 	if (emissive_strength != 0.0) {
 		emissive = albedo * emissive_strength * texture(emissive_mask, UV).r;
