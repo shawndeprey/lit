@@ -18,7 +18,10 @@ extends EditorPlugin
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 
-const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
+# The tool assigns the fast receiver variant: it only ever wires plain CanvasItems,
+# whose materials never get self_rects populated, so the compiled-out self-shadow
+# exclusion could never run for them anyway (see lit_receiver_common.gdshaderinc).
+const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver_fast.gdshader"
 const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")

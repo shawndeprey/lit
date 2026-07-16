@@ -2,9 +2,9 @@
 
 [ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="1_n8bxl"]
 [ext_resource type="PackedScene" uid="uid://d28fv3x2iqnq2" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="1_un7ao"]
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="2_cdys8"]
 [ext_resource type="Texture2D" uid="uid://pfbeg7uspbx7" path="res://Test/cinderskull_preview_n.png" id="2_pyd3v"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_4l8u5"]
-[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="3_es8hm"]
 [ext_resource type="Texture2D" uid="uid://b2nlbskimwprj" path="res://Test/cinderskull_preview_o.png" id="3_x1o0v"]
 [ext_resource type="Texture2D" uid="uid://cgevs35a2oh53" path="res://Test/cinderskull_preview_r.png" id="4_abemx"]
 [ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="4_lg8mm"]
@@ -60,7 +60,7 @@ emission_curve = SubResource("CurveTexture_abemx")
 polygon = PackedVector2Array(-5.199997, 7.199997, 6.4000015, 7.199997, 2.800003, 12.599998, -1.9999924, 12.599998)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_s7aw1"]
-shader = ExtResource("3_es8hm")
+shader = ExtResource("2_cdys8")
 shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false
@@ -88,7 +88,7 @@ specular_texture = ExtResource("6_abemx")
 polygon = PackedVector2Array(-5.199997, 7.199997, 6.4000015, 7.199997, 2.800003, 12.599998, -1.9999924, 12.599998)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_aici6"]
-shader = ExtResource("3_es8hm")
+shader = ExtResource("2_cdys8")
 shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false

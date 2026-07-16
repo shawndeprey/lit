@@ -11,7 +11,9 @@ extends Node2D
 ## Everything is spawned at runtime and torn down on stop, so it never touches the saved
 ## scene. All demo lights run full soft shadows (shadow_hardness = 0).
 
-const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver.gdshader")
+# Fast variant: the demo's spawned receivers are plain sprites with no owned occluders,
+# so the self-shadow exclusion the fast shader compiles out could never run for them.
+const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
 
 const MAX_LIGHTS := 128
 const COOKIE_MAX_LIGHTS := 64
@@ -47,6 +49,12 @@ var _stage_index := -1
 var _stage_time := 0.0
 var _clock := 0.0
 var _perf_accum := 0.0
+
+# Measured render times accumulated per frame between perf-panel refreshes, so the
+# panel shows a window average (like LITBENCH) instead of a single frame's sample.
+var _perf_frames := 0
+var _perf_cpu_sum := 0.0
+var _perf_gpu_sum := 0.0
 
 var _white_tex: ImageTexture
 var _area_center := Vector2(576, 324)
@@ -119,6 +127,12 @@ var _stages := [
 # =====================================================================================
 
 func _ready() -> void:
+	# Same conditions the stress bench (stress_test.gd) measures under: vsync off so
+	# frame times are real and uncapped, and per-viewport render-time measurement on so
+	# the perf panel can report the same render CPU / GPU milliseconds LITBENCH prints.
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
 	_white_tex = ImageTexture.create_from_image(img)
@@ -136,7 +150,7 @@ func _build_ui() -> void:
 	_ui.add_child(root)
 
 	_perf_lbl = _make_label(root, 18, Color(0.6, 1.0, 0.7), HORIZONTAL_ALIGNMENT_LEFT)
-	_set_rect(_perf_lbl, 0, 0, 0, 0, 16, 14, 250, 150)
+	_set_rect(_perf_lbl, 0, 0, 0, 0, 16, 14, 250, 200)
 
 	_feature_lbl = _make_label(root, 46, BRAND, HORIZONTAL_ALIGNMENT_CENTER)
 	_set_rect(_feature_lbl, 0, 0, 1, 0, 0, 22, 0, 86)
@@ -199,7 +213,9 @@ func _set_ui_state(state: String) -> void:
 	_feature_lbl.visible = running
 	_desc_lbl.visible = running
 	_counter_lbl.visible = running
-	_perf_lbl.visible = running
+	# The perf panel stays up in every state: the demo scene doubles as the manual
+	# performance test, so idle poking around should show real numbers too.
+	_perf_lbl.visible = true
 
 
 # =====================================================================================
@@ -743,11 +759,35 @@ func _process(dt: float) -> void:
 
 
 func _update_perf(dt: float) -> void:
+	# Accumulate the measured render times every frame; refresh the panel 5x/s with the
+	# window average. CPU/GPU are the same numbers the stress bench reports as LITBENCH
+	# render_cpu_ms / render_gpu_ms (GPU is the one to watch - the engine is GPU-bound).
+	var vp_rid := get_viewport().get_viewport_rid()
+	_perf_frames += 1
+	_perf_cpu_sum += RenderingServer.viewport_get_measured_render_time_cpu(vp_rid)
+	_perf_gpu_sum += RenderingServer.viewport_get_measured_render_time_gpu(vp_rid)
 	_perf_accum += dt
 	if _perf_accum < 0.2:
 		return
-	_perf_accum = 0.0
 	var fps := Engine.get_frames_per_second()
 	var ms := 1000.0 / maxf(fps, 1.0)
+	var cpu_ms := _perf_cpu_sum / float(_perf_frames)
+	var gpu_ms := _perf_gpu_sum / float(_perf_frames)
+	_perf_accum = 0.0
+	_perf_frames = 0
+	_perf_cpu_sum = 0.0
+	_perf_gpu_sum = 0.0
 	var draws := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
-	_perf_lbl.text = "FPS    %4d\nFrame  %5.1f ms\nLights %4d\nDraws  %5d" % [int(round(fps)), ms, _lights.size(), draws]
+	var light_count := _lights.size() if _running else _enabled_scene_lights()
+	_perf_lbl.text = "FPS    %4d\nFrame  %6.2f ms\nCPU    %6.2f ms\nGPU    %6.2f ms\nLights %4d\nDraws  %5d" \
+			% [int(round(fps)), ms, cpu_ms, gpu_ms, light_count, draws]
+
+
+# Enabled, visible lights in the scene, for the perf panel outside a demo run (while
+# running, the demo's own spawned-light list is the accurate count).
+func _enabled_scene_lights() -> int:
+	var n := 0
+	for l in get_tree().get_nodes_in_group("lit_lights"):
+		if l.get("enabled") and l.is_visible_in_tree():
+			n += 1
+	return n

@@ -15,7 +15,7 @@ extends Node2D
 ## Run fullscreen with vsync off for true (uncapped) frame times:
 ##   godot --path . res://Test/StressTest.tscn --fullscreen
 
-const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver.gdshader")
+const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
 
 const LIGHT_COUNT := 128
 # Test-only overrides for cost attribution, passed after "--" on the CLI:

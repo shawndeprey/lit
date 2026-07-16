@@ -1,6 +1,6 @@
 [gd_scene format=4 uid="uid://d28fv3x2iqnq2"]
 
-[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="1_b50dt"]
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/lit_receiver_fast.gdshader" id="1_b50dt"]
 [ext_resource type="Texture2D" uid="uid://bcoyinyc7nquk" path="res://Test/tilesets/crypts/ra_crypt/ra_crypt.png" id="2_pulpr"]
 [ext_resource type="Texture2D" uid="uid://c3cltubry87tc" path="res://Test/tilesets/crypts/ra_crypt/ra_crypt_n.png" id="4_rcxug"]
 [ext_resource type="Script" uid="uid://c4ukaxjuidwha" path="res://Test/tilesets/game_tile.gd" id="5_vvk8t"]
