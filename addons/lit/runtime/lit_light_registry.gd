@@ -29,7 +29,7 @@ const TEXELS_PER_LIGHT := 7
 const TILE_SIZE := 64
 
 # Width of the flat tile-index texture; a flat index maps to (i % WIDTH, i / WIDTH).
-# Must match LIT_INDEX_TEX_WIDTH in lit_receiver.gdshader.
+# Must match LIT_INDEX_TEX_WIDTH in lit_receiver_common.gdshaderinc.
 const INDEX_TEX_WIDTH := 2048
 
 var _texture: ImageTexture
