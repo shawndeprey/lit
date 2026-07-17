@@ -19,6 +19,9 @@ enum BlendMode { ADD, SUBTRACT }
 ## Sizing mode for the cookie `texture`; mirrors LitPointLight2D.
 enum TextureSizeMode { NATIVE, FIT_RANGE }
 
+## Per-light shadow algorithm; order must match the flags bits packed by the registry.
+enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
+
 @export var enabled: bool = true
 @export var color: Color = Color.WHITE
 @export var energy: float = 1.0
@@ -54,12 +57,46 @@ enum TextureSizeMode { NATIVE, FIT_RANGE }
 
 @export_group("Shadow")
 @export var shadow_enabled: bool = false
+## RAYMARCHED: single SDF march with an estimated penumbra - the fast base option.
+## CONE_TRACED: same single march, but the penumbra width comes physically from
+## `source_radius` over distance. STOCHASTIC: averages `shadow_samples` marches across
+## the emitting disc for true umbra/penumbra/antumbra - the realistic (and most
+## expensive) option. Every Lit receiver in the scene is swapped to a shader variant
+## compiled for the algorithms in use automatically (by the registry each frame).
+@export var shadow_algorithm: ShadowAlgorithm = ShadowAlgorithm.RAYMARCHED:
+	set(value):
+		shadow_algorithm = value
+		notify_property_list_changed()
 @export var shadow_color: Color = Color.BLACK
-## 0 = very soft, 1 = hard.
+## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
+## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
+## Radius of the physical emitting disc in world pixels (CONE_TRACED / STOCHASTIC).
+## Bigger sources cast softer shadows: wider penumbras and shorter umbras — an
+## occluder's dark core tapers closed after roughly (occluder width / source_radius) x
+## its distance to the light, so radii comparable to your occluders give clearly
+## visible soft-light behavior. Distinct from `range`, which is how far the light
+## reaches.
+@export_range(0.0, 256.0, 0.5, "or_greater") var source_radius: float = 32.0
+## Shadow marches per fragment across the source disc (STOCHASTIC): more is smoother
+## and slower. Clamped by lit/quality/shadow_samples_max.
+@export_range(1, 32) var shadow_samples: int = 8
+## STOCHASTIC sample placement: 0 = fixed stratified pattern (can band at low sample
+## counts), 1 = per-pixel randomized (banding becomes fine grain).
+@export_range(0.0, 1.0) var shadow_jitter: float = 1.0
 
 @export_group("Advanced")
 @export var blend_mode: BlendMode = BlendMode.ADD
+
+
+func _validate_property(property: Dictionary) -> void:
+	# Show only the dials the selected algorithm reads.
+	if property.name == "source_radius":
+		if shadow_algorithm == ShadowAlgorithm.RAYMARCHED:
+			property.usage &= ~PROPERTY_USAGE_EDITOR
+	elif property.name == "shadow_samples" or property.name == "shadow_jitter":
+		if shadow_algorithm != ShadowAlgorithm.STOCHASTIC:
+			property.usage &= ~PROPERTY_USAGE_EDITOR
 
 
 func _enter_tree() -> void:

@@ -2,7 +2,7 @@
 
 [ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="1_n8bxl"]
 [ext_resource type="PackedScene" uid="uid://d28fv3x2iqnq2" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="1_un7ao"]
-[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/lit_receiver.gdshader" id="2_cdys8"]
+[ext_resource type="Shader" uid="uid://c6ybpyxcmqinm" path="res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader" id="2_cdys8"]
 [ext_resource type="Texture2D" uid="uid://pfbeg7uspbx7" path="res://Test/cinderskull_preview_n.png" id="2_pyd3v"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_4l8u5"]
 [ext_resource type="Texture2D" uid="uid://b2nlbskimwprj" path="res://Test/cinderskull_preview_o.png" id="3_x1o0v"]
@@ -169,23 +169,25 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
-position = Vector2(575, 152)
+position = Vector2(571, 129)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0
 height = 45.0
 shadow_enabled = true
-shadow_hardness = 0.0
+shadow_algorithm = 2
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights" unique_id=1063815886]
-position = Vector2(733, 450)
+position = Vector2(718, 448)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 1.5
 range = 1024.0
 shadow_enabled = true
-shadow_hardness = 0.0
+shadow_algorithm = 2
+shadow_samples = 32
+shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights" unique_id=1682313072]
@@ -199,10 +201,11 @@ spot_angle = 90.0
 spot_softness = 1.0
 height = 64.0
 shadow_enabled = true
-shadow_hardness = 0.0
+shadow_algorithm = 1
 metadata/_custom_type_script = "uid://blronx1n8oliq"
 
 [node name="LitPointCookieWindow" type="Node2D" parent="LitLights" unique_id=1402938501]
+visible = false
 position = Vector2(259, 181)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.87, 0.65, 1)
@@ -216,6 +219,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointCookieBlinds" type="Node2D" parent="LitLights" unique_id=733214890]
+visible = false
 position = Vector2(208.00002, 478)
 rotation = 0.2617994
 script = ExtResource("4_lg8mm")
@@ -230,6 +234,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointCookieCanopy" type="Node2D" parent="LitLights" unique_id=1577760143]
+visible = false
 position = Vector2(946, 160)
 script = ExtResource("4_lg8mm")
 color = Color(0.75, 1, 0.7, 1)
@@ -243,6 +248,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointCookieFlashlight" type="Node2D" parent="LitLights" unique_id=358129416]
+visible = false
 position = Vector2(937, 475)
 script = ExtResource("4_lg8mm")
 color = Color(0.85, 0.92, 1, 1)
@@ -255,6 +261,7 @@ shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotCookieRadial" type="Node2D" parent="LitLights" unique_id=1934750217]
+visible = false
 position = Vector2(581, 564)
 rotation = -1.5707964
 script = ExtResource("8_5ghie")

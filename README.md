@@ -80,6 +80,12 @@ That's it — everything updates live in the editor as you build.
 - **Light textures (cookies).** Drop a texture on a point or spot light to shape it —
   window panes, canopy dapple, blinds — just like the engine's `PointLight2D` texture.
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
+- **Three shadow algorithms, per light.** **Raymarched** (the fast default),
+  **Cone Traced** (penumbras that widen with distance, driven by a physical
+  **Source Radius** — Unreal's SDF-shadow approach, same cost as Raymarched), and
+  **Stochastic** (true area-light shadows with real umbra, penumbra, and antumbra,
+  plus samples/jitter dials — the realistic option, and the only one that costs more).
+  Pick per light with the **Shadow Algorithm** dropdown.
 - **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` — no wiring.
 - **Blinn–Phong or PBR.** Pick the lighting model in Project Settings → Lit. PBR adds
   optional metallic / roughness / AO inputs on the receiver material; switch back to

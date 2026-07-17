@@ -9,17 +9,38 @@ extends Node2D
 
 const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
 
+const SHADOW_ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
+const SHADOW_ALGO_NAMES := ["raymarch", "cone", "stochastic"]
+
+# Launch-time settings, editable on the scene's root node in the inspector. CLI args
+# (after "--") override them, so scripted benchmark runs keep working. Future
+# launch-time toggles for the benchmark belong in this group.
+@export_group("Launch Options")
+## Shadow algorithm every spawned light starts on; keys 1/2/3 still switch live
+## (switching restarts the warmup/measure cycle).
+@export var shadow_algorithm: LitPointLight2D.ShadowAlgorithm = LitPointLight2D.ShadowAlgorithm.RAYMARCHED
+
+# Deterministic shadow-source parameters for the cone/stochastic runs.
+const SOURCE_RADIUS := 10.0
+const SOURCE_ANGLE_DEG := 3.0
+const SHADOW_SAMPLES := 8
+
 const LIGHT_COUNT := 128
 # Overrides for cost attribution, passed after "--" on the CLI:
 #   shadows=off   kinds=point|spot|dir|cookie|mix   lights=N   warmup=N   measure=N
-#   sdf=25|50|100 (SDF scale probe)
+#   shadow_algo=raymarch|cone|stochastic   sdf=25|50|100 (SDF scale probe)
 #   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
+# The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
+# 3 (stochastic); switching restarts the warmup/measure cycle so the reported numbers
+# always describe a single algorithm. Receiver shaders follow via the registry's
+# automatic variant swap, the same path a game uses.
 var _opt_shadows := true
 var _opt_kinds := ["point", "spot", "point", "dir"]
 var _opt_light_count := LIGHT_COUNT
 var _opt_capture := ""
 var _opt_warmup := WARMUP_SEC
 var _opt_measure := MEASURE_SEC
+var _opt_shadow_algo := "raymarch"
 
 # Clock value used for the deterministic capture frame.
 const CAPTURE_CLOCK := 60.0
@@ -50,6 +71,7 @@ var _hud: Label
 
 
 func _ready() -> void:
+	_opt_shadow_algo = SHADOW_ALGO_NAMES[shadow_algorithm]
 	for arg in OS.get_cmdline_user_args():
 		var kv := arg.split("=")
 		if kv.size() != 2:
@@ -61,6 +83,9 @@ func _ready() -> void:
 				_opt_kinds = ["point", "spot", "point", "dir"] if kv[1] == "mix" else [kv[1]]
 			"lights":
 				_opt_light_count = int(kv[1])
+			"shadow_algo":
+				if SHADOW_ALGO_IDS.has(kv[1]):
+					_opt_shadow_algo = kv[1]
 			"capture":
 				_opt_capture = kv[1]
 			"warmup":
@@ -249,7 +274,7 @@ func _spawn_light(kind: String, col: Color) -> void:
 	n.color = col
 	n.energy = _rng.randf_range(1.3, 2.4)
 	n.shadow_enabled = _opt_shadows
-	n.shadow_hardness = 0.0
+	_configure_shadow_algo(n, kind)
 	add_child(n)
 
 	_lights.append({
@@ -281,7 +306,53 @@ func _update_lights() -> void:
 			n.color = Color.from_hsv(fposmod(d.hue + _clock * 0.05, 1.0), 0.85, 1.0)
 
 
+# Apply the current shadow algorithm and its fixed source parameters to one light.
+# Fixed values keep runs comparable across algorithms; cone/stochastic read hardness
+# as a contrast remap, where 0.5 is neutral.
+func _configure_shadow_algo(n, kind: String) -> void:
+	n.shadow_algorithm = SHADOW_ALGO_IDS[_opt_shadow_algo]
+	if _opt_shadow_algo == "raymarch":
+		n.shadow_hardness = 0.0
+	else:
+		n.shadow_hardness = 0.5
+		n.shadow_samples = SHADOW_SAMPLES
+		n.shadow_jitter = 1.0
+		if kind == "dir":
+			n.source_angle = SOURCE_ANGLE_DEG
+		else:
+			n.source_radius = SOURCE_RADIUS
+
+
 # --- benchmark loop ------------------------------------------------------------------
+
+## Live algorithm switch: 1 = raymarch, 2 = cone, 3 = stochastic. Restarts the
+## warmup/measure cycle so the reported numbers describe a single algorithm.
+func _input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo:
+		return
+	var algo := ""
+	match key.keycode:
+		KEY_1:
+			algo = "raymarch"
+		KEY_2:
+			algo = "cone"
+		KEY_3:
+			algo = "stochastic"
+		_:
+			return
+	if algo == _opt_shadow_algo or _state == "boot" or _state == "done":
+		return
+	_opt_shadow_algo = algo
+	for d in _lights:
+		_configure_shadow_algo(d.node, d.kind)
+	_state = "warmup"
+	_state_time = 0.0
+	_frame_times.clear()
+	_process_times.clear()
+	_render_cpu.clear()
+	_render_gpu.clear()
+
 
 func _process(dt: float) -> void:
 	if _state == "boot" or _state == "done":
@@ -291,7 +362,7 @@ func _process(dt: float) -> void:
 	_state_time += dt
 
 	if _state == "warmup":
-		_hud.text = "WARMUP %.1f / %.1f s   lights %d" % [_state_time, _opt_warmup, _lights.size()]
+		_hud.text = "WARMUP %.1f / %.1f s   lights %d   algo %s   [1] raymarch [2] cone [3] stochastic" % [_state_time, _opt_warmup, _lights.size(), _opt_shadow_algo]
 		if _state_time >= _opt_warmup:
 			_state = "measure"
 			_state_time = 0.0
@@ -303,7 +374,7 @@ func _process(dt: float) -> void:
 	_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS))
 	_render_cpu.append(RenderingServer.viewport_get_measured_render_time_cpu(vp_rid))
 	_render_gpu.append(RenderingServer.viewport_get_measured_render_time_gpu(vp_rid))
-	_hud.text = "MEASURE %.1f / %.1f s   lights %d   fps %d" % [_state_time, _opt_measure, _lights.size(), Engine.get_frames_per_second()]
+	_hud.text = "MEASURE %.1f / %.1f s   lights %d   algo %s   fps %d" % [_state_time, _opt_measure, _lights.size(), _opt_shadow_algo, Engine.get_frames_per_second()]
 	if _state_time >= _opt_measure:
 		_state = "done"
 		_report()
@@ -348,6 +419,7 @@ func _report() -> void:
 	var rcpu_ms := _mean(_render_cpu)
 	var rgpu_ms := _mean(_render_gpu)
 
+	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
 	print("LITBENCH frames=%d" % n)
 	print("LITBENCH avg_fps=%.2f" % fps)
 	print("LITBENCH avg_frame_ms=%.3f" % avg_ms)
