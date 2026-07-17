@@ -20,9 +20,11 @@ const SHADOW_ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 ## (switching restarts the warmup/measure cycle).
 @export var shadow_algorithm: LitPointLight2D.ShadowAlgorithm = LitPointLight2D.ShadowAlgorithm.RAYMARCHED
 
-# Deterministic shadow-source parameters for the cone/stochastic runs.
+# Deterministic shadow-source parameters for the cone/stochastic runs. The angle is a
+# full angular diameter (source_angle convention), so this marches the same cone as
+# the pre-convention-change 3.0 half-angle runs.
 const SOURCE_RADIUS := 10.0
-const SOURCE_ANGLE_DEG := 3.0
+const SOURCE_ANGLE_DEG := 6.0
 const SHADOW_SAMPLES := 8
 
 const LIGHT_COUNT := 128

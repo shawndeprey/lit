@@ -46,10 +46,13 @@ enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
-## Angular half-size of the source in degrees (CONE_TRACED / STOCHASTIC): how wide the
-## light appears in the sky. The sun is about 0.25; larger reads as a big soft sky
-## light with penumbras that grow with distance from the occluder.
-@export_range(0.0, 30.0, 0.05) var source_angle: float = 3.0
+## Angular size (full diameter) of the source in degrees (CONE_TRACED / STOCHASTIC):
+## how wide the light appears in the sky, the same convention as Unreal's Source Angle
+## (0.5357), Unity HDRP's Angular Diameter (0.5) and Blender's Sun Angle (0.526) - the
+## sun is about 0.53. Larger reads as a big soft sky light with penumbras that grow
+## with distance from the occluder; the default is deliberately sun x ~11 so the
+## softness is visible at game scale.
+@export_range(0.0, 60.0, 0.05) var source_angle: float = 6.0
 ## Shadow marches per fragment across the source (STOCHASTIC): more is smoother and
 ## slower. Clamped by lit/quality/shadow_samples_max.
 @export_range(1, 32) var shadow_samples: int = 8

@@ -10,7 +10,7 @@ extends Node2D
 ##
 ## Automated use (screenshots), after "--" on the CLI:
 ##   algo=raymarch|cone|stochastic   out=PATH (capture one frame, then quit)
-##   radius=N   samples=N   jitter=X   hardness=X
+##   radius=N   samples=N   jitter=X   hardness=X   range=N
 
 const ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 const ALGO_NAMES := ["raymarch", "cone", "stochastic"]
@@ -29,6 +29,10 @@ const ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 @export_range(0.0, 1.0) var shadow_jitter: float = 1.0
 ## Hardness the light starts with (raymarched: softness; others: contrast).
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
+## Light range the scene starts with. The default puts the range end just past the
+## screen's right edge, which crushes the far shadow field (umbra apex/antumbra) into
+## near-black attenuation; raise it to see those regions clearly lit.
+@export_range(100.0, 10000.0, 10.0) var light_range: float = 1200.0
 
 var _light: LitPointLight2D
 var _hud: Label
@@ -81,7 +85,7 @@ func _ready() -> void:
 	_light.position = Vector2(vp.x * 0.25, vp.y * 0.5)
 	_light.color = Color.WHITE
 	_light.energy = 1.5
-	_light.range = 1200.0
+	_light.range = light_range
 	_light.falloff = 0.6
 	# High enough that the flat (un-normal-mapped) floor stays visibly lit across the
 	# whole scene; the shadow march is screen-space, so height only affects shading.
@@ -123,6 +127,8 @@ func _ready() -> void:
 				_light.shadow_jitter = float(kv[1])
 			"hardness":
 				_light.shadow_hardness = float(kv[1])
+			"range":
+				_light.range = float(kv[1])
 
 	_update_hud()
 	if _out != "":

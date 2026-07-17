@@ -325,10 +325,11 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	_pack_buf[o + 14] = light.shadow_color.b
 	_pack_buf[o + 15] = light.shadow_hardness
 
-	# Texel 7: tan(source half-angle) | samples | jitter. The tangent is the angular
-	# extent the cone/stochastic shaders use directly (a directional light has no
-	# distance to derive it from).
-	_pack_buf[o + 28] = tan(deg_to_rad(light.source_angle))
+	# Texel 7: tan(source half-angle) | samples | jitter. source_angle is the full
+	# angular diameter (the cross-engine convention), halved here to the tangent the
+	# cone/stochastic shaders use directly (a directional light has no distance to
+	# derive it from).
+	_pack_buf[o + 28] = tan(deg_to_rad(light.source_angle) * 0.5)
 	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
 	_pack_buf[o + 30] = light.shadow_jitter
 

@@ -321,7 +321,7 @@ float lit_shadow_contrast(float s, float hardness) {
 }
 #endif
 
-#ifdef LIT_SHADOW_CONE
+#if defined(LIT_SHADOW_CONE) || defined(LIT_SHADOW_STOCH)
 // Cone-traced shadow: march a cone of half-angle tangent w (the source's angular
 // radius) instead of a ray, estimating at each step the unblocked fraction of the
 // cone's cross-section from the SIGNED distance: 0.5 + d/(w*t) - a sample on an
@@ -333,11 +333,80 @@ float lit_shadow_contrast(float s, float hardness) {
 // on |d| so it can pass through shape interiors; there is no early hit-exit, but a
 // fully-black minimum still returns immediately. Grace/footprint/receding behavior
 // matches lit_shadow; in the full variant, samples whose nearest outline may belong to
-// the receiver's own occluders never darken (self-exclusion).
+// the receiver's own occluders never darken (self-exclusion). Compiled for the
+// stochastic variants too: lit_shadow_stoch runs it as its penumbra gate.
 float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_steps, float frag_d,
 		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	float t = shadow_min_step;
 	float res = 1.0;
+
+	// Fast path (no self-exclusion): the same phase split as lit_shadow - grace,
+	// receding and steady each run at most once, in order, so run each as its own
+	// minimal loop sharing the step budget. Identical samples and coverage updates,
+	// none of the per-step phase bookkeeping.
+	if (!self_ex) {
+		int s = 0;
+		max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+		if (frag_d < 0.0) {
+			// Grace: march out of the containing shape without coverage updates;
+			// apply its footprint shadow once, at the exit sample.
+			bool receding = false;
+			float prev_d = 0.0;
+			for (; s < max_steps && t < maxd; s++) {
+				float d = texture_sdf(frag_sdf + dir * t);
+				if (d < 0.0) {
+					t += max(-d, shadow_min_step);
+					continue;
+				}
+				res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+				if (res <= 0.0) {
+					return 0.0;
+				}
+				prev_d = d;
+				t += max(d, shadow_min_step);
+				s++;                                   // this sample consumed a step
+				receding = true;
+				break;
+			}
+			// Receding: mute coverage while still receding from the exited edge, or
+			// the receiver's own surface would count as half-blocking the cone. The
+			// breaking sample follows the steady-state rule.
+			if (receding) {
+				for (; s < max_steps && t < maxd; s++) {
+					float d = texture_sdf(frag_sdf + dir * t);
+					if (d >= prev_d) {
+						prev_d = d;
+						t += max(abs(d), shadow_min_step);
+						continue;
+					}
+					float cand = 0.5 + d / (2.0 * w * t);
+					if (cand < res) {
+						res = max(cand, 0.0);
+						if (res <= 0.0) {
+							return 0.0;
+						}
+					}
+					t += max(abs(d), shadow_min_step);
+					s++;                               // this sample consumed a step
+					break;
+				}
+			}
+		}
+		// Steady state: bare signed-coverage march.
+		for (; s < max_steps && t < maxd; s++) {
+			float d = texture_sdf(frag_sdf + dir * t);
+			float cand = 0.5 + d / (2.0 * w * t);
+			if (cand < res) {
+				res = max(cand, 0.0);
+				if (res <= 0.0) {
+					return 0.0;                      // cone fully blocked; can't recover
+				}
+			}
+			t += max(abs(d), shadow_min_step);
+		}
+		return clamp(res, 0.0, 1.0);
+	}
+
 	bool grace = frag_d < 0.0;
 	bool receding = false;
 	float prev_d = frag_d;
@@ -460,9 +529,28 @@ float lit_shadow_hard(vec2 frag_sdf, vec2 dir, float maxd, int max_steps, float 
 // Directional: the march direction deflects across the source's angular extent, src is
 // tan(half-angle). jitter blends stratum centers (banding at low n) toward per-pixel
 // randomized positions (grain).
+//
+// Penumbra gate: one cone-coverage march classifies the fragment first, so only
+// genuine penumbra pays for the n marches (the adaptive-sampling structure of PCSS's
+// blocker-search early-out and of tile classification in production ray-traced
+// shadows). The gate's endpoints are trustworthy by the cone march's own geometry:
+// coverage 0 means some step's empty-space ball spanned the whole source wedge from
+// inside a shape - every sample ray crosses it - and coverage 1 means no step came
+// within the wedge, which contains all sample rays. Between the endpoints the n-march
+// estimate runs unchanged, so multi-occluder accumulation (which the single-blocker
+// cone minimum underestimates) is preserved exactly where it matters.
 float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float src,
 		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
 		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
+	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
+	float gate = lit_shadow_cone(frag_sdf, dir, maxd, w_gate, max_steps, frag_d,
+			self_ex, self_local, sdf_to_local, self_scale);
+	if (gate <= 0.0) {
+		return 0.0;
+	}
+	if (gate >= 1.0) {
+		return 1.0;
+	}
 	n = clamp(n, 1, LIT_MAX_SHADOW_SAMPLES);
 	vec2 perp = vec2(-dir.y, dir.x);
 	// Interleaved gradient noise gives the per-pixel base; the golden-ratio sequence
