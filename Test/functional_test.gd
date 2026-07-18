@@ -26,7 +26,7 @@ const ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 ## Sample count the light starts with (stochastic).
 @export_range(1, 32) var shadow_samples: int = 8
 ## Jitter the light starts with (stochastic).
-@export_range(0.0, 1.0) var shadow_jitter: float = 1.0
+@export_range(0.0, 1.0) var shadow_jitter: float = 0.35
 ## Hardness the light starts with (raymarched: softness; others: contrast).
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
 ## Light range the scene starts with. The default puts the range end just past the
@@ -129,6 +129,10 @@ func _ready() -> void:
 				_light.shadow_hardness = float(kv[1])
 			"range":
 				_light.range = float(kv[1])
+			"lightx":
+				# Fraction of the viewport width; brings the light close to the skull
+				# to probe near-source-overlap behavior (occluder is at ~0.62).
+				_light.position.x = get_viewport_rect().size.x * float(kv[1])
 
 	_update_hud()
 	if _out != "":

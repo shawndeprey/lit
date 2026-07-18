@@ -335,8 +335,18 @@ float lit_shadow_contrast(float s, float hardness) {
 // matches lit_shadow; in the full variant, samples whose nearest outline may belong to
 // the receiver's own occluders never darken (self-exclusion). Compiled for the
 // stochastic variants too: lit_shadow_stoch runs it as its penumbra gate.
+//
+// src_plane (point/spot only - a directional march's far end is sky, not a source):
+// take one final clamped sample AT t = maxd, the source plane, where the cone is
+// widest. Sphere-trace steps are sized by off-ray distances, so when an occluder sits
+// near or overlapping the emitting disc, the march routinely exits without a sample in
+// the last step-length before the source - and whether a given fragment's step cascade
+// happens to land one there or hop it flips the whole overlap-dimming term on and off,
+// painting hard sawtooth wedges across the scene. Pinning the source-plane sample makes
+// that term smooth and fragment-independent; far-field lights (source clear of
+// occluders) get coverage >= 1 from it, leaving their result untouched.
 float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_steps, float frag_d,
-		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
+		bool src_plane, bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	float t = shadow_min_step;
 	float res = 1.0;
 
@@ -404,6 +414,11 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			}
 			t += max(abs(d), shadow_min_step);
 		}
+		if (src_plane && maxd > shadow_min_step) {
+			float d = texture_sdf(frag_sdf + dir * maxd);
+			float cand = 0.5 + d / (2.0 * w * maxd);
+			res = min(res, max(cand, 0.0));
+		}
 		return clamp(res, 0.0, 1.0);
 	}
 
@@ -464,6 +479,16 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 		}
 		t += max(ad, shadow_min_step);
 	}
+	if (src_plane && maxd > shadow_min_step) {
+		// Source-plane sample; see the fast path. Owned occluders stay exempt.
+		vec2 offset = dir * maxd;
+		float d = texture_sdf(frag_sdf + offset);
+		float cand = 0.5 + d / (2.0 * w * maxd);
+		if (cand < res && !(self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+				<= (abs(d) + LIT_SELF_PAD_SDF) * self_scale)) {
+			res = max(cand, 0.0);
+		}
+	}
 	return clamp(res, 0.0, 1.0);
 }
 #endif
@@ -473,62 +498,22 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 // the CPU as well (lit/quality/shadow_samples_max).
 const int LIT_MAX_SHADOW_SAMPLES = 32;
 
-// Hard (binary) march used per stochastic sample: the raymarched march minus the
-// penumbra estimate - softness comes from averaging many of these rays, never from a
-// single one. Keeps the grace/footprint behavior and (in the full variant) the
-// self-exclusion step-through, so every algorithm agrees on those rules.
-float lit_shadow_hard(vec2 frag_sdf, vec2 dir, float maxd, int max_steps, float frag_d,
-		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
-	float t = shadow_min_step;
-	float res = 1.0;
-	float prev_d = frag_d;
-	bool grace = prev_d < 0.0;
-	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
-	for (int s = 0; s < max_steps && t < maxd; s++) {
-		vec2 offset = dir * t;
-		float d = texture_sdf(frag_sdf + offset);
-		float ad = abs(d);
-		if (grace) {
-			prev_d = d;
-			if (d < 0.0) {
-				t += max(-d, shadow_min_step);
-				continue;
-			}
-			grace = false;
-			bool own_exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
-			if (!own_exempt) {
-				res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
-				if (res <= 0.0) {
-					return 0.0;
-				}
-			}
-			t += max(ad, shadow_min_step);
-			continue;
-		}
-		bool hit = ad < 0.001 || (d < 0.0) != (prev_d < 0.0);
-		prev_d = d;
-		if (hit) {
-			if (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale) {
-				t += max(-d, shadow_min_step);   // step through an owned occluder
-				continue;
-			}
-			return 0.0;
-		}
-		t += max(ad, shadow_min_step);
-	}
-	return res;
-}
-
-// Stochastic area-light visibility: average n hard marches toward stratified points
-// across the source, yielding the visible fraction of the light - true umbra (all rays
-// blocked), penumbra (some blocked) and antumbra (a source wider than the occluder is
-// never fully blocked). Point/spot: sample points span the emitting disc's diameter
-// perpendicular to the light direction, src is its half-extent in SDF units.
-// Directional: the march direction deflects across the source's angular extent, src is
-// tan(half-angle). jitter blends stratum centers (banding at low n) toward per-pixel
-// randomized positions (grain).
+// Stochastic area-light visibility: split the source into n strata and cone-march a
+// narrow sub-cone covering each, averaging the fractional stratum coverages - true
+// umbra (every stratum blocked), penumbra (some partially blocked) and antumbra (a
+// source wider than the occluder is never fully blocked). Fractional sub-cones instead
+// of binary hard marches matter: a binary sample quantizes to 0/1, and with a large or
+// close source the penumbra spans many strata, concentrating +-1/n binary noise into
+// visible streak bands that jitter cannot smooth (the noise IS the jitter, organized
+// along the noise pattern's level lines). A sub-cone returns its stratum's coverage
+// continuously, so the estimate is smooth at any n, and n = 1 degenerates exactly to
+// the Cone Traced algorithm. Multi-occluder accumulation across strata is preserved
+// (the single-blocker minimum applies only within one narrow sub-wedge, where it is
+// nearly exact). Point/spot: strata span the emitting disc's diameter perpendicular to
+// the light direction, src is its half-extent in SDF units. Directional: the march
+// direction deflects across the source's angular extent, src is tan(half-angle).
+// jitter blends stratum centers toward per-pixel randomized positions inside each
+// stratum; with fractional samples it adds only faint residual grain either way.
 //
 // Penumbra gate: one cone-coverage march classifies the fragment first, so only
 // genuine penumbra pays for the n marches (the adaptive-sampling structure of PCSS's
@@ -544,7 +529,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
 	float gate = lit_shadow_cone(frag_sdf, dir, maxd, w_gate, max_steps, frag_d,
-			self_ex, self_local, sdf_to_local, self_scale);
+			!is_dir, self_ex, self_local, sdf_to_local, self_scale);
 	if (gate <= 0.0) {
 		return 0.0;
 	}
@@ -556,21 +541,27 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 	// Interleaved gradient noise gives the per-pixel base; the golden-ratio sequence
 	// decorrelates it across samples.
 	float ign = fract(52.9829189 * fract(dot(noise_px, vec2(0.06711056, 0.00583715))));
+	// Half-extent of one stratum: each sub-cone's angular half-width (directional) or
+	// half-width at the source (point/spot), so the n sub-cones tile the source exactly.
+	float half_stratum = src / float(n);
 	float sum = 0.0;
 	for (int i = 0; i < n; i++) {
 		float rnd = fract(ign + float(i) * 0.61803398875);
 		float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
 		vec2 sdir = dir;
 		float smaxd = maxd;
+		float w_sub;
 		if (is_dir) {
 			sdir = normalize(dir + perp * (u * src));
+			w_sub = half_stratum;
 		} else {
 			vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
 			smaxd = length(delta);
 			sdir = delta / max(smaxd, 1e-4);
+			w_sub = half_stratum / max(smaxd, 1e-4);
 		}
-		sum += lit_shadow_hard(frag_sdf, sdir, smaxd, max_steps, frag_d,
-				self_ex, self_local, sdf_to_local, self_scale);
+		sum += lit_shadow_cone(frag_sdf, sdir, smaxd, max(w_sub, 1e-4), max_steps, frag_d,
+				!is_dir, self_ex, self_local, sdf_to_local, self_scale);
 	}
 	return sum / float(n);
 }
@@ -828,7 +819,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 				float w = is_directional ? t7.x
 						: t7.x * lit_canvas_scale * px_to_sdf / max(march_len, 1e-4);
 				s = lit_shadow_cone(frag_sdf, march_dir, march_len, max(w, 1e-4), steps,
-						frag_d, self_ex, self_local, sdf_to_local, self_scale);
+						frag_d, !is_directional, self_ex, self_local, sdf_to_local, self_scale);
 				s = lit_shadow_contrast(s, t3.w);
 			} else
 #endif

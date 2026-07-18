@@ -318,7 +318,7 @@ func _configure_shadow_algo(n, kind: String) -> void:
 	else:
 		n.shadow_hardness = 0.5
 		n.shadow_samples = SHADOW_SAMPLES
-		n.shadow_jitter = 1.0
+		n.shadow_jitter = 0.35
 		if kind == "dir":
 			n.source_angle = SOURCE_ANGLE_DEG
 		else:

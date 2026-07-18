@@ -56,9 +56,11 @@ enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
 ## Shadow marches per fragment across the source (STOCHASTIC): more is smoother and
 ## slower. Clamped by lit/quality/shadow_samples_max.
 @export_range(1, 32) var shadow_samples: int = 8
-## STOCHASTIC sample placement: 0 = fixed stratified pattern (can band at low sample
-## counts), 1 = per-pixel randomized (banding becomes fine grain).
-@export_range(0.0, 1.0) var shadow_jitter: float = 1.0
+## STOCHASTIC dither inside each stratum. Samples are fractional sub-cone coverages,
+## so any setting is smooth (no binary noise); the default is just enough dither to
+## erase the faint per-stratum wedges a very wide/near source can show. 0 = fully
+## deterministic, 1 = maximum per-pixel dither (fine grain).
+@export_range(0.0, 1.0) var shadow_jitter: float = 0.35
 
 @export_group("Advanced")
 @export var blend_mode: BlendMode = BlendMode.ADD
