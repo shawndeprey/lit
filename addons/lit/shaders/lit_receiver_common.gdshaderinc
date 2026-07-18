@@ -1,8 +1,14 @@
-﻿// Shared body of the Lit receiver shader. lit_receiver.gdshader defines
-// LIT_SELF_EXCLUSION (full feature set); lit_receiver_fast.gdshader leaves it undefined,
-// compiling the self-shadow exclusion out for a measurable speedup - identical output
-// for materials that never populate self_rects. LitSprite2D swaps variants
-// automatically; the self_* uniforms exist in both so parameters survive the swap.
+﻿// Shared body of the Lit receiver shader, compiled into thin wrapper variants along
+// two axes (never-executed code still taxes a shader, so each feature exists only in
+// the variants that need it; LitSprite2D swaps variants automatically and the uniforms
+// exist in all of them so parameters survive the swap):
+//  - LIT_SELF_EXCLUSION: self-shadow exclusion (lit_receiver.gdshader and the other
+//    non-_fast wrappers); the _fast wrappers compile it out - identical output for
+//    materials that never populate self_rects.
+//  - LIT_SHADOW_CONE / LIT_SHADOW_STOCH: the Cone Traced and Stochastic per-light
+//    shadow algorithms (the _cone / _stoch / _cone_stoch wrappers). Base wrappers
+//    support only the Raymarched algorithm and compile byte-identical to the
+//    pre-algorithm-selection shader.
 
 // Transport: global uniforms plus the per-frame light-data texture, packed by the
 // manager. Read via texelFetch (integer coords, no filtering), so the texture's
@@ -150,15 +156,16 @@ float lit_self_dist(vec2 p_local) {
 // shape takes that shape's shadow via the footprint_shadow ramp instead of a hard hit.
 // Returns 1 fully lit, 0 occluded. The caller passes the unit march direction and
 // length (dir, maxd, SDF space) and frag_d, its own texture_sdf sample, shared by
-// every light's march. When self_ex is true, samples whose nearest outline may belong
-// to the receiver's own occluders are stepped through instead of occluding; self_local
-// and sdf_to_local map SDF-space march offsets into local space, and self_scale is the
-// local length of one SDF unit.
-float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float hardness, int max_steps, float frag_d,
+// every light's march. k shapes the penumbra estimate k*d/t: the Raymarched algorithm
+// derives it from shadow_hardness, the Cone Traced algorithm from the source's angular
+// size (k = 1/tan(half-angle)) - same march, different cone width. When self_ex is
+// true, samples whose nearest outline may belong to the receiver's own occluders are
+// stepped through instead of occluding; self_local and sdf_to_local map SDF-space
+// march offsets into local space, and self_scale is the local length of one SDF unit.
+float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, float frag_d,
 		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	float t = shadow_min_step;
 	float res = 1.0;
-	float k = mix(8.0, 256.0, hardness);     // low hardness is soft, high is crisp
 	float prev_d = frag_d;                   // signed; tracks outline crossings
 	// A fragment starting inside a shape marches out of it without treating its own
 	// outline as hits; the shape's shadow is applied once, at the exit.
@@ -302,6 +309,263 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float hardness, int max_st
 	}
 	return clamp(res, 0.0, 1.0);
 }
+
+#if defined(LIT_SHADOW_CONE) || defined(LIT_SHADOW_STOCH)
+// Hardness for the physical algorithms: the source size sets the penumbra's width,
+// hardness reshapes its profile. A contrast curve pivoting on half-lit - 0.5 is
+// neutral (identity), higher sharpens the gradient, lower flattens it. Fixes 0, 0.5
+// and 1, so umbra and fully-lit regions never shift.
+float lit_shadow_contrast(float s, float hardness) {
+	float c = exp2((hardness - 0.5) * 4.0);
+	return s < 0.5 ? 0.5 * pow(2.0 * s, c) : 1.0 - 0.5 * pow(2.0 * (1.0 - s), c);
+}
+#endif
+
+#if defined(LIT_SHADOW_CONE) || defined(LIT_SHADOW_STOCH)
+// Cone-traced shadow: march a cone of half-angle tangent w (the source's angular
+// radius) instead of a ray, estimating at each step the unblocked fraction of the
+// cone's cross-section from the SIGNED distance: 0.5 + d/(w*t) - a sample on an
+// outline blocks half the cone, deeper inside blocks more, farther outside less. The
+// result is the minimum over the march. Unlike a center-ray hit test this lets the
+// umbra CLOSE: far enough behind an occluder the cone is wider than the occluder's
+// depth, the minimum rises above 0, and the shadow tapers to a point then re-brightens
+// (an approximate antumbra) - the eclipse geometry, from one march. The march advances
+// on |d| so it can pass through shape interiors; there is no early hit-exit, but a
+// fully-black minimum still returns immediately. Grace/footprint/receding behavior
+// matches lit_shadow; in the full variant, samples whose nearest outline may belong to
+// the receiver's own occluders never darken (self-exclusion). Compiled for the
+// stochastic variants too: lit_shadow_stoch runs it as its penumbra gate.
+//
+// src_plane (point/spot only - a directional march's far end is sky, not a source):
+// take one final clamped sample AT t = maxd, the source plane, where the cone is
+// widest. Sphere-trace steps are sized by off-ray distances, so when an occluder sits
+// near or overlapping the emitting disc, the march routinely exits without a sample in
+// the last step-length before the source - and whether a given fragment's step cascade
+// happens to land one there or hop it flips the whole overlap-dimming term on and off,
+// painting hard sawtooth wedges across the scene. Pinning the source-plane sample makes
+// that term smooth and fragment-independent; far-field lights (source clear of
+// occluders) get coverage >= 1 from it, leaving their result untouched.
+float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_steps, float frag_d,
+		bool src_plane, bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
+	float t = shadow_min_step;
+	float res = 1.0;
+
+	// Fast path (no self-exclusion): the same phase split as lit_shadow - grace,
+	// receding and steady each run at most once, in order, so run each as its own
+	// minimal loop sharing the step budget. Identical samples and coverage updates,
+	// none of the per-step phase bookkeeping.
+	if (!self_ex) {
+		int s = 0;
+		max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+		if (frag_d < 0.0) {
+			// Grace: march out of the containing shape without coverage updates;
+			// apply its footprint shadow once, at the exit sample.
+			bool receding = false;
+			float prev_d = 0.0;
+			for (; s < max_steps && t < maxd; s++) {
+				float d = texture_sdf(frag_sdf + dir * t);
+				if (d < 0.0) {
+					t += max(-d, shadow_min_step);
+					continue;
+				}
+				res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+				if (res <= 0.0) {
+					return 0.0;
+				}
+				prev_d = d;
+				t += max(d, shadow_min_step);
+				s++;                                   // this sample consumed a step
+				receding = true;
+				break;
+			}
+			// Receding: mute coverage while still receding from the exited edge, or
+			// the receiver's own surface would count as half-blocking the cone. The
+			// breaking sample follows the steady-state rule.
+			if (receding) {
+				for (; s < max_steps && t < maxd; s++) {
+					float d = texture_sdf(frag_sdf + dir * t);
+					if (d >= prev_d) {
+						prev_d = d;
+						t += max(abs(d), shadow_min_step);
+						continue;
+					}
+					float cand = 0.5 + d / (2.0 * w * t);
+					if (cand < res) {
+						res = max(cand, 0.0);
+						if (res <= 0.0) {
+							return 0.0;
+						}
+					}
+					t += max(abs(d), shadow_min_step);
+					s++;                               // this sample consumed a step
+					break;
+				}
+			}
+		}
+		// Steady state: bare signed-coverage march.
+		for (; s < max_steps && t < maxd; s++) {
+			float d = texture_sdf(frag_sdf + dir * t);
+			float cand = 0.5 + d / (2.0 * w * t);
+			if (cand < res) {
+				res = max(cand, 0.0);
+				if (res <= 0.0) {
+					return 0.0;                      // cone fully blocked; can't recover
+				}
+			}
+			t += max(abs(d), shadow_min_step);
+		}
+		if (src_plane && maxd > shadow_min_step) {
+			float d = texture_sdf(frag_sdf + dir * maxd);
+			float cand = 0.5 + d / (2.0 * w * maxd);
+			res = min(res, max(cand, 0.0));
+		}
+		return clamp(res, 0.0, 1.0);
+	}
+
+	bool grace = frag_d < 0.0;
+	bool receding = false;
+	float prev_d = frag_d;
+	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+	for (int s = 0; s < max_steps && t < maxd; s++) {
+		vec2 offset = dir * t;
+		float d = texture_sdf(frag_sdf + offset);
+		float ad = abs(d);
+		if (grace) {
+			// March out of the containing shape; apply its footprint shadow once, at
+			// the exit sample, unless the shape is an owned occluder.
+			if (d < 0.0) {
+				t += max(-d, shadow_min_step);
+				continue;
+			}
+			grace = false;
+			receding = true;
+			prev_d = d;
+			bool own_exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
+			if (!own_exempt) {
+				res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+				if (res <= 0.0) {
+					return 0.0;
+				}
+			}
+			t += max(ad, shadow_min_step);
+			continue;
+		}
+		if (receding) {
+			// Mute accumulation while still receding from the exited edge, or the
+			// receiver's own surface would count as half-blocking the cone.
+			if (d >= prev_d) {
+				prev_d = d;
+				t += max(ad, shadow_min_step);
+				continue;
+			}
+			receding = false;
+		}
+		// Half-plane coverage of the cone's cross-section (half-width w*t at distance
+		// t): an edge at signed distance d from the cone's center leaves the fraction
+		// 0.5 + d/(2*w*t) unblocked, hitting 0 only when the edge is a full half-width
+		// past center - which is what lets the umbra close behind small occluders.
+		float cand = 0.5 + d / (2.0 * w * t);
+		if (cand < res) {
+			if (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (ad + LIT_SELF_PAD_SDF) * self_scale) {
+				t += max(ad, shadow_min_step);   // owned occluder: contributes nothing
+				continue;
+			}
+			res = max(cand, 0.0);
+			if (res <= 0.0) {
+				return 0.0;                      // cone fully blocked; minimum can't recover
+			}
+		}
+		t += max(ad, shadow_min_step);
+	}
+	if (src_plane && maxd > shadow_min_step) {
+		// Source-plane sample; see the fast path. Owned occluders stay exempt.
+		vec2 offset = dir * maxd;
+		float d = texture_sdf(frag_sdf + offset);
+		float cand = 0.5 + d / (2.0 * w * maxd);
+		if (cand < res && !(self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+				<= (abs(d) + LIT_SELF_PAD_SDF) * self_scale)) {
+			res = max(cand, 0.0);
+		}
+	}
+	return clamp(res, 0.0, 1.0);
+}
+#endif
+
+#ifdef LIT_SHADOW_STOCH
+// Compile-time ceiling on area-light samples; the packed count is clamped to this on
+// the CPU as well (lit/quality/shadow_samples_max).
+const int LIT_MAX_SHADOW_SAMPLES = 32;
+
+// Stochastic area-light visibility: split the source into n strata and cone-march a
+// narrow sub-cone covering each, averaging the fractional stratum coverages - true
+// umbra (every stratum blocked), penumbra (some partially blocked) and antumbra (a
+// source wider than the occluder is never fully blocked). Fractional sub-cones instead
+// of binary hard marches matter: a binary sample quantizes to 0/1, and with a large or
+// close source the penumbra spans many strata, concentrating +-1/n binary noise into
+// visible streak bands that jitter cannot smooth (the noise IS the jitter, organized
+// along the noise pattern's level lines). A sub-cone returns its stratum's coverage
+// continuously, so the estimate is smooth at any n, and n = 1 degenerates exactly to
+// the Cone Traced algorithm. Multi-occluder accumulation across strata is preserved
+// (the single-blocker minimum applies only within one narrow sub-wedge, where it is
+// nearly exact). Point/spot: strata span the emitting disc's diameter perpendicular to
+// the light direction, src is its half-extent in SDF units. Directional: the march
+// direction deflects across the source's angular extent, src is tan(half-angle).
+// jitter blends stratum centers toward per-pixel randomized positions inside each
+// stratum; with fractional samples it adds only faint residual grain either way.
+//
+// Penumbra gate: one cone-coverage march classifies the fragment first, so only
+// genuine penumbra pays for the n marches (the adaptive-sampling structure of PCSS's
+// blocker-search early-out and of tile classification in production ray-traced
+// shadows). The gate's endpoints are trustworthy by the cone march's own geometry:
+// coverage 0 means some step's empty-space ball spanned the whole source wedge from
+// inside a shape - every sample ray crosses it - and coverage 1 means no step came
+// within the wedge, which contains all sample rays. Between the endpoints the n-march
+// estimate runs unchanged, so multi-occluder accumulation (which the single-blocker
+// cone minimum underestimates) is preserved exactly where it matters.
+float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float src,
+		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
+		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
+	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
+	float gate = lit_shadow_cone(frag_sdf, dir, maxd, w_gate, max_steps, frag_d,
+			!is_dir, self_ex, self_local, sdf_to_local, self_scale);
+	if (gate <= 0.0) {
+		return 0.0;
+	}
+	if (gate >= 1.0) {
+		return 1.0;
+	}
+	n = clamp(n, 1, LIT_MAX_SHADOW_SAMPLES);
+	vec2 perp = vec2(-dir.y, dir.x);
+	// Interleaved gradient noise gives the per-pixel base; the golden-ratio sequence
+	// decorrelates it across samples.
+	float ign = fract(52.9829189 * fract(dot(noise_px, vec2(0.06711056, 0.00583715))));
+	// Half-extent of one stratum: each sub-cone's angular half-width (directional) or
+	// half-width at the source (point/spot), so the n sub-cones tile the source exactly.
+	float half_stratum = src / float(n);
+	float sum = 0.0;
+	for (int i = 0; i < n; i++) {
+		float rnd = fract(ign + float(i) * 0.61803398875);
+		float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
+		vec2 sdir = dir;
+		float smaxd = maxd;
+		float w_sub;
+		if (is_dir) {
+			sdir = normalize(dir + perp * (u * src));
+			w_sub = half_stratum;
+		} else {
+			vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
+			smaxd = length(delta);
+			sdir = delta / max(smaxd, 1e-4);
+			w_sub = half_stratum / max(smaxd, 1e-4);
+		}
+		sum += lit_shadow_cone(frag_sdf, sdir, smaxd, max(w_sub, 1e-4), max_steps, frag_d,
+				!is_dir, self_ex, self_local, sdf_to_local, self_scale);
+	}
+	return sum / float(n);
+}
+#endif
 
 // --- PBR helpers (Cook-Torrance microfacet BRDF) ------------------------------------
 // Trowbridge-Reitz / GGX normal distribution.
@@ -522,8 +786,53 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		}
 
 		// A light sitting on the fragment is fully lit, no march.
-		float s = march_len < 0.0001 ? 1.0
-				: lit_shadow(frag_sdf, march_dir, march_len, t3.w, steps, frag_d, self_ex, self_local, sdf_to_local, self_scale);
+		float s;
+		if (march_len < 0.0001) {
+			s = 1.0;
+		} else {
+#if defined(LIT_SHADOW_CONE) || defined(LIT_SHADOW_STOCH)
+			// Per-light algorithm (flags bits 3-4): 0 raymarched, 1 cone traced,
+			// 2 stochastic. Decoded only in the extended shader variants; the base
+			// variants compile the raymarched call alone, so scenes that never use the
+			// physical algorithms pay nothing for them.
+			int algo = (flags >> 3) & 3;
+			// SDF units per screen pixel, to convert the packed source size.
+			float px_to_sdf = sdf_diag / length(lit_viewport_size);
+#ifdef LIT_SHADOW_STOCH
+			if (algo == 2) {
+				vec4 t7 = texelFetch(lit_light_data, ivec2(7, i), 0); // source | samples | jitter
+				// Point/spot: t7.x is the source disc's radius in world px. Directional:
+				// t7.x is tan(source half-angle), used as an angular extent directly.
+				float src = is_directional ? t7.x : t7.x * lit_canvas_scale * px_to_sdf;
+				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
+						march_len, src, is_directional, int(round(t7.y)), t7.z,
+						frag_uv * lit_viewport_size, steps, frag_d,
+						self_ex, self_local, sdf_to_local, self_scale);
+				s = lit_shadow_contrast(s, t3.w);
+			} else
+#endif
+#ifdef LIT_SHADOW_CONE
+			if (algo == 1) {
+				vec4 t7 = texelFetch(lit_light_data, ivec2(7, i), 0); // source | samples | jitter
+				// Cone half-angle tangent: source size over source distance (directional
+				// packs the tangent directly).
+				float w = is_directional ? t7.x
+						: t7.x * lit_canvas_scale * px_to_sdf / max(march_len, 1e-4);
+				s = lit_shadow_cone(frag_sdf, march_dir, march_len, max(w, 1e-4), steps,
+						frag_d, !is_directional, self_ex, self_local, sdf_to_local, self_scale);
+				s = lit_shadow_contrast(s, t3.w);
+			} else
+#endif
+			{
+				s = lit_shadow(frag_sdf, march_dir, march_len, mix(8.0, 256.0, t3.w),
+						steps, frag_d, self_ex, self_local, sdf_to_local, self_scale);
+			}
+#else
+			// Low hardness is soft, high is crisp.
+			s = lit_shadow(frag_sdf, march_dir, march_len, mix(8.0, 256.0, t3.w),
+					steps, frag_d, self_ex, self_local, sdf_to_local, self_scale);
+#endif
+		}
 		contribution *= mix(t3.rgb, vec3(1.0), s);
 	}
 

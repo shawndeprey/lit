@@ -100,7 +100,11 @@ func _process(delta: float) -> void:
 		int(ProjectSettings.get_setting("lit/render/lighting_model", 0)))
 	if _registry == null or EditorInterface.get_edited_scene_root() == null:
 		return  # no scene open / nothing to light
-	_registry.refresh(get_tree(), EditorInterface.get_editor_viewport_2d())
+	# Mirror the runtime manager's CPU-side stochastic sample cap for the preview.
+	_registry.shadow_samples_max = clampi(
+		int(ProjectSettings.get_setting("lit/quality/shadow_samples_max", 32)), 1, 32)
+	_registry.refresh(get_tree(), EditorInterface.get_editor_viewport_2d(),
+		EditorInterface.get_edited_scene_root())
 
 # --- "Make Selected Nodes Lit" tool ------------------------------------------
 #
@@ -288,6 +292,18 @@ func _project_setting_defs() -> Array:
 				"type": TYPE_INT,
 				"hint": PROPERTY_HINT_RANGE,
 				"hint_string": "1,256,1",
+			},
+		},
+		{
+			# Scene-wide cap on each light's stochastic shadow_samples, applied at pack
+			# time; the global quality floor/ceiling for the Stochastic algorithm.
+			"name": "lit/quality/shadow_samples_max",
+			"default": 32,
+			"info": {
+				"name": "lit/quality/shadow_samples_max",
+				"type": TYPE_INT,
+				"hint": PROPERTY_HINT_RANGE,
+				"hint_string": "1,32,1",
 			},
 		},
 		{

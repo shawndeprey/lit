@@ -17,12 +17,48 @@ class_name LitLightRegistry
 ## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range | energy,
 ## t2 = color.rgb | height, t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
 ## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
-## when flags bit 2 is set). type/flags/mask sit in texel 0 so the shader can
-## mask-reject after a single fetch.
+## when flags bit 2 is set), t7 = shadow source size | samples | jitter (read only when
+## the algorithm bits are nonzero). type/flags/mask sit in texel 0 so the shader can
+## mask-reject after a single fetch. flags: bit 0 shadow_enabled, bit 1 subtractive,
+## bit 2 textured, bits 3-4 shadow algorithm (ShadowAlgorithm order on the light nodes).
 
 const LitCookieAtlasScript := preload("res://addons/lit/runtime/lit_cookie_atlas.gd")
 
-const TEXELS_PER_LIGHT := 7
+const TEXELS_PER_LIGHT := 8
+
+# Which shadow algorithms the shaders must support this frame, from the last refresh()
+# in this process (bit 0 = Cone Traced, bit 1 = Stochastic, among enabled shadow-casting
+# lights). LitSprite2D reads it every frame to pick its receiver shader variant, and
+# refresh() itself re-points every other Lit receiver material via
+# _apply_receiver_variants, so the per-light algorithm dropdown works on all receivers
+# (tool-converted nodes, tilemaps, hand-assigned materials) with no manual shader swap.
+static var active_algos: int = 0
+
+# Receiver variants by active-algorithm bitmask, fast (no self-exclusion) and full.
+# Must stay aligned with the same tables in lit_sprite_2d.gd.
+const RECEIVER_FAST_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast.gdshader",
+]
+const RECEIVER_FULL_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader",
+]
+
+# Algorithm mask last applied to receiver materials, and whether the tree changed since
+# the last application. Starting at 0 (the base mask) means a scene that never uses the
+# physical algorithms never pays for a receiver walk.
+var _published_algos: int = 0
+var _receiver_dirty: bool = true
+
+# CPU-side clamp on each light's shadow_samples, from lit/quality/shadow_samples_max;
+# set by the owner (LitManager at runtime, the plugin in the editor). The shader
+# additionally clamps to its compile-time LIT_MAX_SHADOW_SAMPLES = 32.
+var shadow_samples_max: int = 32
 
 # Screen tile edge in pixels for the light-culling grid. Must match the shader's tile
 # math (it divides SCREEN_UV * viewport by lit_tile_size).
@@ -69,8 +105,10 @@ var _cache_dirty: bool = true
 var _cache_tree: SceneTree = null
 
 ## Gather visible lights, pack them into the light-data texture, build the tile grid,
-## and publish the global shader uniforms. Call once per frame.
-func refresh(tree: SceneTree, viewport: Viewport) -> void:
+## and publish the global shader uniforms. Call once per frame. receiver_root bounds
+## the receiver-material walk for the shadow-algorithm variant swap (the game tree root
+## at runtime, the edited scene root in the editor); null skips that swap.
+func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) -> void:
 	if tree == null or viewport == null:
 		return
 
@@ -122,6 +160,22 @@ func refresh(tree: SceneTree, viewport: Viewport) -> void:
 				visible.append(spot)
 
 	var count := visible.size()
+
+	# Publish which non-raymarched shadow algorithms are in play and re-point receiver
+	# materials to a variant compiled with exactly those (base scenes stay on the base
+	# shader). Computed over every enabled light in the tree, not just the view-culled
+	# set, so camera movement past a light's AABB never thrashes receiver shaders. Only
+	# shadow-casting lights count: an algorithm on a shadowless light is never marched.
+	var algos := 0
+	for entry in lights:
+		# Untyped: enabled/shadow_enabled/shadow_algorithm live on each light class,
+		# not on a shared base.
+		var node = entry[0]
+		if is_instance_valid(node) and node.enabled and node.shadow_enabled \
+				and node.shadow_algorithm != 0:
+			algos |= 1 << (node.shadow_algorithm - 1)
+	active_algos = algos
+	_apply_receiver_variants(receiver_root)
 
 	# Zero-light case: count 0 plus a 1x1 dummy (never a 4x0 image) and empty tiles.
 	if count == 0:
@@ -196,7 +250,8 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
 	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
 	var textured := _pack_cookie(o, light, canvas_xform)
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured) \
+			+ 8.0 * float(light.shadow_algorithm)
 	const TYPE_POINT := 0.0
 
 	# Texel 0: type | flags | light_mask | falloff
@@ -223,6 +278,11 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	_pack_buf[o + 14] = light.shadow_color.b
 	_pack_buf[o + 15] = light.shadow_hardness
 
+	# Texel 7: source_radius | samples | jitter (read only by cone/stochastic shaders)
+	_pack_buf[o + 28] = light.source_radius
+	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
+	_pack_buf[o + 30] = light.shadow_jitter
+
 ## Pack one directional light. Texel 1 carries a normalized direction toward the light
 ## in screen-pixel space instead of a UV position; range and falloff are unused.
 func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Transform2D) -> void:
@@ -235,7 +295,8 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 		dir_px = dir_px.normalized()
 
 	var subtractive := 1.0 if light.blend_mode == LitDirectionalLight2D.BlendMode.SUBTRACT else 0.0
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
+			+ 8.0 * float(light.shadow_algorithm)
 	const TYPE_DIRECTIONAL := 1.0
 
 	var o := row * TEXELS_PER_LIGHT * 4
@@ -264,6 +325,14 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	_pack_buf[o + 14] = light.shadow_color.b
 	_pack_buf[o + 15] = light.shadow_hardness
 
+	# Texel 7: tan(source half-angle) | samples | jitter. source_angle is the full
+	# angular diameter (the cross-engine convention), halved here to the tangent the
+	# cone/stochastic shaders use directly (a directional light has no distance to
+	# derive it from).
+	_pack_buf[o + 28] = tan(deg_to_rad(light.source_angle) * 0.5)
+	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
+	_pack_buf[o + 30] = light.shadow_jitter
+
 ## Pack one spot light: a point light (texels 0 to 3) plus a cone (texel 4). The node's
 ## local +X (its rotation) is the direction the cone aims.
 func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
@@ -287,7 +356,8 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 
 	var subtractive := 1.0 if light.blend_mode == LitSpotLight2D.BlendMode.SUBTRACT else 0.0
 	var textured := _pack_cookie(o, light, canvas_xform)
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured) \
+			+ 8.0 * float(light.shadow_algorithm)
 	const TYPE_SPOT := 2.0
 
 	# Texel 0: type | flags | light_mask | falloff
@@ -319,6 +389,11 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 17] = aim_px.y
 	_pack_buf[o + 18] = cos_outer
 	_pack_buf[o + 19] = cos_inner
+
+	# Texel 7: source_radius | samples | jitter (read only by cone/stochastic shaders)
+	_pack_buf[o + 28] = light.source_radius
+	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
+	_pack_buf[o + 30] = light.shadow_jitter
 
 ## Pack the cookie fields (texels 5-6) for the point/spot light whose row starts at
 ## float offset `o`. Returns true when the light has a packed cookie; the caller sets
@@ -607,6 +682,46 @@ func _bind_cache_tree(tree: SceneTree) -> void:
 
 func _on_tree_changed(_node: Node) -> void:
 	_cache_dirty = true
+	_receiver_dirty = true
+
+
+## Re-point every Lit receiver material under `root` at the variant compiled for the
+## currently active shadow algorithms, preserving each material's fast/full axis
+## (LitSprite2D owns that axis and converges to the same target). Work happens only
+## when the mask changed, or when the tree changed while a non-base mask is active
+## (newly added receivers arrive on the base variant and need the swap); a scene that
+## never uses the physical algorithms never walks the tree here.
+func _apply_receiver_variants(root: Node) -> void:
+	var mask := active_algos & 3
+	if mask == _published_algos and (mask == 0 or not _receiver_dirty):
+		return
+	if root == null:
+		return
+	var mats := {}
+	_collect_receiver_mats(root, mats)
+	for mat in mats:
+		var path: String = mat.shader.resource_path
+		var full := path in RECEIVER_FULL_VARIANTS
+		var wanted: String = (RECEIVER_FULL_VARIANTS if full else RECEIVER_FAST_VARIANTS)[mask]
+		if path != wanted:
+			mat.shader = load(wanted)
+	_published_algos = mask
+	_receiver_dirty = false
+
+
+## Collect (deduped, as Dictionary keys) every ShaderMaterial in the subtree whose
+## shader is one of the Lit receiver variants. Materials shared across nodes are
+## visited once.
+func _collect_receiver_mats(node: Node, acc: Dictionary) -> void:
+	var ci := node as CanvasItem
+	if ci != null:
+		var mat := ci.material as ShaderMaterial
+		if mat != null and mat.shader != null:
+			var path := mat.shader.resource_path
+			if path in RECEIVER_FAST_VARIANTS or path in RECEIVER_FULL_VARIANTS:
+				acc[mat] = true
+	for child in node.get_children():
+		_collect_receiver_mats(child, acc)
 
 ## Rescan the lit_lights group and store [node, kind] (kind: 0 point, 1 directional,
 ## 2 spot) so refresh() avoids the group scan and per-node type dispatch each frame.

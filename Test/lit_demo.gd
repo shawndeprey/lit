@@ -9,7 +9,10 @@ extends Node2D
 ## draw calls.
 ##
 ## Everything is spawned at runtime and torn down on stop, so it never touches the saved
-## scene. All demo lights run full soft shadows (shadow_hardness = 0).
+## scene. All demo lights run Cone Traced soft shadows (neutral hardness 0.5); a
+## dedicated Shadow Algorithms section near the start cycles all three algorithms on a
+## dozen colored point lights. The scene's own occluders stay live in the SDF, so the
+## saved scene's props cast alongside the demo's circle props.
 
 # Fast variant: the demo's receivers never use self-shadow exclusion.
 const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
@@ -18,6 +21,15 @@ const MAX_LIGHTS := 128
 const COOKIE_MAX_LIGHTS := 64
 const PROP_COUNT := 7
 const BRAND := Color("#ffca60")
+
+# The circle props' shared texture: a white disc rendered once into this image size,
+# with this radius in texels (the margin keeps the anti-aliased rim off the edge).
+const CIRCLE_TEX_SIZE := 64
+const CIRCLE_TEX_RADIUS := 30.0
+
+# Light count for the Shadow Algorithms section: enough overlapping casters to read
+# the penumbra behavior clearly without burying it.
+const ALGO_STAGE_LIGHTS := 12
 
 # Lighting models, mirroring LitManager.LightingModel / LIT_MODEL_* in the receiver shader.
 # The PBR stage flips the lit_lighting_model global directly on the RenderingServer for a
@@ -55,6 +67,7 @@ var _perf_cpu_sum := 0.0
 var _perf_gpu_sum := 0.0
 
 var _white_tex: ImageTexture
+var _circle_tex: ImageTexture
 var _area_center := Vector2(576, 324)
 var _area_half := Vector2(560, 320)
 
@@ -67,7 +80,6 @@ var _modulate: Node = null
 var _orig_modulate_color := Color.BLACK
 var _post: Node = null
 var _post_orig := {}
-var _occluders: Array = []       # pre-existing scene occluders, disabled during the demo
 
 # The lighting model in effect before the demo touched it, captured on start and restored
 # on teardown. The PBR stage overrides the live global; everything else runs Phong.
@@ -103,6 +115,9 @@ var _stages := [
 	{"id": "point",     "name": "Point Light",               "desc": "One light • full soft shadows",        "dur": 5.0,  "auto": true},
 	{"id": "dir",       "name": "Directional Light",         "desc": "A sun - parallel light, sweeping shadows", "dur": 5.0, "auto": true},
 	{"id": "spot",      "name": "Spot Light",                "desc": "An aimable cone",                      "dur": 5.0,  "auto": true},
+	{"id": "algo_ray",   "name": "Shadows · Raymarched",     "desc": "The classic fast march - stylized penumbra", "dur": 5.0, "auto": true},
+	{"id": "algo_cone",  "name": "Shadows · Cone Traced",    "desc": "The default - physical penumbras that widen, umbras that taper closed", "dur": 5.0, "auto": true},
+	{"id": "algo_stoch", "name": "Shadows · Stochastic",     "desc": "Ground-truth sampled area shadows",    "dur": 5.0,  "auto": true},
 	{"id": "colors",    "name": "Many Colored Lights",       "desc": "Mixed types, every color, all moving", "dur": 6.0,  "auto": true},
 	{"id": "shadows",   "name": "Layered Soft Shadows",      "desc": "Overlapping casters, all real-time",   "dur": 6.0,  "auto": true},
 	{"id": "negative",  "name": "Negative Lights",           "desc": "Subtract mode carves darkness",        "dur": 5.0,  "auto": true},
@@ -133,8 +148,21 @@ func _ready() -> void:
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
 	_white_tex = ImageTexture.create_from_image(img)
+	_circle_tex = _make_circle_texture()
 	_build_ui()
 	_set_ui_state("idle")
+
+
+# White disc with a 1px anti-aliased rim, shared by every circle prop.
+func _make_circle_texture() -> ImageTexture:
+	var img := Image.create(CIRCLE_TEX_SIZE, CIRCLE_TEX_SIZE, false, Image.FORMAT_RGBA8)
+	var c := Vector2(CIRCLE_TEX_SIZE, CIRCLE_TEX_SIZE) * 0.5
+	for y in CIRCLE_TEX_SIZE:
+		for x in CIRCLE_TEX_SIZE:
+			var d := (Vector2(x + 0.5, y + 0.5) - c).length()
+			var a := clampf(CIRCLE_TEX_RADIUS - d + 0.5, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	return ImageTexture.create_from_image(img)
 
 
 func _build_ui() -> void:
@@ -252,10 +280,6 @@ func _teardown() -> void:
 		for k in _post_orig:
 			_post.set(k, _post_orig[k])
 	_post_orig.clear()
-	for o in _occluders:
-		if is_instance_valid(o.node):
-			o.node.sdf_collision = o.sdf
-	_occluders.clear()
 	# Put the lighting model back the way the scene had it.
 	RenderingServer.global_shader_parameter_set("lit_lighting_model", _orig_lighting_model)
 	_props_are_skulls = false
@@ -286,12 +310,9 @@ func _capture_scene_state() -> void:
 			_post_orig[k] = _post.get(k)
 		_post_all_off()
 
-	# Pre-existing scene occluders (e.g. the skull's LightOccluder2D) fight the demo's
-	# own shadows, so drop them from the SDF while the demo runs and restore on stop.
-	_occluders.clear()
-	for occ in _find_all(scene, LightOccluder2D):
-		_occluders.append({"node": occ, "sdf": occ.sdf_collision})
-		occ.sdf_collision = false
+	# The scene's own occluders (e.g. the skull's LightOccluder2D) stay live in the
+	# SDF: the shadow algorithms handle overlapping casters cleanly, so the saved
+	# scene's props simply cast alongside the demo's.
 
 
 func _compute_area() -> void:
@@ -335,18 +356,19 @@ func _spawn_props() -> void:
 	for i in PROP_COUNT:
 		var ang := TAU * float(i) / float(PROP_COUNT)
 		var pos := _area_center + Vector2(cos(ang) * _area_half.x * 0.55, sin(ang) * _area_half.y * 0.55)
-		var size := Vector2(randf_range(74, 128), randf_range(74, 150))
-		_make_prop(pos, size)
+		_make_prop(pos, randf_range(40.0, 68.0))
 
 
-func _make_prop(pos: Vector2, size: Vector2) -> void:
+# A sphere prop: white disc sprite plus a matching circle occluder polygon. Round
+# silhouettes show the algorithms' curved penumbras better than boxes do.
+func _make_prop(pos: Vector2, radius: float) -> void:
 	var root := Node2D.new()
 	root.position = pos
 	add_child(root)
 
 	var spr := Sprite2D.new()
-	spr.texture = _white_tex
-	spr.scale = size                       # scale the 1x1 white tex to a size.x by size.y block
+	spr.texture = _circle_tex
+	spr.scale = Vector2.ONE * (radius / CIRCLE_TEX_RADIUS)
 	spr.modulate = Color(0.82, 0.84, 0.92)
 	var mat := ShaderMaterial.new()
 	mat.shader = RECEIVER_SHADER
@@ -355,13 +377,19 @@ func _make_prop(pos: Vector2, size: Vector2) -> void:
 
 	var occ := LightOccluder2D.new()       # sdf_collision defaults true, so it feeds the SDF
 	var poly := OccluderPolygon2D.new()
-	var hw := size.x * 0.5
-	var hh := size.y * 0.5
-	poly.polygon = PackedVector2Array([Vector2(-hw, -hh), Vector2(hw, -hh), Vector2(hw, hh), Vector2(-hw, hh)])
+	poly.polygon = _circle_polygon(radius)
 	occ.occluder = poly
 	root.add_child(occ)
 
 	_props.append({"root": root, "mat": mat})
+
+
+static func _circle_polygon(radius: float, segments := 20) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in segments:
+		var a := TAU * float(i) / float(segments)
+		pts.append(Vector2(cos(a), sin(a)) * radius)
+	return pts
 
 
 func _clear_props() -> void:
@@ -484,7 +512,10 @@ func _spawn_light(kind: String, col: Color, hue_cycle := false) -> Dictionary:
 	n.color = col
 	n.energy = randf_range(1.3, 2.4)
 	n.shadow_enabled = true
-	n.shadow_hardness = 0.0                # full soft shadows, always
+	# Explicitly Cone Traced (the node default too, but the demo shouldn't drift if
+	# defaults ever move); the Shadow Algorithms section overrides per stage.
+	n.shadow_algorithm = LitPointLight2D.ShadowAlgorithm.CONE_TRACED
+	n.shadow_hardness = 0.5                # neutral penumbra contrast under the cone default
 	add_child(n)
 
 	var d := {
@@ -595,6 +626,19 @@ func _enter_stage(idx: int) -> void:
 		"spot":
 			_clear_lights()
 			_spawn_light("spot", Color(0.6, 0.8, 1.0))
+		"algo_ray":
+			# The Shadow Algorithms section: the same dozen colored point lights persist
+			# across all three stages, so the only thing that changes on screen is the
+			# algorithm itself.
+			_clear_lights()
+			_ensure_count(ALGO_STAGE_LIGHTS, ["point"], true)
+			_set_shadow_algorithm(LitPointLight2D.ShadowAlgorithm.RAYMARCHED)
+		"algo_cone":
+			_ensure_count(ALGO_STAGE_LIGHTS, ["point"], true)
+			_set_shadow_algorithm(LitPointLight2D.ShadowAlgorithm.CONE_TRACED)
+		"algo_stoch":
+			_ensure_count(ALGO_STAGE_LIGHTS, ["point"], true)
+			_set_shadow_algorithm(LitPointLight2D.ShadowAlgorithm.STOCHASTIC)
 		"colors":
 			_clear_lights()
 			_ensure_count(12, ["point", "spot", "point", "dir"], true)
@@ -702,6 +746,15 @@ func _enter_stage(idx: int) -> void:
 			if _post:
 				_post.visible = true
 				_post.bloom_enabled = true
+
+
+# Apply one shadow algorithm to every live demo light. The Shadow Algorithms section
+# switches the whole set at once so the algorithm change itself is what reads on
+# screen. The enum values are identical across the three light classes.
+func _set_shadow_algorithm(algo: int) -> void:
+	for d in _lights:
+		if is_instance_valid(d.node):
+			d.node.shadow_algorithm = algo
 
 
 # Spawn kind for the cookie stage: cookies when the textures load, plain points otherwise.

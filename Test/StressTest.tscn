@@ -1,9 +1,9 @@
-[gd_scene load_steps=3 format=3 uid="uid://c8stresslit001"]
+[gd_scene format=3 uid="uid://bb742cv1tlab5"]
 
-[ext_resource type="Script" path="res://Test/stress_test.gd" id="1_stress"]
+[ext_resource type="Script" uid="uid://mjhu3hfjvy4c" path="res://Test/stress_test.gd" id="1_stress"]
 [ext_resource type="PackedScene" uid="uid://dnpho6vflpb77" path="res://Test/Test.tscn" id="2_test"]
 
-[node name="StressTest" type="Node2D"]
+[node name="StressTest" type="Node2D" unique_id=1351069356]
 script = ExtResource("1_stress")
 
-[node name="Test" parent="." instance=ExtResource("2_test")]
+[node name="Test" parent="." unique_id=774330042 instance=ExtResource("2_test")]
