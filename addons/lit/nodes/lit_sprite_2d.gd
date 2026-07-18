@@ -19,7 +19,12 @@ class_name LitSprite2D
 # _enter_tree has registered the lit_* global uniforms. On a fresh install that produces a
 # benign "Global uniform does not exist" error. Deferring to _init means the shader isn't
 # compiled until a LitSprite2D is actually instantiated, by which point the globals exist.
+#
+# Two variants, same features: fast has the self-shadow exclusion compiled out.
+# _update_self_rect keeps the material on the full shader exactly while exclusion is
+# active; parameters are stored on the material by name, so they survive the swap.
 const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
+const RECEIVER_SHADER_FAST_PATH := "res://addons/lit/shaders/lit_receiver_fast.gdshader"
 
 ## Emissive strength: these pixels ignore the dark. Proxies to the material's
 ## `emissive_strength` uniform.
@@ -60,7 +65,8 @@ func _init() -> void:
 	# below, which is what we want.
 	if material == null:
 		var mat := ShaderMaterial.new()
-		mat.shader = load(RECEIVER_SHADER_PATH)
+		# Fast by default: a fresh LitSprite2D has no owned occluders.
+		mat.shader = load(RECEIVER_SHADER_FAST_PATH)
 		material = mat
 	if texture == null:
 		texture = CanvasTexture.new()
@@ -161,6 +167,23 @@ func _update_self_rect() -> void:
 		packed[i] = Vector4(rects[i].position.x, rects[i].position.y, rects[i].end.x, rects[i].end.y)
 	_set_param("self_rects", packed)
 	_set_param("self_rect_count", rects.size())
+
+	# Full shader only while the self-exclusion march can actually run.
+	_apply_shader_variant(rects.size() > 0 and not self_shadow)
+
+
+# Swap between the fast and full receiver shaders. Only materials already on one of the
+# two Lit variants are touched; a custom shader is left alone.
+func _apply_shader_variant(wants_full: bool) -> void:
+	var mat := material as ShaderMaterial
+	if mat == null or mat.shader == null:
+		return
+	var current: String = mat.shader.resource_path
+	if current != RECEIVER_SHADER_PATH and current != RECEIVER_SHADER_FAST_PATH:
+		return
+	var wanted := RECEIVER_SHADER_PATH if wants_full else RECEIVER_SHADER_FAST_PATH
+	if current != wanted:
+		mat.shader = load(wanted)
 
 
 func _set_param(param: String, value: Variant) -> void:

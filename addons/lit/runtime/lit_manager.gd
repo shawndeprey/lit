@@ -14,8 +14,8 @@ const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_SHADOW_STEP_SCALING := "lit/quality/shadow_step_scaling"
 const SETTING_SHADOW_STEPS_MAX := "lit/quality/shadow_steps_max"
 
-# Lighting models; must match LIT_MODEL_* in lit_receiver.gdshader and the enum order of
-# the lit/render/lighting_model project setting registered by lit_plugin.gd.
+# Must match LIT_MODEL_* in lit_receiver_common.gdshaderinc and the enum order of the
+# lit/render/lighting_model project setting registered by lit_plugin.gd.
 enum LightingModel { PHONG = 0, PBR = 1 }
 
 const DEFAULT_LIGHTING_MODEL := LightingModel.PHONG
