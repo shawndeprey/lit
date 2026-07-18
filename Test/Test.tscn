@@ -164,51 +164,41 @@ script = ExtResource("12_demo")
 visible = false
 script = ExtResource("7_iednq")
 shadow_enabled = true
-shadow_algorithm = 1
 shadow_hardness = 0.415
 source_angle = 60.0
 shadow_samples = 32
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
-[node name="LitPointLight2D" type="Node2D" parent="LitLights" unique_id=2029040104]
+[node name="Raymarched" type="Node2D" parent="LitLights" unique_id=444963724]
 visible = false
+
+[node name="LitPointLight2D" type="Node2D" parent="LitLights/Raymarched" unique_id=834265123]
 position = Vector2(572, 158)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0
 height = 45.0
 shadow_enabled = true
-shadow_algorithm = 1
-shadow_jitter = 0.0
-metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
-
-[node name="LitPointLight2D3" type="Node2D" parent="LitLights" unique_id=679010808]
-position = Vector2(363, 397)
-script = ExtResource("4_lg8mm")
-energy = 1.5
-range = 1024.0
-height = 45.0
-shadow_enabled = true
+shadow_algorithm = 0
 shadow_hardness = 0.0
 shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
-[node name="LitPointLight2D2" type="Node2D" parent="LitLights" unique_id=1063815886]
-visible = false
+[node name="LitPointLight2D2" type="Node2D" parent="LitLights/Raymarched" unique_id=813209696]
 position = Vector2(691, 431)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 1.5
 range = 1024.0
 shadow_enabled = true
-shadow_algorithm = 1
+shadow_algorithm = 0
+shadow_hardness = 0.0
 shadow_jitter = 1.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
-[node name="LitSpotLight2D" type="Node2D" parent="LitLights" unique_id=1682313072]
-visible = false
+[node name="LitSpotLight2D" type="Node2D" parent="LitLights/Raymarched" unique_id=1045430114]
 position = Vector2(434.99997, 442.99997)
-rotation = -0.6769053
+rotation = -0.67690533
 script = ExtResource("8_5ghie")
 color = Color(0, 0, 1, 1)
 energy = 1.5
@@ -217,7 +207,43 @@ spot_angle = 90.0
 spot_softness = 1.0
 height = 64.0
 shadow_enabled = true
-shadow_algorithm = 1
+shadow_algorithm = 0
+shadow_hardness = 0.0
+metadata/_custom_type_script = "uid://blronx1n8oliq"
+
+[node name="Cone Traced" type="Node2D" parent="LitLights" unique_id=196279174]
+
+[node name="LitPointLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=2029040104]
+position = Vector2(572, 158)
+script = ExtResource("4_lg8mm")
+color = Color(1, 0.5137255, 0, 1)
+range = 1024.0
+height = 45.0
+shadow_enabled = true
+shadow_jitter = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LitPointLight2D2" type="Node2D" parent="LitLights/Cone Traced" unique_id=1063815886]
+position = Vector2(691, 431)
+script = ExtResource("4_lg8mm")
+color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
+energy = 1.5
+range = 1024.0
+shadow_enabled = true
+shadow_jitter = 1.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LitSpotLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=1682313072]
+position = Vector2(434.99997, 442.99997)
+rotation = -0.67690533
+script = ExtResource("8_5ghie")
+color = Color(0, 0, 1, 1)
+energy = 1.5
+range = 1024.0
+spot_angle = 90.0
+spot_softness = 1.0
+height = 64.0
+shadow_enabled = true
 metadata/_custom_type_script = "uid://blronx1n8oliq"
 
 [node name="LitPointCookieWindow" type="Node2D" parent="LitLights" unique_id=1402938501]
@@ -231,7 +257,6 @@ falloff = 0.0
 texture = ExtResource("17_ckwin")
 texture_scale = 1.3
 shadow_enabled = true
-shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointCookieBlinds" type="Node2D" parent="LitLights" unique_id=733214890]
@@ -246,7 +271,6 @@ falloff = 0.0
 texture = ExtResource("18_ckbld")
 texture_scale = 1.2
 shadow_enabled = true
-shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointCookieCanopy" type="Node2D" parent="LitLights" unique_id=1577760143]
@@ -260,7 +284,6 @@ falloff = 0.0
 texture = ExtResource("19_ckcnp")
 texture_size_mode = 1
 shadow_enabled = true
-shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointCookieFlashlight" type="Node2D" parent="LitLights" unique_id=358129416]
@@ -273,7 +296,6 @@ range = 200.0
 falloff = 0.0
 texture = ExtResource("20_ckfls")
 shadow_enabled = true
-shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotCookieRadial" type="Node2D" parent="LitLights" unique_id=1934750217]
@@ -290,7 +312,6 @@ texture_size_mode = 1
 spot_angle = 25.0
 spot_softness = 0.6
 shadow_enabled = true
-shadow_hardness = 0.0
 metadata/_custom_type_script = "uid://blronx1n8oliq"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1618820850]

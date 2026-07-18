@@ -20,7 +20,7 @@ const ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 # for this test bed belong in this group.
 @export_group("Launch Options")
 ## Shadow algorithm the scene starts on; keys 1/2/3 still switch live.
-@export var shadow_algorithm: LitPointLight2D.ShadowAlgorithm = LitPointLight2D.ShadowAlgorithm.RAYMARCHED
+@export var shadow_algorithm: LitPointLight2D.ShadowAlgorithm = LitPointLight2D.ShadowAlgorithm.CONE_TRACED
 ## Source disc radius the light starts with (cone/stochastic).
 @export_range(0.0, 256.0, 0.5, "or_greater") var source_radius: float = 32.0
 ## Sample count the light starts with (stochastic).

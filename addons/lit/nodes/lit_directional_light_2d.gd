@@ -32,13 +32,14 @@ enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
 
 @export_group("Shadow")
 @export var shadow_enabled: bool = false
-## RAYMARCHED: single SDF march with an estimated penumbra - the fast base option.
-## CONE_TRACED: same single march, but the penumbra width comes physically from
-## `source_angle`. STOCHASTIC: averages `shadow_samples` marches across the source's
-## angular extent for true umbra/penumbra/antumbra - the realistic (and most
-## expensive) option. Every Lit receiver in the scene is swapped to a shader variant
-## compiled for the algorithms in use automatically (by the registry each frame).
-@export var shadow_algorithm: ShadowAlgorithm = ShadowAlgorithm.RAYMARCHED:
+## CONE_TRACED (the default): a single signed-coverage cone march - penumbras widen
+## with distance, umbras taper closed, and an antumbra re-brightens, all driven
+## physically by `source_angle`. RAYMARCHED: the classic estimated-penumbra march -
+## fastest, stylized, hardness-driven. STOCHASTIC: splits the source's angular extent
+## into `shadow_samples` sub-cones for ground-truth area shadows - the most expensive
+## option. Every Lit receiver in the scene is swapped to a shader variant compiled for
+## the algorithms in use automatically (by the registry each frame).
+@export var shadow_algorithm: ShadowAlgorithm = ShadowAlgorithm.CONE_TRACED:
 	set(value):
 		shadow_algorithm = value
 		notify_property_list_changed()
