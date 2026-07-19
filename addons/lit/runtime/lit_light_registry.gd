@@ -34,19 +34,33 @@ const TEXELS_PER_LIGHT := 8
 # (tool-converted nodes, tilemaps, hand-assigned materials) with no manual shader swap.
 static var active_algos: int = 0
 
-# Receiver variants by active-algorithm bitmask, fast (no self-exclusion) and full.
-# Must stay aligned with the same tables in lit_sprite_2d.gd.
+# Whether the lit/render/y_sort project setting is on, published by the owner
+# (LitManager at runtime, the plugin in the editor). Selects the _ysort receiver
+# variants (bit 2 of the variant index) and turns on the per-frame occluder-table
+# build; LitSprite2D reads it to publish its receiver sort key.
+static var ysort_enabled: bool = false
+
+# Receiver variants indexed by (active-algorithm bitmask | ysort << 2), fast (no
+# self-exclusion) and full. Must stay aligned with the same tables in lit_sprite_2d.gd.
 const RECEIVER_FAST_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_fast.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_fast.gdshader",
 	"res://addons/lit/shaders/lit_receiver_stoch_fast.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_ysort_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_fast.gdshader",
 ]
 const RECEIVER_FULL_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone.gdshader",
 	"res://addons/lit/shaders/lit_receiver_stoch.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader",
+	"res://addons/lit/shaders/lit_receiver_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort.gdshader",
 ]
 
 # Algorithm mask last applied to receiver materials, and whether the tree changed since
@@ -103,6 +117,30 @@ var _index_img: Image
 var _light_cache: Array = []
 var _cache_dirty: bool = true
 var _cache_tree: SceneTree = null
+
+# Y-sort occluder sources, cached like the light list: LightOccluder2D nodes plus
+# [TileMapLayer, Array[Rect2]] entries holding each layer's tile-occluder AABBs in
+# layer-local space (cell enumeration is too slow to redo per frame). Rebuilt on tree
+# changes and on a layer's `changed` signal; only touched while ysort_enabled.
+var _occ_dirty: bool = true
+var _occ_root: Node = null
+var _occ_nodes: Array = []
+var _occ_layers: Array = []
+
+# Reused y-sort pack/bin scratch, mirroring the light-side buffers above.
+var _occ_buf: PackedFloat32Array = PackedFloat32Array()
+var _occ_img: Image
+var _occ_img_rows: int = -1
+var _occ_tex: ImageTexture
+var _occ_tile_counts: PackedInt32Array = PackedInt32Array()
+var _occ_pair_tiles: PackedInt32Array = PackedInt32Array()
+var _occ_pair_rows: PackedInt32Array = PackedInt32Array()
+var _occ_header_buf: PackedFloat32Array = PackedFloat32Array()
+var _occ_index_buf: PackedFloat32Array = PackedFloat32Array()
+var _occ_header_img: Image
+var _occ_index_img: Image
+var _occ_header_tex: ImageTexture
+var _occ_index_tex: ImageTexture
 
 ## Gather visible lights, pack them into the light-data texture, build the tile grid,
 ## and publish the global shader uniforms. Call once per frame. receiver_root bounds
@@ -231,6 +269,11 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 
 	# Bin the positional lights into the screen-tile grid the shader culls against.
 	_build_tiles(visible, canvas_xform, vp_size, canvas_scale)
+
+	# Y-sort (lit/render/y_sort): publish the occluder table the shader uses to give
+	# shadow-march hits an identity. Zero cost while the setting is off.
+	if ysort_enabled:
+		_build_occluders(receiver_root, canvas_xform, vp_size, world_rect)
 
 	# Publish globals.
 	RenderingServer.global_shader_parameter_set("lit_light_count", count)
@@ -683,6 +726,7 @@ func _bind_cache_tree(tree: SceneTree) -> void:
 func _on_tree_changed(_node: Node) -> void:
 	_cache_dirty = true
 	_receiver_dirty = true
+	_occ_dirty = true
 
 
 ## Re-point every Lit receiver material under `root` at the variant compiled for the
@@ -693,6 +737,8 @@ func _on_tree_changed(_node: Node) -> void:
 ## never uses the physical algorithms never walks the tree here.
 func _apply_receiver_variants(root: Node) -> void:
 	var mask := active_algos & 3
+	if ysort_enabled:
+		mask |= 4
 	if mask == _published_algos and (mask == 0 or not _receiver_dirty):
 		return
 	if root == null:
@@ -738,6 +784,231 @@ func _rebuild_light_cache(tree: SceneTree) -> void:
 		if kind >= 0:
 			_light_cache.append([node, kind])
 	_cache_dirty = false
+
+# --- Y-sort occluder table -----------------------------------------------------------
+#
+# The shadow SDF is anonymous, so with lit/render/y_sort on the registry publishes an
+# identity for it: every occluder's screen-space AABB plus its sort key - the bottom
+# edge of its occluder polygon in world space, the ground-contact line a y-sorted
+# sprite would sort by - binned into the same screen-tile grid as the lights. At a
+# shadow-march hit the receiver shader looks the hit up here; an occluder whose base
+# sorts behind the receiver's key is stepped through instead of darkening it, which is
+# what makes shadows layer like y-sorted sprites. Occluders the table misses (culled,
+# or from unsupported sources) keep today's shadow-everything behavior.
+
+# Padding (screen px) around each occluder's AABB when binning into tiles. Must stay
+# >= the shader's largest lookup pad (LIT_YSORT_MAX_PAD_PX + LIT_YSORT_PAD_PX in
+# lit_receiver_common.gdshaderinc) so a padded containment test never involves an
+# occluder missing from the sample's tile bucket.
+const OCC_BIN_PAD := 18.0
+
+## Gather every visible occluder's world AABB and base y, then pack and publish the
+## table. Runs once per refresh() while ysort_enabled.
+func _build_occluders(root: Node, canvas_xform: Transform2D, vp_size: Vector2, world_rect: Rect2) -> void:
+	if _occ_dirty or root != _occ_root:
+		_rebuild_occ_cache(root)
+
+	# Off-screen occluders still cast on-screen shadows (Godot's SDF viewport extends
+	# past the screen), so gather from a grown view rect.
+	var view := world_rect.grow(maxf(world_rect.size.x, world_rect.size.y) * 0.5)
+
+	var rects: Array[Rect2] = []
+	var bases: PackedFloat32Array = PackedFloat32Array()
+
+	# LightOccluder2D nodes: exact per-frame AABB from the transformed polygon (these
+	# move; the per-point cost is fine for node counts). Only SDF participants matter.
+	for entry in _occ_nodes:
+		if not is_instance_valid(entry):
+			_occ_dirty = true
+			continue
+		var node := entry as LightOccluder2D
+		if not node.is_inside_tree() or not node.is_visible_in_tree() or not node.sdf_collision:
+			continue
+		var poly := node.occluder
+		if poly == null or poly.polygon.is_empty():
+			continue
+		var xf := node.global_transform
+		var wr := Rect2(xf * poly.polygon[0], Vector2.ZERO)
+		for p in poly.polygon:
+			wr = wr.expand(xf * p)
+		if view.intersects(wr):
+			rects.append(canvas_xform * wr)
+			bases.append(wr.end.y)
+
+	# Tile occluders: cached local AABBs, culled in layer-local space so only visible
+	# cells pay for the world/screen transforms.
+	for entry in _occ_layers:
+		var layer = entry[0]
+		if not is_instance_valid(layer):
+			_occ_dirty = true
+			continue
+		if not layer.is_inside_tree() or not layer.is_visible_in_tree() \
+				or not layer.occlusion_enabled:
+			continue
+		var xf: Transform2D = layer.global_transform
+		var view_local: Rect2 = xf.affine_inverse() * view
+		for r in entry[1]:
+			if not view_local.intersects(r):
+				continue
+			var wr: Rect2 = xf * r
+			rects.append(canvas_xform * wr)
+			bases.append(wr.end.y)
+
+	_pack_occluders(rects, bases, vp_size)
+
+## Rescan the tree for occluder sources: LightOccluder2D nodes are listed directly;
+## each TileMapLayer's tile occluders are flattened into local-space AABBs once here
+## (cell enumeration is too slow per frame) and re-flattened when the layer changes.
+func _rebuild_occ_cache(root: Node) -> void:
+	_occ_nodes.clear()
+	_occ_layers.clear()
+	_occ_root = root
+	if root != null:
+		_collect_occluders(root)
+	_occ_dirty = false
+
+func _collect_occluders(node: Node) -> void:
+	if node is LightOccluder2D:
+		_occ_nodes.append(node)
+	elif node is TileMapLayer:
+		var rects := _tile_occluder_rects(node)
+		if not rects.is_empty():
+			_occ_layers.append([node, rects])
+		# Repaints and tile-set edits invalidate the flattened AABBs.
+		if not node.changed.is_connected(_on_occ_source_changed):
+			node.changed.connect(_on_occ_source_changed)
+	for child in node.get_children():
+		_collect_occluders(child)
+
+func _on_occ_source_changed() -> void:
+	_occ_dirty = true
+
+## Layer-local AABB of every tile occluder polygon in `layer`, one per polygon,
+## positioned at its cell. Flip/transpose cell alternatives are not mirrored (the AABB
+## of the unflipped polygon is used); symmetric occluders - the common case - are
+## unaffected.
+func _tile_occluder_rects(layer: TileMapLayer) -> Array[Rect2]:
+	var rects: Array[Rect2] = []
+	var ts := layer.tile_set
+	if ts == null:
+		return rects
+	var occ_layer_count := ts.get_occlusion_layers_count()
+	if occ_layer_count == 0:
+		return rects
+	for cell in layer.get_used_cells():
+		var td := layer.get_cell_tile_data(cell)
+		if td == null:
+			continue
+		var origin := layer.map_to_local(cell)
+		for li in occ_layer_count:
+			for pi in td.get_occluder_polygons_count(li):
+				var poly := td.get_occluder_polygon(li, pi)
+				if poly == null or poly.polygon.is_empty():
+					continue
+				var r := Rect2(origin + poly.polygon[0], Vector2.ZERO)
+				for p in poly.polygon:
+					r = r.expand(origin + p)
+				rects.append(r)
+	return rects
+
+## Pack the gathered occluders into the data texture (2 texels per row: screen AABB |
+## base y) and bin them into the light tile grid (header offset|count + flat index
+## list), then publish the three lit_occ_* globals. Zero occluders publishes a valid
+## all-empty grid, so the shader lookups simply miss.
+func _pack_occluders(rects: Array[Rect2], bases: PackedFloat32Array, vp_size: Vector2) -> void:
+	var count := rects.size()
+
+	var floats_needed := maxi(count, 1) * 8
+	if _occ_buf.size() != floats_needed:
+		_occ_buf.resize(floats_needed)
+	_occ_buf.fill(0.0)
+	for i in count:
+		var o := i * 8
+		var r := rects[i]
+		# Texel 0: AABB min.xy | max.xy (screen px). Texel 1: base y (world).
+		_occ_buf[o + 0] = r.position.x
+		_occ_buf[o + 1] = r.position.y
+		_occ_buf[o + 2] = r.end.x
+		_occ_buf[o + 3] = r.end.y
+		_occ_buf[o + 4] = bases[i]
+
+	var rows := maxi(count, 1)
+	var bytes := _occ_buf.to_byte_array()
+	if _occ_img == null or _occ_img_rows != rows:
+		_occ_img = Image.create_from_data(2, rows, false, Image.FORMAT_RGBAF, bytes)
+		_occ_img_rows = rows
+	else:
+		_occ_img.set_data(2, rows, false, Image.FORMAT_RGBAF, bytes)
+	if _occ_tex == null or _occ_tex.get_size() != Vector2(2, rows):
+		_occ_tex = ImageTexture.create_from_image(_occ_img)
+	else:
+		_occ_tex.update(_occ_img)
+
+	# Bin padded AABBs into the tile grid; clamping folds off-screen occluders into the
+	# edge tiles, matching the shader's clamped tile lookup for off-screen samples.
+	var tiles_x := maxi(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
+	var tiles_y := maxi(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
+	var tile_count := tiles_x * tiles_y
+	if _occ_tile_counts.size() != tile_count:
+		_occ_tile_counts.resize(tile_count)
+	_occ_tile_counts.fill(0)
+	_occ_pair_tiles.clear()
+	_occ_pair_rows.clear()
+	for i in count:
+		var r := rects[i].grow(OCC_BIN_PAD)
+		var tx0 := clampi(int(floor(r.position.x / float(TILE_SIZE))), 0, tiles_x - 1)
+		var tx1 := clampi(int(floor(r.end.x / float(TILE_SIZE))), 0, tiles_x - 1)
+		var ty0 := clampi(int(floor(r.position.y / float(TILE_SIZE))), 0, tiles_y - 1)
+		var ty1 := clampi(int(floor(r.end.y / float(TILE_SIZE))), 0, tiles_y - 1)
+		for ty in range(ty0, ty1 + 1):
+			var row_base := ty * tiles_x
+			for tx in range(tx0, tx1 + 1):
+				_occ_pair_tiles.push_back(row_base + tx)
+				_occ_pair_rows.push_back(i)
+				_occ_tile_counts[row_base + tx] += 1
+
+	var total_indices := _occ_pair_tiles.size()
+	var idx_rows := int(ceil(float(maxi(total_indices, 1)) / float(INDEX_TEX_WIDTH)))
+
+	var header_floats := tile_count * 4
+	if _occ_header_buf.size() != header_floats:
+		_occ_header_buf.resize(header_floats)
+	_occ_header_buf.fill(0.0)
+	var index_floats := INDEX_TEX_WIDTH * idx_rows * 4
+	if _occ_index_buf.size() != index_floats:
+		_occ_index_buf.resize(index_floats)
+
+	# Prefix-sum counts into start offsets, then scatter (same scheme as _build_tiles).
+	var offset := 0
+	for t in tile_count:
+		var cnt := _occ_tile_counts[t]
+		_occ_header_buf[t * 4] = float(offset)
+		_occ_header_buf[t * 4 + 1] = float(cnt)
+		_occ_tile_counts[t] = offset
+		offset += cnt
+	for p in total_indices:
+		var slot := _occ_tile_counts[_occ_pair_tiles[p]]
+		_occ_tile_counts[_occ_pair_tiles[p]] = slot + 1
+		_occ_index_buf[slot * 4] = float(_occ_pair_rows[p])
+
+	var header_bytes := _occ_header_buf.to_byte_array()
+	if _occ_header_img == null or _occ_header_img.get_width() != tiles_x \
+			or _occ_header_img.get_height() != tiles_y:
+		_occ_header_img = Image.create_from_data(tiles_x, tiles_y, false, Image.FORMAT_RGBAF, header_bytes)
+	else:
+		_occ_header_img.set_data(tiles_x, tiles_y, false, Image.FORMAT_RGBAF, header_bytes)
+	_occ_header_tex = _make_or_update(_occ_header_tex, _occ_header_img)
+
+	var index_bytes := _occ_index_buf.to_byte_array()
+	if _occ_index_img == null or _occ_index_img.get_height() != idx_rows:
+		_occ_index_img = Image.create_from_data(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF, index_bytes)
+	else:
+		_occ_index_img.set_data(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF, index_bytes)
+	_occ_index_tex = _make_or_update(_occ_index_tex, _occ_index_img)
+
+	RenderingServer.global_shader_parameter_set("lit_occ_data", _occ_tex)
+	RenderingServer.global_shader_parameter_set("lit_occ_headers", _occ_header_tex)
+	RenderingServer.global_shader_parameter_set("lit_occ_indices", _occ_index_tex)
 
 ## 1x1 RGBAF texture published as the light data when there are no lights, so the
 ## sampler global is always valid.

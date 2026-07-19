@@ -2,7 +2,7 @@
 
 [ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="1_n8bxl"]
 [ext_resource type="PackedScene" uid="uid://d28fv3x2iqnq2" path="res://Test/tilesets/crypts/tile_basic_crypt.tscn" id="1_un7ao"]
-[ext_resource type="Shader" uid="uid://dhsv6mhsi8bd3" path="res://addons/lit/shaders/lit_receiver_cone.gdshader" id="2_cdys8"]
+[ext_resource type="Shader" uid="uid://drx31524s1mq6" path="res://addons/lit/shaders/lit_receiver_cone_ysort.gdshader" id="2_cdys8"]
 [ext_resource type="Texture2D" uid="uid://pfbeg7uspbx7" path="res://Test/cinderskull_preview_n.png" id="2_pyd3v"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_4l8u5"]
 [ext_resource type="Texture2D" uid="uid://b2nlbskimwprj" path="res://Test/cinderskull_preview_o.png" id="3_x1o0v"]
@@ -65,7 +65,9 @@ shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false
 shader_parameter/self_rect_count = 1
-shader_parameter/self_rects = PackedVector4Array(-6.1999965, 6.999992, 5.400001, 12.399993, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/self_rects = PackedVector4Array(-6.199997, 6.9999847, 5.4000015, 12.399986, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/receiver_ysort = true
+shader_parameter/receiver_sort_y = 218.79997
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = true
@@ -94,6 +96,8 @@ shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false
 shader_parameter/self_rect_count = 1
 shader_parameter/self_rects = PackedVector4Array(-16, -16, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/receiver_ysort = true
+shader_parameter/receiver_sort_y = 272.0
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = false
@@ -134,8 +138,8 @@ scale = Vector2(5, 5)
 occluder = SubResource("OccluderPolygon2D_abemx")
 
 [node name="Skeleton" type="Node2D" parent="." unique_id=1155335731]
-position = Vector2(576, 324)
-scale = Vector2(5, 5)
+position = Vector2(483, 194)
+scale = Vector2(2, 2)
 
 [node name="LitSprite2D" type="Sprite2D" parent="Skeleton" unique_id=1127649428]
 z_index = 1
@@ -214,7 +218,7 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 [node name="Cone Traced" type="Node2D" parent="LitLights" unique_id=196279174]
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=2029040104]
-position = Vector2(572, 158)
+position = Vector2(369, 224)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0
@@ -224,7 +228,7 @@ shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights/Cone Traced" unique_id=1063815886]
-position = Vector2(691, 431)
+position = Vector2(619, 187)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 1.5
@@ -234,7 +238,7 @@ shadow_jitter = 1.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=1682313072]
-position = Vector2(434.99997, 442.99997)
+position = Vector2(381, 342.99997)
 rotation = -0.67690533
 script = ExtResource("8_5ghie")
 color = Color(0, 0, 1, 1)
@@ -334,7 +338,6 @@ lut_amount = 0.77
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
 
 [node name="Walls" type="Node2D" parent="." unique_id=2022145144]
-visible = false
 
 [node name="Wall1" type="Sprite2D" parent="Walls" unique_id=1067797917]
 material = SubResource("ShaderMaterial_aici6")

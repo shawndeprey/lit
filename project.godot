@@ -34,6 +34,7 @@ enabled=PackedStringArray("res://addons/lit/plugin.cfg")
 [lit]
 
 render/lighting_model=1
+render/y_sort=true
 
 [physics]
 
@@ -46,6 +47,28 @@ rendering_device/driver.windows="d3d12"
 
 [shader_globals]
 
+lit_ysort={
+"type": "bool",
+"value": false
+}
+lit_occ_data={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
+lit_occ_headers={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
+lit_occ_indices={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
 lit_light_data={
 "filter": "nearest",
 "repeat": "disable",

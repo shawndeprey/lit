@@ -34,12 +34,20 @@ const RECEIVER_FAST_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_cone_fast.gdshader",
 	"res://addons/lit/shaders/lit_receiver_stoch_fast.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_ysort_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_fast.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_fast.gdshader",
 ]
 const RECEIVER_FULL_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone.gdshader",
 	"res://addons/lit/shaders/lit_receiver_stoch.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader",
+	"res://addons/lit/shaders/lit_receiver_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort.gdshader",
 ]
 
 ## Emissive strength: these pixels ignore the dark. Proxies to the material's
@@ -158,11 +166,17 @@ func _refresh_occluder_cache() -> void:
 
 # Push one local-space box (min.xy | max.xy) per owned occluder. The shader takes up
 # to 4 boxes; extras are unioned into the last. Count 0 turns the exclusion off.
+# While lit/render/y_sort is on, also publish this sprite's y-sort key: the bottom of
+# its owned occluders in world space (the ground-contact line, matching how the
+# registry keys every occluder), so shadows from occluders behind this sprite never
+# darken it. Occluder-less sprites (rugs, decals - nothing standing) get no key and
+# receive every shadow, like open floor.
 func _update_self_rect() -> void:
 	if not is_inside_tree():
 		return
 	var to_local := global_transform.affine_inverse()
 	var rects: Array[Rect2] = []
+	var sort_bottom := -INF
 	for node in _self_occluders:
 		if not is_instance_valid(node):
 			continue
@@ -170,10 +184,12 @@ func _update_self_rect() -> void:
 		if occ == null or not occ.is_inside_tree() \
 				or occ.occluder == null or occ.occluder.polygon.is_empty():
 			continue
-		var xf := to_local * occ.global_transform
+		var occ_xf := occ.global_transform
+		var xf := to_local * occ_xf
 		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
 		for p in occ.occluder.polygon:
 			r = r.expand(xf * p)
+			sort_bottom = maxf(sort_bottom, (occ_xf * p).y)
 		rects.append(r)
 	while rects.size() > 4:
 		rects[3] = rects[3].merge(rects.pop_back())
@@ -183,6 +199,11 @@ func _update_self_rect() -> void:
 		packed[i] = Vector4(rects[i].position.x, rects[i].position.y, rects[i].end.x, rects[i].end.y)
 	_set_param("self_rects", packed)
 	_set_param("self_rect_count", rects.size())
+
+	var ysort := LitLightRegistry.ysort_enabled and rects.size() > 0
+	_set_param("receiver_ysort", ysort)
+	if ysort:
+		_set_param("receiver_sort_y", sort_bottom)
 
 	# Full shader only while the self-exclusion march can actually run.
 	_apply_shader_variant(rects.size() > 0 and not self_shadow)
@@ -200,6 +221,8 @@ func _apply_shader_variant(wants_full: bool) -> void:
 	if not (current in RECEIVER_FAST_VARIANTS or current in RECEIVER_FULL_VARIANTS):
 		return
 	var mask := LitLightRegistry.active_algos & 3
+	if LitLightRegistry.ysort_enabled:
+		mask |= 4
 	var wanted: String = (RECEIVER_FULL_VARIANTS if wants_full else RECEIVER_FAST_VARIANTS)[mask]
 	if current != wanted:
 		mat.shader = load(wanted)

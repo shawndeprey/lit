@@ -63,6 +63,11 @@ That's it — everything updates live in the editor as you build.
 - **Blinn–Phong or PBR.** Pick the lighting model in Project Settings → Lit. PBR adds
   optional metallic / roughness / AO inputs on the receiver material; switch back to
   Blinn–Phong any time and the extra maps are simply ignored.
+- **Y-sorted shadows (top-down depth).** Turn on **Y Sort** in Project Settings → Lit →
+  Render and shadows layer like y-sorted sprites: an occluder's shadow draws over what's
+  behind it and hides behind what's in front, keyed by each occluder's ground-contact
+  line (the bottom of its occluder polygon). A character standing in front of a wall is
+  never darkened by it; a shadow cast toward a wall from behind never paints its face.
 - **Darkness & ambient.** One `LitCanvasModulate` node sets the mood for the whole scene.
 - **Light masks.** Make a light affect only the things you want it to.
 - **Negative lights.** Flip a light to *subtract* to carve pools of extra darkness.
@@ -94,6 +99,9 @@ That's it — everything updates live in the editor as you build.
   `Light2D`. The two systems live side by side, so you can convert a project piece by piece.
 - For **tilemaps to cast shadows**, the TileSet's occlusion layer needs **SDF Collision**
   turned on (it's off by default).
+- With **Y Sort** on, a `LitSprite2D` that owns occluders sorts at the bottom of those
+  occluders automatically. Occluder-less receivers (floors, rugs, decals) receive every
+  shadow, and tile occluders sort at their own polygon bottoms — no per-node setup.
 
 ---
 

@@ -98,6 +98,11 @@ func _process(delta: float) -> void:
 	# Phong (the global's default) regardless of the setting.
 	RenderingServer.global_shader_parameter_set("lit_lighting_model",
 		int(ProjectSettings.get_setting("lit/render/lighting_model", 0)))
+	# Mirror the y-sort toggle the same way, so the editor preview builds the occluder
+	# table and swaps receiver variants exactly like the runtime manager.
+	var ysort := bool(ProjectSettings.get_setting("lit/render/y_sort", false))
+	LitLightRegistry.ysort_enabled = ysort
+	RenderingServer.global_shader_parameter_set("lit_ysort", ysort)
 	if _registry == null or EditorInterface.get_edited_scene_root() == null:
 		return  # no scene open / nothing to light
 	# Mirror the runtime manager's CPU-side stochastic sample cap for the preview.
@@ -203,6 +208,19 @@ func _ps_global_defs() -> Array:
 			"name": "lit_cookie_atlas",
 			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
 		},
+		{"name": "lit_ysort", "def": {"type": "bool", "value": false}},
+		{
+			"name": "lit_occ_data",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
+		{
+			"name": "lit_occ_headers",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
+		{
+			"name": "lit_occ_indices",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
 	]
 
 ## RenderingServer live-add defs: name + GlobalShaderParameterType + default.
@@ -228,6 +246,10 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_tile_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_cookie_atlas", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_ysort", "type": RenderingServer.GLOBAL_VAR_TYPE_BOOL, "value": false},
+		{"name": "lit_occ_data", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_occ_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_occ_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 	]
 
 ## Persist the shader_globals into project.godot. Idempotent: writes only the missing
@@ -278,6 +300,17 @@ func _project_setting_defs() -> Array:
 				"hint": PROPERTY_HINT_ENUM,
 				"hint_string": "Blinn–Phong (BP) — faster · uses only the CanvasTexture · stylized highlights,Physically Based Rendering (PBR) — realistic surfaces · adds metallic/roughness/AO · slight perf cost",
 			},
+		},
+		{
+			# Y-sort shadow ordering for top-down scenes: shadows and occluder shading
+			# respect depth ordering by each occluder's ground-contact line (the bottom
+			# of its occluder polygon), like Godot's node y-sorting. An occluder's
+			# shadow draws over receivers behind it and never onto receivers in front
+			# of it. Off by default; enabling it swaps receivers to the _ysort shader
+			# variants and builds a per-frame occluder table.
+			"name": "lit/render/y_sort",
+			"default": false,
+			"info": {"name": "lit/render/y_sort", "type": TYPE_BOOL},
 		},
 		{
 			"name": "lit/quality/shadow_step_scaling",
