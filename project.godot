@@ -51,6 +51,10 @@ lit_ysort={
 "type": "bool",
 "value": false
 }
+lit_ysort_fade={
+"type": "float",
+"value": 16.0
+}
 lit_occ_data={
 "filter": "nearest",
 "repeat": "disable",

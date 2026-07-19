@@ -103,6 +103,8 @@ func _process(delta: float) -> void:
 	var ysort := bool(ProjectSettings.get_setting("lit/render/y_sort", false))
 	LitLightRegistry.ysort_enabled = ysort
 	RenderingServer.global_shader_parameter_set("lit_ysort", ysort)
+	RenderingServer.global_shader_parameter_set("lit_ysort_fade",
+		maxf(float(ProjectSettings.get_setting("lit/render/y_sort_fade", 16.0)), 0.0))
 	if _registry == null or EditorInterface.get_edited_scene_root() == null:
 		return  # no scene open / nothing to light
 	# Mirror the runtime manager's CPU-side stochastic sample cap for the preview.
@@ -209,6 +211,7 @@ func _ps_global_defs() -> Array:
 			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
 		},
 		{"name": "lit_ysort", "def": {"type": "bool", "value": false}},
+		{"name": "lit_ysort_fade", "def": {"type": "float", "value": 16.0}},
 		{
 			"name": "lit_occ_data",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
@@ -247,6 +250,7 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_cookie_atlas", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_ysort", "type": RenderingServer.GLOBAL_VAR_TYPE_BOOL, "value": false},
+		{"name": "lit_ysort_fade", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 16.0},
 		{"name": "lit_occ_data", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_occ_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_occ_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
@@ -311,6 +315,19 @@ func _project_setting_defs() -> Array:
 			"name": "lit/render/y_sort",
 			"default": false,
 			"info": {"name": "lit/render/y_sort", "type": TYPE_BOOL},
+		},
+		{
+			# Width (world px) of the Y Sort front/behind transition band: shadow
+			# opacity cross-fades as an occluder's base passes a receiver's, instead of
+			# switching instantly. 0 restores the hard switch.
+			"name": "lit/render/y_sort_fade",
+			"default": 16.0,
+			"info": {
+				"name": "lit/render/y_sort_fade",
+				"type": TYPE_FLOAT,
+				"hint": PROPERTY_HINT_RANGE,
+				"hint_string": "0,256,0.5,or_greater",
+			},
 		},
 		{
 			"name": "lit/quality/shadow_step_scaling",

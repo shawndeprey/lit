@@ -98,6 +98,8 @@ That's it — everything updates live in the editor as you build.
   behind it and hides behind what's in front, keyed by each occluder's ground-contact
   line (the bottom of its occluder polygon). A character standing in front of a wall is
   never darkened by it; a shadow cast toward a wall from behind never paints its face.
+  Shadows cross-fade over the **Y Sort Fade** band (world px) as things pass each other,
+  so the handoff is fluid; set it to 0 for an instant switch.
 - **Darkness & ambient.** One `LitCanvasModulate` node sets the mood for the whole scene.
 - **Light masks.** Make a light affect only the things you want it to.
 - **Negative lights.** Flip a light to *subtract* to carve pools of extra darkness.

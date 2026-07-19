@@ -67,7 +67,7 @@ shader_parameter/self_shadow = false
 shader_parameter/self_rect_count = 1
 shader_parameter/self_rects = PackedVector4Array(-6.199997, 6.9999847, 5.4000015, 12.399986, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/receiver_ysort = true
-shader_parameter/receiver_sort_y = 218.79997
+shader_parameter/receiver_sort_y = 243.79997
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = true
@@ -138,7 +138,7 @@ scale = Vector2(5, 5)
 occluder = SubResource("OccluderPolygon2D_abemx")
 
 [node name="Skeleton" type="Node2D" parent="." unique_id=1155335731]
-position = Vector2(483, 194)
+position = Vector2(402, 219)
 scale = Vector2(2, 2)
 
 [node name="LitSprite2D" type="Sprite2D" parent="Skeleton" unique_id=1127649428]
@@ -218,7 +218,7 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 [node name="Cone Traced" type="Node2D" parent="LitLights" unique_id=196279174]
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=2029040104]
-position = Vector2(369, 224)
+position = Vector2(320, 220)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0
@@ -338,6 +338,7 @@ lut_amount = 0.77
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
 
 [node name="Walls" type="Node2D" parent="." unique_id=2022145144]
+y_sort_enabled = true
 
 [node name="Wall1" type="Sprite2D" parent="Walls" unique_id=1067797917]
 material = SubResource("ShaderMaterial_aici6")

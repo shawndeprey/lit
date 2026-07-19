@@ -38,6 +38,8 @@ func _ready() -> void:
 					has_pos = true
 			"ysort":
 				ysort = kv[1] == "1"
+			"fade":
+				ProjectSettings.set_setting("lit/render/y_sort_fade", float(kv[1]))
 			"out":
 				_out = kv[1]
 			"probe":

@@ -62,6 +62,12 @@ global uniform bool      lit_ysort;
 global uniform sampler2D lit_occ_data;     // per occluder: t0 = screen AABB, t1.x = base y (world)
 global uniform sampler2D lit_occ_headers;  // per tile: offset | count into the index list
 global uniform sampler2D lit_occ_indices;  // flat occluder-row index list
+
+// Width (world px) of the front/behind transition band, from lit/render/y_sort_fade.
+// Exemption ramps 0..1 as an occluder's base moves from the receiver's key to `fade`
+// above it, so shadows cross-fade as things pass each other instead of popping;
+// 0 restores the hard switch.
+global uniform float     lit_ysort_fade;
 #endif
 
 // The index list is stored as a 2D texture this wide, so a flat index maps to
@@ -209,14 +215,19 @@ float lit_occ_base_y(vec2 px, float pad) {
 	return best;
 }
 
-// True when the occluding outline near this march sample belongs only to occluders
-// that sort behind the receiver, so the sample must not darken it. px is the sample in
-// screen px; near_px is the distance to the nearest outline in px (the pad the AABB
-// test needs to still contain the outline's occluder). A lookup miss (unmapped
-// occluder) keeps the shadow, preserving non-y-sort behavior.
-bool lit_ysort_exempt(vec2 px, float near_px, float recv_y) {
+// How exempt the occluding outline near this march sample is from darkening the
+// receiver: 0 = sorts at/in front of it (full shadow), 1 = fully behind (no shadow),
+// ramped across the lit_ysort_fade band in between so shadows cross-fade as things
+// pass each other. px is the sample in screen px; near_px is the distance to the
+// nearest outline in px (the pad the AABB test needs to still contain the outline's
+// occluder). A lookup miss (unmapped occluder) keeps the shadow, preserving
+// non-y-sort behavior.
+float lit_ysort_exemption(vec2 px, float near_px, float recv_y) {
 	float base = lit_occ_base_y(px, min(near_px, LIT_YSORT_MAX_PAD_PX) + LIT_YSORT_PAD_PX);
-	return base > LIT_YSORT_MISS * 0.5 && base < recv_y;
+	if (base < LIT_YSORT_MISS * 0.5) {
+		return 0.0;
+	}
+	return clamp((recv_y - base) / max(lit_ysort_fade, 1e-3), 0.0, 1.0);
 }
 #endif
 
@@ -334,22 +345,23 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 				continue;
 			}
 			// First exit from the containing shape: apply its shadow, ramped by depth
-			// crossed over light distance, unless it is an owned occluder or (y-sort)
-			// the containing shape sorts behind the receiver.
+			// crossed over light distance, attenuated by the exemptions - fully for an
+			// owned occluder, by the y-sort fade for a shape sorting behind the
+			// receiver.
 			grace = false;
 			receding = true;
 			prev_ad = ad;
-			bool own_exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
+			float own_ex = (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (ad + LIT_SELF_PAD_SDF) * self_scale) ? 1.0 : 0.0;
 #ifdef LIT_YSORT
-			if (ys_on && !own_exempt) {
-				own_exempt = lit_ysort_exempt(frag_px + sdf_to_px * offset,
-						ad * px_per_sdf, recv_y);
+			if (ys_on && own_ex < 1.0) {
+				own_ex = max(own_ex, lit_ysort_exemption(frag_px + sdf_to_px * offset,
+						ad * px_per_sdf, recv_y));
 			}
 #endif
-			if (!own_exempt) {
+			if (own_ex < 1.0) {
 				float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
-				res = min(res, 1.0 - own_block);
+				res = min(res, 1.0 - own_block * (1.0 - own_ex));
 				if (res <= 0.0) {
 					return 0.0;              // fully occluded
 				}
@@ -372,30 +384,31 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 		float cand = k * ad / t;
 		// Test the exemptions only when the sample matters (hit or lower penumbra).
 		// Self: the nearest outline may be the receiver's own whenever the self bounds
-		// lie within |d| of the sample. Y-sort: the sample's occluder sorts behind the
-		// receiver.
+		// lie within |d| of the sample (fully exempt). Y-sort: the sample's occluder
+		// exempts by how far behind the receiver it sorts (0..1 across the fade band).
 		if (hit || cand < res) {
-			bool exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
+			float ex = (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (ad + LIT_SELF_PAD_SDF) * self_scale) ? 1.0 : 0.0;
 #ifdef LIT_YSORT
-			if (ys_on && !exempt) {
-				exempt = lit_ysort_exempt(frag_px + sdf_to_px * offset,
-						ad * px_per_sdf, recv_y);
+			if (ys_on && ex < 1.0) {
+				ex = max(ex, lit_ysort_exemption(frag_px + sdf_to_px * offset,
+						ad * px_per_sdf, recv_y));
 			}
 #endif
-			if (exempt) {
-				if (hit) {
-					// Crossing an exempt occluder: inside it, -d is the distance to
-					// the far edge.
-					t += max(-d, shadow_min_step);
-					continue;
-				}
-			} else {
-				if (hit) {
+			if (hit) {
+				if (ex <= 0.0) {
 					return 0.0;              // fully occluded
 				}
-				res = cand;                  // penumbra accumulation
+				// (Partially) exempt occluder: it blocks 1 - ex of the light; step
+				// through it - inside, -d is the distance to the far edge.
+				res = min(res, ex);
+				if (res <= 0.0) {
+					return 0.0;
+				}
+				t += max(-d, shadow_min_step);
+				continue;
 			}
+			res = min(res, mix(cand, 1.0, ex)); // penumbra, attenuated by exemption
 		}
 		t += max(ad, shadow_min_step);
 	}
@@ -533,16 +546,16 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			grace = false;
 			receding = true;
 			prev_d = d;
-			bool own_exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
+			float own_ex = (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (ad + LIT_SELF_PAD_SDF) * self_scale) ? 1.0 : 0.0;
 #ifdef LIT_YSORT
-			if (ys_on && !own_exempt) {
-				own_exempt = lit_ysort_exempt(frag_px + sdf_to_px * offset,
-						ad * px_per_sdf, recv_y);
+			if (ys_on && own_ex < 1.0) {
+				own_ex = max(own_ex, lit_ysort_exemption(frag_px + sdf_to_px * offset,
+						ad * px_per_sdf, recv_y));
 			}
 #endif
-			if (!own_exempt) {
-				res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+			if (own_ex < 1.0) {
+				res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0) * (1.0 - own_ex);
 				if (res <= 0.0) {
 					return 0.0;
 				}
@@ -566,43 +579,41 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 		// past center - which is what lets the umbra close behind small occluders.
 		float cand = 0.5 + d / (2.0 * w * t);
 		if (cand < res) {
-			bool exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
+			float ex = (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (ad + LIT_SELF_PAD_SDF) * self_scale) ? 1.0 : 0.0;
 #ifdef LIT_YSORT
-			if (ys_on && !exempt) {
-				exempt = lit_ysort_exempt(frag_px + sdf_to_px * offset,
-						ad * px_per_sdf, recv_y);
+			if (ys_on && ex < 1.0) {
+				ex = max(ex, lit_ysort_exemption(frag_px + sdf_to_px * offset,
+						ad * px_per_sdf, recv_y));
 			}
 #endif
-			if (exempt) {
-				t += max(ad, shadow_min_step);   // exempt occluder: contributes nothing
-				continue;
-			}
-			res = max(cand, 0.0);
-			if (res <= 0.0) {
-				return 0.0;                      // cone fully blocked; minimum can't recover
+			// An exempt occluder's coverage loss is faded back toward open cone.
+			float faded = mix(max(cand, 0.0), 1.0, ex);
+			if (faded < res) {
+				res = faded;
+				if (res <= 0.0) {
+					return 0.0;                  // cone fully blocked; minimum can't recover
+				}
 			}
 		}
 		t += max(ad, shadow_min_step);
 	}
 	if (src_plane && maxd > shadow_min_step) {
 		// Source-plane sample; see the fast path. Owned and behind-sorting occluders
-		// stay exempt.
+		// stay exempt (the latter by their fade).
 		vec2 offset = dir * maxd;
 		float d = texture_sdf(frag_sdf + offset);
 		float cand = 0.5 + d / (2.0 * w * maxd);
 		if (cand < res) {
-			bool exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (abs(d) + LIT_SELF_PAD_SDF) * self_scale;
+			float ex = (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
+					<= (abs(d) + LIT_SELF_PAD_SDF) * self_scale) ? 1.0 : 0.0;
 #ifdef LIT_YSORT
-			if (ys_on && !exempt) {
-				exempt = lit_ysort_exempt(frag_px + sdf_to_px * offset,
-						abs(d) * px_per_sdf, recv_y);
+			if (ys_on && ex < 1.0) {
+				ex = max(ex, lit_ysort_exemption(frag_px + sdf_to_px * offset,
+						abs(d) * px_per_sdf, recv_y));
 			}
 #endif
-			if (!exempt) {
-				res = max(cand, 0.0);
-			}
+			res = min(res, mix(max(cand, 0.0), 1.0, ex));
 		}
 	}
 	return clamp(res, 0.0, 1.0);

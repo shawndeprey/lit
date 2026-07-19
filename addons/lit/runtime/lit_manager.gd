@@ -12,6 +12,7 @@ const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_regi
 
 const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_Y_SORT := "lit/render/y_sort"
+const SETTING_Y_SORT_FADE := "lit/render/y_sort_fade"
 const SETTING_SHADOW_STEP_SCALING := "lit/quality/shadow_step_scaling"
 const SETTING_SHADOW_STEPS_MAX := "lit/quality/shadow_steps_max"
 const SETTING_SHADOW_SAMPLES_MAX := "lit/quality/shadow_samples_max"
@@ -22,6 +23,7 @@ enum LightingModel { PHONG = 0, PBR = 1 }
 
 const DEFAULT_LIGHTING_MODEL := LightingModel.PHONG
 const DEFAULT_Y_SORT := false
+const DEFAULT_Y_SORT_FADE := 16.0
 const DEFAULT_SHADOW_STEP_SCALING := false
 const DEFAULT_SHADOW_STEPS_MAX := 64
 const DEFAULT_SHADOW_SAMPLES_MAX := 32
@@ -30,6 +32,7 @@ var _registry: LitLightRegistry
 
 var lighting_model: int = DEFAULT_LIGHTING_MODEL
 var y_sort: bool = DEFAULT_Y_SORT
+var y_sort_fade: float = DEFAULT_Y_SORT_FADE
 var shadow_step_scaling: bool = DEFAULT_SHADOW_STEP_SCALING
 var shadow_steps_max: int = DEFAULT_SHADOW_STEPS_MAX
 var shadow_samples_max: int = DEFAULT_SHADOW_SAMPLES_MAX
@@ -54,9 +57,12 @@ func _reload_settings() -> void:
 		SETTING_LIGHTING_MODEL, DEFAULT_LIGHTING_MODEL)), LightingModel.PHONG, LightingModel.PBR)
 
 	# Y-sort shadow ordering: the registry reads the static to build the occluder table
-	# and select the _ysort receiver variants; the shader gates on the global.
+	# and select the _ysort receiver variants; the shader gates on the global. The fade
+	# is the world-px width of the front/behind cross-fade band (0 = hard switch).
 	y_sort = bool(ProjectSettings.get_setting(SETTING_Y_SORT, DEFAULT_Y_SORT))
 	LitLightRegistry.ysort_enabled = y_sort
+	y_sort_fade = maxf(float(ProjectSettings.get_setting(
+		SETTING_Y_SORT_FADE, DEFAULT_Y_SORT_FADE)), 0.0)
 
 	shadow_step_scaling = bool(ProjectSettings.get_setting(
 		SETTING_SHADOW_STEP_SCALING, DEFAULT_SHADOW_STEP_SCALING))
@@ -76,5 +82,6 @@ func _reload_settings() -> void:
 	# branch; the shadow pair feeds the adaptive shadow march.
 	RenderingServer.global_shader_parameter_set("lit_lighting_model", lighting_model)
 	RenderingServer.global_shader_parameter_set("lit_ysort", y_sort)
+	RenderingServer.global_shader_parameter_set("lit_ysort_fade", y_sort_fade)
 	RenderingServer.global_shader_parameter_set("lit_shadow_steps_max", shadow_steps_max)
 	RenderingServer.global_shader_parameter_set("lit_shadow_step_scaling", shadow_step_scaling)
