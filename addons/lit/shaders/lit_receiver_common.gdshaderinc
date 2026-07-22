@@ -63,69 +63,6 @@ const int   LIT_MODEL_PHONG = 0;
 const int   LIT_MODEL_PBR   = 1;
 const float LIT_PI = 3.14159265359;
 
-uniform float emissive_strength = 0.0;
-uniform sampler2D emissive_mask : hint_default_white;   // white default lets strength work alone
-
-// A light affects this receiver only if (light_mask & receiver_mask) != 0. Plain int,
-// since shader uniforms have no layers hint; LitSprite2D proxies it with a nicer
-// 2D-render-layers control.
-uniform int receiver_mask = 1;
-
-// Self-shadow exclusion: when self_shadow is off, shadow-march hits inside the
-// receiver's own occluder bounds are ignored, so its own occluders cast behind it, not
-// onto it. LitSprite2D syncs one local-space box per owned occluder, unioning extras
-// into the last slot; count 0 disables the test.
-uniform bool self_shadow = false;
-uniform int  self_rect_count = 0;
-uniform vec4 self_rects[4];  // local-space min.xy | max.xy each
-
-// Blinn-Phong specular controls (LIT_MODEL_PHONG only). Ignored in PBR mode.
-// specular_k scales how the CanvasTexture shininess maps to the half-vector exponent.
-uniform float specular_strength = 0.5;
-uniform float specular_k = 32.0;
-
-// Per-instance: is a specular map actually present on this receiver? LitSprite2D
-// auto-detects it from the CanvasTexture's specular slot; other receiver types can set it
-// by hand. Godot reports the same SPECULAR_SHININESS for "no map" and "white map", so the
-// shader can't tell on its own. When true the Blinn-Phong path uses the true half-vector
-// specular (crisp, view-aware, shaped by the map). When false it falls back to the
-// original sharpened-N.L lobe, which stays well-behaved on flat, un-normal-mapped surfaces
-// where the half-vector would otherwise blow the highlight out. PBR mode ignores this.
-uniform bool has_specular_map = false;
-
-// --- PBR (metallic-roughness) material inputs ---------------------------------------
-// Sampled only when lit_lighting_model == LIT_MODEL_PBR. Each map multiplies its scalar,
-// and the maps default to white so an unassigned map falls back to the scalar alone:
-// leave the scalar and drop in a map, or skip the map and dial the scalar. Metallic 0 is
-// dielectric; roughness 1 is fully matte, the safe default that reads like the plain
-// diffuse look until dialed down. AO modulates the ambient term only. In Phong mode none
-// of these are read, so a PBR-authored material still renders correctly after switching
-// back to Phong (the extra data is simply ignored). Import metallic/roughness/AO maps as
-// linear (uncheck sRGB) for correct values.
-uniform sampler2D metallic_map : hint_default_white;
-uniform float metallic_value : hint_range(0.0, 1.0) = 0.0;
-uniform sampler2D roughness_map : hint_default_white;
-uniform float roughness_value : hint_range(0.0, 1.0) = 1.0;
-uniform sampler2D ao_map : hint_default_white;
-
-uniform int   shadow_steps = 64;
-uniform float shadow_min_step = 0.2;
-
-// How strongly an occluder's own shadow lands on its footprint:
-// block = footprint_shadow * depth crossed / light distance, clamped to 1. Higher
-// values darken footprints sooner. Dimensionless, so zoom does not change the look.
-uniform float footprint_shadow = 16.0;
-
-// Horizontal reach of a directional light's shading vector relative to its `height`;
-// elevation is atan(height / scale). The default gives about 27 degrees at height 16,
-// so the direction reads clearly. Larger is more grazing.
-uniform float directional_horizontal_scale = 32.0;
-
-// How far a directional shadow marches across the SDF before it counts as open sky,
-// in screen diagonals. Scaling to screen size keeps the fixed step budget
-// well-sampled; a fixed huge distance would under-sample the penumbra.
-uniform float directional_shadow_reach = 1.0;
-
 // Fragment position in the item's local space, for the self-shadow bounds test.
 varying vec2 v_local;
 
