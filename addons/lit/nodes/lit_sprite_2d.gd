@@ -90,9 +90,12 @@ func _init() -> void:
 	_set_param("emissive_strength", emissive_strength)
 	_set_param("receiver_mask", receiver_mask)
 	_set_param("self_shadow", self_shadow)
+	# Signal, not _ready: a subclass overriding _ready without super() must not
+	# silently disable the node.
+	ready.connect(_lit_ready)
 
 
-func _ready() -> void:
+func _lit_ready() -> void:
 	# Keep has_specular_map in sync so the Blinn-Phong path picks the half-vector specular
 	# only when a specular map is actually present (it blows out without one). texture_changed
 	# fires on texture swaps; we also subscribe to the CanvasTexture itself so assigning the
@@ -156,12 +159,11 @@ func _refresh_occluder_cache() -> void:
 				_self_occluders.append(sibling)
 
 
-# Push one local-space box (min.xy | max.xy) per owned occluder. The shader takes up
+# Push one canvas-space box (min.xy | max.xy) per owned occluder. The shader takes up
 # to 4 boxes; extras are unioned into the last. Count 0 turns the exclusion off.
 func _update_self_rect() -> void:
 	if not is_inside_tree():
 		return
-	var to_local := global_transform.affine_inverse()
 	var rects: Array[Rect2] = []
 	for node in _self_occluders:
 		if not is_instance_valid(node):
@@ -170,7 +172,7 @@ func _update_self_rect() -> void:
 		if occ == null or not occ.is_inside_tree() \
 				or occ.occluder == null or occ.occluder.polygon.is_empty():
 			continue
-		var xf := to_local * occ.global_transform
+		var xf := occ.global_transform
 		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
 		for p in occ.occluder.polygon:
 			r = r.expand(xf * p)

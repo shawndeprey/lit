@@ -73,11 +73,11 @@ uniform int receiver_mask = 1;
 
 // Self-shadow exclusion: when self_shadow is off, shadow-march hits inside the
 // receiver's own occluder bounds are ignored, so its own occluders cast behind it, not
-// onto it. LitSprite2D syncs one local-space box per owned occluder, unioning extras
+// onto it. LitSprite2D syncs one canvas-space box per owned occluder, unioning extras
 // into the last slot; count 0 disables the test.
 uniform bool self_shadow = false;
 uniform int  self_rect_count = 0;
-uniform vec4 self_rects[4];  // local-space min.xy | max.xy each
+uniform vec4 self_rects[4];  // canvas-space min.xy | max.xy each
 
 // Blinn-Phong specular controls (LIT_MODEL_PHONG only). Ignored in PBR mode.
 // specular_k scales how the CanvasTexture shininess maps to the half-vector exponent.
@@ -126,11 +126,13 @@ uniform float directional_horizontal_scale = 32.0;
 // well-sampled; a fixed huge distance would under-sample the penumbra.
 uniform float directional_shadow_reach = 1.0;
 
-// Fragment position in the item's local space, for the self-shadow bounds test.
-varying vec2 v_local;
+// Fragment position in canvas space, for the self-shadow bounds test. Canvas space
+// rather than VERTEX so the rects stay valid for items that don't draw in their
+// owner's local space (a y-sorted TileMapLayer renders per-row child items).
+varying vec2 v_canvas;
 
 void vertex() {
-	v_local = VERTEX;
+	v_canvas = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
 
 // Slack for the self-bounds test, in SDF units: the SDF is generated at reduced
@@ -138,13 +140,13 @@ void vertex() {
 const float LIT_SELF_PAD_SDF = 2.0;
 
 // Squared distance to the nearest self box (0 inside).
-float lit_self_dist2(vec2 p_local) {
+float lit_self_dist2(vec2 p_canvas) {
 	float best = 1e20;
 	for (int i = 0; i < 4; i++) {
 		if (i >= self_rect_count) {
 			break;
 		}
-		vec2 dv = max(max(self_rects[i].xy - p_local, vec2(0.0)), p_local - self_rects[i].zw);
+		vec2 dv = max(max(self_rects[i].xy - p_canvas, vec2(0.0)), p_canvas - self_rects[i].zw);
 		best = min(best, dot(dv, dv));
 	}
 	return best;
@@ -181,10 +183,10 @@ float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 // derives it from shadow_hardness, the Cone Traced algorithm from the source's angular
 // size (k = 1/tan(half-angle)) - same march, different cone width. When self_ex is
 // true, samples whose nearest outline may belong to the receiver's own occluders are
-// stepped through instead of occluding; self_local and sdf_to_local map SDF-space
-// march offsets into local space, and self_scale is the local length of one SDF unit.
+// stepped through instead of occluding; self_canvas and sdf_to_canvas map SDF-space
+// march offsets into canvas space, and self_scale is the canvas length of one SDF unit.
 float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, float frag_d,
-		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
+		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale) {
 	float t = shadow_min_step;
 	float res = 1.0;
 	float prev_d = frag_d;                   // signed; tracks outline crossings
@@ -197,9 +199,9 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 	// Own outlines only matter within penumbra reach; past the segment exit the fast
 	// phases finish the march.
 	if (self_ex) {
-		vec2 dir_local = sdf_to_local * dir;
+		vec2 dir_canvas = sdf_to_canvas * dir;
 		float pad = (max(maxd / k, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
-		float t_self_end = lit_self_segment_exit(self_local, dir_local * maxd, pad) * maxd;
+		float t_self_end = lit_self_segment_exit(self_canvas, dir_canvas * maxd, pad) * maxd;
 		// Mutes penumbra accumulation while the ray still recedes from the exited edge.
 		bool receding = false;
 		float prev_ad = 0.0;
@@ -220,7 +222,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 				receding = true;
 				prev_ad = ad;
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				if (lit_self_dist2(self_local + dir_local * t) > own_r * own_r) {
+				if (lit_self_dist2(self_canvas + dir_canvas * t) > own_r * own_r) {
 					float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
@@ -248,7 +250,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 			// lie within |d| of the sample.
 			if (hit || cand < res) {
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				if (lit_self_dist2(self_local + dir_local * t) <= own_r * own_r) {
+				if (lit_self_dist2(self_canvas + dir_canvas * t) <= own_r * own_r) {
 					if (hit) {
 						// Crossing an owned occluder: inside it, -d is the distance
 						// to the far edge.
@@ -369,7 +371,7 @@ float lit_shadow_contrast(float s, float hardness) {
 // that term smooth and fragment-independent; far-field lights (source clear of
 // occluders) get coverage >= 1 from it, leaving their result untouched.
 float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_steps, float frag_d,
-		bool src_plane, bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
+		bool src_plane, bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale) {
 	float t = shadow_min_step;
 	float res = 1.0;
 	bool grace = frag_d < 0.0;
@@ -380,9 +382,9 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 	// Own outlines only matter within the cone's widest reach; past the segment exit
 	// the fast phases finish the march.
 	if (self_ex) {
-		vec2 dir_local = sdf_to_local * dir;
+		vec2 dir_canvas = sdf_to_canvas * dir;
 		float pad = (max(w * maxd, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
-		t_self_end = lit_self_segment_exit(self_local, dir_local * maxd, pad) * maxd;
+		t_self_end = lit_self_segment_exit(self_canvas, dir_canvas * maxd, pad) * maxd;
 		bool receding = false;
 		float prev_d = frag_d;
 		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
@@ -401,7 +403,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 				receding = true;
 				prev_d = d;
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				if (lit_self_dist2(self_local + dir_local * t) > own_r * own_r) {
+				if (lit_self_dist2(self_canvas + dir_canvas * t) > own_r * own_r) {
 					res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
 					if (res <= 0.0) {
 						return 0.0;
@@ -428,7 +430,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			float cand = 0.5 + d / (2.0 * w * t);
 			if (cand < res) {
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				if (lit_self_dist2(self_local + dir_local * t) <= own_r * own_r) {
+				if (lit_self_dist2(self_canvas + dir_canvas * t) <= own_r * own_r) {
 					t += max(ad, shadow_min_step);   // owned occluder: contributes nothing
 					continue;
 				}
@@ -509,7 +511,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			float cand = 0.5 + d / (2.0 * w * maxd);
 			float own_r = (abs(d) + LIT_SELF_PAD_SDF) * self_scale;
 			bool own_exempt = self_ex && maxd <= t_self_end
-					&& lit_self_dist2(self_local + sdf_to_local * (dir * maxd)) <= own_r * own_r;
+					&& lit_self_dist2(self_canvas + sdf_to_canvas * (dir * maxd)) <= own_r * own_r;
 			if (cand < res && !own_exempt) {
 				res = max(cand, 0.0);
 			}
@@ -552,10 +554,10 @@ const int LIT_MAX_SHADOW_SAMPLES = 32;
 // cone minimum underestimates) is preserved exactly where it matters.
 float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float src,
 		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
-		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
+		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale) {
 	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
 	float gate = lit_shadow_cone(frag_sdf, dir, maxd, w_gate, max_steps, frag_d,
-			!is_dir, self_ex, self_local, sdf_to_local, self_scale);
+			!is_dir, self_ex, self_canvas, sdf_to_canvas, self_scale);
 	if (gate <= 0.0) {
 		return 0.0;
 	}
@@ -587,7 +589,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 			w_sub = half_stratum / max(smaxd, 1e-4);
 		}
 		sum += lit_shadow_cone(frag_sdf, sdir, smaxd, max(w_sub, 1e-4), max_steps, frag_d,
-				!is_dir, self_ex, self_local, sdf_to_local, self_scale);
+				!is_dir, self_ex, self_canvas, sdf_to_canvas, self_scale);
 	}
 	return sum / float(n);
 }
@@ -623,7 +625,7 @@ vec3 lit_f_schlick(float v_dot_h, vec3 f0) {
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float metallic, float roughness,
 		vec2 frag_uv, vec2 frag_sdf, float sdf_diag, float frag_d,
-		bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
+		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
 	vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0);
@@ -833,7 +835,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
 						march_len, src, is_directional, int(round(t7.y)), t7.z,
 						frag_uv * lit_viewport_size, steps, frag_d,
-						self_ex, self_local, sdf_to_local, self_scale);
+						self_ex, self_canvas, sdf_to_canvas, self_scale);
 				s = lit_shadow_contrast(s, t3.w);
 			} else
 #endif
@@ -845,18 +847,18 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 				float w = is_directional ? t7.x
 						: t7.x * lit_canvas_scale * px_to_sdf / max(march_len, 1e-4);
 				s = lit_shadow_cone(frag_sdf, march_dir, march_len, max(w, 1e-4), steps,
-						frag_d, !is_directional, self_ex, self_local, sdf_to_local, self_scale);
+						frag_d, !is_directional, self_ex, self_canvas, sdf_to_canvas, self_scale);
 				s = lit_shadow_contrast(s, t3.w);
 			} else
 #endif
 			{
 				s = lit_shadow(frag_sdf, march_dir, march_len, mix(8.0, 256.0, t3.w),
-						steps, frag_d, self_ex, self_local, sdf_to_local, self_scale);
+						steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale);
 			}
 #else
 			// Low hardness is soft, high is crisp.
 			s = lit_shadow(frag_sdf, march_dir, march_len, mix(8.0, 256.0, t3.w),
-					steps, frag_d, self_ex, self_local, sdf_to_local, self_scale);
+					steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale);
 #endif
 		}
 		contribution *= mix(t3.rgb, vec3(1.0), s);
@@ -899,7 +901,7 @@ void fragment() {
 	// distance, keeping the step budget well-sampled at any resolution.
 	float sdf_diag = length(screen_uv_to_sdf(vec2(1.0)) - screen_uv_to_sdf(vec2(0.0)));
 
-	// Self-shadow basis: map SDF-space march offsets to local space. Both spaces are
+	// Self-shadow basis: map SDF-space march offsets to canvas space. Both spaces are
 	// affine images of the screen, so probing one pixel step in each and composing is
 	// exact. The uniform condition keeps the derivative calls in uniform control flow.
 #ifdef LIT_SELF_EXCLUSION
@@ -909,17 +911,17 @@ void fragment() {
 	// below, and the lit_self_* helpers out of the shader.
 	bool self_ex = false;
 #endif
-	mat2 sdf_to_local = mat2(vec2(0.0), vec2(0.0));
+	mat2 sdf_to_canvas = mat2(vec2(0.0), vec2(0.0));
 	float self_scale = 0.0;
 	if (self_ex) {
 		// Columns: per-pixel-step delta of each space, in x and y.
 		mat2 px_to_sdf = mat2(
 				screen_uv_to_sdf(SCREEN_UV + vec2(SCREEN_PIXEL_SIZE.x, 0.0)) - frag_sdf,
 				screen_uv_to_sdf(SCREEN_UV + vec2(0.0, SCREEN_PIXEL_SIZE.y)) - frag_sdf);
-		mat2 px_to_local = mat2(dFdx(v_local), dFdy(v_local));
-		sdf_to_local = px_to_local * inverse(px_to_sdf);
-		// Local length of one SDF unit, for comparing SDF distances against the bounds.
-		self_scale = max(length(sdf_to_local[0]), length(sdf_to_local[1]));
+		mat2 px_to_canvas = mat2(dFdx(v_canvas), dFdy(v_canvas));
+		sdf_to_canvas = px_to_canvas * inverse(px_to_sdf);
+		// Canvas length of one SDF unit, for comparing SDF distances against the bounds.
+		self_scale = max(length(sdf_to_canvas[0]), length(sdf_to_canvas[1]));
 	}
 
 	// Tiling is only used once the manager has published a grid; until then (and in the
@@ -931,7 +933,7 @@ void fragment() {
 		// leading directional rows for every fragment. Kept separate from the tile loop
 		// so the row index stays wave-uniform.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_local, sdf_to_local, self_scale);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -945,12 +947,12 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_local, sdf_to_local, self_scale);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_local, sdf_to_local, self_scale);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale);
 		}
 	}
 
