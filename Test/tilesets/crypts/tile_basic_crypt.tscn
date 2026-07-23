@@ -6,7 +6,6 @@
 [ext_resource type="Script" uid="uid://c4ukaxjuidwha" path="res://Test/tilesets/game_tile.gd" id="5_vvk8t"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_b50dt"]
-resource_local_to_scene = true
 shader = ExtResource("1_b50dt")
 shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
@@ -1252,7 +1251,7 @@ terrain_set_0/terrain_4/name = "Dead Grass 1"
 terrain_set_0/terrain_4/color = Color(0.314989, 0.296358, 1, 1)
 sources/1 = SubResource("TileSetAtlasSource_vcek0")
 
-[node name="TileBasicCrypt" type="TileMapLayer" unique_id=680737480]
+[node name="TileBasicCrypt" type="TileMapLayer" unique_id=736403759]
 y_sort_enabled = true
 material = SubResource("ShaderMaterial_b50dt")
 tile_set = SubResource("TileSet_3f351")
@@ -1260,4 +1259,3 @@ y_sort_origin = -1
 use_kinematic_bodies = true
 navigation_enabled = false
 script = ExtResource("5_vvk8t")
-metadata/_custom_type_script = "uid://cekuun21ika3v"

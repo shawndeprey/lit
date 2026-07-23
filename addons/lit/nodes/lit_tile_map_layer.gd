@@ -46,13 +46,15 @@ var _last_count := -1
 
 
 func _init() -> void:
+	# Seed params only on a freshly created material: an existing one may carry
+	# hand-set values that the export defaults must not stomp.
 	if material == null:
 		var mat := ShaderMaterial.new()
 		mat.shader = load(RECEIVER_SHADER_FAST_PATH)
 		material = mat
-	_set_param("emissive_strength", emissive_strength)
-	_set_param("receiver_mask", receiver_mask)
-	_set_param("self_shadow", self_shadow)
+		_set_param("emissive_strength", emissive_strength)
+		_set_param("receiver_mask", receiver_mask)
+		_set_param("self_shadow", self_shadow)
 	# Signal, not _ready: a subclass overriding _ready without super() must not
 	# silently disable the node.
 	ready.connect(_lit_ready)
@@ -67,9 +69,6 @@ func _lit_ready() -> void:
 				and (mat.shader.resource_path in RECEIVER_FAST_VARIANTS \
 				or mat.shader.resource_path in RECEIVER_FULL_VARIANTS):
 			material = mat.duplicate()
-	_set_param("emissive_strength", emissive_strength)
-	_set_param("receiver_mask", receiver_mask)
-	_set_param("self_shadow", self_shadow)
 	if not changed.is_connected(_on_map_changed):
 		changed.connect(_on_map_changed)
 	if not child_entered_tree.is_connected(_on_children_changed):
@@ -138,7 +137,12 @@ func _update_self_rect() -> void:
 		_set_param("self_rects", packed)
 		_set_param("self_rect_count", rects.size())
 
-	_apply_shader_variant(rects.size() > 0 and not self_shadow)
+	# The material param decides, so the flag also works when set directly on a
+	# hand-assigned receiver material; the export is a proxy that writes it.
+	var flag: Variant = null
+	if material is ShaderMaterial:
+		flag = (material as ShaderMaterial).get_shader_parameter("self_shadow")
+	_apply_shader_variant(rects.size() > 0 and flag != true)
 
 
 func _apply_shader_variant(wants_full: bool) -> void:

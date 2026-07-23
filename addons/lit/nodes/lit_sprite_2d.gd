@@ -84,12 +84,13 @@ func _init() -> void:
 		# Fast by default: a fresh LitSprite2D has no owned occluders.
 		mat.shader = load(RECEIVER_SHADER_FAST_PATH)
 		material = mat
+		# Seed the proxy values only on a freshly-made material: an existing one may
+		# carry hand-set values that the export defaults must not stomp.
+		_set_param("emissive_strength", emissive_strength)
+		_set_param("receiver_mask", receiver_mask)
+		_set_param("self_shadow", self_shadow)
 	if texture == null:
 		texture = CanvasTexture.new()
-	# Push the initial proxy values onto the freshly-made material.
-	_set_param("emissive_strength", emissive_strength)
-	_set_param("receiver_mask", receiver_mask)
-	_set_param("self_shadow", self_shadow)
 	# Signal, not _ready: a subclass overriding _ready without super() must not
 	# silently disable the node.
 	ready.connect(_lit_ready)
@@ -186,8 +187,12 @@ func _update_self_rect() -> void:
 	_set_param("self_rects", packed)
 	_set_param("self_rect_count", rects.size())
 
-	# Full shader only while the self-exclusion march can actually run.
-	_apply_shader_variant(rects.size() > 0 and not self_shadow)
+	# Full shader only while the self-exclusion march can actually run. The material
+	# param decides, so the flag also works when set directly on the material.
+	var flag: Variant = null
+	if material is ShaderMaterial:
+		flag = (material as ShaderMaterial).get_shader_parameter("self_shadow")
+	_apply_shader_variant(rects.size() > 0 and flag != true)
 
 
 # Swap to the receiver variant for this frame's needs: full/fast per the self-exclusion
