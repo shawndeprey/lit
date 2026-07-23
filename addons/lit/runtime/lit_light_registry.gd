@@ -681,10 +681,11 @@ func _bind_cache_tree(tree: SceneTree) -> void:
 		if not tree.node_removed.is_connected(_on_tree_changed):
 			tree.node_removed.connect(_on_tree_changed)
 
-func _on_tree_changed(_node: Node) -> void:
+func _on_tree_changed(node: Node) -> void:
 	_cache_dirty = true
 	_receiver_dirty = true
-	_bare_dirty = true
+	if node is Sprite2D or node is AnimatedSprite2D or node is LightOccluder2D:
+		_bare_dirty = true
 
 
 ## Re-point every Lit receiver material under `root` at the variant compiled for the
@@ -728,10 +729,11 @@ func _collect_receiver_mats(node: Node, acc: Dictionary) -> void:
 # --- Bare-receiver self-shadow exclusion --------------------------------------
 #
 # Drives `self_rects` for sprite receivers without a driving script (hand-assigned
-# materials, sprites with their own scripts). Ownership matches LitSprite2D:
-# descendant and direct-sibling LightOccluder2Ds. Tilemaps are never driven; a
-# claimed sibling occluder would exempt real shadows. Discovery walks only on tree
-# changes; per-frame cost matches LitSprite2D._process.
+# materials, sprites with their own scripts). Ownership is descendant
+# LightOccluder2Ds only — claiming siblings would mis-claim neighbors and force the
+# costlier full shader on layouts that never asked for exclusion; sibling layouts
+# use LitSprite2D. Discovery walks only on sprite/occluder tree changes; params are
+# pushed only when the rects change.
 
 var _bare_cache: Array = []      # [sprite, material, occluders] per driven receiver
 var _bare_driven := {}           # materials the driver wrote, reset when undriven
@@ -750,7 +752,7 @@ func _drive_bare_receivers(root: Node) -> void:
 				or spr.material != mat or mat.shader == null:
 			_bare_dirty = true
 			continue
-		_push_self_rects(spr, mat, entry[2])
+		_push_self_rects(entry)
 
 ## Rebuild the driven list. Shared materials are never driven (per-node rects can't
 ## live on one material); materials leaving the driven set get their count reset.
@@ -769,7 +771,7 @@ func _rebuild_bare_cache(root: Node) -> void:
 		var occluders := _owned_occluders(sprites[0])
 		if occluders.is_empty():
 			continue
-		_bare_cache.append([sprites[0], mat, occluders])
+		_bare_cache.append([sprites[0], mat, occluders, PackedVector4Array(), -1])
 		driven[mat] = true
 	for mat in _bare_driven:
 		if not driven.has(mat) and is_instance_valid(mat):
@@ -791,16 +793,11 @@ func _collect_bare_receivers(node: Node, acc: Dictionary) -> void:
 	for child in node.get_children():
 		_collect_bare_receivers(child, acc)
 
-## Descendant plus direct-sibling LightOccluder2Ds, LitSprite2D's ownership rule.
+## Descendant LightOccluder2Ds only; siblings are LitSprite2D's opt-in rule.
 func _owned_occluders(spr: Node) -> Array:
 	var occluders: Array = []
 	for child in spr.find_children("*", "LightOccluder2D", true, false):
 		occluders.append(child)
-	var parent := spr.get_parent()
-	if parent != null:
-		for sibling in parent.get_children():
-			if sibling is LightOccluder2D:
-				occluders.append(sibling)
 	return occluders
 
 func _any_owns_occluders(sprites: Array) -> bool:
@@ -812,11 +809,13 @@ func _any_owns_occluders(sprites: Array) -> bool:
 ## Push one local-space box (min.xy | max.xy) per owned occluder and swap the
 ## material's fast/full variant. Mirrors LitSprite2D._update_self_rect /
 ## _apply_shader_variant — keep aligned. self_shadow lives on the material and may
-## be unset (null) there.
-func _push_self_rects(spr: Node2D, mat: ShaderMaterial, occluders: Array) -> void:
+## be unset (null) there. Params are pushed only when the rects changed.
+func _push_self_rects(entry: Array) -> void:
+	var spr: Node2D = entry[0]
+	var mat: ShaderMaterial = entry[1]
 	var to_local := spr.global_transform.affine_inverse()
 	var rects: Array[Rect2] = []
-	for node in occluders:
+	for node in entry[2]:
 		if not is_instance_valid(node):
 			_bare_dirty = true
 			continue
@@ -835,8 +834,11 @@ func _push_self_rects(spr: Node2D, mat: ShaderMaterial, occluders: Array) -> voi
 	packed.resize(4)
 	for i in rects.size():
 		packed[i] = Vector4(rects[i].position.x, rects[i].position.y, rects[i].end.x, rects[i].end.y)
-	mat.set_shader_parameter("self_rects", packed)
-	mat.set_shader_parameter("self_rect_count", rects.size())
+	if packed != entry[3] or rects.size() != entry[4]:
+		entry[3] = packed
+		entry[4] = rects.size()
+		mat.set_shader_parameter("self_rects", packed)
+		mat.set_shader_parameter("self_rect_count", rects.size())
 
 	var wants_full: bool = rects.size() > 0 and mat.get_shader_parameter("self_shadow") != true
 	var path: String = mat.shader.resource_path

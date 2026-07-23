@@ -91,7 +91,7 @@ shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false
 shader_parameter/self_rect_count = 1
-shader_parameter/self_rects = PackedVector4Array(-6.1999965, 6.999992, 5.400001, 12.399993, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/self_rects = PackedVector4Array(-6.1999955, 6.9999905, 5.4, 12.399991, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = true
@@ -175,7 +175,7 @@ texture = SubResource("CanvasTexture_ywxc3")
 
 [node name="LightOccluder2D3" type="LightOccluder2D" parent="Skele2/Sprite2D" unique_id=175157522]
 z_index = -1
-position = Vector2(-2.333313, -7.6666718)
+position = Vector2(-2.333313, -7.666664)
 scale = Vector2(1.6666667, 1.6666667)
 occluder = SubResource("OccluderPolygon2D_3srmn")
 
@@ -192,7 +192,8 @@ metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
 [node name="LightOccluder2D2" type="LightOccluder2D" parent="Skeleton/LitSprite2D" unique_id=204842395]
 z_index = -1
-position = Vector2(-0.9999988, -0.20000845)
+position = Vector2(-1, -0.20000458)
+scale = Vector2(0.9999998, 0.9999998)
 occluder = SubResource("OccluderPolygon2D_ynfqq")
 
 [node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]
