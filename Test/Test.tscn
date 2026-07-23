@@ -183,7 +183,7 @@ metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 [node name="LightOccluder2D2" type="LightOccluder2D" parent="Skeleton/LitSprite2D" unique_id=204842395]
 z_index = -1
 position = Vector2(-1, -0.20000458)
-scale = Vector2(0.9999998, 0.9999998)
+scale = Vector2(0.99999976, 0.99999976)
 occluder = SubResource("OccluderPolygon2D_ynfqq")
 
 [node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1199514877]

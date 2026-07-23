@@ -5,6 +5,5 @@
 
 [node name="StressTest" type="Node2D" unique_id=1351069356]
 script = ExtResource("1_stress")
-shadow_algorithm = 1
 
 [node name="Test" parent="." unique_id=774330042 instance=ExtResource("2_test")]
