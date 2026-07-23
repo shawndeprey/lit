@@ -39,7 +39,7 @@ const RECEIVER_FULL_VARIANTS: Array[String] = [
 		_set_param("self_shadow", value)
 
 var _self_occluders: Array = []
-var _tile_rect := Rect2()
+var _tile_rects: Array[Rect2] = []
 var _tile_rect_dirty := true
 var _last_packed := PackedVector4Array()
 var _last_count := -1
@@ -89,6 +89,12 @@ func _on_map_changed() -> void:
 	_tile_rect_dirty = true
 
 
+# The changed signal doesn't fire for cell edits (set_cell / editor painting); this
+# virtual does.
+func _update_cells(_coords: Array[Vector2i], _forced_cleanup: bool) -> void:
+	_tile_rect_dirty = true
+
+
 func _on_children_changed(_child: Node) -> void:
 	_refresh_occluder_cache.call_deferred()
 
@@ -104,10 +110,10 @@ func _update_self_rect() -> void:
 		return
 	if _tile_rect_dirty:
 		_tile_rect_dirty = false
-		_tile_rect = LitLightRegistry.tile_occluder_rect(self)
+		_tile_rects = LitLightRegistry.tile_occluder_rects(self)
 	var rects: Array[Rect2] = []
-	if _tile_rect.size != Vector2.ZERO:
-		rects.append(global_transform * _tile_rect)
+	for tile_rect in _tile_rects:
+		rects.append(global_transform * tile_rect)
 	for node in _self_occluders:
 		if not is_instance_valid(node):
 			continue

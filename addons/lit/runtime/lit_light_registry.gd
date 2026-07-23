@@ -726,7 +726,7 @@ func _collect_receiver_mats(node: Node, acc: Dictionary) -> void:
 	for child in node.get_children():
 		_collect_receiver_mats(child, acc)
 
-var _bare_cache: Array = []      # [node, mat, occluders, last rects, last count, tile rect]
+var _bare_cache: Array = []      # [node, mat, occluders, last rects, last count, tile rects]
 var _bare_driven := {}
 var _bare_dirty := true
 var _bare_shared_warned := false
@@ -758,20 +758,20 @@ func _rebuild_bare_cache(root: Node) -> void:
 				push_warning("Lit: a receiver material is shared by %d nodes; self-shadow exclusion needs one material per node." % nodes.size())
 			continue
 		var node = nodes[0]
-		var tile_rect := Rect2()
+		var tile_rects: Array[Rect2] = []
 		var tml := node as TileMapLayer
 		if tml != null:
-			tile_rect = tile_occluder_rect(tml)
+			tile_rects = tile_occluder_rects(tml)
 			if not tml.changed.is_connected(_on_tilemap_changed):
 				tml.changed.connect(_on_tilemap_changed)
 		var occluders := _owned_occluders(node)
-		if occluders.is_empty() and tile_rect.size == Vector2.ZERO:
+		if occluders.is_empty() and tile_rects.is_empty():
 			# Heal stale rects a scene save may have baked into the material.
 			var stale = mat.get_shader_parameter("self_rect_count")
 			if stale != null and int(stale) != 0:
 				mat.set_shader_parameter("self_rect_count", 0)
 			continue
-		_bare_cache.append([node, mat, occluders, PackedVector4Array(), -1, tile_rect])
+		_bare_cache.append([node, mat, occluders, PackedVector4Array(), -1, tile_rects])
 		driven[mat] = true
 	for mat in _bare_driven:
 		if not driven.has(mat) and is_instance_valid(mat):
@@ -813,26 +813,29 @@ func _any_owns_occluders(nodes: Array) -> bool:
 	for n in nodes:
 		if not _owned_occluders(n).is_empty():
 			return true
-		if n is TileMapLayer and tile_occluder_rect(n).size != Vector2.ZERO:
+		if n is TileMapLayer and not tile_occluder_rects(n).is_empty():
 			return true
 	return false
 
-## Local-space bounds of every tileset occlusion polygon on this layer's painted cells;
-## zero-size when there are none.
-static func tile_occluder_rect(layer: TileMapLayer) -> Rect2:
+## Local-space bounds of the tileset occlusion polygons on this layer's painted cells:
+## one tight rect per occluder cell up to the shader's 4 slots, a single union beyond.
+static func tile_occluder_rects(layer: TileMapLayer) -> Array[Rect2]:
 	var ts := layer.tile_set
 	if ts == null:
-		return Rect2()
+		return []
 	var occ_layers := ts.get_occlusion_layers_count()
 	if occ_layers == 0:
-		return Rect2()
+		return []
 	var poly_rects := {}
-	var rect := Rect2()
-	var has_rect := false
+	var rects: Array[Rect2] = []
+	var union := Rect2()
+	var count := 0
 	for cell in layer.get_used_cells():
 		var td := layer.get_cell_tile_data(cell)
 		if td == null:
 			continue
+		var cell_rect := Rect2()
+		var has_cell := false
 		for l in occ_layers:
 			for p in td.get_occluder_polygons_count(l):
 				var poly: OccluderPolygon2D = td.get_occluder_polygon(l, p)
@@ -846,18 +849,26 @@ static func tile_occluder_rect(layer: TileMapLayer) -> Rect2:
 					for pt in poly.polygon:
 						pr = pr.expand(pt)
 					poly_rects[poly] = pr
-				var cr := Rect2(pr.position + layer.map_to_local(cell), pr.size)
-				rect = cr if not has_rect else rect.merge(cr)
-				has_rect = true
-	return rect
+				cell_rect = pr if not has_cell else cell_rect.merge(pr)
+				has_cell = true
+		if not has_cell:
+			continue
+		cell_rect.position += layer.map_to_local(cell)
+		union = cell_rect if count == 0 else union.merge(cell_rect)
+		count += 1
+		if count <= 4:
+			rects.append(cell_rect)
+	if count > 4:
+		var single: Array[Rect2] = [union]
+		return single
+	return rects
 
 # Keep aligned with LitSprite2D._update_self_rect.
 func _push_self_rects(entry: Array) -> void:
 	var spr: Node2D = entry[0]
 	var mat: ShaderMaterial = entry[1]
 	var rects: Array[Rect2] = []
-	var tile_rect: Rect2 = entry[5]
-	if tile_rect.size != Vector2.ZERO:
+	for tile_rect in entry[5]:
 		rects.append(spr.global_transform * tile_rect)
 	for node in entry[2]:
 		if not is_instance_valid(node):
