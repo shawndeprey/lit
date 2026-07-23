@@ -19,7 +19,7 @@ shader_parameter/metallic_value = 0.0
 shader_parameter/roughness_value = 1.0
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
-shader_parameter/footprint_shadow = 16.0
+shader_parameter/footprint_shadow = 0.0
 shader_parameter/directional_horizontal_scale = 32.0
 shader_parameter/directional_shadow_reach = 1.0
 
