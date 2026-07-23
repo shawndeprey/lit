@@ -251,7 +251,6 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 [node name="Cone Traced" type="Node2D" parent="LitLights" unique_id=196279174]
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=2029040104]
-visible = false
 position = Vector2(570, 172)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
@@ -262,6 +261,7 @@ shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D3" type="Node2D" parent="LitLights/Cone Traced" unique_id=2104560388]
+visible = false
 position = Vector2(639, 477)
 script = ExtResource("4_lg8mm")
 energy = 1.5
@@ -272,7 +272,6 @@ shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights/Cone Traced" unique_id=1063815886]
-visible = false
 position = Vector2(690, 439)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
@@ -283,7 +282,6 @@ shadow_jitter = 1.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=1682313072]
-visible = false
 position = Vector2(434.99997, 442.99997)
 rotation = -0.67690533
 script = ExtResource("8_5ghie")
