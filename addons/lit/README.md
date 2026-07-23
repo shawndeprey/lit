@@ -40,9 +40,10 @@ Prefer videos? Subscribe on YouTube:
    color, energy, and range to taste.
 5. **Want shadows?** On the light, tick **Shadow Enabled**. Then give the world something to
    block the light: add a `LightOccluder2D` to a sprite, or for tiles enable **SDF
-   Collision** on your TileSet's occlusion layer. A `LitSprite2D` never shadows itself —
-   its occluder's shadow falls behind it (flip **Self Shadow** on the sprite if you want
-   plain SDF shadowing back).
+   Collision** on your TileSet's occlusion layer. A sprite carrying the receiver
+   material — `LitSprite2D`, tool-converted, or hand-assigned — never shadows itself:
+   its occluder's shadow falls behind it (flip **Self Shadow** on the sprite if you
+   want plain SDF shadowing back).
 6. **Want a look?** Add a **`LitPostProcess`** node and switch on bloom, color grade, CRT,
    or any of the other effects.
 

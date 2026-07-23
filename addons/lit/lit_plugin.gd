@@ -18,7 +18,6 @@ extends EditorPlugin
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 
-# Fast variant: the tool wires plain CanvasItems, which never use self-shadow exclusion.
 const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver_fast.gdshader"
 const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
 
@@ -132,6 +131,7 @@ func _make_selected_nodes_lit() -> void:
 		return
 
 	var shader := load(RECEIVER_SHADER_PATH) as Shader
+	var lit_sprite_script := load("res://addons/lit/nodes/lit_sprite_2d.gd") as Script
 	var undo := get_undo_redo()
 	undo.create_action(TOOL_MENU_ITEM)
 	for ci in targets:
@@ -139,6 +139,12 @@ func _make_selected_nodes_lit() -> void:
 		mat.shader = shader
 		undo.add_do_property(ci, "material", mat)
 		undo.add_undo_property(ci, "material", ci.material)
+
+		# Do-method Callables validate at add time.
+		if ci is Sprite2D and ci.get_script() == null:
+			undo.add_do_property(ci, "script", lit_sprite_script)
+			undo.add_undo_property(ci, "script", null)
+			undo.add_do_method(self, "_start_converted_sprite", ci)
 
 		# If the node draws a single Texture2D (Sprite2D, Polygon2D, MeshInstance2D, ...),
 		# wrap it in a CanvasTexture so the normal/specular slots appear. `texture` isn't
@@ -151,6 +157,11 @@ func _make_selected_nodes_lit() -> void:
 			undo.add_do_property(ci, "texture", ct)
 			undo.add_undo_property(ci, "texture", tex)
 	undo.commit_action()
+
+# set_script runs _init but not _ready.
+func _start_converted_sprite(node: Node) -> void:
+	if node.has_method("_ready"):
+		node.call("_ready")
 
 # --- Global shader parameter registration -------------------------------------
 #

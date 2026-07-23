@@ -137,17 +137,38 @@ void vertex() {
 // resolution, so an outline's zero level sits a texel or two outside its polygon.
 const float LIT_SELF_PAD_SDF = 2.0;
 
-// Distance from a local-space point to the nearest self box (0 inside any).
-float lit_self_dist(vec2 p_local) {
+// Squared distance to the nearest self box (0 inside).
+float lit_self_dist2(vec2 p_local) {
 	float best = 1e20;
 	for (int i = 0; i < 4; i++) {
 		if (i >= self_rect_count) {
 			break;
 		}
 		vec2 dv = max(max(self_rects[i].xy - p_local, vec2(0.0)), p_local - self_rects[i].zw);
-		best = min(best, length(dv));
+		best = min(best, dot(dv, dv));
 	}
 	return best;
+}
+
+// Param in [0,1] where segment a -> a+ab exits the pad-expanded self boxes; 0 if never inside.
+float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
+	vec2 inv = 1.0 / ab;
+	float t_end = 0.0;
+	for (int i = 0; i < 4; i++) {
+		if (i >= self_rect_count) {
+			break;
+		}
+		vec2 t0 = (self_rects[i].xy - pad - a) * inv;
+		vec2 t1 = (self_rects[i].zw + pad - a) * inv;
+		vec2 tn = min(t0, t1);
+		vec2 tf = max(t0, t1);
+		float tmin = max(tn.x, tn.y);
+		float tmax = min(tf.x, tf.y);
+		if (tmax >= max(tmin, 0.0) && tmin <= 1.0) {
+			t_end = max(t_end, min(tmax, 1.0));
+		}
+	}
+	return t_end;
 }
 
 // Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| -
@@ -170,16 +191,87 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 	// A fragment starting inside a shape marches out of it without treating its own
 	// outline as hits; the shape's shadow is applied once, at the exit.
 	bool grace = prev_d < 0.0;
+	int s = 0;
+	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);      // keep the compile-time cap
 
-	// Fast path (no self-exclusion): the three phases - grace, receding, steady - each
-	// run at most once, in order, so run each as its own minimal loop sharing the step
-	// budget: identical samples, none of the per-step phase bookkeeping. Past the grace
-	// exit every sample is non-negative, so the full loop's hit test (|d| < 0.001 ||
-	// sign flip) collapses to d < 0.001 and prev_d/abs() drop out. The state-machine
-	// loop below remains for self-excluding receivers.
-	if (!self_ex) {
-		int s = 0;
-		max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);  // keep the compile-time cap
+	// Own outlines only matter within penumbra reach; past the segment exit the fast
+	// phases finish the march.
+	if (self_ex) {
+		vec2 dir_local = sdf_to_local * dir;
+		float pad = (max(maxd / k, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
+		float t_self_end = lit_self_segment_exit(self_local, dir_local * maxd, pad) * maxd;
+		// Mutes penumbra accumulation while the ray still recedes from the exited edge.
+		bool receding = false;
+		float prev_ad = 0.0;
+		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
+		// body, which taxes the whole shader even on fragments that never take it.
+		for (; s < max_steps && t < maxd && t <= t_self_end; s++) {
+			float d = texture_sdf(frag_sdf + dir * t); // signed: negative inside a shape
+			float ad = abs(d);                         // distance to the nearest outline
+			if (grace) {
+				prev_d = d;
+				if (d < 0.0) {
+					t += max(-d, shadow_min_step);     // -d is the distance to the far edge
+					continue;
+				}
+				// First exit from the containing shape: apply its shadow, ramped by
+				// depth crossed over light distance, unless it is an owned occluder.
+				grace = false;
+				receding = true;
+				prev_ad = ad;
+				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
+				if (lit_self_dist2(self_local + dir_local * t) > own_r * own_r) {
+					float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+					res = min(res, 1.0 - own_block);
+					if (res <= 0.0) {
+						return 0.0;              // fully occluded
+					}
+				}
+				t += max(ad, shadow_min_step);
+				continue;
+			}
+			// A sign flip between consecutive samples catches crossings a min-step
+			// advance can hop over.
+			bool hit = ad < 0.001 || (d < 0.0) != (prev_d < 0.0);
+			prev_d = d;
+			if (receding) {
+				if (!hit && ad >= prev_ad) {
+					prev_ad = ad;
+					t += max(ad, shadow_min_step);
+					continue;
+				}
+				receding = false;
+			}
+			float cand = k * ad / t;
+			// Test self-exclusion only when the sample matters (hit or lower penumbra).
+			// The nearest outline may be the receiver's own whenever the self bounds
+			// lie within |d| of the sample.
+			if (hit || cand < res) {
+				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
+				if (lit_self_dist2(self_local + dir_local * t) <= own_r * own_r) {
+					if (hit) {
+						// Crossing an owned occluder: inside it, -d is the distance
+						// to the far edge.
+						t += max(-d, shadow_min_step);
+						continue;
+					}
+				} else {
+					if (hit) {
+						return 0.0;              // fully occluded
+					}
+					res = cand;                  // penumbra accumulation
+				}
+			}
+			t += max(ad, shadow_min_step);
+		}
+	}
+
+	// Fast phases: grace, receding, steady - each runs at most once, in order, so run
+	// each as its own minimal loop sharing the step budget: identical samples, none of
+	// the per-step phase bookkeeping. Past the grace exit every sample is non-negative,
+	// so the full hit test (|d| < 0.001 || sign flip) collapses to d < 0.001 and
+	// prev_d/abs() drop out. Also the self-excluding tail: no self tests needed here.
+	{
 		if (grace) {
 			// Grace: march out of the containing shape without treating its outline as
 			// hits; apply its footprint shadow once, at the exit sample.
@@ -239,75 +331,6 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 		}
 		return clamp(min(res, k * best_d / best_t), 0.0, 1.0);
 	}
-
-	// Mutes penumbra accumulation while the ray is still receding from the exited edge.
-	bool receding = false;
-	float prev_ad = 0.0;
-	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
-	// Dynamic loop bounds on purpose: a constant bound invites unrolling this body,
-	// which taxes the whole shader even on fragments that never take this path.
-	for (int s = 0; s < max_steps && t < maxd; s++) {
-		vec2 offset = dir * t;
-		float d = texture_sdf(frag_sdf + offset);  // signed: negative inside a shape
-		float ad = abs(d);                         // distance to the nearest outline
-		if (grace) {
-			prev_d = d;
-			if (d < 0.0) {
-				t += max(-d, shadow_min_step);     // -d is the distance to the far edge
-				continue;
-			}
-			// First exit from the containing shape: apply its shadow, ramped by depth
-			// crossed over light distance, unless it is an owned occluder.
-			grace = false;
-			receding = true;
-			prev_ad = ad;
-			bool own_exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
-			if (!own_exempt) {
-				float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
-				res = min(res, 1.0 - own_block);
-				if (res <= 0.0) {
-					return 0.0;              // fully occluded
-				}
-			}
-			t += max(ad, shadow_min_step);
-			continue;
-		}
-		// A sign flip between consecutive samples catches crossings a min-step
-		// advance can hop over.
-		bool hit = ad < 0.001 || (d < 0.0) != (prev_d < 0.0);
-		prev_d = d;
-		if (receding) {
-			if (!hit && ad >= prev_ad) {
-				prev_ad = ad;
-				t += max(ad, shadow_min_step);
-				continue;
-			}
-			receding = false;
-		}
-		float cand = k * ad / t;
-		// Test self-exclusion only when the sample matters (hit or lower penumbra).
-		// The nearest outline may be the receiver's own whenever the self bounds lie
-		// within |d| of the sample.
-		if (hit || cand < res) {
-			if (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale) {
-				if (hit) {
-					// Crossing an owned occluder: inside it, -d is the distance to
-					// the far edge.
-					t += max(-d, shadow_min_step);
-					continue;
-				}
-			} else {
-				if (hit) {
-					return 0.0;              // fully occluded
-				}
-				res = cand;                  // penumbra accumulation
-			}
-		}
-		t += max(ad, shadow_min_step);
-	}
-	return clamp(res, 0.0, 1.0);
 }
 
 #if defined(LIT_SHADOW_CONE) || defined(LIT_SHADOW_STOCH)
@@ -349,15 +372,81 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 		bool src_plane, bool self_ex, vec2 self_local, mat2 sdf_to_local, float self_scale) {
 	float t = shadow_min_step;
 	float res = 1.0;
+	bool grace = frag_d < 0.0;
+	int s = 0;
+	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+	float t_self_end = 0.0;
 
-	// Fast path (no self-exclusion): the same phase split as lit_shadow - grace,
-	// receding and steady each run at most once, in order, so run each as its own
-	// minimal loop sharing the step budget. Identical samples and coverage updates,
-	// none of the per-step phase bookkeeping.
-	if (!self_ex) {
-		int s = 0;
-		max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
-		if (frag_d < 0.0) {
+	// Own outlines only matter within the cone's widest reach; past the segment exit
+	// the fast phases finish the march.
+	if (self_ex) {
+		vec2 dir_local = sdf_to_local * dir;
+		float pad = (max(w * maxd, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
+		t_self_end = lit_self_segment_exit(self_local, dir_local * maxd, pad) * maxd;
+		bool receding = false;
+		float prev_d = frag_d;
+		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
+		// body, which taxes the whole shader even on fragments that never take it.
+		for (; s < max_steps && t < maxd && t <= t_self_end; s++) {
+			float d = texture_sdf(frag_sdf + dir * t);
+			float ad = abs(d);
+			if (grace) {
+				// March out of the containing shape; apply its footprint shadow once,
+				// at the exit sample, unless the shape is an owned occluder.
+				if (d < 0.0) {
+					t += max(-d, shadow_min_step);
+					continue;
+				}
+				grace = false;
+				receding = true;
+				prev_d = d;
+				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
+				if (lit_self_dist2(self_local + dir_local * t) > own_r * own_r) {
+					res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+					if (res <= 0.0) {
+						return 0.0;
+					}
+				}
+				t += max(ad, shadow_min_step);
+				continue;
+			}
+			if (receding) {
+				// Mute accumulation while still receding from the exited edge, or the
+				// receiver's own surface would count as half-blocking the cone.
+				if (d >= prev_d) {
+					prev_d = d;
+					t += max(ad, shadow_min_step);
+					continue;
+				}
+				receding = false;
+			}
+			// Half-plane coverage of the cone's cross-section (half-width w*t at
+			// distance t): an edge at signed distance d from the cone's center leaves
+			// the fraction 0.5 + d/(2*w*t) unblocked, hitting 0 only when the edge is
+			// a full half-width past center - which is what lets the umbra close
+			// behind small occluders.
+			float cand = 0.5 + d / (2.0 * w * t);
+			if (cand < res) {
+				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
+				if (lit_self_dist2(self_local + dir_local * t) <= own_r * own_r) {
+					t += max(ad, shadow_min_step);   // owned occluder: contributes nothing
+					continue;
+				}
+				res = max(cand, 0.0);
+				if (res <= 0.0) {
+					return 0.0;                      // cone fully blocked; can't recover
+				}
+			}
+			t += max(ad, shadow_min_step);
+		}
+	}
+
+	// Fast phases: the same split as lit_shadow - grace, receding and steady each run
+	// at most once, in order, so run each as its own minimal loop sharing the step
+	// budget. Identical samples and coverage updates, none of the per-step phase
+	// bookkeeping. Also the self-excluding tail: no self tests needed here.
+	{
+		if (grace) {
 			// Grace: march out of the containing shape without coverage updates;
 			// apply its footprint shadow once, at the exit sample.
 			bool receding = false;
@@ -415,81 +504,18 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			t += max(abs(d), shadow_min_step);
 		}
 		if (src_plane && maxd > shadow_min_step) {
+			// Source-plane sample; see the header comment. Owned occluders stay exempt.
 			float d = texture_sdf(frag_sdf + dir * maxd);
 			float cand = 0.5 + d / (2.0 * w * maxd);
-			res = min(res, max(cand, 0.0));
+			float own_r = (abs(d) + LIT_SELF_PAD_SDF) * self_scale;
+			bool own_exempt = self_ex && maxd <= t_self_end
+					&& lit_self_dist2(self_local + sdf_to_local * (dir * maxd)) <= own_r * own_r;
+			if (cand < res && !own_exempt) {
+				res = max(cand, 0.0);
+			}
 		}
 		return clamp(res, 0.0, 1.0);
 	}
-
-	bool grace = frag_d < 0.0;
-	bool receding = false;
-	float prev_d = frag_d;
-	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
-	for (int s = 0; s < max_steps && t < maxd; s++) {
-		vec2 offset = dir * t;
-		float d = texture_sdf(frag_sdf + offset);
-		float ad = abs(d);
-		if (grace) {
-			// March out of the containing shape; apply its footprint shadow once, at
-			// the exit sample, unless the shape is an owned occluder.
-			if (d < 0.0) {
-				t += max(-d, shadow_min_step);
-				continue;
-			}
-			grace = false;
-			receding = true;
-			prev_d = d;
-			bool own_exempt = self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale;
-			if (!own_exempt) {
-				res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
-				if (res <= 0.0) {
-					return 0.0;
-				}
-			}
-			t += max(ad, shadow_min_step);
-			continue;
-		}
-		if (receding) {
-			// Mute accumulation while still receding from the exited edge, or the
-			// receiver's own surface would count as half-blocking the cone.
-			if (d >= prev_d) {
-				prev_d = d;
-				t += max(ad, shadow_min_step);
-				continue;
-			}
-			receding = false;
-		}
-		// Half-plane coverage of the cone's cross-section (half-width w*t at distance
-		// t): an edge at signed distance d from the cone's center leaves the fraction
-		// 0.5 + d/(2*w*t) unblocked, hitting 0 only when the edge is a full half-width
-		// past center - which is what lets the umbra close behind small occluders.
-		float cand = 0.5 + d / (2.0 * w * t);
-		if (cand < res) {
-			if (self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-					<= (ad + LIT_SELF_PAD_SDF) * self_scale) {
-				t += max(ad, shadow_min_step);   // owned occluder: contributes nothing
-				continue;
-			}
-			res = max(cand, 0.0);
-			if (res <= 0.0) {
-				return 0.0;                      // cone fully blocked; minimum can't recover
-			}
-		}
-		t += max(ad, shadow_min_step);
-	}
-	if (src_plane && maxd > shadow_min_step) {
-		// Source-plane sample; see the fast path. Owned occluders stay exempt.
-		vec2 offset = dir * maxd;
-		float d = texture_sdf(frag_sdf + offset);
-		float cand = 0.5 + d / (2.0 * w * maxd);
-		if (cand < res && !(self_ex && lit_self_dist(self_local + sdf_to_local * offset)
-				<= (abs(d) + LIT_SELF_PAD_SDF) * self_scale)) {
-			res = max(cand, 0.0);
-		}
-	}
-	return clamp(res, 0.0, 1.0);
 }
 #endif
 
@@ -880,7 +906,7 @@ void fragment() {
 	bool self_ex = !self_shadow && self_rect_count > 0;
 #else
 	// Fast variant: the constant false compiles the exclusion march, the self basis
-	// below, and lit_self_dist out of the shader.
+	// below, and the lit_self_* helpers out of the shader.
 	bool self_ex = false;
 #endif
 	mat2 sdf_to_local = mat2(vec2(0.0), vec2(0.0));
