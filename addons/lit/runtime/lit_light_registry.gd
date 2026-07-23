@@ -684,7 +684,7 @@ func _bind_cache_tree(tree: SceneTree) -> void:
 func _on_tree_changed(node: Node) -> void:
 	_cache_dirty = true
 	_receiver_dirty = true
-	if node is Sprite2D or node is AnimatedSprite2D or node is LightOccluder2D:
+	if node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer or node is LightOccluder2D:
 		_bare_dirty = true
 
 
@@ -726,7 +726,7 @@ func _collect_receiver_mats(node: Node, acc: Dictionary) -> void:
 	for child in node.get_children():
 		_collect_receiver_mats(child, acc)
 
-var _bare_cache: Array = []      # [sprite, mat, occluders, last rects, last count]
+var _bare_cache: Array = []      # [node, mat, occluders, last rects, last count, tile rects]
 var _bare_driven := {}
 var _bare_dirty := true
 var _bare_shared_warned := false
@@ -751,16 +751,27 @@ func _rebuild_bare_cache(root: Node) -> void:
 	_collect_bare_receivers(root, by_mat)
 	var driven := {}
 	for mat in by_mat:
-		var sprites: Array = by_mat[mat]
-		if sprites.size() > 1:
-			if not _bare_shared_warned and _any_owns_occluders(sprites):
+		var nodes: Array = by_mat[mat]
+		if nodes.size() > 1:
+			if not _bare_shared_warned and _any_owns_occluders(nodes):
 				_bare_shared_warned = true
-				push_warning("Lit: a receiver material is shared by %d sprites; self-shadow exclusion needs one material per sprite." % sprites.size())
+				push_warning("Lit: a receiver material is shared by %d nodes; self-shadow exclusion needs one material per node." % nodes.size())
 			continue
-		var occluders := _owned_occluders(sprites[0])
-		if occluders.is_empty():
+		var node = nodes[0]
+		var tile_rects: Array[Rect2] = []
+		var tml := node as TileMapLayer
+		if tml != null:
+			tile_rects = tile_occluder_rects(tml)
+			if not tml.changed.is_connected(_on_tilemap_changed):
+				tml.changed.connect(_on_tilemap_changed)
+		var occluders := _owned_occluders(node)
+		if occluders.is_empty() and tile_rects.is_empty():
+			# Heal stale rects a scene save may have baked into the material.
+			var stale = mat.get_shader_parameter("self_rect_count")
+			if stale != null and int(stale) != 0:
+				mat.set_shader_parameter("self_rect_count", 0)
 			continue
-		_bare_cache.append([sprites[0], mat, occluders, PackedVector4Array(), -1])
+		_bare_cache.append([node, mat, occluders, PackedVector4Array(), -1, tile_rects])
 		driven[mat] = true
 	for mat in _bare_driven:
 		if not driven.has(mat) and is_instance_valid(mat):
@@ -768,8 +779,12 @@ func _rebuild_bare_cache(root: Node) -> void:
 	_bare_driven = driven
 	_bare_dirty = false
 
+func _on_tilemap_changed() -> void:
+	_bare_dirty = true
+
 func _collect_bare_receivers(node: Node, acc: Dictionary) -> void:
-	if (node is Sprite2D or node is AnimatedSprite2D) and not node.has_method("_update_self_rect"):
+	if (node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer) \
+			and not node.has_method("_update_self_rect"):
 		var mat := (node as CanvasItem).material as ShaderMaterial
 		if mat != null and mat.shader != null:
 			var path := mat.shader.resource_path
@@ -784,6 +799,9 @@ func _owned_occluders(spr: Node) -> Array:
 	var occluders: Array = []
 	for child in spr.find_children("*", "LightOccluder2D", true, false):
 		occluders.append(child)
+	# A tilemap's siblings are unrelated level content, not its own occluders.
+	if spr is TileMapLayer:
+		return occluders
 	var parent := spr.get_parent()
 	if parent != null:
 		for sibling in parent.get_children():
@@ -791,18 +809,67 @@ func _owned_occluders(spr: Node) -> Array:
 				occluders.append(sibling)
 	return occluders
 
-func _any_owns_occluders(sprites: Array) -> bool:
-	for spr in sprites:
-		if not _owned_occluders(spr).is_empty():
+func _any_owns_occluders(nodes: Array) -> bool:
+	for n in nodes:
+		if not _owned_occluders(n).is_empty():
+			return true
+		if n is TileMapLayer and not tile_occluder_rects(n).is_empty():
 			return true
 	return false
+
+## Local-space bounds of the tileset occlusion polygons on this layer's painted cells:
+## one tight rect per occluder cell up to the shader's 4 slots, a single union beyond.
+static func tile_occluder_rects(layer: TileMapLayer) -> Array[Rect2]:
+	var ts := layer.tile_set
+	if ts == null:
+		return []
+	var occ_layers := ts.get_occlusion_layers_count()
+	if occ_layers == 0:
+		return []
+	var poly_rects := {}
+	var rects: Array[Rect2] = []
+	var union := Rect2()
+	var count := 0
+	for cell in layer.get_used_cells():
+		var td := layer.get_cell_tile_data(cell)
+		if td == null:
+			continue
+		var cell_rect := Rect2()
+		var has_cell := false
+		for l in occ_layers:
+			for p in td.get_occluder_polygons_count(l):
+				var poly: OccluderPolygon2D = td.get_occluder_polygon(l, p)
+				if poly == null or poly.polygon.is_empty():
+					continue
+				var pr: Rect2
+				if poly_rects.has(poly):
+					pr = poly_rects[poly]
+				else:
+					pr = Rect2(poly.polygon[0], Vector2.ZERO)
+					for pt in poly.polygon:
+						pr = pr.expand(pt)
+					poly_rects[poly] = pr
+				cell_rect = pr if not has_cell else cell_rect.merge(pr)
+				has_cell = true
+		if not has_cell:
+			continue
+		cell_rect.position += layer.map_to_local(cell)
+		union = cell_rect if count == 0 else union.merge(cell_rect)
+		count += 1
+		if count <= 4:
+			rects.append(cell_rect)
+	if count > 4:
+		var single: Array[Rect2] = [union]
+		return single
+	return rects
 
 # Keep aligned with LitSprite2D._update_self_rect.
 func _push_self_rects(entry: Array) -> void:
 	var spr: Node2D = entry[0]
 	var mat: ShaderMaterial = entry[1]
-	var to_local := spr.global_transform.affine_inverse()
 	var rects: Array[Rect2] = []
+	for tile_rect in entry[5]:
+		rects.append(spr.global_transform * tile_rect)
 	for node in entry[2]:
 		if not is_instance_valid(node):
 			_bare_dirty = true
@@ -811,7 +878,7 @@ func _push_self_rects(entry: Array) -> void:
 		if occ == null or not occ.is_inside_tree() \
 				or occ.occluder == null or occ.occluder.polygon.is_empty():
 			continue
-		var xf := to_local * occ.global_transform
+		var xf := occ.global_transform
 		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
 		for p in occ.occluder.polygon:
 			r = r.expand(xf * p)

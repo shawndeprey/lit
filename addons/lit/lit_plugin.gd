@@ -158,10 +158,10 @@ func _make_selected_nodes_lit() -> void:
 			undo.add_undo_property(ci, "texture", tex)
 	undo.commit_action()
 
-# set_script runs _init but not _ready.
+# set_script runs _init but not the ready hook (the node is already in the tree).
 func _start_converted_sprite(node: Node) -> void:
-	if node.has_method("_ready"):
-		node.call("_ready")
+	if node.has_method("_lit_ready"):
+		node.call("_lit_ready")
 
 # --- Global shader parameter registration -------------------------------------
 #
