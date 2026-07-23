@@ -56,9 +56,6 @@ scale_max = 0.5
 color_ramp = SubResource("GradientTexture1D_o2bho")
 emission_curve = SubResource("CurveTexture_abemx")
 
-[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_abemx"]
-polygon = PackedVector2Array(-5.199997, 7.199997, 6.4000015, 7.199997, 2.800003, 12.599998, -1.9999924, 12.599998)
-
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_p4q25"]
 shader = ExtResource("2_cdys8")
 shader_parameter/emissive_strength = 0.0
@@ -157,13 +154,6 @@ texture = SubResource("GradientTexture2D_ywxc3")
 lifetime = 2.0
 process_material = SubResource("ParticleProcessMaterial_ynfqq")
 
-[node name="LightOccluder2D3" type="LightOccluder2D" parent="." unique_id=1989510638]
-visible = false
-z_index = -1
-position = Vector2(688, 196)
-scale = Vector2(5, 5)
-occluder = SubResource("OccluderPolygon2D_abemx")
-
 [node name="Skele2" type="Node2D" parent="." unique_id=1548463048]
 visible = false
 
@@ -173,7 +163,7 @@ position = Vector2(669, 324)
 scale = Vector2(3, 3)
 texture = SubResource("CanvasTexture_ywxc3")
 
-[node name="LightOccluder2D3" type="LightOccluder2D" parent="Skele2/Sprite2D" unique_id=175157522]
+[node name="LightOccluder2D4" type="LightOccluder2D" parent="Skele2/Sprite2D" unique_id=175157522]
 z_index = -1
 position = Vector2(-2.333313, -7.666664)
 scale = Vector2(1.6666667, 1.6666667)
@@ -261,6 +251,7 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 [node name="Cone Traced" type="Node2D" parent="LitLights" unique_id=196279174]
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=2029040104]
+visible = false
 position = Vector2(570, 172)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
@@ -271,7 +262,6 @@ shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D3" type="Node2D" parent="LitLights/Cone Traced" unique_id=2104560388]
-visible = false
 position = Vector2(639, 477)
 script = ExtResource("4_lg8mm")
 energy = 1.5
@@ -282,6 +272,7 @@ shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights/Cone Traced" unique_id=1063815886]
+visible = false
 position = Vector2(690, 439)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
@@ -292,6 +283,7 @@ shadow_jitter = 1.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=1682313072]
+visible = false
 position = Vector2(434.99997, 442.99997)
 rotation = -0.67690533
 script = ExtResource("8_5ghie")

@@ -729,11 +729,11 @@ func _collect_receiver_mats(node: Node, acc: Dictionary) -> void:
 # --- Bare-receiver self-shadow exclusion --------------------------------------
 #
 # Drives `self_rects` for sprite receivers without a driving script (hand-assigned
-# materials, sprites with their own scripts). Ownership is descendant
-# LightOccluder2Ds only — claiming siblings would mis-claim neighbors and force the
-# costlier full shader on layouts that never asked for exclusion; sibling layouts
-# use LitSprite2D. Discovery walks only on sprite/occluder tree changes; params are
-# pushed only when the rects change.
+# materials, sprites with their own scripts). Ownership matches LitSprite2D:
+# descendant and direct-sibling LightOccluder2Ds. Receivers that want plain SDF
+# shadowing set self_shadow true, which keeps them on the fast shader. Discovery
+# walks only on sprite/occluder tree changes; params are pushed only when the
+# rects change.
 
 var _bare_cache: Array = []      # [sprite, material, occluders] per driven receiver
 var _bare_driven := {}           # materials the driver wrote, reset when undriven
@@ -793,11 +793,16 @@ func _collect_bare_receivers(node: Node, acc: Dictionary) -> void:
 	for child in node.get_children():
 		_collect_bare_receivers(child, acc)
 
-## Descendant LightOccluder2Ds only; siblings are LitSprite2D's opt-in rule.
+## Descendant plus direct-sibling LightOccluder2Ds, LitSprite2D's ownership rule.
 func _owned_occluders(spr: Node) -> Array:
 	var occluders: Array = []
 	for child in spr.find_children("*", "LightOccluder2D", true, false):
 		occluders.append(child)
+	var parent := spr.get_parent()
+	if parent != null:
+		for sibling in parent.get_children():
+			if sibling is LightOccluder2D:
+				occluders.append(sibling)
 	return occluders
 
 func _any_owns_occluders(sprites: Array) -> bool:

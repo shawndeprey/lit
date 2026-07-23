@@ -14,7 +14,8 @@ extends Node2D
 ## dozen colored point lights. The scene's own occluders stay live in the SDF, so the
 ## saved scene's props cast alongside the demo's circle props.
 
-# Fast variant: the demo's receivers never use self-shadow exclusion.
+# Fast variant: the demo's receivers never use self-shadow exclusion. Prop materials
+# set self_shadow true so the registry driver keeps them here.
 const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
 
 const MAX_LIGHTS := 128
@@ -372,6 +373,7 @@ func _make_prop(pos: Vector2, radius: float) -> void:
 	spr.modulate = Color(0.82, 0.84, 0.92)
 	var mat := ShaderMaterial.new()
 	mat.shader = RECEIVER_SHADER
+	mat.set_shader_parameter("self_shadow", true)
 	spr.material = mat
 	root.add_child(spr)
 
@@ -457,6 +459,7 @@ func _make_skull_prop(pos: Vector2, tex_scale: float) -> void:
 
 	var mat := ShaderMaterial.new()
 	mat.shader = RECEIVER_SHADER
+	mat.set_shader_parameter("self_shadow", true)
 	# PBR material inputs. Roughness and AO are real maps; their scalars stay at 1 so the
 	# map drives the value. Metallic is 0 (bone is a dielectric) with no map needed.
 	mat.set_shader_parameter("roughness_map", _skull_roughness)
