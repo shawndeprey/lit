@@ -726,8 +726,7 @@ func _collect_receiver_mats(node: Node, acc: Dictionary) -> void:
 	for child in node.get_children():
 		_collect_receiver_mats(child, acc)
 
-# Self-rect driver for scriptless sprite receivers; ownership matches LitSprite2D.
-var _bare_cache: Array = []      # [sprite, material, occluders, last rects, last count]
+var _bare_cache: Array = []      # [sprite, mat, occluders, last rects, last count]
 var _bare_driven := {}
 var _bare_dirty := true
 var _bare_shared_warned := false
@@ -798,7 +797,7 @@ func _any_owns_occluders(sprites: Array) -> bool:
 			return true
 	return false
 
-# Mirrors LitSprite2D._update_self_rect / _apply_shader_variant - keep aligned.
+# Keep aligned with LitSprite2D._update_self_rect.
 func _push_self_rects(entry: Array) -> void:
 	var spr: Node2D = entry[0]
 	var mat: ShaderMaterial = entry[1]

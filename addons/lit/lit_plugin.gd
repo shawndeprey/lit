@@ -18,7 +18,6 @@ extends EditorPlugin
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 
-# Fast variant: the same default a fresh LitSprite2D starts on.
 const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver_fast.gdshader"
 const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
 
@@ -141,7 +140,7 @@ func _make_selected_nodes_lit() -> void:
 		undo.add_do_property(ci, "material", mat)
 		undo.add_undo_property(ci, "material", ci.material)
 
-		# Do-method Callables are validated at add time, before the script exists.
+		# Do-method Callables validate at add time.
 		if ci is Sprite2D and ci.get_script() == null:
 			undo.add_do_property(ci, "script", lit_sprite_script)
 			undo.add_undo_property(ci, "script", null)
@@ -159,7 +158,7 @@ func _make_selected_nodes_lit() -> void:
 			undo.add_undo_property(ci, "texture", tex)
 	undo.commit_action()
 
-# Attaching a script runs _init but never _ready on an in-tree node.
+# set_script runs _init but not _ready.
 func _start_converted_sprite(node: Node) -> void:
 	if node.has_method("_ready"):
 		node.call("_ready")
