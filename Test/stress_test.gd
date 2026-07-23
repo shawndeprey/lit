@@ -221,7 +221,7 @@ func _make_prop(pos: Vector2, size: Vector2) -> void:
 	spr.modulate = Color(0.82, 0.84, 0.92)
 	var mat := ShaderMaterial.new()
 	mat.shader = RECEIVER_SHADER
-	mat.set_shader_parameter("self_shadow", true)   # keep bench props on the fast shader
+	mat.set_shader_parameter("self_shadow", true)
 	spr.material = mat
 	root.add_child(spr)
 

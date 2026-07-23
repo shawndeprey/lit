@@ -138,7 +138,6 @@ void vertex() {
 const float LIT_SELF_PAD_SDF = 2.0;
 
 // Squared distance from a local-space point to the nearest self box (0 inside any).
-// Squared so per-sample tests compare without a sqrt.
 float lit_self_dist2(vec2 p_local) {
 	float best = 1e20;
 	for (int i = 0; i < 4; i++) {
@@ -151,11 +150,8 @@ float lit_self_dist2(vec2 p_local) {
 	return best;
 }
 
-// Normalized ray param in [0,1] where the segment a -> a+ab last leaves the self boxes
-// expanded by `pad` per axis (conservative for a Euclidean pad); 0 when it never
-// enters. Slab-clips the segment against each expanded box. Bounds a march's
-// self-exclusion region: past this point (or for a ray that never enters) an own
-// outline is farther than the penumbra can reach, so the fast phases finish the march.
+// Normalized param in [0,1] where the segment a -> a+ab last leaves the self boxes
+// expanded by `pad` per axis; 0 when it never enters.
 float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 	vec2 inv = 1.0 / ab;
 	float t_end = 0.0;
@@ -199,13 +195,10 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 	int s = 0;
 	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);      // keep the compile-time cap
 
-	// Self-exclusion region: an own outline can only produce a hit or cand < 1 while
-	// the ray is within the penumbra reach (maxd/k, plus the min-step overshoot) of the
-	// self rects, so the exclusion state machine runs only up to the segment's exit
-	// from that region - zero-length for rays that never enter it - and the fast
-	// phases below finish the march.
+	// Own outlines only matter within penumbra reach of the self rects: the exclusion
+	// state machine runs to the segment's exit, then the fast phases finish.
 	if (self_ex) {
-		vec2 dir_local = sdf_to_local * dir;   // local point at t is self_local + dir_local * t
+		vec2 dir_local = sdf_to_local * dir;
 		float pad = (max(maxd / k, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
 		float t_self_end = lit_self_segment_exit(self_local, dir_local * maxd, pad) * maxd;
 		// Mutes penumbra accumulation while the ray still recedes from the exited edge.
@@ -278,9 +271,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 	// each as its own minimal loop sharing the step budget: identical samples, none of
 	// the per-step phase bookkeeping. Past the grace exit every sample is non-negative,
 	// so the full hit test (|d| < 0.001 || sign flip) collapses to d < 0.001 and
-	// prev_d/abs() drop out. Also the tail of a self-excluding march: entered with its
-	// s/t/res/grace, past t_self_end an own outline is out of penumbra reach, so no
-	// sample here needs the self test.
+	// prev_d/abs() drop out. Also the tail of a self-excluding march: past t_self_end
+	// no sample needs the self test.
 	{
 		if (grace) {
 			// Grace: march out of the containing shape without treating its outline as
@@ -387,13 +379,10 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
 	float t_self_end = 0.0;
 
-	// Self-exclusion region: an own outline can only lower the cone's coverage while
-	// the ray is within its widest reach (w*maxd, plus the min-step overshoot) of the
-	// self rects, so the exclusion state machine runs only up to the segment's exit
-	// from that region - zero-length for rays that never enter it - and the fast
-	// phases below finish the march.
+	// Own outlines only matter within the cone's widest reach of the self rects: the
+	// exclusion state machine runs to the segment's exit, then the fast phases finish.
 	if (self_ex) {
-		vec2 dir_local = sdf_to_local * dir;   // local point at t is self_local + dir_local * t
+		vec2 dir_local = sdf_to_local * dir;
 		float pad = (max(w * maxd, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
 		t_self_end = lit_self_segment_exit(self_local, dir_local * maxd, pad) * maxd;
 		bool receding = false;
@@ -457,9 +446,8 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 	// Fast phases: the same split as lit_shadow - grace, receding and steady each run
 	// at most once, in order, so run each as its own minimal loop sharing the step
 	// budget. Identical samples and coverage updates, none of the per-step phase
-	// bookkeeping. Also the tail of a self-excluding march: entered with its
-	// s/t/res/grace, past t_self_end an own outline is out of the cone's reach, so no
-	// sample here needs the self test.
+	// bookkeeping. Also the tail of a self-excluding march: past t_self_end no sample
+	// needs the self test.
 	{
 		if (grace) {
 			// Grace: march out of the containing shape without coverage updates;
@@ -519,9 +507,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			t += max(abs(d), shadow_min_step);
 		}
 		if (src_plane && maxd > shadow_min_step) {
-			// Source-plane sample; see the header comment. An owned occluder overlapping
-			// the source (only possible while the source plane sits inside the self
-			// region) stays exempt.
+			// Source-plane sample; see the header comment. Owned occluders stay exempt.
 			float d = texture_sdf(frag_sdf + dir * maxd);
 			float cand = 0.5 + d / (2.0 * w * maxd);
 			float own_r = (abs(d) + LIT_SELF_PAD_SDF) * self_scale;

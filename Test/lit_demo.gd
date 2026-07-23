@@ -14,8 +14,7 @@ extends Node2D
 ## dozen colored point lights. The scene's own occluders stay live in the SDF, so the
 ## saved scene's props cast alongside the demo's circle props.
 
-# Fast variant: the demo's receivers never use self-shadow exclusion. Prop materials
-# set self_shadow true so the registry driver keeps them here.
+# Fast variant: the demo's receivers never use self-shadow exclusion.
 const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
 
 const MAX_LIGHTS := 128

@@ -120,10 +120,6 @@ func _process(delta: float) -> void:
 # This is the batch path for existing art; LitSprite2D is the from-scratch path. It also
 # sidesteps the Quick Load friction, since a node's `material` slot only accepts a
 # Material, never a `.gdshader`.
-#
-# A script-less Sprite2D also gets the LitSprite2D script, so Self Shadow and the
-# per-instance proxies work like the from-scratch path. Other nodes keep the bare
-# material; the registry drives their self-rects.
 
 func _make_selected_nodes_lit() -> void:
 	var targets: Array[CanvasItem] = []
@@ -145,8 +141,7 @@ func _make_selected_nodes_lit() -> void:
 		undo.add_do_property(ci, "material", mat)
 		undo.add_undo_property(ci, "material", ci.material)
 
-		# A do-method Callable is validated at add time, before the script exists on
-		# the node, so its _ready is routed through the plugin.
+		# Do-method Callables are validated at add time, before the script exists.
 		if ci is Sprite2D and ci.get_script() == null:
 			undo.add_do_property(ci, "script", lit_sprite_script)
 			undo.add_undo_property(ci, "script", null)
@@ -164,8 +159,7 @@ func _make_selected_nodes_lit() -> void:
 			undo.add_undo_property(ci, "texture", tex)
 	undo.commit_action()
 
-# Attaching a script runs _init but never _ready on an in-tree node; run it now.
-# Its signal connections are guarded, so the next scene load re-running it is harmless.
+# Attaching a script runs _init but never _ready on an in-tree node.
 func _start_converted_sprite(node: Node) -> void:
 	if node.has_method("_ready"):
 		node.call("_ready")

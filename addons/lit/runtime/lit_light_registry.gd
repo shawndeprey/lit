@@ -726,17 +726,9 @@ func _collect_receiver_mats(node: Node, acc: Dictionary) -> void:
 	for child in node.get_children():
 		_collect_receiver_mats(child, acc)
 
-# --- Bare-receiver self-shadow exclusion --------------------------------------
-#
-# Drives `self_rects` for sprite receivers without a driving script (hand-assigned
-# materials, sprites with their own scripts). Ownership matches LitSprite2D:
-# descendant and direct-sibling LightOccluder2Ds. Receivers that want plain SDF
-# shadowing set self_shadow true, which keeps them on the fast shader. Discovery
-# walks only on sprite/occluder tree changes; params are pushed only when the
-# rects change.
-
-var _bare_cache: Array = []      # [sprite, material, occluders] per driven receiver
-var _bare_driven := {}           # materials the driver wrote, reset when undriven
+# Self-rect driver for scriptless sprite receivers; ownership matches LitSprite2D.
+var _bare_cache: Array = []      # [sprite, material, occluders, last rects, last count]
+var _bare_driven := {}
 var _bare_dirty := true
 var _bare_shared_warned := false
 
@@ -754,8 +746,6 @@ func _drive_bare_receivers(root: Node) -> void:
 			continue
 		_push_self_rects(entry)
 
-## Rebuild the driven list. Shared materials are never driven (per-node rects can't
-## live on one material); materials leaving the driven set get their count reset.
 func _rebuild_bare_cache(root: Node) -> void:
 	_bare_cache.clear()
 	var by_mat := {}
@@ -779,8 +769,6 @@ func _rebuild_bare_cache(root: Node) -> void:
 	_bare_driven = driven
 	_bare_dirty = false
 
-## Group bare sprite receivers by material. Skips nodes that drive their own rects
-## (the LitSprite2D duck test).
 func _collect_bare_receivers(node: Node, acc: Dictionary) -> void:
 	if (node is Sprite2D or node is AnimatedSprite2D) and not node.has_method("_update_self_rect"):
 		var mat := (node as CanvasItem).material as ShaderMaterial
@@ -793,7 +781,6 @@ func _collect_bare_receivers(node: Node, acc: Dictionary) -> void:
 	for child in node.get_children():
 		_collect_bare_receivers(child, acc)
 
-## Descendant plus direct-sibling LightOccluder2Ds, LitSprite2D's ownership rule.
 func _owned_occluders(spr: Node) -> Array:
 	var occluders: Array = []
 	for child in spr.find_children("*", "LightOccluder2D", true, false):
@@ -811,10 +798,7 @@ func _any_owns_occluders(sprites: Array) -> bool:
 			return true
 	return false
 
-## Push one local-space box (min.xy | max.xy) per owned occluder and swap the
-## material's fast/full variant. Mirrors LitSprite2D._update_self_rect /
-## _apply_shader_variant — keep aligned. self_shadow lives on the material and may
-## be unset (null) there. Params are pushed only when the rects changed.
+# Mirrors LitSprite2D._update_self_rect / _apply_shader_variant - keep aligned.
 func _push_self_rects(entry: Array) -> void:
 	var spr: Node2D = entry[0]
 	var mat: ShaderMaterial = entry[1]
