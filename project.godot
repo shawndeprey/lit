@@ -114,3 +114,29 @@ lit_cookie_atlas={
 "type": "sampler2D",
 "value": ""
 }
+lit_ysort_enabled={
+"type": "bool",
+"value": false
+}
+lit_ysort_band={
+"type": "float",
+"value": 12.0
+}
+lit_occ_data={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
+lit_occ_headers={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
+lit_occ_indices={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
