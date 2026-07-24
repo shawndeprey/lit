@@ -49,8 +49,8 @@ global uniform int       lit_tile_size;                 // tile edge in pixels
 #ifdef LIT_YSORT
 global uniform bool      lit_ysort_enabled;
 global uniform float     lit_ysort_band;                // fade half-width, world px
-global uniform sampler2D lit_occ_data;                  // t0 rect min.xy|max.xy, t1 depth_y
-global uniform sampler2D lit_occ_headers;               // per tile: offset | count
+global uniform sampler2D lit_occ_data;                  // rect min.xy|max.xy; max.y is the depth line
+global uniform sampler2D lit_occ_headers;               // per tile: offset | count | min depth
 global uniform sampler2D lit_occ_indices;
 #endif
 
@@ -205,6 +205,12 @@ float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 float lit_ysort_weight(vec2 p_canvas, vec2 p_px, float reach) {
 	ivec2 tile = clamp(ivec2(p_px) / lit_tile_size, ivec2(0), lit_tile_grid - ivec2(1));
 	vec4 header = texelFetch(lit_occ_headers, tile, 0);
+	// Every candidate at or below the receiver's band keeps its shadow (smoothstep
+	// saturates to 1), so the tile's min depth answers for all of them at once. Empty
+	// tiles carry a huge min depth and take this exit too.
+	if (header.z - ysort_y >= lit_ysort_band) {
+		return 1.0;
+	}
 	int offset = int(round(header.x));
 	int count = int(round(header.y));
 	float w = -1.0;
@@ -218,8 +224,7 @@ float lit_ysort_weight(vec2 p_canvas, vec2 p_px, float reach) {
 		if (dot(dv, dv) > r2) {
 			continue;
 		}
-		float depth_y = texelFetch(lit_occ_data, ivec2(1, oi), 0).x;
-		w = max(w, smoothstep(-lit_ysort_band, lit_ysort_band, depth_y - ysort_y));
+		w = max(w, smoothstep(-lit_ysort_band, lit_ysort_band, rect.w - ysort_y));
 		if (w >= 1.0) {
 			return 1.0;
 		}

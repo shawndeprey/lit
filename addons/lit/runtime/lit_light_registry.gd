@@ -115,19 +115,19 @@ var _cache_tree: SceneTree = null
 # Per-occluder canvas rect + depth line, binned into the light tile grid.
 static var ysort_enabled: bool = false
 
-const TEXELS_PER_OCC := 2
-
 var _occ_nodes: Array = []
-var _occ_layers: Array = []      # [TileMapLayer, Array[Rect2] cell-local occluder rects]
+var _occ_layers: Array = []      # [TileMapLayer, Array[Rect2] cell-local rects, cached xform, world rects]
 var _occ_dirty := true
 var _occ_pack_buf := PackedFloat32Array()
 var _occ_rects: Array[Rect2] = []
-var _occ_depths := PackedFloat32Array()
+var _occ_spans := PackedInt32Array()
 var _occ_tile_counts := PackedInt32Array()
-var _occ_pair_tiles := PackedInt32Array()
-var _occ_pair_rows := PackedInt32Array()
+var _occ_tile_min := PackedFloat32Array()
 var _occ_header_buf := PackedFloat32Array()
 var _occ_index_buf := PackedFloat32Array()
+var _occ_prev_pack := PackedFloat32Array()
+var _occ_prev_xform := Transform2D()
+var _occ_prev_grid := Vector2i.ZERO
 var _occ_img: Image
 var _occ_header_img: Image
 var _occ_index_img: Image
@@ -668,7 +668,10 @@ func _make_or_update(tex: ImageTexture, img: Image) -> ImageTexture:
 	tex.update(img)
 	return tex
 
-## Pack every SDF-casting occluder's rect + depth line; mirrors _build_tiles.
+## Pack every SDF-casting occluder's canvas rect (max.y doubles as its depth line) and
+## bin the rects into the light tile grid; mirrors _build_tiles. Header texel z carries
+## the tile's min depth so the shader can dismiss whole tiles with one fetch. Frames
+## where nothing moved skip the binning and uploads entirely.
 func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vector2,
 		world_rect: Rect2, scale: float) -> void:
 	if _occ_dirty:
@@ -678,7 +681,6 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 	var cull_rect := world_rect.grow(maxf(world_rect.size.x, world_rect.size.y) * 0.25)
 
 	_occ_rects.clear()
-	_occ_depths.clear()
 
 	for entry in _occ_nodes:
 		if not is_instance_valid(entry):
@@ -695,7 +697,6 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 		if not cull_rect.intersects(r):
 			continue
 		_occ_rects.append(r)
-		_occ_depths.append(r.end.y)
 
 	for entry in _occ_layers:
 		var layer: TileMapLayer = entry[0]
@@ -705,60 +706,82 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 		if not layer.is_inside_tree() or not layer.is_visible_in_tree():
 			continue
 		var xf: Transform2D = layer.global_transform
-		for local_rect in entry[1]:
-			var r: Rect2 = xf * local_rect
-			if not cull_rect.intersects(r):
-				continue
-			_occ_rects.append(r)
-			_occ_depths.append(r.end.y)
+		if entry[2] != xf:
+			entry[2] = xf
+			var world: Array[Rect2] = []
+			world.resize(entry[1].size())
+			for i in entry[1].size():
+				world[i] = xf * entry[1][i]
+			entry[3] = world
+		for r in entry[3]:
+			if cull_rect.intersects(r):
+				_occ_rects.append(r)
 
 	var count := _occ_rects.size()
 	var tiles_x := maxi(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
 	var tiles_y := maxi(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
 	var tile_count := tiles_x * tiles_y
+	var grid := Vector2i(tiles_x, tiles_y)
 
-	# Texel 0 = rect min.xy | max.xy (canvas), texel 1 = depth line.
-	var floats_needed := maxi(count, 1) * TEXELS_PER_OCC * 4
+	var floats_needed := maxi(count, 1) * 4
 	if _occ_pack_buf.size() != floats_needed:
 		_occ_pack_buf.resize(floats_needed)
-	_occ_pack_buf.fill(0.0)
-
-	if _occ_tile_counts.size() != tile_count:
-		_occ_tile_counts.resize(tile_count)
-	_occ_tile_counts.fill(0)
-	_occ_pair_tiles.clear()
-	_occ_pair_rows.clear()
-
-	# Candidacy tests reach past a rect, so bin each one tile edge wider.
-	var bin_pad := float(TILE_SIZE)
-
+	if count == 0:
+		_occ_pack_buf.fill(0.0)
 	for i in count:
-		var o := i * TEXELS_PER_OCC * 4
+		var o := i * 4
 		var r := _occ_rects[i]
 		_occ_pack_buf[o + 0] = r.position.x
 		_occ_pack_buf[o + 1] = r.position.y
 		_occ_pack_buf[o + 2] = r.end.x
 		_occ_pack_buf[o + 3] = r.end.y
-		_occ_pack_buf[o + 4] = _occ_depths[i]
 
+	var pack_same := _occ_pack_buf == _occ_prev_pack
+	if pack_same and canvas_xform == _occ_prev_xform and grid == _occ_prev_grid:
+		return
+	if not pack_same:
+		_occ_prev_pack = _occ_pack_buf.duplicate()
+	_occ_prev_xform = canvas_xform
+	_occ_prev_grid = grid
+
+	if _occ_tile_counts.size() != tile_count:
+		_occ_tile_counts.resize(tile_count)
+		_occ_tile_min.resize(tile_count)
+	_occ_tile_counts.fill(0)
+	_occ_tile_min.fill(3.4e38)
+	if _occ_spans.size() != count * 4:
+		_occ_spans.resize(count * 4)
+
+	# Candidacy tests reach past a rect, so bin each one tile edge wider.
+	var bin_pad := float(TILE_SIZE)
+	var total := 0
+
+	for i in count:
+		var r := _occ_rects[i]
 		var sr: Rect2 = canvas_xform * r
 		var tx0 := clampi(int(floor((sr.position.x - bin_pad) / float(TILE_SIZE))), 0, tiles_x - 1)
 		var tx1 := clampi(int(floor((sr.end.x + bin_pad) / float(TILE_SIZE))), 0, tiles_x - 1)
 		var ty0 := clampi(int(floor((sr.position.y - bin_pad) / float(TILE_SIZE))), 0, tiles_y - 1)
 		var ty1 := clampi(int(floor((sr.end.y + bin_pad) / float(TILE_SIZE))), 0, tiles_y - 1)
+		var s4 := i * 4
+		_occ_spans[s4 + 0] = tx0
+		_occ_spans[s4 + 1] = tx1
+		_occ_spans[s4 + 2] = ty0
+		_occ_spans[s4 + 3] = ty1
+		total += (tx1 - tx0 + 1) * (ty1 - ty0 + 1)
+		var depth := r.end.y
 		for ty in range(ty0, ty1 + 1):
 			var row_base := ty * tiles_x
 			for tx in range(tx0, tx1 + 1):
-				_occ_pair_tiles.push_back(row_base + tx)
-				_occ_pair_rows.push_back(i)
-				_occ_tile_counts[row_base + tx] += 1
+				var t := row_base + tx
+				_occ_tile_counts[t] += 1
+				if depth < _occ_tile_min[t]:
+					_occ_tile_min[t] = depth
 
-	var total := _occ_pair_tiles.size()
 	var idx_rows := int(ceil(float(maxi(total, 1)) / float(INDEX_TEX_WIDTH)))
 	var header_floats := tile_count * 4
 	if _occ_header_buf.size() != header_floats:
 		_occ_header_buf.resize(header_floats)
-	_occ_header_buf.fill(0.0)
 	var index_floats := INDEX_TEX_WIDTH * idx_rows * 4
 	if _occ_index_buf.size() != index_floats:
 		_occ_index_buf.resize(index_floats)
@@ -766,22 +789,32 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 	var offset := 0
 	for t in tile_count:
 		var cnt := _occ_tile_counts[t]
-		_occ_header_buf[t * 4] = float(offset)
-		_occ_header_buf[t * 4 + 1] = float(cnt)
+		var h := t * 4
+		_occ_header_buf[h] = float(offset)
+		_occ_header_buf[h + 1] = float(cnt)
+		_occ_header_buf[h + 2] = _occ_tile_min[t]
 		_occ_tile_counts[t] = offset
 		offset += cnt
-	for p in total:
-		var slot := _occ_tile_counts[_occ_pair_tiles[p]]
-		_occ_tile_counts[_occ_pair_tiles[p]] = slot + 1
-		_occ_index_buf[slot * 4] = float(_occ_pair_rows[p])
+	for i in count:
+		var s4 := i * 4
+		for ty in range(_occ_spans[s4 + 2], _occ_spans[s4 + 3] + 1):
+			var row_base := ty * tiles_x
+			for tx in range(_occ_spans[s4 + 0], _occ_spans[s4 + 1] + 1):
+				var slot := _occ_tile_counts[row_base + tx]
+				_occ_tile_counts[row_base + tx] = slot + 1
+				_occ_index_buf[slot * 4] = float(i)
 
-	var rows := maxi(count, 1)
-	var data_bytes := _occ_pack_buf.to_byte_array()
-	if _occ_img == null or _occ_img.get_height() != rows:
-		_occ_img = Image.create_from_data(TEXELS_PER_OCC, rows, false, Image.FORMAT_RGBAF, data_bytes)
-	else:
-		_occ_img.set_data(TEXELS_PER_OCC, rows, false, Image.FORMAT_RGBAF, data_bytes)
-	_occ_tex = _make_or_update(_occ_tex, _occ_img)
+	if not pack_same or _occ_tex == null:
+		var rows := maxi(count, 1)
+		var data_bytes := _occ_pack_buf.to_byte_array()
+		if _occ_img == null or _occ_img.get_height() != rows:
+			_occ_img = Image.create_from_data(1, rows, false, Image.FORMAT_RGBAF, data_bytes)
+		else:
+			_occ_img.set_data(1, rows, false, Image.FORMAT_RGBAF, data_bytes)
+		var prev_data := _occ_tex
+		_occ_tex = _make_or_update(_occ_tex, _occ_img)
+		if _occ_tex != prev_data:
+			RenderingServer.global_shader_parameter_set("lit_occ_data", _occ_tex)
 
 	var header_bytes := _occ_header_buf.to_byte_array()
 	if _occ_header_img == null or _occ_header_img.get_width() != tiles_x \
@@ -789,18 +822,20 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 		_occ_header_img = Image.create_from_data(tiles_x, tiles_y, false, Image.FORMAT_RGBAF, header_bytes)
 	else:
 		_occ_header_img.set_data(tiles_x, tiles_y, false, Image.FORMAT_RGBAF, header_bytes)
+	var prev_header := _occ_header_tex
 	_occ_header_tex = _make_or_update(_occ_header_tex, _occ_header_img)
+	if _occ_header_tex != prev_header:
+		RenderingServer.global_shader_parameter_set("lit_occ_headers", _occ_header_tex)
 
 	var index_bytes := _occ_index_buf.to_byte_array()
 	if _occ_index_img == null or _occ_index_img.get_height() != idx_rows:
 		_occ_index_img = Image.create_from_data(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF, index_bytes)
 	else:
 		_occ_index_img.set_data(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF, index_bytes)
+	var prev_index := _occ_index_tex
 	_occ_index_tex = _make_or_update(_occ_index_tex, _occ_index_img)
-
-	RenderingServer.global_shader_parameter_set("lit_occ_data", _occ_tex)
-	RenderingServer.global_shader_parameter_set("lit_occ_headers", _occ_header_tex)
-	RenderingServer.global_shader_parameter_set("lit_occ_indices", _occ_index_tex)
+	if _occ_index_tex != prev_index:
+		RenderingServer.global_shader_parameter_set("lit_occ_indices", _occ_index_tex)
 
 ## Rescan the subtree for casters; tilemap cell rects cache until the layer changes.
 func _rebuild_occ_cache(root: Node) -> void:
@@ -816,7 +851,7 @@ func _rebuild_occ_cache(root: Node) -> void:
 			continue
 		if not layer.changed.is_connected(_on_tilemap_changed):
 			layer.changed.connect(_on_tilemap_changed)
-		_occ_layers.append([layer, rects])
+		_occ_layers.append([layer, rects, null, []])
 	_occ_dirty = false
 
 ## One layer-local rect per painted cell with SDF-collision occlusion polygons.
