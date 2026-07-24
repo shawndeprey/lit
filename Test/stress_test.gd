@@ -43,6 +43,7 @@ var _opt_capture := ""
 var _opt_warmup := WARMUP_SEC
 var _opt_measure := MEASURE_SEC
 var _opt_shadow_algo := "raymarch"
+var _opt_ysort := false
 
 # Clock value used for the deterministic capture frame.
 const CAPTURE_CLOCK := 60.0
@@ -104,6 +105,8 @@ func _ready() -> void:
 							scales[int(kv[1])])
 			"measure":
 				_opt_measure = float(kv[1])
+			"ysort":
+				_opt_ysort = kv[1] == "on"
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -155,6 +158,12 @@ func _setup() -> void:
 		part.visible = false
 
 	RenderingServer.global_shader_parameter_set("lit_lighting_model", LIT_MODEL_PHONG)
+
+	# Driven directly: a runtime set_setting perturbs renderer state and skews numbers.
+	if _opt_ysort:
+		RenderingServer.global_shader_parameter_set("lit_ysort_enabled", true)
+		RenderingServer.global_shader_parameter_set("lit_ysort_band", 12.0)
+		get_node("/root/LitManager")._registry.set_ysort(true)
 
 	_compute_area()
 	_rng.seed = RNG_SEED
