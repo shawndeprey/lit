@@ -104,6 +104,7 @@ var _start_btn: Button
 var _restart_btn: Button
 var _skip_btn: Button
 var _stop_btn: Button
+var _splash_btn: Button
 var _feature_lbl: Label
 var _desc_lbl: Label
 var _counter_lbl: Label
@@ -202,6 +203,10 @@ func _build_ui() -> void:
 	_set_rect(_stop_btn, 0, 1, 0, 1, 16, -58, 150, -16)
 	_stop_btn.pressed.connect(_teardown_to_idle)
 
+	_splash_btn = _make_button(root, "✦  Splash Screen")
+	_set_rect(_splash_btn, 0, 1, 0, 1, 356, -58, 560, -16)
+	_splash_btn.pressed.connect(_play_splash)
+
 
 func _make_label(parent: Control, size: int, color: Color, align: HorizontalAlignment) -> Label:
 	var l := Label.new()
@@ -238,6 +243,7 @@ func _set_ui_state(state: String) -> void:
 	_feature_lbl.visible = running
 	_desc_lbl.visible = running
 	_counter_lbl.visible = running
+	_splash_btn.visible = state == "idle"
 	# Always visible: the demo scene doubles as the manual performance test.
 	_perf_lbl.visible = true
 
@@ -263,6 +269,13 @@ func _on_restart() -> void:
 func _teardown_to_idle() -> void:
 	_teardown()
 	_set_ui_state("idle")
+
+
+func _play_splash() -> void:
+	_splash_btn.disabled = true
+	var splash := LitSplashScreen.new()
+	splash.finished.connect(func() -> void: _splash_btn.disabled = false)
+	add_child(splash)
 
 
 func _teardown() -> void:
