@@ -47,6 +47,25 @@ const RECEIVER_YSORT_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_stoch_ysort.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort.gdshader",
 ]
+# Mask twins, used while any light carries shadow exclusions (LitLightRegistry.masks_active).
+const RECEIVER_FAST_MASK_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_mask.gdshader",
+]
+const RECEIVER_FULL_MASK_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_mask.gdshader",
+]
+const RECEIVER_YSORT_MASK_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_mask.gdshader",
+]
 
 ## Emissive strength: these pixels ignore the dark. Proxies to the material's
 ## `emissive_strength` uniform.
@@ -231,15 +250,15 @@ func _apply_shader_variant(wants_full: bool, wants_ysort: bool) -> void:
 	if mat == null or mat.shader == null:
 		return
 	var current: String = mat.shader.resource_path
-	if not (current in RECEIVER_FAST_VARIANTS or current in RECEIVER_FULL_VARIANTS \
-			or current in RECEIVER_YSORT_VARIANTS):
+	if not LitLightRegistry._is_lit_receiver_path(current):
 		return
 	var mask := LitLightRegistry.active_algos & 3
-	var table := RECEIVER_FAST_VARIANTS
+	var masks := LitLightRegistry.masks_active
+	var table := RECEIVER_FAST_MASK_VARIANTS if masks else RECEIVER_FAST_VARIANTS
 	if wants_ysort:
-		table = RECEIVER_YSORT_VARIANTS
+		table = RECEIVER_YSORT_MASK_VARIANTS if masks else RECEIVER_YSORT_VARIANTS
 	elif wants_full:
-		table = RECEIVER_FULL_VARIANTS
+		table = RECEIVER_FULL_MASK_VARIANTS if masks else RECEIVER_FULL_VARIANTS
 	var wanted: String = table[mask]
 	if current != wanted:
 		mat.shader = load(wanted)

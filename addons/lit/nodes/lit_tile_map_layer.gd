@@ -20,6 +20,19 @@ const RECEIVER_FULL_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_stoch.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader",
 ]
+# Mask twins, used while any light carries shadow exclusions (LitLightRegistry.masks_active).
+const RECEIVER_FAST_MASK_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_mask.gdshader",
+]
+const RECEIVER_FULL_MASK_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_mask.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_mask.gdshader",
+]
 
 @export var emissive_strength: float = 0.0:
 	set(value):
@@ -66,8 +79,7 @@ func _lit_ready() -> void:
 	if not Engine.is_editor_hint():
 		var mat := material as ShaderMaterial
 		if mat != null and mat.shader != null and not mat.resource_local_to_scene \
-				and (mat.shader.resource_path in RECEIVER_FAST_VARIANTS \
-				or mat.shader.resource_path in RECEIVER_FULL_VARIANTS):
+				and LitLightRegistry._is_lit_receiver_path(mat.shader.resource_path):
 			material = mat.duplicate()
 	if not changed.is_connected(_on_map_changed):
 		changed.connect(_on_map_changed)
@@ -150,10 +162,14 @@ func _apply_shader_variant(wants_full: bool) -> void:
 	if mat == null or mat.shader == null:
 		return
 	var current: String = mat.shader.resource_path
-	if not (current in RECEIVER_FAST_VARIANTS or current in RECEIVER_FULL_VARIANTS):
+	if not LitLightRegistry._is_lit_receiver_path(current):
 		return
 	var mask := LitLightRegistry.active_algos & 3
-	var wanted: String = (RECEIVER_FULL_VARIANTS if wants_full else RECEIVER_FAST_VARIANTS)[mask]
+	var masks := LitLightRegistry.masks_active
+	var table := RECEIVER_FAST_MASK_VARIANTS if masks else RECEIVER_FAST_VARIANTS
+	if wants_full:
+		table = RECEIVER_FULL_MASK_VARIANTS if masks else RECEIVER_FULL_VARIANTS
+	var wanted: String = table[mask]
 	if current != wanted:
 		mat.shader = load(wanted)
 

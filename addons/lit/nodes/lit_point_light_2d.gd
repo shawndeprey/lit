@@ -51,6 +51,11 @@ enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
 
 @export_group("Shadow")
 @export var shadow_enabled: bool = false
+## Occluders cast this light's shadows only if their Occluder Light Mask (tileset
+## occlusion layers: Light Mask) shares a bit with this mask.
+@export_flags_2d_render var shadow_mask: int = 1
+## Occluders in this light's own scene (its owner's subtree) never cast its shadows.
+@export var exclude_scene_occluders: bool = false
 ## CONE_TRACED (the default): a single signed-coverage cone march - penumbras widen
 ## with distance, umbras taper closed, and an antumbra re-brightens, all driven
 ## physically by `source_radius`. RAYMARCHED: the classic estimated-penumbra march -
