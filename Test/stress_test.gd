@@ -44,9 +44,10 @@ var _opt_warmup := WARMUP_SEC
 var _opt_measure := MEASURE_SEC
 var _opt_shadow_algo := "raymarch"
 var _opt_ysort := false
-# masks=off|one|all|split: mark one prop occluder (or all) with occluder mask 2. With
-# no mask-2 light that exercises the global-exclusion tier; split also gives light 0
+# masks=off|one|all|split|tilemap: mark one prop occluder (or all) with occluder mask 2.
+# With no mask-2 light that exercises the global-exclusion tier; split also gives light 0
 # shadow_mask 3 so the occluder still casts for it, exercising the per-light tier.
+# tilemap puts every tileset occlusion layer on mask 2 (globally excluded tilemap case).
 var _opt_masks := "off"
 
 # Clock value used for the deterministic capture frame.
@@ -179,6 +180,12 @@ func _setup() -> void:
 	elif _opt_masks == "all":
 		for p in _props:
 			p.occ.occluder_light_mask = 2
+	elif _opt_masks == "tilemap":
+		for tml in _find_all(scene, TileMapLayer):
+			var ts: TileSet = tml.tile_set
+			if ts != null:
+				for l in ts.get_occlusion_layers_count():
+					ts.set_occlusion_layer_light_mask(l, 2)
 	for i in _opt_light_count:
 		var kind: String = _opt_kinds[i % _opt_kinds.size()]
 		_spawn_light(kind, Color.from_hsv(_rng.randf(), 0.85, 1.0))

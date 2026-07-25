@@ -195,6 +195,7 @@ var _gx_packed := PackedVector4Array()
 # editor previews via the _gx shader tier instead.
 var sdf_cull := false
 var _sdf_culled := {}            # occluders whose sdf_collision this registry disabled
+var _ts_culled := {}             # TileSet -> {occlusion layer idx} this registry disabled
 var _excl_info := {}             # light -> owner id, for lights with exclusions this frame
 var _excl_smasks := {}           # shadow_masks of those lights
 var _excl_owners := {}           # owner ids of those lights
@@ -427,9 +428,9 @@ func _classify_exclusions(lights: Array, root: Node, potential: bool, smask_unio
 			_excl_combos["%d_%d" % [smask, owner_id]] = [smask, owner_id]
 			masks_active = true
 
-## Re-enable SDF collision on culled occluders a light's mask matches again.
+## Re-enable SDF collision on culled occluders/tileset layers a light's mask matches again.
 func _restore_unculled() -> void:
-	if _sdf_culled.is_empty():
+	if _sdf_culled.is_empty() and _ts_culled.is_empty():
 		return
 	var restore: Array = []
 	for occ in _sdf_culled:
@@ -440,6 +441,22 @@ func _restore_unculled() -> void:
 			restore.append(occ)
 	for occ in restore:
 		_sdf_culled.erase(occ)
+	var ts_done: Array = []
+	for ts in _ts_culled:
+		var layers: Dictionary = _ts_culled[ts]
+		var back: Array = []
+		for l in layers:
+			if l >= ts.get_occlusion_layers_count():
+				back.append(l)
+			elif not _gx_masks.has(ts.get_occlusion_layer_light_mask(l)):
+				ts.set_occlusion_layer_sdf_collision(l, true)
+				back.append(l)
+		for l in back:
+			layers.erase(l)
+		if layers.is_empty():
+			ts_done.append(ts)
+	for ts in ts_done:
+		_ts_culled.erase(ts)
 
 ## True if the scope owns an SDF caster that isn't already globally excluded.
 func _scope_has_caster(owner_id: int) -> bool:
@@ -966,10 +983,34 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 			continue
 		if not layer.is_inside_tree() or not layer.is_visible_in_tree():
 			continue
+		var culled := {}
+		var ts := layer.tile_set
+		if ts != null and not _gx_masks.is_empty():
+			if sdf_cull:
+				for l in ts.get_occlusion_layers_count():
+					if ts.get_occlusion_layer_sdf_collision(l) \
+							and _gx_masks.has(ts.get_occlusion_layer_light_mask(l)):
+						# Out of the SDF like loose occluders; _restore_unculled reverts.
+						ts.set_occlusion_layer_sdf_collision(l, false)
+						if not _ts_culled.has(ts):
+							_ts_culled[ts] = {}
+						_ts_culled[ts][l] = true
+			for l in _ts_culled.get(ts, {}):
+				culled[ts.get_occlusion_layer_light_mask(l)] = true
+		if not culled.is_empty():
+			var all_culled := true
+			for m in entry[5]:
+				if not culled.has(m):
+					all_culled = false
+					break
+			if all_culled:
+				continue
 		var include := {}
 		var any_gx := false
 		if not full_set:
 			for m in entry[5]:
+				if culled.has(m):
+					continue
 				if _gx_masks.has(m):
 					any_gx = true
 				elif _exempt_for_any(m, 0):
@@ -987,6 +1028,8 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 		var layer_masks: PackedInt32Array = entry[4]
 		for i in entry[3].size():
 			var m := layer_masks[i]
+			if culled.has(m):
+				continue
 			var r: Rect2 = entry[3][i]
 			if _gx_masks.has(m):
 				if cull_rect.intersects(r):
@@ -1222,8 +1265,9 @@ func _rebuild_excl_lists() -> void:
 		_excl_lists[key] = [rects.size(), union, packed]
 
 ## [rects, masks]: one layer-local rect per painted cell and occlusion mask group among
-## the SDF-collision layers, with the group's light mask parallel in the second array.
-static func tile_caster_rects(layer: TileMapLayer) -> Array:
+## the SDF-collision layers (culled layers included so their mask stays classified), with
+## the group's light mask parallel in the second array.
+func tile_caster_rects(layer: TileMapLayer) -> Array:
 	var rects: Array[Rect2] = []
 	var masks := PackedInt32Array()
 	var ts := layer.tile_set
@@ -1232,7 +1276,7 @@ static func tile_caster_rects(layer: TileMapLayer) -> Array:
 	var sdf_layers: Array[int] = []
 	var layer_masks: Array[int] = []
 	for l in ts.get_occlusion_layers_count():
-		if ts.get_occlusion_layer_sdf_collision(l):
+		if ts.get_occlusion_layer_sdf_collision(l) or _ts_culled.get(ts, {}).has(l):
 			sdf_layers.append(l)
 			layer_masks.append(ts.get_occlusion_layer_light_mask(l))
 	if sdf_layers.is_empty():

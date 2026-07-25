@@ -46,7 +46,7 @@ z_index = -1
 position = Vector2(-2.333313, -7.666664)
 scale = Vector2(1.6666667, 1.6666667)
 occluder = SubResource("OccluderPolygon2D_3srmn")
-occluder_light_mask = 4
+occluder_light_mask = 6
 
 [node name="LitPointLight2D4" type="Node2D" parent="." unique_id=239916220]
 visible = false
