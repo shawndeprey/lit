@@ -101,7 +101,7 @@ shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false
 shader_parameter/self_rect_count = 1
-shader_parameter/self_rects = PackedVector4Array(644, 337.99997, 689, 357.99997, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/self_rects = PackedVector4Array(796, 489.99997, 841, 509.99997, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = false
@@ -127,7 +127,7 @@ shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false
 shader_parameter/self_rect_count = 1
-shader_parameter/self_rects = PackedVector4Array(545, 358.99994, 603, 385.99994, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/self_rects = PackedVector4Array(544, 360.99994, 602, 387.99994, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/specular_strength = 0.5
 shader_parameter/specular_k = 32.0
 shader_parameter/has_specular_map = true
@@ -197,10 +197,11 @@ process_material = SubResource("ParticleProcessMaterial_ynfqq")
 
 [node name="Skele2" type="Node2D" parent="." unique_id=1548463048]
 visible = false
+z_index = 1
+position = Vector2(821, 476)
 
 [node name="Sprite2D" type="Sprite2D" parent="Skele2" unique_id=265787463]
 material = SubResource("ShaderMaterial_p4q25")
-position = Vector2(669, 324)
 scale = Vector2(3, 3)
 texture = SubResource("CanvasTexture_ywxc3")
 
@@ -211,11 +212,11 @@ scale = Vector2(1.6666667, 1.6666667)
 occluder = SubResource("OccluderPolygon2D_3srmn")
 
 [node name="Skeleton" type="Node2D" parent="." unique_id=1155335731]
-position = Vector2(576, 324)
+z_index = 1
+position = Vector2(575, 326)
 scale = Vector2(5, 5)
 
 [node name="LitSprite2D" type="Sprite2D" parent="Skeleton" unique_id=1127649428]
-z_index = 1
 material = SubResource("ShaderMaterial_s7aw1")
 texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("6_ngwpp")
@@ -234,6 +235,7 @@ color = Color(0, 0, 0, 1)
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="LitDemo" type="Node2D" parent="." unique_id=1359773360]
+position = Vector2(-163, 45)
 script = ExtResource("12_demo")
 
 [node name="LitLights" type="Node2D" parent="." unique_id=976079942]
@@ -292,7 +294,7 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 [node name="Cone Traced" type="Node2D" parent="LitLights" unique_id=196279174]
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=2029040104]
-position = Vector2(570, 172)
+position = Vector2(573, 173)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0
@@ -303,9 +305,9 @@ metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D3" type="Node2D" parent="LitLights/Cone Traced" unique_id=2104560388]
 visible = false
-position = Vector2(727, 480)
+position = Vector2(630, 514)
 script = ExtResource("4_lg8mm")
-energy = 2.5
+energy = 1.5
 range = 1024.0
 height = 45.0
 shadow_enabled = true
@@ -313,7 +315,7 @@ shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights/Cone Traced" unique_id=1063815886]
-position = Vector2(690, 439)
+position = Vector2(699, 433)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 1.5
@@ -323,7 +325,7 @@ shadow_jitter = 1.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=1682313072]
-position = Vector2(434.99997, 442.99997)
+position = Vector2(443, 447.99997)
 rotation = -0.67690533
 script = ExtResource("8_5ghie")
 color = Color(0, 0, 1, 1)

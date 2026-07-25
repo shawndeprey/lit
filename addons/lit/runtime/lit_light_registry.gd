@@ -48,6 +48,13 @@ const RECEIVER_FULL_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_stoch.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader",
 ]
+# Third axis: full + the y-sort shadow depth test, for participating receivers only.
+const RECEIVER_YSORT_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort.gdshader",
+]
 
 # Algorithm mask last applied to receiver materials, and whether the tree changed since
 # the last application. Starting at 0 (the base mask) means a scene that never uses the
@@ -103,6 +110,37 @@ var _index_img: Image
 var _light_cache: Array = []
 var _cache_dirty: bool = true
 var _cache_tree: SceneTree = null
+
+# --- Y-sort shadow depth (lit/render/y_sorting) --------------------------------------
+# Per-occluder canvas rect + depth line, binned into the light tile grid.
+static var ysort_enabled: bool = false
+
+var _occ_nodes: Array = []
+var _occ_layers: Array = []      # [TileMapLayer, Array[Rect2] cell-local rects, cached xform, world rects]
+var _occ_dirty := true
+var _occ_pack_buf := PackedFloat32Array()
+var _occ_rects: Array[Rect2] = []
+var _occ_spans := PackedInt32Array()
+var _occ_tile_counts := PackedInt32Array()
+var _occ_tile_min := PackedFloat32Array()
+var _occ_header_buf := PackedFloat32Array()
+var _occ_index_buf := PackedFloat32Array()
+var _occ_prev_pack := PackedFloat32Array()
+var _occ_prev_xform := Transform2D()
+var _occ_prev_grid := Vector2i.ZERO
+var _occ_img: Image
+var _occ_header_img: Image
+var _occ_index_img: Image
+var _occ_tex: ImageTexture
+var _occ_header_tex: ImageTexture
+var _occ_index_tex: ImageTexture
+
+func set_ysort(enabled: bool) -> void:
+	if ysort_enabled == enabled:
+		return
+	ysort_enabled = enabled
+	_bare_dirty = true
+	_occ_dirty = true
 
 ## Gather visible lights, pack them into the light-data texture, build the tile grid,
 ## and publish the global shader uniforms. Call once per frame. receiver_root bounds
@@ -232,6 +270,9 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 
 	# Bin the positional lights into the screen-tile grid the shader culls against.
 	_build_tiles(visible, canvas_xform, vp_size, canvas_scale)
+
+	if ysort_enabled:
+		_build_occluder_tiles(receiver_root, canvas_xform, vp_size, world_rect, canvas_scale)
 
 	# Publish globals.
 	RenderingServer.global_shader_parameter_set("lit_light_count", count)
@@ -627,6 +668,231 @@ func _make_or_update(tex: ImageTexture, img: Image) -> ImageTexture:
 	tex.update(img)
 	return tex
 
+## Pack every SDF-casting occluder's canvas rect (max.y doubles as its depth line) and
+## bin the rects into the light tile grid; mirrors _build_tiles. Header texel z carries
+## the tile's min depth so the shader can dismiss whole tiles with one fetch. Frames
+## where nothing moved skip the binning and uploads entirely.
+func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vector2,
+		world_rect: Rect2, scale: float) -> void:
+	if _occ_dirty:
+		_rebuild_occ_cache(root)
+
+	# Generous pad: off-view casters still shadow into the oversized SDF.
+	var cull_rect := world_rect.grow(maxf(world_rect.size.x, world_rect.size.y) * 0.25)
+
+	_occ_rects.clear()
+
+	for entry in _occ_nodes:
+		if not is_instance_valid(entry):
+			_occ_dirty = true
+			continue
+		var occ := entry as LightOccluder2D
+		if not occ.is_inside_tree() or not occ.sdf_collision or not occ.is_visible_in_tree() \
+				or occ.occluder == null or occ.occluder.polygon.is_empty():
+			continue
+		var xf := occ.global_transform
+		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
+		for p in occ.occluder.polygon:
+			r = r.expand(xf * p)
+		if not cull_rect.intersects(r):
+			continue
+		_occ_rects.append(r)
+
+	for entry in _occ_layers:
+		var layer: TileMapLayer = entry[0]
+		if not is_instance_valid(layer):
+			_occ_dirty = true
+			continue
+		if not layer.is_inside_tree() or not layer.is_visible_in_tree():
+			continue
+		var xf: Transform2D = layer.global_transform
+		if entry[2] != xf:
+			entry[2] = xf
+			var world: Array[Rect2] = []
+			world.resize(entry[1].size())
+			for i in entry[1].size():
+				world[i] = xf * entry[1][i]
+			entry[3] = world
+		for r in entry[3]:
+			if cull_rect.intersects(r):
+				_occ_rects.append(r)
+
+	var count := _occ_rects.size()
+	var tiles_x := maxi(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
+	var tiles_y := maxi(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
+	var tile_count := tiles_x * tiles_y
+	var grid := Vector2i(tiles_x, tiles_y)
+
+	var floats_needed := maxi(count, 1) * 4
+	if _occ_pack_buf.size() != floats_needed:
+		_occ_pack_buf.resize(floats_needed)
+	if count == 0:
+		_occ_pack_buf.fill(0.0)
+	for i in count:
+		var o := i * 4
+		var r := _occ_rects[i]
+		_occ_pack_buf[o + 0] = r.position.x
+		_occ_pack_buf[o + 1] = r.position.y
+		_occ_pack_buf[o + 2] = r.end.x
+		_occ_pack_buf[o + 3] = r.end.y
+
+	var pack_same := _occ_pack_buf == _occ_prev_pack
+	if pack_same and canvas_xform == _occ_prev_xform and grid == _occ_prev_grid:
+		return
+	if not pack_same:
+		_occ_prev_pack = _occ_pack_buf.duplicate()
+	_occ_prev_xform = canvas_xform
+	_occ_prev_grid = grid
+
+	if _occ_tile_counts.size() != tile_count:
+		_occ_tile_counts.resize(tile_count)
+		_occ_tile_min.resize(tile_count)
+	_occ_tile_counts.fill(0)
+	_occ_tile_min.fill(3.4e38)
+	if _occ_spans.size() != count * 4:
+		_occ_spans.resize(count * 4)
+
+	# Candidacy tests reach past a rect, so bin each one tile edge wider.
+	var bin_pad := float(TILE_SIZE)
+	var total := 0
+
+	for i in count:
+		var r := _occ_rects[i]
+		var sr: Rect2 = canvas_xform * r
+		var tx0 := clampi(int(floor((sr.position.x - bin_pad) / float(TILE_SIZE))), 0, tiles_x - 1)
+		var tx1 := clampi(int(floor((sr.end.x + bin_pad) / float(TILE_SIZE))), 0, tiles_x - 1)
+		var ty0 := clampi(int(floor((sr.position.y - bin_pad) / float(TILE_SIZE))), 0, tiles_y - 1)
+		var ty1 := clampi(int(floor((sr.end.y + bin_pad) / float(TILE_SIZE))), 0, tiles_y - 1)
+		var s4 := i * 4
+		_occ_spans[s4 + 0] = tx0
+		_occ_spans[s4 + 1] = tx1
+		_occ_spans[s4 + 2] = ty0
+		_occ_spans[s4 + 3] = ty1
+		total += (tx1 - tx0 + 1) * (ty1 - ty0 + 1)
+		var depth := r.end.y
+		for ty in range(ty0, ty1 + 1):
+			var row_base := ty * tiles_x
+			for tx in range(tx0, tx1 + 1):
+				var t := row_base + tx
+				_occ_tile_counts[t] += 1
+				if depth < _occ_tile_min[t]:
+					_occ_tile_min[t] = depth
+
+	var idx_rows := int(ceil(float(maxi(total, 1)) / float(INDEX_TEX_WIDTH)))
+	var header_floats := tile_count * 4
+	if _occ_header_buf.size() != header_floats:
+		_occ_header_buf.resize(header_floats)
+	var index_floats := INDEX_TEX_WIDTH * idx_rows * 4
+	if _occ_index_buf.size() != index_floats:
+		_occ_index_buf.resize(index_floats)
+
+	var offset := 0
+	for t in tile_count:
+		var cnt := _occ_tile_counts[t]
+		var h := t * 4
+		_occ_header_buf[h] = float(offset)
+		_occ_header_buf[h + 1] = float(cnt)
+		_occ_header_buf[h + 2] = _occ_tile_min[t]
+		_occ_tile_counts[t] = offset
+		offset += cnt
+	for i in count:
+		var s4 := i * 4
+		for ty in range(_occ_spans[s4 + 2], _occ_spans[s4 + 3] + 1):
+			var row_base := ty * tiles_x
+			for tx in range(_occ_spans[s4 + 0], _occ_spans[s4 + 1] + 1):
+				var slot := _occ_tile_counts[row_base + tx]
+				_occ_tile_counts[row_base + tx] = slot + 1
+				_occ_index_buf[slot * 4] = float(i)
+
+	if not pack_same or _occ_tex == null:
+		var rows := maxi(count, 1)
+		var data_bytes := _occ_pack_buf.to_byte_array()
+		if _occ_img == null or _occ_img.get_height() != rows:
+			_occ_img = Image.create_from_data(1, rows, false, Image.FORMAT_RGBAF, data_bytes)
+		else:
+			_occ_img.set_data(1, rows, false, Image.FORMAT_RGBAF, data_bytes)
+		var prev_data := _occ_tex
+		_occ_tex = _make_or_update(_occ_tex, _occ_img)
+		if _occ_tex != prev_data:
+			RenderingServer.global_shader_parameter_set("lit_occ_data", _occ_tex)
+
+	var header_bytes := _occ_header_buf.to_byte_array()
+	if _occ_header_img == null or _occ_header_img.get_width() != tiles_x \
+			or _occ_header_img.get_height() != tiles_y:
+		_occ_header_img = Image.create_from_data(tiles_x, tiles_y, false, Image.FORMAT_RGBAF, header_bytes)
+	else:
+		_occ_header_img.set_data(tiles_x, tiles_y, false, Image.FORMAT_RGBAF, header_bytes)
+	var prev_header := _occ_header_tex
+	_occ_header_tex = _make_or_update(_occ_header_tex, _occ_header_img)
+	if _occ_header_tex != prev_header:
+		RenderingServer.global_shader_parameter_set("lit_occ_headers", _occ_header_tex)
+
+	var index_bytes := _occ_index_buf.to_byte_array()
+	if _occ_index_img == null or _occ_index_img.get_height() != idx_rows:
+		_occ_index_img = Image.create_from_data(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF, index_bytes)
+	else:
+		_occ_index_img.set_data(INDEX_TEX_WIDTH, idx_rows, false, Image.FORMAT_RGBAF, index_bytes)
+	var prev_index := _occ_index_tex
+	_occ_index_tex = _make_or_update(_occ_index_tex, _occ_index_img)
+	if _occ_index_tex != prev_index:
+		RenderingServer.global_shader_parameter_set("lit_occ_indices", _occ_index_tex)
+
+## Rescan the subtree for casters; tilemap cell rects cache until the layer changes.
+func _rebuild_occ_cache(root: Node) -> void:
+	_occ_nodes.clear()
+	_occ_layers.clear()
+	if root == null:
+		return
+	for occ in root.find_children("*", "LightOccluder2D", true, false):
+		_occ_nodes.append(occ)
+	for layer in root.find_children("*", "TileMapLayer", true, false):
+		var rects := tile_caster_rects(layer)
+		if rects.is_empty():
+			continue
+		if not layer.changed.is_connected(_on_tilemap_changed):
+			layer.changed.connect(_on_tilemap_changed)
+		_occ_layers.append([layer, rects, null, []])
+	_occ_dirty = false
+
+## One layer-local rect per painted cell with SDF-collision occlusion polygons.
+static func tile_caster_rects(layer: TileMapLayer) -> Array[Rect2]:
+	var rects: Array[Rect2] = []
+	var ts := layer.tile_set
+	if ts == null:
+		return rects
+	var sdf_layers: Array[int] = []
+	for l in ts.get_occlusion_layers_count():
+		if ts.get_occlusion_layer_sdf_collision(l):
+			sdf_layers.append(l)
+	if sdf_layers.is_empty():
+		return rects
+	var poly_rects := {}
+	for cell in layer.get_used_cells():
+		var td := layer.get_cell_tile_data(cell)
+		if td == null:
+			continue
+		var cell_rect := Rect2()
+		var has_cell := false
+		for l in sdf_layers:
+			for p in td.get_occluder_polygons_count(l):
+				var poly: OccluderPolygon2D = td.get_occluder_polygon(l, p)
+				if poly == null or poly.polygon.is_empty():
+					continue
+				var pr: Rect2
+				if poly_rects.has(poly):
+					pr = poly_rects[poly]
+				else:
+					pr = Rect2(poly.polygon[0], Vector2.ZERO)
+					for pt in poly.polygon:
+						pr = pr.expand(pt)
+					poly_rects[poly] = pr
+				cell_rect = pr if not has_cell else cell_rect.merge(pr)
+				has_cell = true
+		if has_cell:
+			cell_rect.position += layer.map_to_local(cell)
+			rects.append(cell_rect)
+	return rects
+
 ## True if a light's `range`-expanded AABB intersects the visible world rect.
 func _aabb_visible(pos: Vector2, light_range: float, world_rect: Rect2) -> bool:
 	var aabb := Rect2(pos - Vector2(light_range, light_range), Vector2(light_range * 2.0, light_range * 2.0))
@@ -686,6 +952,8 @@ func _on_tree_changed(node: Node) -> void:
 	_receiver_dirty = true
 	if node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer or node is LightOccluder2D:
 		_bare_dirty = true
+	if node is TileMapLayer or node is LightOccluder2D:
+		_occ_dirty = true
 
 
 ## Re-point every Lit receiver material under `root` at the variant compiled for the
@@ -704,8 +972,12 @@ func _apply_receiver_variants(root: Node) -> void:
 	_collect_receiver_mats(root, mats)
 	for mat in mats:
 		var path: String = mat.shader.resource_path
-		var full := path in RECEIVER_FULL_VARIANTS
-		var wanted: String = (RECEIVER_FULL_VARIANTS if full else RECEIVER_FAST_VARIANTS)[mask]
+		var table := RECEIVER_FAST_VARIANTS
+		if path in RECEIVER_YSORT_VARIANTS:
+			table = RECEIVER_YSORT_VARIANTS
+		elif path in RECEIVER_FULL_VARIANTS:
+			table = RECEIVER_FULL_VARIANTS
+		var wanted: String = table[mask]
 		if path != wanted:
 			mat.shader = load(wanted)
 	_published_algos = mask
@@ -721,7 +993,8 @@ func _collect_receiver_mats(node: Node, acc: Dictionary) -> void:
 		var mat := ci.material as ShaderMaterial
 		if mat != null and mat.shader != null:
 			var path := mat.shader.resource_path
-			if path in RECEIVER_FAST_VARIANTS or path in RECEIVER_FULL_VARIANTS:
+			if path in RECEIVER_FAST_VARIANTS or path in RECEIVER_FULL_VARIANTS \
+					or path in RECEIVER_YSORT_VARIANTS:
 				acc[mat] = true
 	for child in node.get_children():
 		_collect_receiver_mats(child, acc)
@@ -771,7 +1044,7 @@ func _rebuild_bare_cache(root: Node) -> void:
 			if stale != null and int(stale) != 0:
 				mat.set_shader_parameter("self_rect_count", 0)
 			continue
-		_bare_cache.append([node, mat, occluders, PackedVector4Array(), -1, tile_rects])
+		_bare_cache.append([node, mat, occluders, PackedVector4Array(), -1, tile_rects, false, 0.0])
 		driven[mat] = true
 	for mat in _bare_driven:
 		if not driven.has(mat) and is_instance_valid(mat):
@@ -781,6 +1054,7 @@ func _rebuild_bare_cache(root: Node) -> void:
 
 func _on_tilemap_changed() -> void:
 	_bare_dirty = true
+	_occ_dirty = true
 
 func _collect_bare_receivers(node: Node, acc: Dictionary) -> void:
 	if (node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer) \
@@ -788,7 +1062,8 @@ func _collect_bare_receivers(node: Node, acc: Dictionary) -> void:
 		var mat := (node as CanvasItem).material as ShaderMaterial
 		if mat != null and mat.shader != null:
 			var path := mat.shader.resource_path
-			if path in RECEIVER_FAST_VARIANTS or path in RECEIVER_FULL_VARIANTS:
+			if path in RECEIVER_FAST_VARIANTS or path in RECEIVER_FULL_VARIANTS \
+					or path in RECEIVER_YSORT_VARIANTS:
 				if not acc.has(mat):
 					acc[mat] = []
 				acc[mat].append(node)
@@ -895,12 +1170,34 @@ func _push_self_rects(entry: Array) -> void:
 		mat.set_shader_parameter("self_rects", packed)
 		mat.set_shader_parameter("self_rect_count", rects.size())
 
+	# Y-sort participation: occluder-owning sprites only, depth = footprint bottom.
+	var ys_on := false
+	var ys_y := 0.0
+	if ysort_enabled and not (spr is TileMapLayer) and not rects.is_empty():
+		ys_on = true
+		ys_y = rects[0].end.y
+		for r in rects:
+			ys_y = maxf(ys_y, r.end.y)
+
 	var wants_full: bool = rects.size() > 0 and mat.get_shader_parameter("self_shadow") != true
 	var path: String = mat.shader.resource_path
-	if path in RECEIVER_FAST_VARIANTS or path in RECEIVER_FULL_VARIANTS:
-		var wanted: String = (RECEIVER_FULL_VARIANTS if wants_full else RECEIVER_FAST_VARIANTS)[active_algos & 3]
+	if path in RECEIVER_FAST_VARIANTS or path in RECEIVER_FULL_VARIANTS \
+			or path in RECEIVER_YSORT_VARIANTS:
+		var table := RECEIVER_FAST_VARIANTS
+		if ys_on:
+			table = RECEIVER_YSORT_VARIANTS
+		elif wants_full:
+			table = RECEIVER_FULL_VARIANTS
+		var wanted: String = table[active_algos & 3]
 		if path != wanted:
 			mat.shader = load(wanted)
+
+	# After the swap, so the params land on a shader declaring them.
+	if entry[6] != ys_on or entry[7] != ys_y:
+		entry[6] = ys_on
+		entry[7] = ys_y
+		mat.set_shader_parameter("ysort_on", ys_on)
+		mat.set_shader_parameter("ysort_y", ys_y)
 
 ## Rescan the lit_lights group and store [node, kind] (kind: 0 point, 1 directional,
 ## 2 spot) so refresh() avoids the group scan and per-node type dispatch each frame.

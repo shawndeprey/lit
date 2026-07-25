@@ -97,8 +97,13 @@ func _process(delta: float) -> void:
 	# Phong (the global's default) regardless of the setting.
 	RenderingServer.global_shader_parameter_set("lit_lighting_model",
 		int(ProjectSettings.get_setting("lit/render/lighting_model", 0)))
+	var ysort := bool(ProjectSettings.get_setting("lit/render/y_sorting", false))
+	RenderingServer.global_shader_parameter_set("lit_ysort_enabled", ysort)
+	RenderingServer.global_shader_parameter_set("lit_ysort_band",
+		maxf(float(ProjectSettings.get_setting("lit/render/y_sort_smoothing", 12.0)), 0.01))
 	if _registry == null or EditorInterface.get_edited_scene_root() == null:
 		return  # no scene open / nothing to light
+	_registry.set_ysort(ysort)
 	# Mirror the runtime manager's CPU-side stochastic sample cap for the preview.
 	_registry.shadow_samples_max = clampi(
 		int(ProjectSettings.get_setting("lit/quality/shadow_samples_max", 32)), 1, 32)
@@ -214,6 +219,20 @@ func _ps_global_defs() -> Array:
 			"name": "lit_cookie_atlas",
 			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
 		},
+		{"name": "lit_ysort_enabled", "def": {"type": "bool", "value": false}},
+		{"name": "lit_ysort_band", "def": {"type": "float", "value": 12.0}},
+		{
+			"name": "lit_occ_data",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
+		{
+			"name": "lit_occ_headers",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
+		{
+			"name": "lit_occ_indices",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
 	]
 
 ## RenderingServer live-add defs: name + GlobalShaderParameterType + default.
@@ -239,6 +258,11 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_tile_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_tile_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_cookie_atlas", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_ysort_enabled", "type": RenderingServer.GLOBAL_VAR_TYPE_BOOL, "value": false},
+		{"name": "lit_ysort_band", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 12.0},
+		{"name": "lit_occ_data", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_occ_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_occ_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 	]
 
 ## Persist the shader_globals into project.godot. Idempotent: writes only the missing
@@ -288,6 +312,23 @@ func _project_setting_defs() -> Array:
 				"type": TYPE_INT,
 				"hint": PROPERTY_HINT_ENUM,
 				"hint_string": "Blinn–Phong (BP) — faster · uses only the CanvasTexture · stylized highlights,Physically Based Rendering (PBR) — realistic surfaces · adds metallic/roughness/AO · slight perf cost",
+			},
+		},
+		{
+			# Top-down shadow depth by occluder footprint bottoms; not Godot y-sort.
+			"name": "lit/render/y_sorting",
+			"default": false,
+			"info": {"name": "lit/render/y_sorting", "type": TYPE_BOOL},
+		},
+		{
+			# Fade half-width in world pixels around the depth boundary.
+			"name": "lit/render/y_sort_smoothing",
+			"default": 12.0,
+			"info": {
+				"name": "lit/render/y_sort_smoothing",
+				"type": TYPE_FLOAT,
+				"hint": PROPERTY_HINT_RANGE,
+				"hint_string": "0,64,0.5,or_greater",
 			},
 		},
 		{

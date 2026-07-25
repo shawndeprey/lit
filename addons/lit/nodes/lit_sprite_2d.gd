@@ -41,6 +41,12 @@ const RECEIVER_FULL_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_stoch.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader",
 ]
+const RECEIVER_YSORT_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort.gdshader",
+]
 
 ## Emissive strength: these pixels ignore the dark. Proxies to the material's
 ## `emissive_strength` uniform.
@@ -73,6 +79,10 @@ var _watched_texture: CanvasTexture = null
 # Owned occluders (descendants and direct siblings); rebuilt when children of this
 # sprite or of its parent change.
 var _self_occluders: Array = []
+
+# Last-pushed y-sort params, so the sync only touches the material on change.
+var _ysort_on_last := false
+var _ysort_y_last := 0.0
 
 
 func _init() -> void:
@@ -187,27 +197,50 @@ func _update_self_rect() -> void:
 	_set_param("self_rects", packed)
 	_set_param("self_rect_count", rects.size())
 
-	# Full shader only while the self-exclusion march can actually run. The material
-	# param decides, so the flag also works when set directly on the material.
+	# Y-sort participation: occluder-owning sprites only, depth = footprint bottom.
+	var ys_on := false
+	var ys_y := 0.0
+	if LitLightRegistry.ysort_enabled and not rects.is_empty():
+		ys_on = true
+		ys_y = rects[0].end.y
+		for r in rects:
+			ys_y = maxf(ys_y, r.end.y)
+
+	# Full shader only while the self-exclusion march can actually run, the y-sort
+	# variant only while participating. The material param decides, so the flag also
+	# works when set directly on the material.
 	var flag: Variant = null
 	if material is ShaderMaterial:
 		flag = (material as ShaderMaterial).get_shader_parameter("self_shadow")
-	_apply_shader_variant(rects.size() > 0 and flag != true)
+	_apply_shader_variant(rects.size() > 0 and flag != true, ys_on)
+
+	# After the swap, so the params land on a shader declaring them.
+	if ys_on != _ysort_on_last or (ys_on and ys_y != _ysort_y_last):
+		_ysort_on_last = ys_on
+		_ysort_y_last = ys_y
+		_set_param("ysort_on", ys_on)
+		_set_param("ysort_y", ys_y)
 
 
-# Swap to the receiver variant for this frame's needs: full/fast per the self-exclusion
-# state, cone/stoch per the shadow algorithms active on lights (published by the
-# registry). Only materials already on a Lit variant are touched; a custom shader is
-# left alone.
-func _apply_shader_variant(wants_full: bool) -> void:
+# Swap to the receiver variant for this frame's needs: ysort/full/fast per the y-sort
+# participation and self-exclusion state, cone/stoch per the shadow algorithms active
+# on lights (published by the registry). Only materials already on a Lit variant are
+# touched; a custom shader is left alone.
+func _apply_shader_variant(wants_full: bool, wants_ysort: bool) -> void:
 	var mat := material as ShaderMaterial
 	if mat == null or mat.shader == null:
 		return
 	var current: String = mat.shader.resource_path
-	if not (current in RECEIVER_FAST_VARIANTS or current in RECEIVER_FULL_VARIANTS):
+	if not (current in RECEIVER_FAST_VARIANTS or current in RECEIVER_FULL_VARIANTS \
+			or current in RECEIVER_YSORT_VARIANTS):
 		return
 	var mask := LitLightRegistry.active_algos & 3
-	var wanted: String = (RECEIVER_FULL_VARIANTS if wants_full else RECEIVER_FAST_VARIANTS)[mask]
+	var table := RECEIVER_FAST_VARIANTS
+	if wants_ysort:
+		table = RECEIVER_YSORT_VARIANTS
+	elif wants_full:
+		table = RECEIVER_FULL_VARIANTS
+	var wanted: String = table[mask]
 	if current != wanted:
 		mat.shader = load(wanted)
 

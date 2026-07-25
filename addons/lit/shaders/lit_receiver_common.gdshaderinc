@@ -5,6 +5,7 @@
 //  - LIT_SELF_EXCLUSION: self-shadow exclusion (lit_receiver.gdshader and the other
 //    non-_fast wrappers); the _fast wrappers compile it out - identical output for
 //    materials that never populate self_rects.
+//  - LIT_YSORT: the y-sort shadow depth test (the _ysort wrappers).
 //  - LIT_SHADOW_CONE / LIT_SHADOW_STOCH: the Cone Traced and Stochastic per-light
 //    shadow algorithms (the _cone / _stoch / _cone_stoch wrappers). Base wrappers
 //    support only the Raymarched algorithm and compile byte-identical to the
@@ -44,6 +45,15 @@ global uniform sampler2D lit_tile_indices;
 global uniform ivec2     lit_tile_grid;                 // tiles across, tiles down
 global uniform int       lit_tile_size;                 // tile edge in pixels
 
+// Y-sort shadow depth: per-occluder rect + depth line, binned into the light tiles.
+#ifdef LIT_YSORT
+global uniform bool      lit_ysort_enabled;
+global uniform float     lit_ysort_band;                // fade half-width, world px
+global uniform sampler2D lit_occ_data;                  // rect min.xy|max.xy; max.y is the depth line
+global uniform sampler2D lit_occ_headers;               // per tile: offset | count | min depth
+global uniform sampler2D lit_occ_indices;
+#endif
+
 // Optional adaptive shadow march, driven by the lit/quality/* project settings via the
 // manager. When scaling is on, a fragment spends march steps in proportion to how far
 // it has to march, capped at lit_shadow_steps_max.
@@ -78,6 +88,12 @@ uniform int receiver_mask = 1;
 uniform bool self_shadow = false;
 uniform int  self_rect_count = 0;
 uniform vec4 self_rects[4];  // canvas-space min.xy | max.xy each
+
+// Y-sort participation + depth line (the receiver's occluder footprint bottom).
+#ifdef LIT_YSORT
+uniform bool  ysort_on = false;
+uniform float ysort_y = 0.0;
+#endif
 
 // Blinn-Phong specular controls (LIT_MODEL_PHONG only). Ignored in PBR mode.
 // specular_k scales how the CanvasTexture shininess maps to the half-vector exponent.
@@ -126,6 +142,17 @@ uniform float directional_horizontal_scale = 32.0;
 // well-sampled; a fixed huge distance would under-sample the penumbra.
 uniform float directional_shadow_reach = 1.0;
 
+// Y-sort march context; the macros erase it from non-_ysort variants entirely.
+#ifdef LIT_YSORT
+#define LIT_YS_PARAMS , bool ys_on, mat2 sdf_to_px, vec2 frag_px
+#define LIT_YS_ARGS , ys_on, sdf_to_px, frag_px
+#define LIT_YS_ON ys_on
+#else
+#define LIT_YS_PARAMS
+#define LIT_YS_ARGS
+#define LIT_YS_ON false
+#endif
+
 // Fragment position in canvas space, for the self-shadow bounds test. Canvas space
 // rather than VERTEX so the rects stay valid for items that don't draw in their
 // owner's local space (a y-sorted TileMapLayer renders per-row child items).
@@ -173,6 +200,39 @@ float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 	return t_end;
 }
 
+#ifdef LIT_YSORT
+// 1 keeps the caster's shadow, 0 exempts it; max over tile candidates, 1 when none.
+float lit_ysort_weight(vec2 p_canvas, vec2 p_px, float reach) {
+	ivec2 tile = clamp(ivec2(p_px) / lit_tile_size, ivec2(0), lit_tile_grid - ivec2(1));
+	vec4 header = texelFetch(lit_occ_headers, tile, 0);
+	// Every candidate at or below the receiver's band keeps its shadow (smoothstep
+	// saturates to 1), so the tile's min depth answers for all of them at once. Empty
+	// tiles carry a huge min depth and take this exit too.
+	if (header.z - ysort_y >= lit_ysort_band) {
+		return 1.0;
+	}
+	int offset = int(round(header.x));
+	int count = int(round(header.y));
+	float w = -1.0;
+	float r2 = reach * reach;
+	for (int j = 0; j < count; j++) {
+		int flat_idx = offset + j;
+		int oi = int(round(texelFetch(lit_occ_indices,
+				ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH), 0).x));
+		vec4 rect = texelFetch(lit_occ_data, ivec2(0, oi), 0);
+		vec2 dv = max(max(rect.xy - p_canvas, vec2(0.0)), p_canvas - rect.zw);
+		if (dot(dv, dv) > r2) {
+			continue;
+		}
+		w = max(w, smoothstep(-lit_ysort_band, lit_ysort_band, rect.w - ysort_y));
+		if (w >= 1.0) {
+			return 1.0;
+		}
+	}
+	return w < 0.0 ? 1.0 : w;
+}
+#endif
+
 // Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| -
 // the distance field of occluder outlines - so a shape casts from its light-facing
 // silhouette and the shadow passes through its body. A fragment starting inside a
@@ -186,7 +246,7 @@ float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 // stepped through instead of occluding; self_canvas and sdf_to_canvas map SDF-space
 // march offsets into canvas space, and self_scale is the canvas length of one SDF unit.
 float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, float frag_d,
-		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale) {
+		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_YS_PARAMS) {
 	float t = shadow_min_step;
 	float res = 1.0;
 	float prev_d = frag_d;                   // signed; tracks outline crossings
@@ -197,17 +257,22 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);      // keep the compile-time cap
 
 	// Own outlines only matter within penumbra reach; past the segment exit the fast
-	// phases finish the march.
-	if (self_ex) {
+	// phases finish the march. Y-sort covers the whole march instead.
+	if (self_ex || LIT_YS_ON) {
 		vec2 dir_canvas = sdf_to_canvas * dir;
+#ifdef LIT_YSORT
+		vec2 dir_px = sdf_to_px * dir;
+#endif
 		float pad = (max(maxd / k, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
-		float t_self_end = lit_self_segment_exit(self_canvas, dir_canvas * maxd, pad) * maxd;
+		float t_self_end = self_ex
+				? lit_self_segment_exit(self_canvas, dir_canvas * maxd, pad) * maxd : 0.0;
+		float t_slow_end = LIT_YS_ON ? maxd : t_self_end;
 		// Mutes penumbra accumulation while the ray still recedes from the exited edge.
 		bool receding = false;
 		float prev_ad = 0.0;
 		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
 		// body, which taxes the whole shader even on fragments that never take it.
-		for (; s < max_steps && t < maxd && t <= t_self_end; s++) {
+		for (; s < max_steps && t < maxd && t <= t_slow_end; s++) {
 			float d = texture_sdf(frag_sdf + dir * t); // signed: negative inside a shape
 			float ad = abs(d);                         // distance to the nearest outline
 			if (grace) {
@@ -223,7 +288,12 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 				prev_ad = ad;
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
 				if (lit_self_dist2(self_canvas + dir_canvas * t) > own_r * own_r) {
-					float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+					float yw = 1.0;
+#ifdef LIT_YSORT
+					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
+							frag_px + dir_px * t, own_r) : 1.0;
+#endif
+					float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0) * yw;
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
 						return 0.0;              // fully occluded
@@ -258,10 +328,24 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 						continue;
 					}
 				} else {
+					float yw = 1.0;
+#ifdef LIT_YSORT
+					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
+							frag_px + dir_px * t, own_r) : 1.0;
+#endif
 					if (hit) {
-						return 0.0;              // fully occluded
+						if (yw >= 1.0) {
+							return 0.0;          // fully occluded
+						}
+						// Faded caster: darken by its weight, then step through it.
+						res = min(res, 1.0 - yw);
+						if (res <= 0.0) {
+							return 0.0;
+						}
+						t += max(-d, shadow_min_step);
+						continue;
 					}
-					res = cand;                  // penumbra accumulation
+					res = min(res, mix(1.0, cand, yw));  // penumbra accumulation
 				}
 			}
 			t += max(ad, shadow_min_step);
@@ -371,7 +455,8 @@ float lit_shadow_contrast(float s, float hardness) {
 // that term smooth and fragment-independent; far-field lights (source clear of
 // occluders) get coverage >= 1 from it, leaving their result untouched.
 float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_steps, float frag_d,
-		bool src_plane, bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale) {
+		bool src_plane, bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas,
+		float self_scale LIT_YS_PARAMS) {
 	float t = shadow_min_step;
 	float res = 1.0;
 	bool grace = frag_d < 0.0;
@@ -380,16 +465,22 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 	float t_self_end = 0.0;
 
 	// Own outlines only matter within the cone's widest reach; past the segment exit
-	// the fast phases finish the march.
-	if (self_ex) {
+	// the fast phases finish the march. Y-sort covers the whole march instead.
+	if (self_ex || LIT_YS_ON) {
 		vec2 dir_canvas = sdf_to_canvas * dir;
+#ifdef LIT_YSORT
+		vec2 dir_px = sdf_to_px * dir;
+#endif
 		float pad = (max(w * maxd, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
-		t_self_end = lit_self_segment_exit(self_canvas, dir_canvas * maxd, pad) * maxd;
+		if (self_ex) {
+			t_self_end = lit_self_segment_exit(self_canvas, dir_canvas * maxd, pad) * maxd;
+		}
+		float t_slow_end = LIT_YS_ON ? maxd : t_self_end;
 		bool receding = false;
 		float prev_d = frag_d;
 		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
 		// body, which taxes the whole shader even on fragments that never take it.
-		for (; s < max_steps && t < maxd && t <= t_self_end; s++) {
+		for (; s < max_steps && t < maxd && t <= t_slow_end; s++) {
 			float d = texture_sdf(frag_sdf + dir * t);
 			float ad = abs(d);
 			if (grace) {
@@ -404,7 +495,12 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 				prev_d = d;
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
 				if (lit_self_dist2(self_canvas + dir_canvas * t) > own_r * own_r) {
-					res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+					float yw = 1.0;
+#ifdef LIT_YSORT
+					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
+							frag_px + dir_px * t, own_r) : 1.0;
+#endif
+					res = 1.0 - clamp(footprint_shadow * t / maxd, 0.0, 1.0) * yw;
 					if (res <= 0.0) {
 						return 0.0;
 					}
@@ -434,9 +530,17 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 					t += max(ad, shadow_min_step);   // owned occluder: contributes nothing
 					continue;
 				}
-				res = max(cand, 0.0);
-				if (res <= 0.0) {
-					return 0.0;                      // cone fully blocked; can't recover
+				float yw = 1.0;
+#ifdef LIT_YSORT
+				yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
+						frag_px + dir_px * t, own_r) : 1.0;
+#endif
+				float faded = mix(1.0, max(cand, 0.0), yw);
+				if (faded < res) {
+					res = faded;
+					if (res <= 0.0) {
+						return 0.0;                  // cone fully blocked; can't recover
+					}
 				}
 			}
 			t += max(ad, shadow_min_step);
@@ -513,7 +617,12 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			bool own_exempt = self_ex && maxd <= t_self_end
 					&& lit_self_dist2(self_canvas + sdf_to_canvas * (dir * maxd)) <= own_r * own_r;
 			if (cand < res && !own_exempt) {
-				res = max(cand, 0.0);
+				float yw = 1.0;
+#ifdef LIT_YSORT
+				yw = ys_on ? lit_ysort_weight(self_canvas + sdf_to_canvas * (dir * maxd),
+						frag_px + sdf_to_px * (dir * maxd), own_r) : 1.0;
+#endif
+				res = min(res, mix(1.0, max(cand, 0.0), yw));
 			}
 		}
 		return clamp(res, 0.0, 1.0);
@@ -554,10 +663,10 @@ const int LIT_MAX_SHADOW_SAMPLES = 32;
 // cone minimum underestimates) is preserved exactly where it matters.
 float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float src,
 		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
-		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale) {
+		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_YS_PARAMS) {
 	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
 	float gate = lit_shadow_cone(frag_sdf, dir, maxd, w_gate, max_steps, frag_d,
-			!is_dir, self_ex, self_canvas, sdf_to_canvas, self_scale);
+			!is_dir, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_YS_ARGS);
 	if (gate <= 0.0) {
 		return 0.0;
 	}
@@ -589,7 +698,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 			w_sub = half_stratum / max(smaxd, 1e-4);
 		}
 		sum += lit_shadow_cone(frag_sdf, sdir, smaxd, max(w_sub, 1e-4), max_steps, frag_d,
-				!is_dir, self_ex, self_canvas, sdf_to_canvas, self_scale);
+				!is_dir, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_YS_ARGS);
 	}
 	return sum / float(n);
 }
@@ -625,7 +734,7 @@ vec3 lit_f_schlick(float v_dot_h, vec3 f0) {
 vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float metallic, float roughness,
 		vec2 frag_uv, vec2 frag_sdf, float sdf_diag, float frag_d,
-		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale) {
+		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_YS_PARAMS) {
 	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
 	// lights bail after a single fetch, before any position/color/shadow texels.
 	vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0);
@@ -835,7 +944,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
 						march_len, src, is_directional, int(round(t7.y)), t7.z,
 						frag_uv * lit_viewport_size, steps, frag_d,
-						self_ex, self_canvas, sdf_to_canvas, self_scale);
+						self_ex, self_canvas, sdf_to_canvas, self_scale LIT_YS_ARGS);
 				s = lit_shadow_contrast(s, t3.w);
 			} else
 #endif
@@ -847,18 +956,19 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 				float w = is_directional ? t7.x
 						: t7.x * lit_canvas_scale * px_to_sdf / max(march_len, 1e-4);
 				s = lit_shadow_cone(frag_sdf, march_dir, march_len, max(w, 1e-4), steps,
-						frag_d, !is_directional, self_ex, self_canvas, sdf_to_canvas, self_scale);
+						frag_d, !is_directional, self_ex, self_canvas, sdf_to_canvas,
+						self_scale LIT_YS_ARGS);
 				s = lit_shadow_contrast(s, t3.w);
 			} else
 #endif
 			{
 				s = lit_shadow(frag_sdf, march_dir, march_len, mix(8.0, 256.0, t3.w),
-						steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale);
+						steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_YS_ARGS);
 			}
 #else
 			// Low hardness is soft, high is crisp.
 			s = lit_shadow(frag_sdf, march_dir, march_len, mix(8.0, 256.0, t3.w),
-					steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale);
+					steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_YS_ARGS);
 #endif
 		}
 		contribution *= mix(t3.rgb, vec3(1.0), s);
@@ -911,15 +1021,25 @@ void fragment() {
 	// below, and the lit_self_* helpers out of the shader.
 	bool self_ex = false;
 #endif
+#ifdef LIT_YSORT
+	bool ys_on = lit_ysort_enabled && ysort_on;
+	mat2 sdf_to_px = mat2(vec2(0.0), vec2(0.0));
+	vec2 frag_px = SCREEN_UV * lit_viewport_size;
+#endif
 	mat2 sdf_to_canvas = mat2(vec2(0.0), vec2(0.0));
 	float self_scale = 0.0;
-	if (self_ex) {
+	if (self_ex || LIT_YS_ON) {
 		// Columns: per-pixel-step delta of each space, in x and y.
 		mat2 px_to_sdf = mat2(
 				screen_uv_to_sdf(SCREEN_UV + vec2(SCREEN_PIXEL_SIZE.x, 0.0)) - frag_sdf,
 				screen_uv_to_sdf(SCREEN_UV + vec2(0.0, SCREEN_PIXEL_SIZE.y)) - frag_sdf);
 		mat2 px_to_canvas = mat2(dFdx(v_canvas), dFdy(v_canvas));
+#ifdef LIT_YSORT
+		sdf_to_px = inverse(px_to_sdf);
+		sdf_to_canvas = px_to_canvas * sdf_to_px;
+#else
 		sdf_to_canvas = px_to_canvas * inverse(px_to_sdf);
+#endif
 		// Canvas length of one SDF unit, for comparing SDF distances against the bounds.
 		self_scale = max(length(sdf_to_canvas[0]), length(sdf_to_canvas[1]));
 	}
@@ -933,7 +1053,7 @@ void fragment() {
 		// leading directional rows for every fragment. Kept separate from the tile loop
 		// so the row index stays wave-uniform.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_YS_ARGS);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -947,12 +1067,12 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale);
+			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_YS_ARGS);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale);
+			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_YS_ARGS);
 		}
 	}
 
