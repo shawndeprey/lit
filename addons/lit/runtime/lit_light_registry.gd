@@ -142,10 +142,14 @@ var _published_cookie_tex: Texture2D = null
 
 # Reused scratch for packing: write floats straight into _pack_buf and upload once,
 # instead of per-texel Image.set_pixel calls. _pack_img is kept across frames and only
-# reallocated when the light count changes.
+# reallocated when the light count or row width changes.
 var _pack_buf: PackedFloat32Array = PackedFloat32Array()
 var _pack_img: Image
 var _pack_img_count: int = -1
+# Light-row texel width: 8 until per-light exclusions first activate, then the full
+# TEXELS_PER_LIGHT (sticky). Base shaders never read past texel 7.
+var _tpl := 8
+var _excl_active := false
 
 # Reused tile-build scratch, kept across frames so steady state allocates nothing.
 var _tile_counts: PackedInt32Array = PackedInt32Array()
@@ -312,8 +316,14 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 			if smask != 1 or node.exclude_scene_occluders:
 				mask_potential = true
 	active_algos = algos
-	_classify_exclusions(lights, receiver_root, mask_potential, smask_union)
-	_restore_unculled()
+	# Skippable only while no light or occluder has ever shown mask potential, when
+	# both calls are provably no-ops (their state is empty by construction).
+	if read_masks or not _mask_seed_done:
+		_classify_exclusions(lights, receiver_root, mask_potential, smask_union)
+		_restore_unculled()
+	_excl_active = not _excl_info.is_empty()
+	if masks_active:
+		_tpl = TEXELS_PER_LIGHT
 
 	# Occluder identity before the variant walk (gx_active is exact) and before packing
 	# (_pack_excl reads the exempt lists this builds).
@@ -361,8 +371,8 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 	_cookies_active = not cookie_textures.is_empty()
 	_publish_cookie_atlas()
 
-	# Pack each light into one TEXELS_PER_LIGHT-wide row of the float buffer.
-	var floats_needed := count * TEXELS_PER_LIGHT * 4
+	# Pack each light into one _tpl-wide row of the float buffer.
+	var floats_needed := count * _tpl * 4
 	if _pack_buf.size() != floats_needed:
 		_pack_buf.resize(floats_needed)
 	_pack_buf.fill(0.0)
@@ -568,13 +578,14 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	var uv := screen_px / vp_size
 
 	# Four floats per texel; o is the float offset of this light's first texel.
-	var o := row * TEXELS_PER_LIGHT * 4
+	var o := row * _tpl * 4
 
 	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
 	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
 	var textured := _pack_cookie(o, light, canvas_xform)
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured) \
-			+ 8.0 * float(light.shadow_algorithm) + _pack_excl(o, light)
+			+ 8.0 * float(light.shadow_algorithm) \
+			+ (_pack_excl(o, light) if _excl_active else 0.0)
 	const TYPE_POINT := 0.0
 
 	# Texel 0: type | flags | light_mask | falloff
@@ -618,9 +629,10 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 		dir_px = dir_px.normalized()
 
 	var subtractive := 1.0 if light.blend_mode == LitDirectionalLight2D.BlendMode.SUBTRACT else 0.0
-	var o := row * TEXELS_PER_LIGHT * 4
+	var o := row * _tpl * 4
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
-			+ 8.0 * float(light.shadow_algorithm) + _pack_excl(o, light)
+			+ 8.0 * float(light.shadow_algorithm) \
+			+ (_pack_excl(o, light) if _excl_active else 0.0)
 	const TYPE_DIRECTIONAL := 1.0
 
 	# Texel 0: type | flags | light_mask | (falloff unused)
@@ -674,12 +686,13 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	if cos_inner <= cos_outer:
 		cos_inner = cos_outer + 0.0001
 
-	var o := row * TEXELS_PER_LIGHT * 4
+	var o := row * _tpl * 4
 
 	var subtractive := 1.0 if light.blend_mode == LitSpotLight2D.BlendMode.SUBTRACT else 0.0
 	var textured := _pack_cookie(o, light, canvas_xform)
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured) \
-			+ 8.0 * float(light.shadow_algorithm) + _pack_excl(o, light)
+			+ 8.0 * float(light.shadow_algorithm) \
+			+ (_pack_excl(o, light) if _excl_active else 0.0)
 	const TYPE_SPOT := 2.0
 
 	# Texel 0: type | flags | light_mask | falloff
@@ -1364,17 +1377,17 @@ func _visible_world_rect(canvas_xform: Transform2D, vp_size: Vector2) -> Rect2:
 	rect = rect.expand(inv * vp_size)
 	return rect
 
-## Upload _pack_buf (TEXELS_PER_LIGHT x count RGBAF) to the light-data texture, reusing
-## the Image and ImageTexture across frames and only reallocating when count changes.
+## Upload _pack_buf (_tpl x count RGBAF) to the light-data texture, reusing the Image
+## and ImageTexture across frames and only reallocating when count or width changes.
 func _upload_pack_buffer(count: int) -> void:
 	var bytes := _pack_buf.to_byte_array()
-	if _pack_img == null or _pack_img_count != count:
-		_pack_img = Image.create_from_data(TEXELS_PER_LIGHT, count, false, Image.FORMAT_RGBAF, bytes)
+	if _pack_img == null or _pack_img_count != count or _pack_img.get_width() != _tpl:
+		_pack_img = Image.create_from_data(_tpl, count, false, Image.FORMAT_RGBAF, bytes)
 		_pack_img_count = count
 	else:
-		_pack_img.set_data(TEXELS_PER_LIGHT, count, false, Image.FORMAT_RGBAF, bytes)
+		_pack_img.set_data(_tpl, count, false, Image.FORMAT_RGBAF, bytes)
 
-	if _texture == null or _texture.get_size() != Vector2(TEXELS_PER_LIGHT, count):
+	if _texture == null or _texture.get_size() != Vector2(_tpl, count):
 		_texture = ImageTexture.create_from_image(_pack_img)
 	else:
 		_texture.update(_pack_img)

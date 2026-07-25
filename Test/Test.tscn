@@ -143,7 +143,7 @@ process_material = SubResource("ParticleProcessMaterial_ynfqq")
 position = Vector2(472, 129)
 
 [node name="Skele2" parent="." unique_id=218316037 instance=ExtResource("4_lng6l")]
-position = Vector2(626, 170)
+position = Vector2(670, 151)
 
 [node name="Skeleton" parent="." unique_id=1906572971 instance=ExtResource("5_efe2u")]
 position = Vector2(575, 326)
