@@ -1,6 +1,6 @@
 [gd_scene format=4 uid="uid://cpygp0wxw1iu7"]
 
-[ext_resource type="Shader" uid="uid://bbn1c0xc3cd65" path="res://addons/lit/shaders/lit_receiver_cone_gx.gdshader" id="1_ae8ts"]
+[ext_resource type="Shader" uid="uid://c8nlvfn4pl3ir" path="res://addons/lit/shaders/lit_receiver_cone_mask.gdshader" id="1_ae8ts"]
 [ext_resource type="Texture2D" uid="uid://b2nlbskimwprj" path="res://Test/cinderskull_preview_o.png" id="2_5pqrm"]
 [ext_resource type="Texture2D" uid="uid://cgevs35a2oh53" path="res://Test/cinderskull_preview_r.png" id="3_b3eui"]
 [ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="4_0nfxa"]
@@ -52,9 +52,9 @@ z_index = -1
 position = Vector2(-1, -0.20000458)
 scale = Vector2(0.99999976, 0.99999976)
 occluder = SubResource("OccluderPolygon2D_ynfqq")
-occluder_light_mask = 2
 
 [node name="LitPointLight2D4" type="Node2D" parent="." unique_id=2079794811]
+visible = false
 position = Vector2(-0.79999995, 27.599998)
 scale = Vector2(0.19999999, 0.19999999)
 script = ExtResource("8_04jfr")

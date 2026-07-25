@@ -175,7 +175,7 @@ static var masks_active: bool = false
 static var gx_active: bool = false
 
 var _occ_nodes: Array = []       # [LightOccluder2D, owner id]
-var _occ_layers: Array = []      # [TileMapLayer, cell-local rects, cached xform, world rects, masks]
+var _occ_layers: Array = []      # [TileMapLayer, cell rects, xform, world rects, masks, distinct, ts snapshot]
 var _occ_dirty := true
 var _occ_pack_buf := PackedFloat32Array()
 var _occ_rects: Array[Rect2] = []
@@ -202,6 +202,8 @@ var _excl_owners := {}           # owner ids of those lights
 var _excl_combos := {}           # "smask_owner" -> [smask, owner id], distinct this frame
 var _excl_lists := {}            # combo key -> [count, union Rect2, 4 packed rects]
 var _prev_combo_sig := ""
+var _prev_excl_masks := PackedInt32Array()
+var _prev_excl_owners := PackedInt32Array()
 var _occ_spans := PackedInt32Array()
 var _occ_tile_counts := PackedInt32Array()
 var _occ_tile_min := PackedFloat32Array()
@@ -393,12 +395,17 @@ func _classify_exclusions(lights: Array, root: Node, potential: bool, smask_unio
 		# One-time scan so occluder masks customized before load are honored at start.
 		_mask_seed_done = true
 		_rebuild_occ_cache(root)
+	elif Engine.is_editor_hint() and smask_union != 0:
+		# Pre-gate: live mask edits must be seen while masks are inactive too, or the
+		# first non-default mask can never open the gate below (stuck until reload).
+		if not _occ_dirty:
+			_refresh_occ_mask_set()
+		if _occ_dirty:
+			_rebuild_occ_cache(root)
 	if smask_union == 0 or not (potential or _occ_masks_seen):
 		return
 	if _occ_dirty:
 		_rebuild_occ_cache(root)
-	elif Engine.is_editor_hint():
-		_refresh_occ_mask_set()
 	for m in _occ_mask_set:
 		if (int(m) & smask_union) == 0:
 			_gx_masks[m] = true
@@ -482,6 +489,8 @@ func _publish_gx(packed: PackedVector4Array) -> void:
 			packed[3] if packed.size() > 3 else Vector4())
 
 ## Recompute the distinct-mask set from the cached nodes (editor live edits only).
+## Tileset masks are cache-derived, so they are compared against a live snapshot here;
+## any drift (mask edit, missed changed signal) marks the cache dirty to self-heal.
 func _refresh_occ_mask_set() -> void:
 	_occ_mask_set.clear()
 	_occ_masks_seen = false
@@ -490,12 +499,26 @@ func _refresh_occ_mask_set() -> void:
 				and (entry[0].sdf_collision or _sdf_culled.has(entry[0])):
 			_occ_mask_set[entry[0].occluder_light_mask] = true
 	for entry in _occ_layers:
-		for m in entry[4]:
+		if not is_instance_valid(entry[0]) or entry[0].tile_set == null \
+				or entry[6] != _ts_layer_masks(entry[0].tile_set):
+			_occ_dirty = true
+		for m in entry[5]:
 			_occ_mask_set[m] = true
 	for m in _occ_mask_set:
 		if int(m) != 1:
 			_occ_masks_seen = true
 			break
+
+## Per-occlusion-layer light masks of a tileset (-1 for non-SDF layers): the snapshot
+## cached per layer entry and compared live for editor edits.
+func _ts_layer_masks(ts: TileSet) -> PackedInt32Array:
+	var masks := PackedInt32Array()
+	for l in ts.get_occlusion_layers_count():
+		if ts.get_occlusion_layer_sdf_collision(l) or _ts_culled.get(ts, {}).has(l):
+			masks.append(ts.get_occlusion_layer_light_mask(l))
+		else:
+			masks.append(-1)
+	return masks
 
 ## True if some excluding light exempts an occluder with this mask/owner.
 func _exempt_for_any(m: int, owner_id: int) -> bool:
@@ -1075,9 +1098,14 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 
 	var pack_same := _occ_pack_buf == _occ_prev_pack
 	if masks_active:
+		# The lists depend on per-rect masks/owners too, not just the rect bytes: a mask
+		# edit can move a rect between lists while the pack stays identical.
 		var combo_sig := str(_excl_combos.keys())
-		if not pack_same or combo_sig != _prev_combo_sig:
+		if not pack_same or combo_sig != _prev_combo_sig \
+				or _occ_masks != _prev_excl_masks or _occ_owners != _prev_excl_owners:
 			_prev_combo_sig = combo_sig
+			_prev_excl_masks = _occ_masks.duplicate()
+			_prev_excl_owners = _occ_owners.duplicate()
 			_rebuild_excl_lists()
 	# Masks alone need no tile binning; the exempt rects travel in the light rows.
 	if not ysort_enabled:
@@ -1226,7 +1254,8 @@ func _rebuild_occ_cache(root: Node) -> void:
 		for m in pair[1]:
 			distinct[m] = true
 			_occ_mask_set[m] = true
-		_occ_layers.append([layer, pair[0], null, [], pair[1], distinct.keys()])
+		_occ_layers.append([layer, pair[0], null, [], pair[1], distinct.keys(),
+				_ts_layer_masks(layer.tile_set)])
 	for m in _occ_mask_set:
 		if int(m) != 1:
 			_occ_masks_seen = true
@@ -1242,7 +1271,7 @@ func _occ_owner_id(occ: Node) -> int:
 	return 0
 
 ## Per-combo exempt rect lists (4 slots, extras unioned into the last) over the gathered
-## occluder rects; valid until the pack or the combo set changes.
+## occluder rects; valid until the pack, per-rect masks/owners, or the combo set change.
 func _rebuild_excl_lists() -> void:
 	_excl_lists.clear()
 	for key in _excl_combos:
