@@ -1,0 +1,67 @@
+[gd_scene format=4 uid="uid://cpygp0wxw1iu7"]
+
+[ext_resource type="Shader" uid="uid://c8nlvfn4pl3ir" path="res://addons/lit/shaders/lit_receiver_cone_mask.gdshader" id="1_ae8ts"]
+[ext_resource type="Texture2D" uid="uid://b2nlbskimwprj" path="res://Test/cinderskull_preview_o.png" id="2_5pqrm"]
+[ext_resource type="Texture2D" uid="uid://cgevs35a2oh53" path="res://Test/cinderskull_preview_r.png" id="3_b3eui"]
+[ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="4_0nfxa"]
+[ext_resource type="Texture2D" uid="uid://pfbeg7uspbx7" path="res://Test/cinderskull_preview_n.png" id="5_3wgac"]
+[ext_resource type="Texture2D" uid="uid://bx4ibmlsnu22c" path="res://Test/cinderskull_preview_s.png" id="6_aunr6"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="7_826ig"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="8_04jfr"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_s7aw1"]
+shader = ExtResource("1_ae8ts")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 1
+shader_parameter/self_rects = PackedVector4Array(-30.999979, 34.999954, 26.999998, 61.999958, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = true
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_map = ExtResource("3_b3eui")
+shader_parameter/roughness_value = 1.0
+shader_parameter/ao_map = ExtResource("2_5pqrm")
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/footprint_shadow = 16.0
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_x1o0v"]
+diffuse_texture = ExtResource("4_0nfxa")
+normal_texture = ExtResource("5_3wgac")
+specular_texture = ExtResource("6_aunr6")
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ynfqq"]
+polygon = PackedVector2Array(-5.199997, 7.199997, 6.4000015, 7.199997, 2.800003, 12.599998, -1.9999924, 12.599998)
+
+[node name="Skeleton" type="Node2D" unique_id=1906572971]
+z_index = 1
+scale = Vector2(5, 5)
+
+[node name="LitSprite2D" type="Sprite2D" parent="." unique_id=973085286]
+material = SubResource("ShaderMaterial_s7aw1")
+texture = SubResource("CanvasTexture_x1o0v")
+script = ExtResource("7_826ig")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="LightOccluder2D2" type="LightOccluder2D" parent="LitSprite2D" unique_id=599053142]
+z_index = -1
+position = Vector2(-1, -0.20000458)
+scale = Vector2(0.99999976, 0.99999976)
+occluder = SubResource("OccluderPolygon2D_ynfqq")
+
+[node name="LitPointLight2D4" type="Node2D" parent="." unique_id=2079794811]
+visible = false
+position = Vector2(-0.79999995, 27.599998)
+scale = Vector2(0.19999999, 0.19999999)
+script = ExtResource("8_04jfr")
+energy = 0.5
+range = 1024.0
+height = 100.0
+shadow_enabled = true
+exclude_scene_occluders = true
+shadow_jitter = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"

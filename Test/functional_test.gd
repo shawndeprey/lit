@@ -35,6 +35,7 @@ const ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 @export_range(100.0, 10000.0, 10.0) var light_range: float = 1200.0
 
 var _light: LitPointLight2D
+var _occ: LightOccluder2D
 var _hud: Label
 var _out := ""
 
@@ -72,13 +73,13 @@ func _ready() -> void:
 	skull.scale = Vector2(5, 5)
 	add_child(skull)
 
-	var occ := LightOccluder2D.new()
+	_occ = LightOccluder2D.new()
 	var poly := OccluderPolygon2D.new()
 	poly.polygon = PackedVector2Array([
 		Vector2(-5.2, 7.2), Vector2(6.4, 7.2), Vector2(2.8, 12.6), Vector2(-2.0, 12.6)])
-	occ.occluder = poly
-	occ.position = Vector2(-1.0, -0.2)
-	skull.add_child(occ)
+	_occ.occluder = poly
+	_occ.position = Vector2(-1.0, -0.2)
+	skull.add_child(_occ)
 
 	# The one light: white, to the left of the skull.
 	_light = LitPointLight2D.new()
@@ -133,6 +134,12 @@ func _ready() -> void:
 				# Fraction of the viewport width; brings the light close to the skull
 				# to probe near-source-overlap behavior (occluder is at ~0.62).
 				_light.position.x = get_viewport_rect().size.x * float(kv[1])
+			"occmask":
+				_occ.occluder_light_mask = int(kv[1])
+			"smask":
+				_light.shadow_mask = int(kv[1])
+			"exclude":
+				_light.exclude_scene_occluders = kv[1] == "on"
 
 	_update_hud()
 	if _out != "":

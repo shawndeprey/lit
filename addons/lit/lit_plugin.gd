@@ -233,6 +233,11 @@ func _ps_global_defs() -> Array:
 			"name": "lit_occ_indices",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
 		},
+		{"name": "lit_gx_count", "def": {"type": "int", "value": 0}},
+		{"name": "lit_gx_rect0", "def": {"type": "vec4", "value": Vector4()}},
+		{"name": "lit_gx_rect1", "def": {"type": "vec4", "value": Vector4()}},
+		{"name": "lit_gx_rect2", "def": {"type": "vec4", "value": Vector4()}},
+		{"name": "lit_gx_rect3", "def": {"type": "vec4", "value": Vector4()}},
 	]
 
 ## RenderingServer live-add defs: name + GlobalShaderParameterType + default.
@@ -263,6 +268,11 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_occ_data", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_occ_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_occ_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_gx_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
+		{"name": "lit_gx_rect0", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
+		{"name": "lit_gx_rect1", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
+		{"name": "lit_gx_rect2", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
+		{"name": "lit_gx_rect3", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
 	]
 
 ## Persist the shader_globals into project.godot. Idempotent: writes only the missing
@@ -319,6 +329,15 @@ func _project_setting_defs() -> Array:
 			"name": "lit/render/y_sorting",
 			"default": false,
 			"info": {"name": "lit/render/y_sorting", "type": TYPE_BOOL},
+		},
+		{
+			# Runtime SDF culling of occluders excluded from every light's shadow_mask.
+			# The canvas SDF also feeds GPUParticles2D collision; turn this off if
+			# excluded occluders must keep colliding with particles (they then fall back
+			# to in-shader exemption).
+			"name": "lit/render/occluder_mask_sdf_culling",
+			"default": true,
+			"info": {"name": "lit/render/occluder_mask_sdf_culling", "type": TYPE_BOOL},
 		},
 		{
 			# Fade half-width in world pixels around the depth boundary.

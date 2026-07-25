@@ -140,3 +140,23 @@ lit_occ_indices={
 "type": "sampler2D",
 "value": ""
 }
+lit_gx_count={
+"type": "int",
+"value": 0
+}
+lit_gx_rect0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+lit_gx_rect1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+lit_gx_rect2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+lit_gx_rect3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}

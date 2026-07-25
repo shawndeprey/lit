@@ -13,6 +13,7 @@ const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_regi
 const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_Y_SORTING := "lit/render/y_sorting"
 const SETTING_Y_SORT_SMOOTHING := "lit/render/y_sort_smoothing"
+const SETTING_SDF_CULLING := "lit/render/occluder_mask_sdf_culling"
 const SETTING_SHADOW_STEP_SCALING := "lit/quality/shadow_step_scaling"
 const SETTING_SHADOW_STEPS_MAX := "lit/quality/shadow_steps_max"
 const SETTING_SHADOW_SAMPLES_MAX := "lit/quality/shadow_samples_max"
@@ -73,6 +74,10 @@ func _reload_settings() -> void:
 	var y_sort_band := maxf(float(ProjectSettings.get_setting(
 			SETTING_Y_SORT_SMOOTHING, DEFAULT_Y_SORT_SMOOTHING)), 0.01)
 	_registry.set_ysort(y_sorting)
+
+	# Runtime only: pull globally excluded occluders out of the SDF instead of exempting
+	# them in-shader. The editor previews via the _gx shaders and never mutates nodes.
+	_registry.sdf_cull = bool(ProjectSettings.get_setting(SETTING_SDF_CULLING, true))
 
 	# Publish to the receiver shader as globals. lit_lighting_model selects the Phong/PBR
 	# branch; the shadow pair feeds the adaptive shadow march.
