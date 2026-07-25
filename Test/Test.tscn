@@ -241,7 +241,6 @@ color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 1.5
 range = 1024.0
 shadow_enabled = true
-shadow_mask = 4
 shadow_jitter = 1.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
