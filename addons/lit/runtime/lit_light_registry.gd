@@ -173,6 +173,9 @@ static var ysort_enabled: bool = false
 static var masks_active: bool = false
 # True while globally excluded occluder rects are published; drives the _gx variants.
 static var gx_active: bool = false
+# True once any light has shown a non-default shadow_mask or exclusion toggle (set by
+# the light setters, scene loads included); gates the per-light mask reads in refresh.
+static var light_masks_seen: bool = false
 
 var _occ_nodes: Array = []       # [LightOccluder2D, owner id]
 var _occ_layers: Array = []      # [TileMapLayer, cell rects, xform, world rects, masks, distinct, ts snapshot]
@@ -292,6 +295,9 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 	var algos := 0
 	var mask_potential := _occ_masks_seen
 	var smask_union := 0
+	# The per-light reads only matter once a light or occluder has ever shown mask
+	# potential; the editor always reads so live inspector edits are never missed.
+	var read_masks := light_masks_seen or _occ_masks_seen or Engine.is_editor_hint()
 	for entry in lights:
 		# Untyped: enabled/shadow_enabled/shadow_algorithm live on each light class,
 		# not on a shared base.
@@ -300,9 +306,11 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 			continue
 		if node.shadow_algorithm != 0:
 			algos |= 1 << (node.shadow_algorithm - 1)
-		smask_union |= node.shadow_mask
-		if node.exclude_scene_occluders or node.shadow_mask != 1:
-			mask_potential = true
+		if read_masks:
+			var smask: int = node.shadow_mask
+			smask_union |= smask
+			if smask != 1 or node.exclude_scene_occluders:
+				mask_potential = true
 	active_algos = algos
 	_classify_exclusions(lights, receiver_root, mask_potential, smask_union)
 	_restore_unculled()
