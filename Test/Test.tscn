@@ -4,6 +4,7 @@
 [ext_resource type="Shader" uid="uid://bvmhc4piveki6" path="res://addons/lit/shaders/lit_receiver_cone_fast_mask.gdshader" id="2_lng6l"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_4l8u5"]
 [ext_resource type="Shader" uid="uid://c8nlvfn4pl3ir" path="res://addons/lit/shaders/lit_receiver_cone_mask.gdshader" id="3_efe2u"]
+[ext_resource type="PackedScene" uid="uid://cs7hyffkrjua8" path="res://Test/nodes/skele_3.tscn" id="4_efe2u"]
 [ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="4_lg8mm"]
 [ext_resource type="PackedScene" uid="uid://bmop7fhsurode" path="res://Test/nodes/skele_2.tscn" id="4_lng6l"]
 [ext_resource type="PackedScene" uid="uid://cpygp0wxw1iu7" path="res://Test/nodes/skeleton.tscn" id="5_efe2u"]
@@ -138,7 +139,11 @@ texture = SubResource("GradientTexture2D_ywxc3")
 lifetime = 2.0
 process_material = SubResource("ParticleProcessMaterial_ynfqq")
 
-[node name="Skele2" parent="." unique_id=1674641774 instance=ExtResource("4_lng6l")]
+[node name="Skele3" parent="." unique_id=1674641774 instance=ExtResource("4_efe2u")]
+visible = true
+position = Vector2(472, 129)
+
+[node name="Skele2" parent="." unique_id=218316037 instance=ExtResource("4_lng6l")]
 visible = true
 position = Vector2(626, 170)
 
@@ -211,14 +216,14 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 [node name="Cone Traced" type="Node2D" parent="LitLights" unique_id=196279174]
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=2029040104]
-position = Vector2(424, 308)
+position = Vector2(331, 266)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 energy = 2.0
 range = 1024.0
 height = 45.0
 shadow_enabled = true
-shadow_mask = 2
+shadow_mask = 3
 shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
@@ -234,13 +239,13 @@ shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D2" type="Node2D" parent="LitLights/Cone Traced" unique_id=1063815886]
-visible = false
-position = Vector2(699, 433)
+position = Vector2(672, 390)
 script = ExtResource("4_lg8mm")
 color = Color(0.7797687, 0.0014208198, 0.90374166, 1)
 energy = 1.5
 range = 1024.0
 shadow_enabled = true
+shadow_mask = 4
 shadow_jitter = 1.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 

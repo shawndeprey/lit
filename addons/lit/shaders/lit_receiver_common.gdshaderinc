@@ -6,6 +6,8 @@
 //    non-_fast wrappers); the _fast wrappers compile it out - identical output for
 //    materials that never populate self_rects.
 //  - LIT_YSORT: the y-sort shadow depth test (the _ysort wrappers).
+//  - LIT_OCC_GX: globally excluded occluders as exempt rects riding the self-exclusion
+//    machinery (the _gx wrappers; also implied by LIT_OCC_MASKS).
 //  - LIT_OCC_MASKS: per-light shadow-mask/owner exclusion (the _mask wrappers).
 //  - LIT_SHADOW_CONE / LIT_SHADOW_STOCH: the Cone Traced and Stochastic per-light
 //    shadow algorithms (the _cone / _stoch / _cone_stoch wrappers). Base wrappers
@@ -53,6 +55,19 @@ global uniform float     lit_ysort_band;                // fade half-width, worl
 global uniform sampler2D lit_occ_data;                  // rect min.xy|max.xy; max.y is the depth line
 global uniform sampler2D lit_occ_headers;               // per tile: offset | count | min depth
 global uniform sampler2D lit_occ_indices;
+#endif
+
+// Globally excluded occluders (no shadow-casting light's mask matches theirs): exempt
+// canvas rects treated exactly like self rects, for every light at once.
+#if defined(LIT_OCC_MASKS) && !defined(LIT_OCC_GX)
+#define LIT_OCC_GX
+#endif
+#ifdef LIT_OCC_GX
+global uniform int  lit_gx_count;
+global uniform vec4 lit_gx_rect0;                       // canvas min.xy | max.xy each
+global uniform vec4 lit_gx_rect1;
+global uniform vec4 lit_gx_rect2;
+global uniform vec4 lit_gx_rect3;                       // extras unioned into this slot
 #endif
 
 // Optional adaptive shadow march, driven by the lit/quality/* project settings via the
@@ -180,41 +195,12 @@ void vertex() {
 // resolution, so an outline's zero level sits a texel or two outside its polygon.
 const float LIT_SELF_PAD_SDF = 2.0;
 
-// Squared distance to the nearest self box (0 inside).
-float lit_self_dist2(vec2 p_canvas) {
-	float best = 1e20;
-	for (int i = 0; i < 4; i++) {
-		if (i >= self_rect_count) {
-			break;
-		}
-		vec2 dv = max(max(self_rects[i].xy - p_canvas, vec2(0.0)), p_canvas - self_rects[i].zw);
-		best = min(best, dot(dv, dv));
-	}
-	return best;
+#ifdef LIT_OCC_GX
+float lit_gx_dist2(vec4 rect, vec2 p_canvas) {
+	vec2 dv = max(max(rect.xy - p_canvas, vec2(0.0)), p_canvas - rect.zw);
+	return dot(dv, dv);
 }
 
-// Param in [0,1] where segment a -> a+ab exits the pad-expanded self boxes; 0 if never inside.
-float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
-	vec2 inv = 1.0 / ab;
-	float t_end = 0.0;
-	for (int i = 0; i < 4; i++) {
-		if (i >= self_rect_count) {
-			break;
-		}
-		vec2 t0 = (self_rects[i].xy - pad - a) * inv;
-		vec2 t1 = (self_rects[i].zw + pad - a) * inv;
-		vec2 tn = min(t0, t1);
-		vec2 tf = max(t0, t1);
-		float tmin = max(tn.x, tn.y);
-		float tmax = min(tf.x, tf.y);
-		if (tmax >= max(tmin, 0.0) && tmin <= 1.0) {
-			t_end = max(t_end, min(tmax, 1.0));
-		}
-	}
-	return t_end;
-}
-
-#ifdef LIT_OCC_MASKS
 // Param in [0,1] where segment a -> a+ab exits the pad-expanded rect; 0 if never inside.
 float lit_rect_segment_exit(vec2 a, vec2 ab, vec4 rect, float pad) {
 	vec2 inv = 1.0 / ab;
@@ -229,7 +215,83 @@ float lit_rect_segment_exit(vec2 a, vec2 ab, vec4 rect, float pad) {
 	}
 	return 0.0;
 }
+#endif
 
+// Squared distance to the nearest exempt box (0 inside): the receiver's own occluders
+// plus, in the exclusion variants, the globally excluded ones.
+float lit_self_dist2(vec2 p_canvas) {
+	float best = 1e20;
+#ifdef LIT_OCC_GX
+	// self_shadow only opts out of the receiver's own rects, never the global ones.
+	int sc = self_shadow ? 0 : self_rect_count;
+#else
+	int sc = self_rect_count;
+#endif
+	for (int i = 0; i < 4; i++) {
+		if (i >= sc) {
+			break;
+		}
+		vec2 dv = max(max(self_rects[i].xy - p_canvas, vec2(0.0)), p_canvas - self_rects[i].zw);
+		best = min(best, dot(dv, dv));
+	}
+#ifdef LIT_OCC_GX
+	if (lit_gx_count > 0) {
+		best = min(best, lit_gx_dist2(lit_gx_rect0, p_canvas));
+		if (lit_gx_count > 1) {
+			best = min(best, lit_gx_dist2(lit_gx_rect1, p_canvas));
+			if (lit_gx_count > 2) {
+				best = min(best, lit_gx_dist2(lit_gx_rect2, p_canvas));
+				if (lit_gx_count > 3) {
+					best = min(best, lit_gx_dist2(lit_gx_rect3, p_canvas));
+				}
+			}
+		}
+	}
+#endif
+	return best;
+}
+
+// Param in [0,1] where segment a -> a+ab exits the pad-expanded exempt boxes; 0 if never inside.
+float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
+	vec2 inv = 1.0 / ab;
+	float t_end = 0.0;
+#ifdef LIT_OCC_GX
+	int sc = self_shadow ? 0 : self_rect_count;
+#else
+	int sc = self_rect_count;
+#endif
+	for (int i = 0; i < 4; i++) {
+		if (i >= sc) {
+			break;
+		}
+		vec2 t0 = (self_rects[i].xy - pad - a) * inv;
+		vec2 t1 = (self_rects[i].zw + pad - a) * inv;
+		vec2 tn = min(t0, t1);
+		vec2 tf = max(t0, t1);
+		float tmin = max(tn.x, tn.y);
+		float tmax = min(tf.x, tf.y);
+		if (tmax >= max(tmin, 0.0) && tmin <= 1.0) {
+			t_end = max(t_end, min(tmax, 1.0));
+		}
+	}
+#ifdef LIT_OCC_GX
+	if (lit_gx_count > 0) {
+		t_end = max(t_end, lit_rect_segment_exit(a, ab, lit_gx_rect0, pad));
+		if (lit_gx_count > 1) {
+			t_end = max(t_end, lit_rect_segment_exit(a, ab, lit_gx_rect1, pad));
+			if (lit_gx_count > 2) {
+				t_end = max(t_end, lit_rect_segment_exit(a, ab, lit_gx_rect2, pad));
+				if (lit_gx_count > 3) {
+					t_end = max(t_end, lit_rect_segment_exit(a, ab, lit_gx_rect3, pad));
+				}
+			}
+		}
+	}
+#endif
+	return t_end;
+}
+
+#ifdef LIT_OCC_MASKS
 // True when the sample's nearest outline can belong to one of the light's exempt
 // occluders (texels 10-13 of its row; texel 8.x is the count).
 bool lit_mk_exempt(int row, vec2 p_canvas, float reach) {
@@ -1244,6 +1306,9 @@ void fragment() {
 	// Fast variant: the constant false compiles the exclusion march, the self basis
 	// below, and the lit_self_* helpers out of the shader.
 	bool self_ex = false;
+#endif
+#ifdef LIT_OCC_GX
+	self_ex = self_ex || lit_gx_count > 0;
 #endif
 #ifdef LIT_YSORT
 	bool ys_on = lit_ysort_enabled && ysort_on;

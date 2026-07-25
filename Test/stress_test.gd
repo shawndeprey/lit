@@ -44,8 +44,9 @@ var _opt_warmup := WARMUP_SEC
 var _opt_measure := MEASURE_SEC
 var _opt_shadow_algo := "raymarch"
 var _opt_ysort := false
-# masks=off|one|all: mark one prop occluder (or all) with occluder mask 2, so every
-# default-mask light excludes it - the shadow-mask feature's overhead axis.
+# masks=off|one|all|split: mark one prop occluder (or all) with occluder mask 2. With
+# no mask-2 light that exercises the global-exclusion tier; split also gives light 0
+# shadow_mask 3 so the occluder still casts for it, exercising the per-light tier.
 var _opt_masks := "off"
 
 # Clock value used for the deterministic capture frame.
@@ -173,7 +174,7 @@ func _setup() -> void:
 	_compute_area()
 	_rng.seed = RNG_SEED
 	_spawn_props()
-	if _opt_masks == "one":
+	if _opt_masks == "one" or _opt_masks == "split":
 		_props[0].occ.occluder_light_mask = 2
 	elif _opt_masks == "all":
 		for p in _props:
@@ -181,6 +182,8 @@ func _setup() -> void:
 	for i in _opt_light_count:
 		var kind: String = _opt_kinds[i % _opt_kinds.size()]
 		_spawn_light(kind, Color.from_hsv(_rng.randf(), 0.85, 1.0))
+	if _opt_masks == "split" and not _lights.is_empty():
+		_lights[0].node.shadow_mask = 3
 
 	_state = "warmup"
 	_state_time = 0.0

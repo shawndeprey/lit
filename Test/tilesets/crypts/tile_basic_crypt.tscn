@@ -1234,7 +1234,7 @@ texture = SubResource("CanvasTexture_el2cc")
 12:4/0 = 0
 
 [sub_resource type="TileSet" id="TileSet_3f351"]
-occlusion_layer_0/light_mask = 1
+occlusion_layer_0/light_mask = 4
 occlusion_layer_0/sdf_collision = true
 physics_layer_0/collision_layer = 0
 physics_layer_0/collision_mask = 0

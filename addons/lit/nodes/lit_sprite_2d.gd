@@ -47,7 +47,26 @@ const RECEIVER_YSORT_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_stoch_ysort.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort.gdshader",
 ]
-# Mask twins, used while any light carries shadow exclusions (LitLightRegistry.masks_active).
+# Gx twins, used while globally excluded occluders exist (LitLightRegistry.gx_active).
+const RECEIVER_FAST_GX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_gx.gdshader",
+]
+const RECEIVER_FULL_GX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_gx.gdshader",
+]
+const RECEIVER_YSORT_GX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_gx.gdshader",
+]
+# Mask twins, used while any light carries per-light exclusions (LitLightRegistry.masks_active).
 const RECEIVER_FAST_MASK_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_fast_mask.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_fast_mask.gdshader",
@@ -254,11 +273,15 @@ func _apply_shader_variant(wants_full: bool, wants_ysort: bool) -> void:
 		return
 	var mask := LitLightRegistry.active_algos & 3
 	var masks := LitLightRegistry.masks_active
-	var table := RECEIVER_FAST_MASK_VARIANTS if masks else RECEIVER_FAST_VARIANTS
+	var gx := LitLightRegistry.gx_active
+	var table := RECEIVER_FAST_MASK_VARIANTS if masks \
+			else (RECEIVER_FAST_GX_VARIANTS if gx else RECEIVER_FAST_VARIANTS)
 	if wants_ysort:
-		table = RECEIVER_YSORT_MASK_VARIANTS if masks else RECEIVER_YSORT_VARIANTS
+		table = RECEIVER_YSORT_MASK_VARIANTS if masks \
+				else (RECEIVER_YSORT_GX_VARIANTS if gx else RECEIVER_YSORT_VARIANTS)
 	elif wants_full:
-		table = RECEIVER_FULL_MASK_VARIANTS if masks else RECEIVER_FULL_VARIANTS
+		table = RECEIVER_FULL_MASK_VARIANTS if masks \
+				else (RECEIVER_FULL_GX_VARIANTS if gx else RECEIVER_FULL_VARIANTS)
 	var wanted: String = table[mask]
 	if current != wanted:
 		mat.shader = load(wanted)

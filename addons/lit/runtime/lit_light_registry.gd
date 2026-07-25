@@ -57,7 +57,27 @@ const RECEIVER_YSORT_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_stoch_ysort.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort.gdshader",
 ]
-# Mask twins of the three tables, used while any light carries shadow exclusions.
+# Gx twins of the three tables, used while globally excluded occluders exist but no
+# light carries per-light exclusions.
+const RECEIVER_FAST_GX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_gx.gdshader",
+]
+const RECEIVER_FULL_GX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_gx.gdshader",
+]
+const RECEIVER_YSORT_GX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_gx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_gx.gdshader",
+]
+# Mask twins of the three tables, used while any light carries per-light exclusions.
 const RECEIVER_FAST_MASK_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_fast_mask.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_fast_mask.gdshader",
@@ -77,10 +97,16 @@ const RECEIVER_YSORT_MASK_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_mask.gdshader",
 ]
 
+static var _receiver_paths := {}
+
 static func _is_lit_receiver_path(path: String) -> bool:
-	return path in RECEIVER_FAST_VARIANTS or path in RECEIVER_FULL_VARIANTS \
-			or path in RECEIVER_YSORT_VARIANTS or path in RECEIVER_FAST_MASK_VARIANTS \
-			or path in RECEIVER_FULL_MASK_VARIANTS or path in RECEIVER_YSORT_MASK_VARIANTS
+	if _receiver_paths.is_empty():
+		for table in [RECEIVER_FAST_VARIANTS, RECEIVER_FULL_VARIANTS, RECEIVER_YSORT_VARIANTS,
+				RECEIVER_FAST_GX_VARIANTS, RECEIVER_FULL_GX_VARIANTS, RECEIVER_YSORT_GX_VARIANTS,
+				RECEIVER_FAST_MASK_VARIANTS, RECEIVER_FULL_MASK_VARIANTS, RECEIVER_YSORT_MASK_VARIANTS]:
+			for p in table:
+				_receiver_paths[p] = true
+	return _receiver_paths.has(path)
 
 # Algorithm mask last applied to receiver materials, and whether the tree changed since
 # the last application. Starting at 0 (the base mask) means a scene that never uses the
@@ -140,9 +166,13 @@ var _cache_tree: SceneTree = null
 # --- Occluder identity (y-sort depth + per-light shadow exclusions) ------------------
 # Per-occluder canvas rect + depth line + mask|owner, binned into the light tile grid.
 static var ysort_enabled: bool = false
-# True while any enabled shadow-casting light carries exclusions; drives the _mask
-# receiver variants. Tree-wide, not view-culled, so camera motion never thrashes shaders.
+# True while any enabled shadow-casting light carries per-light exclusions; drives the
+# _mask receiver variants. Tree-wide, not view-culled, so camera motion never thrashes
+# shaders. Occluders excluded from EVERY light never set this: they ride the far cheaper
+# gx tier below.
 static var masks_active: bool = false
+# True while globally excluded occluder rects are published; drives the _gx variants.
+static var gx_active: bool = false
 
 var _occ_nodes: Array = []       # [LightOccluder2D, owner id]
 var _occ_layers: Array = []      # [TileMapLayer, cell-local rects, cached xform, world rects, masks]
@@ -151,11 +181,20 @@ var _occ_pack_buf := PackedFloat32Array()
 var _occ_rects: Array[Rect2] = []
 var _occ_masks := PackedInt32Array()
 var _occ_owners := PackedInt32Array()
-var _occ_mask_set := {}          # distinct occluder masks, exact at cache rebuild
-var _occ_masks_seen := false     # any non-default occluder mask observed (sticky)
+var _occ_mask_set := {}          # distinct SDF-casting occluder masks, exact at cache rebuild
+var _occ_masks_seen := false     # any non-default SDF-casting occluder mask observed (sticky)
 var _mask_seed_done := false
 var _scope_ids := {}             # scope root Node -> owner id
-var _scope_occ_counts := {}      # owner id -> occluders under that scope
+var _scope_occ_masks := {}       # owner id -> {mask: true} of SDF casters under that scope
+var _gx_masks := {}              # occluder masks excluded from every shadow-casting light
+var _gx_rects: Array[Rect2] = []
+var _gx_packed := PackedVector4Array()
+# Runtime only (lit/render/occluder_mask_sdf_culling): globally excluded occluders are
+# pulled out of the SDF entirely instead of exempted in-shader - marches get faster, not
+# slower. Never set in the editor, where mutating scene nodes would risk saves; the
+# editor previews via the _gx shader tier instead.
+var sdf_cull := false
+var _sdf_culled := {}            # occluders whose sdf_collision this registry disabled
 var _excl_info := {}             # light -> owner id, for lights with exclusions this frame
 var _excl_smasks := {}           # shadow_masks of those lights
 var _excl_owners := {}           # owner ids of those lights
@@ -249,6 +288,7 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 	# shadow-casting lights count: an algorithm on a shadowless light is never marched.
 	var algos := 0
 	var mask_potential := _occ_masks_seen
+	var smask_union := 0
 	for entry in lights:
 		# Untyped: enabled/shadow_enabled/shadow_algorithm live on each light class,
 		# not on a shared base.
@@ -257,10 +297,21 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 			continue
 		if node.shadow_algorithm != 0:
 			algos |= 1 << (node.shadow_algorithm - 1)
+		smask_union |= node.shadow_mask
 		if node.exclude_scene_occluders or node.shadow_mask != 1:
 			mask_potential = true
 	active_algos = algos
-	_classify_exclusions(lights, receiver_root, mask_potential)
+	_classify_exclusions(lights, receiver_root, mask_potential, smask_union)
+	_restore_unculled()
+
+	# Occluder identity before the variant walk (gx_active is exact) and before packing
+	# (_pack_excl reads the exempt lists this builds).
+	if ysort_enabled or masks_active or not _gx_masks.is_empty():
+		_build_occluder_tiles(receiver_root, canvas_xform, vp_size, world_rect, canvas_scale)
+	elif gx_active:
+		gx_active = false
+		_publish_gx(PackedVector4Array())
+
 	_apply_receiver_variants(receiver_root)
 	_drive_bare_receivers(receiver_root)
 
@@ -299,10 +350,6 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 	_cookies_active = not cookie_textures.is_empty()
 	_publish_cookie_atlas()
 
-	# Occluder identity before packing: _pack_excl reads the exempt lists it builds.
-	if ysort_enabled or masks_active:
-		_build_occluder_tiles(receiver_root, canvas_xform, vp_size, world_rect, canvas_scale)
-
 	# Pack each light into one TEXELS_PER_LIGHT-wide row of the float buffer.
 	var floats_needed := count * TEXELS_PER_LIGHT * 4
 	if _pack_buf.size() != floats_needed:
@@ -329,25 +376,31 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 	RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
 	RenderingServer.global_shader_parameter_set("lit_light_data", _texture)
 
-## Decide which lights carry shadow exclusions this frame and set masks_active.
-## Skipped outright (beyond the light loop in refresh) until a light or occluder shows
-## a non-default mask or an exclusion toggle, so mask-free scenes pay nothing here.
-func _classify_exclusions(lights: Array, root: Node, potential: bool) -> void:
+## Split exclusions into tiers and set masks_active. Occluder masks no shadow-casting
+## light matches land in _gx_masks (global tier, no per-light state); only occluders
+## that cast for SOME lights make a light carry per-light exclusions. Skipped outright
+## (beyond the light loop in refresh) until a light or SDF-casting occluder shows a
+## non-default mask or an exclusion toggle, so mask-free scenes pay nothing here.
+func _classify_exclusions(lights: Array, root: Node, potential: bool, smask_union: int) -> void:
 	_excl_info.clear()
 	_excl_smasks.clear()
 	_excl_owners.clear()
 	_excl_combos.clear()
+	_gx_masks.clear()
 	masks_active = false
 	if not _mask_seed_done:
 		# One-time scan so occluder masks customized before load are honored at start.
 		_mask_seed_done = true
 		_rebuild_occ_cache(root)
-	if not (potential or _occ_masks_seen):
+	if smask_union == 0 or not (potential or _occ_masks_seen):
 		return
 	if _occ_dirty:
 		_rebuild_occ_cache(root)
 	elif Engine.is_editor_hint():
 		_refresh_occ_mask_set()
+	for m in _occ_mask_set:
+		if (int(m) & smask_union) == 0:
+			_gx_masks[m] = true
 	for entry in lights:
 		var node = entry[0]
 		if not is_instance_valid(node) or not node.enabled or not node.shadow_enabled:
@@ -356,13 +409,13 @@ func _classify_exclusions(lights: Array, root: Node, potential: bool) -> void:
 		if node.exclude_scene_occluders:
 			var scope: Node = node.owner if node.owner != null else node.get_parent()
 			owner_id = _scope_ids.get(scope, 0)
-			if owner_id != 0 and int(_scope_occ_counts.get(owner_id, 0)) == 0:
+			if owner_id != 0 and not _scope_has_caster(owner_id):
 				owner_id = 0
 		var has_excl := owner_id != 0
 		if not has_excl:
 			var smask: int = node.shadow_mask
 			for m in _occ_mask_set:
-				if (int(m) & smask) == 0:
+				if (int(m) & smask) == 0 and (int(m) & smask_union) != 0:
 					has_excl = true
 					break
 		if has_excl:
@@ -374,12 +427,50 @@ func _classify_exclusions(lights: Array, root: Node, potential: bool) -> void:
 			_excl_combos["%d_%d" % [smask, owner_id]] = [smask, owner_id]
 			masks_active = true
 
+## Re-enable SDF collision on culled occluders a light's mask matches again.
+func _restore_unculled() -> void:
+	if _sdf_culled.is_empty():
+		return
+	var restore: Array = []
+	for occ in _sdf_culled:
+		if not is_instance_valid(occ):
+			restore.append(occ)
+		elif not _gx_masks.has(occ.occluder_light_mask):
+			occ.sdf_collision = true
+			restore.append(occ)
+	for occ in restore:
+		_sdf_culled.erase(occ)
+
+## True if the scope owns an SDF caster that isn't already globally excluded.
+func _scope_has_caster(owner_id: int) -> bool:
+	var sm: Dictionary = _scope_occ_masks.get(owner_id, {})
+	for m in sm:
+		if not _gx_masks.has(m):
+			return true
+	return false
+
+## Publish the global exempt rects only when they changed.
+func _publish_gx(packed: PackedVector4Array) -> void:
+	if packed == _gx_packed:
+		return
+	_gx_packed = packed
+	RenderingServer.global_shader_parameter_set("lit_gx_count", packed.size())
+	RenderingServer.global_shader_parameter_set("lit_gx_rect0",
+			packed[0] if packed.size() > 0 else Vector4())
+	RenderingServer.global_shader_parameter_set("lit_gx_rect1",
+			packed[1] if packed.size() > 1 else Vector4())
+	RenderingServer.global_shader_parameter_set("lit_gx_rect2",
+			packed[2] if packed.size() > 2 else Vector4())
+	RenderingServer.global_shader_parameter_set("lit_gx_rect3",
+			packed[3] if packed.size() > 3 else Vector4())
+
 ## Recompute the distinct-mask set from the cached nodes (editor live edits only).
 func _refresh_occ_mask_set() -> void:
 	_occ_mask_set.clear()
 	_occ_masks_seen = false
 	for entry in _occ_nodes:
-		if is_instance_valid(entry[0]):
+		if is_instance_valid(entry[0]) \
+				and (entry[0].sdf_collision or _sdf_culled.has(entry[0])):
 			_occ_mask_set[entry[0].occluder_light_mask] = true
 	for entry in _occ_layers:
 		for m in entry[4]:
@@ -829,6 +920,7 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 	_occ_rects.clear()
 	_occ_masks.clear()
 	_occ_owners.clear()
+	_gx_rects.clear()
 
 	for entry in _occ_nodes:
 		var node = entry[0]
@@ -836,8 +928,14 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 			_occ_dirty = true
 			continue
 		var occ := node as LightOccluder2D
-		if not occ.is_inside_tree() or not occ.sdf_collision or not occ.is_visible_in_tree() \
+		if not occ.is_inside_tree() or not occ.is_visible_in_tree() \
 				or occ.occluder == null or occ.occluder.polygon.is_empty():
+			continue
+		if sdf_cull and occ.sdf_collision and _gx_masks.has(occ.occluder_light_mask):
+			# Out of the SDF entirely; _restore_unculled brings it back when wanted.
+			occ.sdf_collision = false
+			_sdf_culled[occ] = true
+		if not occ.sdf_collision:
 			continue
 		var m: int = occ.occluder_light_mask
 		if not _occ_mask_set.has(m):
@@ -845,13 +943,17 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 			_occ_mask_set[m] = true
 			if m != 1:
 				_occ_masks_seen = true
-		if not full_set and not _exempt_for_any(m, entry[1]):
+		var is_gx: bool = _gx_masks.has(m)
+		if not full_set and not is_gx and not _exempt_for_any(m, entry[1]):
 			continue
 		var xf := occ.global_transform
 		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
 		for p in occ.occluder.polygon:
 			r = r.expand(xf * p)
 		if not cull_rect.intersects(r):
+			continue
+		if is_gx:
+			_gx_rects.append(r)
 			continue
 		_occ_rects.append(r)
 		_occ_masks.append(m)
@@ -865,11 +967,14 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 		if not layer.is_inside_tree() or not layer.is_visible_in_tree():
 			continue
 		var include := {}
+		var any_gx := false
 		if not full_set:
 			for m in entry[5]:
-				if _exempt_for_any(m, 0):
+				if _gx_masks.has(m):
+					any_gx = true
+				elif _exempt_for_any(m, 0):
 					include[m] = true
-			if include.is_empty():
+			if include.is_empty() and not any_gx:
 				continue
 		var xf: Transform2D = layer.global_transform
 		if entry[2] != xf:
@@ -881,13 +986,30 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 			entry[3] = world
 		var layer_masks: PackedInt32Array = entry[4]
 		for i in entry[3].size():
-			if not full_set and not include.has(layer_masks[i]):
-				continue
+			var m := layer_masks[i]
 			var r: Rect2 = entry[3][i]
+			if _gx_masks.has(m):
+				if cull_rect.intersects(r):
+					_gx_rects.append(r)
+				continue
+			if not full_set and not include.has(m):
+				continue
 			if cull_rect.intersects(r):
 				_occ_rects.append(r)
-				_occ_masks.append(layer_masks[i])
+				_occ_masks.append(m)
 				_occ_owners.append(0)
+
+	# Global tier: 4 slots, extras unioned into the last; published as globals so every
+	# receiver type sees them with no material walk.
+	while _gx_rects.size() > 4:
+		_gx_rects[3] = _gx_rects[3].merge(_gx_rects.pop_back())
+	gx_active = not _gx_rects.is_empty()
+	var gx_packed := PackedVector4Array()
+	gx_packed.resize(_gx_rects.size())
+	for i in _gx_rects.size():
+		gx_packed[i] = Vector4(_gx_rects[i].position.x, _gx_rects[i].position.y,
+				_gx_rects[i].end.x, _gx_rects[i].end.y)
+	_publish_gx(gx_packed)
 
 	var count := _occ_rects.size()
 	var tiles_x := maxi(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
@@ -1026,7 +1148,7 @@ func _rebuild_occ_cache(root: Node) -> void:
 	_occ_nodes.clear()
 	_occ_layers.clear()
 	_scope_ids.clear()
-	_scope_occ_counts.clear()
+	_scope_occ_masks.clear()
 	_occ_mask_set.clear()
 	_occ_masks_seen = false
 	_occ_dirty = false
@@ -1042,8 +1164,14 @@ func _rebuild_occ_cache(root: Node) -> void:
 	for occ in root.find_children("*", "LightOccluder2D", true, false):
 		var owner_id := _occ_owner_id(occ)
 		_occ_nodes.append([occ, owner_id])
+		# Only SDF casters matter to exclusion; others cast no Lit shadows at all.
+		# Culled occluders still count so their mask stays classified (no oscillation).
+		if not occ.sdf_collision and not _sdf_culled.has(occ):
+			continue
 		if owner_id != 0:
-			_scope_occ_counts[owner_id] = int(_scope_occ_counts.get(owner_id, 0)) + 1
+			if not _scope_occ_masks.has(owner_id):
+				_scope_occ_masks[owner_id] = {}
+			_scope_occ_masks[owner_id][occ.occluder_light_mask] = true
 		_occ_mask_set[occ.occluder_light_mask] = true
 	for layer in root.find_children("*", "TileMapLayer", true, false):
 		var pair := tile_caster_rects(layer)
@@ -1203,7 +1331,7 @@ func _on_tree_changed(node: Node) -> void:
 	if node is TileMapLayer or node is LightOccluder2D:
 		_occ_dirty = true
 		if node is LightOccluder2D:
-			if node.occluder_light_mask != 1:
+			if node.sdf_collision and node.occluder_light_mask != 1:
 				_occ_masks_seen = true
 		elif node.tile_set != null:
 			var ts: TileSet = node.tile_set
@@ -1224,7 +1352,7 @@ func _on_tree_changed(node: Node) -> void:
 ## never uses the physical algorithms never walks the tree here.
 func _apply_receiver_variants(root: Node) -> void:
 	var mask := active_algos & 3
-	var key := mask | (4 if masks_active else 0)
+	var key := mask | (4 if masks_active else 0) | (8 if gx_active else 0)
 	if key == _published_algos and (key == 0 or not _receiver_dirty):
 		return
 	if root == null:
@@ -1233,16 +1361,29 @@ func _apply_receiver_variants(root: Node) -> void:
 	_collect_receiver_mats(root, mats)
 	for mat in mats:
 		var path: String = mat.shader.resource_path
-		var table := RECEIVER_FAST_MASK_VARIANTS if masks_active else RECEIVER_FAST_VARIANTS
-		if path in RECEIVER_YSORT_VARIANTS or path in RECEIVER_YSORT_MASK_VARIANTS:
-			table = RECEIVER_YSORT_MASK_VARIANTS if masks_active else RECEIVER_YSORT_VARIANTS
-		elif path in RECEIVER_FULL_VARIANTS or path in RECEIVER_FULL_MASK_VARIANTS:
-			table = RECEIVER_FULL_MASK_VARIANTS if masks_active else RECEIVER_FULL_VARIANTS
+		var table := _tier_table(RECEIVER_FAST_VARIANTS, RECEIVER_FAST_GX_VARIANTS,
+				RECEIVER_FAST_MASK_VARIANTS)
+		if path in RECEIVER_YSORT_VARIANTS or path in RECEIVER_YSORT_GX_VARIANTS \
+				or path in RECEIVER_YSORT_MASK_VARIANTS:
+			table = _tier_table(RECEIVER_YSORT_VARIANTS, RECEIVER_YSORT_GX_VARIANTS,
+					RECEIVER_YSORT_MASK_VARIANTS)
+		elif path in RECEIVER_FULL_VARIANTS or path in RECEIVER_FULL_GX_VARIANTS \
+				or path in RECEIVER_FULL_MASK_VARIANTS:
+			table = _tier_table(RECEIVER_FULL_VARIANTS, RECEIVER_FULL_GX_VARIANTS,
+					RECEIVER_FULL_MASK_VARIANTS)
 		var wanted: String = table[mask]
 		if path != wanted:
 			mat.shader = load(wanted)
 	_published_algos = key
 	_receiver_dirty = false
+
+## Pick the tier's table: per-light exclusions beat gx (the _mask variants carry both).
+static func _tier_table(base: Array[String], gx: Array[String], mk: Array[String]) -> Array[String]:
+	if masks_active:
+		return mk
+	if gx_active:
+		return gx
+	return base
 
 
 ## Collect (deduped, as Dictionary keys) every ShaderMaterial in the subtree whose
@@ -1437,11 +1578,14 @@ func _push_self_rects(entry: Array) -> void:
 	var wants_full: bool = rects.size() > 0 and mat.get_shader_parameter("self_shadow") != true
 	var path: String = mat.shader.resource_path
 	if _is_lit_receiver_path(path):
-		var table := RECEIVER_FAST_MASK_VARIANTS if masks_active else RECEIVER_FAST_VARIANTS
+		var table := _tier_table(RECEIVER_FAST_VARIANTS, RECEIVER_FAST_GX_VARIANTS,
+				RECEIVER_FAST_MASK_VARIANTS)
 		if ys_on:
-			table = RECEIVER_YSORT_MASK_VARIANTS if masks_active else RECEIVER_YSORT_VARIANTS
+			table = _tier_table(RECEIVER_YSORT_VARIANTS, RECEIVER_YSORT_GX_VARIANTS,
+					RECEIVER_YSORT_MASK_VARIANTS)
 		elif wants_full:
-			table = RECEIVER_FULL_MASK_VARIANTS if masks_active else RECEIVER_FULL_VARIANTS
+			table = _tier_table(RECEIVER_FULL_VARIANTS, RECEIVER_FULL_GX_VARIANTS,
+					RECEIVER_FULL_MASK_VARIANTS)
 		var wanted: String = table[active_algos & 3]
 		if path != wanted:
 			mat.shader = load(wanted)
