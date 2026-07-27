@@ -86,10 +86,12 @@ global uniform vec4 lit_gx_rect3;                       // extras unioned into t
 // cells included) is exempted at per-occluder precision.
 #ifdef LIT_OCC_RX
 uniform int  rx_mask = 0;
-// Union bounds of this receiver's ignored casters (canvas min.xy | max.xy), synced by
-// the registry: marches run their slow phase only while crossing it, so a small
-// ignored set keeps the fast phases. Zero-area exempts nothing.
-uniform vec4 rx_bound = vec4(0.0);
+// Clustered bounds of this receiver's ignored casters (canvas min.xy | max.xy per
+// slot), synced by the registry: a march runs its slow phase only while crossing a
+// cluster it actually intersects, so scattered ignored sets keep the fast phases
+// instead of degenerating into one screen-sized union.
+uniform vec4 rx_bounds[4];
+uniform int  rx_bound_count = 0;
 #endif
 
 // Optional adaptive shadow march, driven by the lit/quality/* project settings via the
@@ -368,6 +370,11 @@ bool lit_mk_exempt(int row, vec2 p_canvas, float reach) {
 bool lit_rx_exempt(vec2 p_canvas, vec2 p_px, float reach, int smask) {
 	ivec2 tile = clamp(ivec2(p_px) / lit_tile_size, ivec2(0), lit_tile_grid - ivec2(1));
 	vec4 header = texelFetch(lit_occ_headers, tile, 0);
+	// header.w is the OR of the tile's candidate masks: one fetch dismisses tiles
+	// where no candidate can pass the per-candidate mask test below.
+	if ((int(round(header.w)) & (smask & rx_mask)) == 0) {
+		return false;
+	}
 	int count = int(round(header.y));
 	int offset = int(round(header.x));
 	float r2 = reach * reach;
@@ -545,9 +552,9 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 				? lit_self_segment_exit(self_canvas, dir_canvas * maxd, pad) * maxd : 0.0;
 		float t_slow_end = LIT_YS_ON ? maxd : t_self_end;
 #ifdef LIT_OCC_RX
-		if (rx_mask != 0) {
+		for (int bi = 0; bi < rx_bound_count; bi++) {
 			t_slow_end = max(t_slow_end,
-					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, rx_bound, pad) * maxd);
+					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, rx_bounds[bi], pad) * maxd);
 		}
 #endif
 		// Mutes penumbra accumulation while the ray still recedes from the exited edge.
@@ -839,9 +846,9 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 		}
 		float t_slow_end = LIT_YS_ON ? maxd : t_self_end;
 #ifdef LIT_OCC_RX
-		if (rx_mask != 0) {
+		for (int bi = 0; bi < rx_bound_count; bi++) {
 			t_slow_end = max(t_slow_end,
-					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, rx_bound, pad) * maxd);
+					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, rx_bounds[bi], pad) * maxd);
 		}
 #endif
 		bool receding = false;
@@ -1313,6 +1320,15 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 
 		// A light sitting on the fragment is fully lit, no march.
 		float s;
+#ifdef LIT_OCC_RX
+		// Effective-layer algebra: a caster contributes only when m & smask != 0, and
+		// its cast is ignored when (m & smask) & rx_mask != 0. With smask inside
+		// rx_mask every possible contribution is ignored, so the march is skipped as
+		// exactly lit. smask == 0 means the mask wasn't packed; never skip on it.
+		if (rx_mask != 0 && rx_smask != 0 && (rx_smask & ~rx_mask) == 0) {
+			s = 1.0;
+		} else
+#endif
 		if (march_len < 0.0001) {
 			s = 1.0;
 		} else {

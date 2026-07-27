@@ -88,7 +88,7 @@ const RECEIVER_FULL_MASK_RX_VARIANTS: Array[String] = [
 @export_flags_2d_render var shadow_ignore_mask: int = 0:
 	set(value):
 		shadow_ignore_mask = value
-		_set_param("rx_mask", value)
+		_set_live_param("rx_mask", value)
 		LitLightRegistry.rx_set(self, value)
 
 ## Self-shadowing: when off (the default), this layer's own occluders can't cast onto
@@ -131,8 +131,7 @@ func _lit_ready() -> void:
 	# Heal a stale rx_mask a scene save may have baked into the material.
 	if shadow_ignore_mask == 0 and material is ShaderMaterial:
 		var stale = (material as ShaderMaterial).get_shader_parameter("rx_mask")
-		if stale != null and int(stale) != 0 \
-				and not (Engine.is_editor_hint() and LitLightRegistry.rx_claims_material(material)):
+		if stale != null and int(stale) != 0:
 			_set_param("rx_mask", 0)
 	if not changed.is_connected(_on_map_changed):
 		changed.connect(_on_map_changed)
@@ -199,8 +198,8 @@ func _update_self_rect() -> void:
 	if packed != _last_packed or rects.size() != _last_count:
 		_last_packed = packed
 		_last_count = rects.size()
-		_set_param("self_rects", packed)
-		_set_param("self_rect_count", rects.size())
+		_set_live_param("self_rects", packed)
+		_set_live_param("self_rect_count", rects.size())
 
 	# The material param decides, so the flag also works when set directly on a
 	# hand-assigned receiver material; the export is a proxy that writes it.
@@ -210,11 +209,11 @@ func _update_self_rect() -> void:
 	_apply_shader_variant(rects.size() > 0 and flag != true)
 	# After the swap, so the param lands on a shader declaring it.
 	if shadow_ignore_mask != 0:
-		_set_param("rx_mask", shadow_ignore_mask)
+		_set_live_param("rx_mask", shadow_ignore_mask)
 
 
 func _apply_shader_variant(wants_full: bool) -> void:
-	var mat := material as ShaderMaterial
+	var mat := _live_mat()
 	if mat == null or mat.shader == null:
 		return
 	var current: String = mat.shader.resource_path
@@ -225,8 +224,6 @@ func _apply_shader_variant(wants_full: bool) -> void:
 	var gx := LitLightRegistry.gx_active
 	# Rx (per-receiver exclusion) has its own variant class carrying the tile test.
 	var rx := shadow_ignore_mask != 0
-	if not rx and Engine.is_editor_hint():
-		rx = LitLightRegistry.rx_claims_material(mat)
 	var table: Array[String]
 	if wants_full:
 		table = (RECEIVER_FULL_MASK_RX_VARIANTS if masks else RECEIVER_FULL_RX_VARIANTS) if rx \
@@ -244,3 +241,29 @@ func _apply_shader_variant(wants_full: bool) -> void:
 func _set_param(param: String, value: Variant) -> void:
 	if material is ShaderMaterial:
 		(material as ShaderMaterial).set_shader_parameter(param, value)
+
+
+# The material carrying live-driven state: in the editor a per-node RenderingServer
+# clone (the property material stays authored-only, so saves never bake volatile
+# state); at runtime the node's own (de-shared) material.
+var _live_last: ShaderMaterial = null
+
+func _live_mat() -> ShaderMaterial:
+	var mat := material as ShaderMaterial
+	if Engine.is_editor_hint() and mat != null and mat.shader != null \
+			and LitLightRegistry._is_lit_receiver_path(mat.shader.resource_path):
+		mat = LitLightRegistry.editor_live_material(self, mat)
+		if mat != _live_last:
+			# Fresh clone (first frame, or recreated after the editor's save-time
+			# script reload): drop the dedup caches so live params re-land on it.
+			_live_last = mat
+			_last_packed = PackedVector4Array()
+			_last_count = -1
+			mat.set_shader_parameter("rx_mask", shadow_ignore_mask)
+	return mat
+
+
+func _set_live_param(param: String, value: Variant) -> void:
+	var mat := _live_mat()
+	if mat != null:
+		mat.set_shader_parameter(param, value)

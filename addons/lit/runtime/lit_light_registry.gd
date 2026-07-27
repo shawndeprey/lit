@@ -241,35 +241,93 @@ static var light_masks_seen: bool = false
 # shader tests each march sample against the occluder identity tiles, so exemption is
 # per-occluder precise at any caster count and costs only the rx receiver's fragments.
 static var _rx_nodes := {}
-static var _rx_shared_warned := false
 
 static func rx_set(node: CanvasItem, mask: int) -> void:
 	if mask == 0:
 		_rx_nodes.erase(node)
 	else:
-		if Engine.is_editor_hint():
-			for other in _rx_nodes:
-				if other != node and is_instance_valid(other) \
-						and other.material == node.material and _rx_nodes[other] != mask:
-					_warn_rx_shared()
-					break
 		_rx_nodes[node] = mask
 
-## Editor arbitration: a material claimed by a live in-tree rx node keeps the rx variant
-## on every sharer, so mask-free sharers can't heal it back each frame (last writer wins).
-static func rx_claims_material(mat: Material) -> bool:
-	if mat == null:
-		return false
-	for node in _rx_nodes:
-		if is_instance_valid(node) and node.is_inside_tree() and node.material == mat:
-			_warn_rx_shared()
-			return true
-	return false
+## The editor reloads @tool scripts in place on every scene save, reinitializing all
+## statics while the tree lives on; setter-driven registration therefore cannot be
+## trusted there. Rebuilt from the tree each editor refresh instead (the setters stay
+## as the runtime fast path, where scripts never reload mid-process).
+static func _editor_rescan_rx(root: Node) -> void:
+	_rx_nodes.clear()
+	if root != null:
+		_collect_rx_nodes(root)
 
-static func _warn_rx_shared() -> void:
-	if not _rx_shared_warned:
-		_rx_shared_warned = true
-		push_warning("Lit: receivers sharing one material have different shadow_ignore_mask values; the shared material previews one mask for all of them. Set resource_local_to_scene on the material to mask instances independently.")
+static func _collect_rx_nodes(node: Node) -> void:
+	if node is CanvasItem:
+		var m = node.get("shadow_ignore_mask")
+		if m != null and int(m) != 0:
+			_rx_nodes[node] = int(m)
+	for child in node.get_children():
+		_collect_rx_nodes(child)
+
+# --- Editor live materials -----------------------------------------------------------
+# In the editor, node.material is the authored layer: the base receiver shader plus the
+# user's params, which is exactly what scene saves should persist. All live-driven state
+# (variant swaps, self rects, y-sort, rx params) goes to a per-node clone bound at the
+# RenderingServer level, where the scene serializer never sees it. These statics are
+# derived caches, so the save-time script reload that wipes them self-heals next refresh.
+static var _live_mats := {}          # CanvasItem -> [clone, base]
+static var _live_uniforms := {}      # shader path -> PackedStringArray of authored uniforms
+const LIVE_PARAMS := {"self_rects": true, "self_rect_count": true, "ysort_on": true,
+		"ysort_y": true, "rx_mask": true, "rx_bounds": true, "rx_bound_count": true,
+		"has_specular_map": true}
+
+static func editor_live_material(ci: CanvasItem, base: ShaderMaterial) -> ShaderMaterial:
+	if base == null or base.shader == null:
+		return base
+	var entry: Array = _live_mats.get(ci, [])
+	if entry.is_empty() or entry[1] != base:
+		entry = [base.duplicate(), base]
+		_live_mats[ci] = entry
+	RenderingServer.canvas_item_set_material(ci.get_canvas_item(), entry[0].get_rid())
+	return entry[0]
+
+static func _authored_uniforms(sh: Shader) -> PackedStringArray:
+	var key := sh.resource_path
+	if not _live_uniforms.has(key):
+		var names := PackedStringArray()
+		for u in sh.get_shader_uniform_list():
+			if not LIVE_PARAMS.has(u.name):
+				names.append(u.name)
+		_live_uniforms[key] = names
+	return _live_uniforms[key]
+
+## Mirror authored params (inspector edits land on the base) into each clone and
+## re-assert the RenderingServer binding, which the engine re-points at the property
+## material on scene ops. Clones of freed nodes or swapped-out materials are dropped.
+func _editor_sync_live() -> void:
+	var stale: Array = []
+	for ci in _live_mats:
+		var base: ShaderMaterial = _live_mats[ci][1]
+		if not is_instance_valid(ci) or (ci.material as ShaderMaterial) != base \
+				or base.shader == null or not _is_lit_receiver_path(base.shader.resource_path):
+			stale.append(ci)
+			continue
+		var clone: ShaderMaterial = _live_mats[ci][0]
+		for uname in _authored_uniforms(clone.shader):
+			clone.set_shader_parameter(uname, base.get_shader_parameter(uname))
+		RenderingServer.canvas_item_set_material(ci.get_canvas_item(), clone.get_rid())
+	for ci in stale:
+		if is_instance_valid(ci):
+			var mat := ci.material as Material
+			RenderingServer.canvas_item_set_material(ci.get_canvas_item(),
+					mat.get_rid() if mat != null else RID())
+		_live_mats.erase(ci)
+
+## Rebind every clone's node to its property material and forget the clones; the
+## plugin calls this on teardown so a disabled plugin leaves no RS overrides behind.
+static func editor_release_live() -> void:
+	for ci in _live_mats:
+		if is_instance_valid(ci):
+			var mat := ci.material as Material
+			RenderingServer.canvas_item_set_material(ci.get_canvas_item(),
+					mat.get_rid() if mat != null else RID())
+	_live_mats.clear()
 
 var _occ_nodes: Array = []       # [LightOccluder2D, owner id]
 var _occ_layers: Array = []      # [TileMapLayer, cell rects, xform, world rects, masks, distinct, ts snapshot]
@@ -306,6 +364,7 @@ var _prev_excl_owners := PackedInt32Array()
 var _occ_spans := PackedInt32Array()
 var _occ_tile_counts := PackedInt32Array()
 var _occ_tile_min := PackedFloat32Array()
+var _occ_tile_mask := PackedInt32Array()
 var _occ_header_buf := PackedFloat32Array()
 var _occ_index_buf := PackedFloat32Array()
 var _occ_prev_pack := PackedFloat32Array()
@@ -419,6 +478,8 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 
 	# Occluder identity before the variant walk (gx_active is exact) and before packing
 	# (_pack_excl and the t7.w shadow-mask pack read what this builds).
+	if Engine.is_editor_hint():
+		_editor_rescan_rx(receiver_root)
 	if _rx_nodes.is_empty():
 		_rx_union_frame = 0
 	if ysort_enabled or masks_active or not _gx_masks.is_empty() or not _rx_nodes.is_empty():
@@ -431,6 +492,8 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 	_drive_bare_receivers(receiver_root)
 	if _rx_union_frame != 0:
 		_drive_rx_bounds()
+	if Engine.is_editor_hint():
+		_editor_sync_live()
 
 	# Zero-light case: count 0 plus a 1x1 dummy (never a 4x0 image) and empty tiles.
 	if count == 0:
@@ -644,23 +707,65 @@ func _drive_rx_bounds() -> void:
 		if not is_instance_valid(node) or not node.is_inside_tree():
 			continue
 		var mat := node.material as ShaderMaterial
+		if Engine.is_editor_hint():
+			mat = editor_live_material(node, mat)
 		if mat == null or mat.shader == null \
 				or not _is_rx_capable_path(mat.shader.resource_path):
 			continue
 		var rmask: int = _rx_nodes[node]
 		if not bounds.has(rmask):
-			var union := Rect2()
-			var found := false
+			var matching: Array[Rect2] = []
 			for i in _occ_rects.size():
 				if (_occ_masks[i] & rmask) != 0:
-					union = _occ_rects[i] if not found else union.merge(_occ_rects[i])
-					found = true
-			bounds[rmask] = Vector4(union.position.x, union.position.y,
-					union.end.x, union.end.y) if found else Vector4()
-		var v: Vector4 = bounds[rmask]
-		if _rx_bound_last.get(node) != v:
-			_rx_bound_last[node] = v
-			mat.set_shader_parameter("rx_bound", v)
+					matching.append(_occ_rects[i])
+			var packed := PackedVector4Array()
+			packed.resize(4)
+			var cnt := 0
+			if not matching.is_empty():
+				var cl := _cluster_bounds(matching)
+				cnt = cl.size()
+				for i in cnt:
+					packed[i] = Vector4(cl[i].position.x, cl[i].position.y,
+							cl[i].end.x, cl[i].end.y)
+			bounds[rmask] = [packed, cnt]
+		var v: Array = bounds[rmask]
+		if Engine.is_editor_hint():
+			# Clones can be recreated under us (save-time script reload); dedup
+			# against the clone itself instead of the wipeable cache.
+			if mat.get_shader_parameter("rx_bounds") != v[0]:
+				mat.set_shader_parameter("rx_bounds", v[0])
+				mat.set_shader_parameter("rx_bound_count", v[1])
+		elif _rx_bound_last.get(node) != v[0]:
+			_rx_bound_last[node] = v[0]
+			mat.set_shader_parameter("rx_bounds", v[0])
+			mat.set_shader_parameter("rx_bound_count", v[1])
+
+## Greedy least-area-growth clustering of the ignored casters into at most 4 bound
+## rects. Scattered sets stay tight clusters instead of one screen-sized union; large
+## sets fall back to the single union (dense fields degenerate either way).
+static func _cluster_bounds(rects: Array[Rect2]) -> Array[Rect2]:
+	if rects.size() > 24:
+		var u := rects[0]
+		for r in rects:
+			u = u.merge(r)
+		var one: Array[Rect2] = [u]
+		return one
+	var cl: Array[Rect2] = rects.duplicate()
+	while cl.size() > 4:
+		var bi := 0
+		var bj := 1
+		var best := INF
+		for i in cl.size():
+			for j in range(i + 1, cl.size()):
+				var growth: float = cl[i].merge(cl[j]).get_area() \
+						- cl[i].get_area() - cl[j].get_area()
+				if growth < best:
+					best = growth
+					bi = i
+					bj = j
+		cl[bi] = cl[bi].merge(cl[bj])
+		cl.remove_at(bj)
+	return cl
 
 ## True if some excluding light exempts an occluder with this mask/owner.
 func _exempt_for_any(m: int, owner_id: int) -> bool:
@@ -1289,8 +1394,10 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 	if _occ_tile_counts.size() != tile_count:
 		_occ_tile_counts.resize(tile_count)
 		_occ_tile_min.resize(tile_count)
+		_occ_tile_mask.resize(tile_count)
 	_occ_tile_counts.fill(0)
 	_occ_tile_min.fill(3.4e38)
+	_occ_tile_mask.fill(0)
 	if _occ_spans.size() != count * 4:
 		_occ_spans.resize(count * 4)
 
@@ -1312,11 +1419,13 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 		_occ_spans[s4 + 3] = ty1
 		total += (tx1 - tx0 + 1) * (ty1 - ty0 + 1)
 		var depth := r.end.y
+		var rmask := _occ_masks[i]
 		for ty in range(ty0, ty1 + 1):
 			var row_base := ty * tiles_x
 			for tx in range(tx0, tx1 + 1):
 				var t := row_base + tx
 				_occ_tile_counts[t] += 1
+				_occ_tile_mask[t] |= rmask
 				if depth < _occ_tile_min[t]:
 					_occ_tile_min[t] = depth
 
@@ -1335,6 +1444,9 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 		_occ_header_buf[h] = float(offset)
 		_occ_header_buf[h + 1] = float(cnt)
 		_occ_header_buf[h + 2] = _occ_tile_min[t]
+		# Tile mask union: one fetch answers "no candidate here can match this receiver"
+		# in the rx test (masks stay well under float32's exact-int range).
+		_occ_header_buf[h + 3] = float(_occ_tile_mask[t])
 		_occ_tile_counts[t] = offset
 		offset += cnt
 	for i in count:
@@ -1507,7 +1619,38 @@ func tile_caster_rects(layer: TileMapLayer) -> Array:
 			r.position += base
 			rects.append(r)
 			masks.append(m)
-	return [rects, masks]
+	return _merge_cell_strips(rects, masks)
+
+## Merge touching same-mask, same-height cell rects into row strips. Coverage and each
+## strip's depth line (end.y) are exactly the union of the parts, so the rx and y-sort
+## tile tests see identical geometry from ~10x fewer candidates on uniform floors.
+static func _merge_cell_strips(rects: Array[Rect2], masks: PackedInt32Array) -> Array:
+	if rects.size() < 2:
+		return [rects, masks]
+	var rows := {}
+	for i in rects.size():
+		var key := "%d|%.3f|%.3f" % [masks[i], rects[i].position.y, rects[i].end.y]
+		if not rows.has(key):
+			rows[key] = []
+		rows[key].append(i)
+	var out_rects: Array[Rect2] = []
+	var out_masks := PackedInt32Array()
+	for key in rows:
+		var idxs: Array = rows[key]
+		idxs.sort_custom(func(a, b): return rects[a].position.x < rects[b].position.x)
+		var cur: Rect2 = rects[idxs[0]]
+		var m := masks[idxs[0]]
+		for j in range(1, idxs.size()):
+			var r: Rect2 = rects[idxs[j]]
+			if r.position.x <= cur.end.x + 0.001:
+				cur = cur.merge(r)
+			else:
+				out_rects.append(cur)
+				out_masks.append(m)
+				cur = r
+		out_rects.append(cur)
+		out_masks.append(m)
+	return [out_rects, out_masks]
 
 ## True if a light's `range`-expanded AABB intersects the visible world rect.
 func _aabb_visible(pos: Vector2, light_range: float, world_rect: Rect2) -> bool:
@@ -1597,6 +1740,13 @@ func _apply_receiver_variants(root: Node) -> void:
 		return
 	if root == null:
 		return
+	if Engine.is_editor_hint():
+		# Lit-scripted nodes drive their own live clones; the registry only tiers the
+		# bare receivers (tool-converted, hand-assigned), on their property materials.
+		_editor_apply_variants(root, mask)
+		_published_algos = key
+		_receiver_dirty = false
+		return
 	# Rx variants are chosen node-locally (each Lit node heals its own material from
 	# its shadow_ignore_mask); leave those materials alone. Rx-path materials no live
 	# node claims fall through and get re-tiered like any other stray.
@@ -1636,6 +1786,30 @@ static func _tier_table(base: Array[String], gx: Array[String], mk: Array[String
 	if gx_active:
 		return gx
 	return base
+
+func _editor_apply_variants(node: Node, mask: int) -> void:
+	var ci := node as CanvasItem
+	if ci != null and not node.has_method("_update_self_rect"):
+		var mat := ci.material as ShaderMaterial
+		if mat != null and mat.shader != null and _is_lit_receiver_path(mat.shader.resource_path):
+			var path: String = mat.shader.resource_path
+			var table := _tier_table(RECEIVER_FAST_VARIANTS, RECEIVER_FAST_GX_VARIANTS,
+					RECEIVER_FAST_MASK_VARIANTS)
+			if path in RECEIVER_YSORT_VARIANTS or path in RECEIVER_YSORT_GX_VARIANTS \
+					or path in RECEIVER_YSORT_MASK_VARIANTS or path in RECEIVER_YSORT_RX_VARIANTS \
+					or path in RECEIVER_YSORT_MASK_RX_VARIANTS:
+				table = _tier_table(RECEIVER_YSORT_VARIANTS, RECEIVER_YSORT_GX_VARIANTS,
+						RECEIVER_YSORT_MASK_VARIANTS)
+			elif path in RECEIVER_FULL_VARIANTS or path in RECEIVER_FULL_GX_VARIANTS \
+					or path in RECEIVER_FULL_MASK_VARIANTS or path in RECEIVER_FULL_RX_VARIANTS \
+					or path in RECEIVER_FULL_MASK_RX_VARIANTS:
+				table = _tier_table(RECEIVER_FULL_VARIANTS, RECEIVER_FULL_GX_VARIANTS,
+						RECEIVER_FULL_MASK_VARIANTS)
+			var wanted: String = table[mask]
+			if path != wanted:
+				mat.shader = load(wanted)
+	for child in node.get_children():
+		_editor_apply_variants(child, mask)
 
 
 ## Collect (deduped, as Dictionary keys) every ShaderMaterial in the subtree whose
