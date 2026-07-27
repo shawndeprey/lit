@@ -17,8 +17,8 @@ class_name LitLightRegistry
 ## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range | energy,
 ## t2 = color.rgb | height, t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
 ## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
-## when flags bit 2 is set), t7 = shadow source size | samples | jitter (read only when
-## the algorithm bits are nonzero), t8.x = exempt rect count, t9 = exempt union bounds,
+## when flags bit 2 is set), t7 = shadow source size | samples | jitter | shadow_mask
+## (mask packed only while rx receivers exist), t8.x = exempt rect count, t9 = exempt union bounds,
 ## t10-13 = the light's exempt-occluder canvas rects (t8-t13 read only when flags bit 5
 ## is set). type/flags/mask sit in texel 0 so the shader can mask-reject after a single
 ## fetch. flags: bit 0 shadow_enabled, bit 1 subtractive, bit 2 textured, bits 3-4
@@ -96,6 +96,44 @@ const RECEIVER_YSORT_MASK_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_stoch_ysort_mask.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_mask.gdshader",
 ]
+# Rx twins (per-receiver exclusion, shadow_receiver_mask): the gx machinery plus the
+# receiver's own exempt rects, chosen per material while its mask is non-default.
+const RECEIVER_FAST_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_rx.gdshader",
+]
+const RECEIVER_FULL_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_rx.gdshader",
+]
+const RECEIVER_YSORT_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_rx.gdshader",
+]
+const RECEIVER_FAST_MASK_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_mask_rx.gdshader",
+]
+const RECEIVER_FULL_MASK_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_mask_rx.gdshader",
+]
+const RECEIVER_YSORT_MASK_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_mask_rx.gdshader",
+]
 
 static var _receiver_paths := {}
 
@@ -103,10 +141,25 @@ static func _is_lit_receiver_path(path: String) -> bool:
 	if _receiver_paths.is_empty():
 		for table in [RECEIVER_FAST_VARIANTS, RECEIVER_FULL_VARIANTS, RECEIVER_YSORT_VARIANTS,
 				RECEIVER_FAST_GX_VARIANTS, RECEIVER_FULL_GX_VARIANTS, RECEIVER_YSORT_GX_VARIANTS,
-				RECEIVER_FAST_MASK_VARIANTS, RECEIVER_FULL_MASK_VARIANTS, RECEIVER_YSORT_MASK_VARIANTS]:
+				RECEIVER_FAST_MASK_VARIANTS, RECEIVER_FULL_MASK_VARIANTS, RECEIVER_YSORT_MASK_VARIANTS,
+				RECEIVER_FAST_RX_VARIANTS, RECEIVER_FULL_RX_VARIANTS, RECEIVER_YSORT_RX_VARIANTS,
+				RECEIVER_FAST_MASK_RX_VARIANTS, RECEIVER_FULL_MASK_RX_VARIANTS,
+				RECEIVER_YSORT_MASK_RX_VARIANTS]:
 			for p in table:
 				_receiver_paths[p] = true
 	return _receiver_paths.has(path)
+
+# Rx-class variants: the ones that declare the rx (per-receiver exclusion) uniforms.
+static var _rx_paths := {}
+
+static func _is_rx_capable_path(path: String) -> bool:
+	if _rx_paths.is_empty():
+		for table in [RECEIVER_FAST_RX_VARIANTS, RECEIVER_FULL_RX_VARIANTS, RECEIVER_YSORT_RX_VARIANTS,
+				RECEIVER_FAST_MASK_RX_VARIANTS, RECEIVER_FULL_MASK_RX_VARIANTS,
+				RECEIVER_YSORT_MASK_RX_VARIANTS]:
+			for p in table:
+				_rx_paths[p] = true
+	return _rx_paths.has(path)
 
 # Algorithm mask last applied to receiver materials, and whether the tree changed since
 # the last application. Starting at 0 (the base mask) means a scene that never uses the
@@ -181,6 +234,43 @@ static var gx_active: bool = false
 # the light setters, scene loads included); gates the per-light mask reads in refresh.
 static var light_masks_seen: bool = false
 
+# --- Per-receiver shadow exclusion (shadow_ignore_mask) ------------------------------
+# Receiver node -> non-zero shadow_ignore_mask, maintained by the node setters (scene
+# loads included) so mask-free scenes never pay a walk or a poll. A receiver ignores
+# shadows from occluders whose occluder_light_mask shares a bit with its mask; the
+# shader tests each march sample against the occluder identity tiles, so exemption is
+# per-occluder precise at any caster count and costs only the rx receiver's fragments.
+static var _rx_nodes := {}
+static var _rx_shared_warned := false
+
+static func rx_set(node: CanvasItem, mask: int) -> void:
+	if mask == 0:
+		_rx_nodes.erase(node)
+	else:
+		if Engine.is_editor_hint():
+			for other in _rx_nodes:
+				if other != node and is_instance_valid(other) \
+						and other.material == node.material and _rx_nodes[other] != mask:
+					_warn_rx_shared()
+					break
+		_rx_nodes[node] = mask
+
+## Editor arbitration: a material claimed by a live in-tree rx node keeps the rx variant
+## on every sharer, so mask-free sharers can't heal it back each frame (last writer wins).
+static func rx_claims_material(mat: Material) -> bool:
+	if mat == null:
+		return false
+	for node in _rx_nodes:
+		if is_instance_valid(node) and node.is_inside_tree() and node.material == mat:
+			_warn_rx_shared()
+			return true
+	return false
+
+static func _warn_rx_shared() -> void:
+	if not _rx_shared_warned:
+		_rx_shared_warned = true
+		push_warning("Lit: receivers sharing one material have different shadow_ignore_mask values; the shared material previews one mask for all of them. Set resource_local_to_scene on the material to mask instances independently.")
+
 var _occ_nodes: Array = []       # [LightOccluder2D, owner id]
 var _occ_layers: Array = []      # [TileMapLayer, cell rects, xform, world rects, masks, distinct, ts snapshot]
 var _occ_dirty := true
@@ -203,6 +293,8 @@ var _gx_packed := PackedVector4Array()
 var sdf_cull := false
 var _sdf_culled := {}            # occluders whose sdf_collision this registry disabled
 var _ts_culled := {}             # TileSet -> {occlusion layer idx} this registry disabled
+var _rx_union_frame := 0         # OR of live shadow_ignore_masks this frame
+var _rx_bound_last := {}         # rx node -> last rx_bound Vector4 pushed to its material
 var _excl_info := {}             # light -> owner id, for lights with exclusions this frame
 var _excl_smasks := {}           # shadow_masks of those lights
 var _excl_owners := {}           # owner ids of those lights
@@ -326,8 +418,10 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 		_tpl = TEXELS_PER_LIGHT
 
 	# Occluder identity before the variant walk (gx_active is exact) and before packing
-	# (_pack_excl reads the exempt lists this builds).
-	if ysort_enabled or masks_active or not _gx_masks.is_empty():
+	# (_pack_excl and the t7.w shadow-mask pack read what this builds).
+	if _rx_nodes.is_empty():
+		_rx_union_frame = 0
+	if ysort_enabled or masks_active or not _gx_masks.is_empty() or not _rx_nodes.is_empty():
 		_build_occluder_tiles(receiver_root, canvas_xform, vp_size, world_rect, canvas_scale)
 	elif gx_active:
 		gx_active = false
@@ -335,6 +429,8 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 
 	_apply_receiver_variants(receiver_root)
 	_drive_bare_receivers(receiver_root)
+	if _rx_union_frame != 0:
+		_drive_rx_bounds()
 
 	# Zero-light case: count 0 plus a 1x1 dummy (never a 4x0 image) and empty tiles.
 	if count == 0:
@@ -538,6 +634,34 @@ func _ts_layer_masks(ts: TileSet) -> PackedInt32Array:
 			masks.append(-1)
 	return masks
 
+## Push each rx receiver's ignored-caster union bounds (rx_bound) to its material, so
+## marches run their slow phase only while crossing it. One vec4 per distinct mask,
+## set on change; params land only on rx-class shaders (they declare the uniform), and
+## the nodes swap themselves there, so a just-registered receiver syncs next frame.
+func _drive_rx_bounds() -> void:
+	var bounds := {}
+	for node in _rx_nodes:
+		if not is_instance_valid(node) or not node.is_inside_tree():
+			continue
+		var mat := node.material as ShaderMaterial
+		if mat == null or mat.shader == null \
+				or not _is_rx_capable_path(mat.shader.resource_path):
+			continue
+		var rmask: int = _rx_nodes[node]
+		if not bounds.has(rmask):
+			var union := Rect2()
+			var found := false
+			for i in _occ_rects.size():
+				if (_occ_masks[i] & rmask) != 0:
+					union = _occ_rects[i] if not found else union.merge(_occ_rects[i])
+					found = true
+			bounds[rmask] = Vector4(union.position.x, union.position.y,
+					union.end.x, union.end.y) if found else Vector4()
+		var v: Vector4 = bounds[rmask]
+		if _rx_bound_last.get(node) != v:
+			_rx_bound_last[node] = v
+			mat.set_shader_parameter("rx_bound", v)
+
 ## True if some excluding light exempts an occluder with this mask/owner.
 func _exempt_for_any(m: int, owner_id: int) -> bool:
 	if owner_id != 0 and _excl_owners.has(owner_id):
@@ -546,6 +670,7 @@ func _exempt_for_any(m: int, owner_id: int) -> bool:
 		if (m & int(s)) == 0:
 			return true
 	return false
+
 
 ## Pack texels 8-13 (exempt rect count, union bounds, up to 4 exempt rects) for a light
 ## with exclusions; returns the flags bit. Lights without exclusions pay one has() here.
@@ -616,6 +741,8 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	_pack_buf[o + 28] = light.source_radius
 	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
 	_pack_buf[o + 30] = light.shadow_jitter
+	if _rx_union_frame != 0:
+		_pack_buf[o + 31] = float(light.shadow_mask)
 
 ## Pack one directional light. Texel 1 carries a normalized direction toward the light
 ## in screen-pixel space instead of a UV position; range and falloff are unused.
@@ -666,6 +793,8 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	_pack_buf[o + 28] = tan(deg_to_rad(light.source_angle) * 0.5)
 	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
 	_pack_buf[o + 30] = light.shadow_jitter
+	if _rx_union_frame != 0:
+		_pack_buf[o + 31] = float(light.shadow_mask)
 
 ## Pack one spot light: a point light (texels 0 to 3) plus a cone (texel 4). The node's
 ## local +X (its rotation) is the direction the cone aims.
@@ -729,6 +858,8 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 28] = light.source_radius
 	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
 	_pack_buf[o + 30] = light.shadow_jitter
+	if _rx_union_frame != 0:
+		_pack_buf[o + 31] = float(light.shadow_mask)
 
 ## Pack the cookie fields (texels 5-6) for the point/spot light whose row starts at
 ## float offset `o`. Returns true when the light has a packed cookie; the caller sets
@@ -970,6 +1101,18 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 	if _occ_dirty:
 		_rebuild_occ_cache(root)
 
+	_rx_union_frame = 0
+	if not _rx_nodes.is_empty():
+		var rx_stale: Array = []
+		for node in _rx_nodes:
+			if not is_instance_valid(node):
+				rx_stale.append(node)
+			elif node.is_inside_tree():
+				_rx_union_frame |= _rx_nodes[node]
+		for n in rx_stale:
+			_rx_nodes.erase(n)
+			_rx_bound_last.erase(n)
+
 	# Generous pad: off-view casters still shadow into the oversized SDF.
 	var cull_rect := world_rect.grow(maxf(world_rect.size.x, world_rect.size.y) * 0.25)
 
@@ -1005,7 +1148,8 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 			if m != 1:
 				_occ_masks_seen = true
 		var is_gx: bool = _gx_masks.has(m)
-		if not full_set and not is_gx and not _exempt_for_any(m, entry[1]):
+		if not full_set and not is_gx and not _exempt_for_any(m, entry[1]) \
+				and (m & _rx_union_frame) == 0:
 			continue
 		var xf := occ.global_transform
 		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
@@ -1057,7 +1201,7 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 					continue
 				if _gx_masks.has(m):
 					any_gx = true
-				elif _exempt_for_any(m, 0):
+				elif _exempt_for_any(m, 0) or (m & _rx_union_frame) != 0:
 					include[m] = true
 			if include.is_empty() and not any_gx:
 				continue
@@ -1104,18 +1248,19 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 	var tile_count := tiles_x * tiles_y
 	var grid := Vector2i(tiles_x, tiles_y)
 
-	var floats_needed := maxi(count, 1) * 4
+	# Two texels per occluder: t0 rect, t1.x light mask (the rx tile test reads it).
+	var floats_needed := maxi(count, 1) * 8
 	if _occ_pack_buf.size() != floats_needed:
 		_occ_pack_buf.resize(floats_needed)
-	if count == 0:
-		_occ_pack_buf.fill(0.0)
+	_occ_pack_buf.fill(0.0)
 	for i in count:
-		var o := i * 4
+		var o := i * 8
 		var r := _occ_rects[i]
 		_occ_pack_buf[o + 0] = r.position.x
 		_occ_pack_buf[o + 1] = r.position.y
 		_occ_pack_buf[o + 2] = r.end.x
 		_occ_pack_buf[o + 3] = r.end.y
+		_occ_pack_buf[o + 4] = float(_occ_masks[i])
 
 	var pack_same := _occ_pack_buf == _occ_prev_pack
 	if masks_active:
@@ -1129,7 +1274,8 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 			_prev_excl_owners = _occ_owners.duplicate()
 			_rebuild_excl_lists()
 	# Masks alone need no tile binning; the exempt rects travel in the light rows.
-	if not ysort_enabled:
+	# Y-sort and rx both consume the occluder tiles, so either builds them.
+	if not ysort_enabled and _rx_union_frame == 0:
 		if not pack_same:
 			_occ_prev_pack = _occ_pack_buf.duplicate()
 		return
@@ -1203,10 +1349,10 @@ func _build_occluder_tiles(root: Node, canvas_xform: Transform2D, vp_size: Vecto
 	if not pack_same or _occ_tex == null:
 		var rows := maxi(count, 1)
 		var data_bytes := _occ_pack_buf.to_byte_array()
-		if _occ_img == null or _occ_img.get_height() != rows:
-			_occ_img = Image.create_from_data(1, rows, false, Image.FORMAT_RGBAF, data_bytes)
+		if _occ_img == null or _occ_img.get_height() != rows or _occ_img.get_width() != 2:
+			_occ_img = Image.create_from_data(2, rows, false, Image.FORMAT_RGBAF, data_bytes)
 		else:
-			_occ_img.set_data(1, rows, false, Image.FORMAT_RGBAF, data_bytes)
+			_occ_img.set_data(2, rows, false, Image.FORMAT_RGBAF, data_bytes)
 		var prev_data := _occ_tex
 		_occ_tex = _make_or_update(_occ_tex, _occ_img)
 		if _occ_tex != prev_data:
@@ -1451,18 +1597,30 @@ func _apply_receiver_variants(root: Node) -> void:
 		return
 	if root == null:
 		return
+	# Rx variants are chosen node-locally (each Lit node heals its own material from
+	# its shadow_ignore_mask); leave those materials alone. Rx-path materials no live
+	# node claims fall through and get re-tiered like any other stray.
+	var rx_mats := {}
+	if not _rx_nodes.is_empty():
+		for node in _rx_nodes:
+			if is_instance_valid(node) and node.material != null:
+				rx_mats[node.material] = true
 	var mats := {}
 	_collect_receiver_mats(root, mats)
 	for mat in mats:
+		if rx_mats.has(mat):
+			continue
 		var path: String = mat.shader.resource_path
 		var table := _tier_table(RECEIVER_FAST_VARIANTS, RECEIVER_FAST_GX_VARIANTS,
 				RECEIVER_FAST_MASK_VARIANTS)
 		if path in RECEIVER_YSORT_VARIANTS or path in RECEIVER_YSORT_GX_VARIANTS \
-				or path in RECEIVER_YSORT_MASK_VARIANTS:
+				or path in RECEIVER_YSORT_MASK_VARIANTS or path in RECEIVER_YSORT_RX_VARIANTS \
+				or path in RECEIVER_YSORT_MASK_RX_VARIANTS:
 			table = _tier_table(RECEIVER_YSORT_VARIANTS, RECEIVER_YSORT_GX_VARIANTS,
 					RECEIVER_YSORT_MASK_VARIANTS)
 		elif path in RECEIVER_FULL_VARIANTS or path in RECEIVER_FULL_GX_VARIANTS \
-				or path in RECEIVER_FULL_MASK_VARIANTS:
+				or path in RECEIVER_FULL_MASK_VARIANTS or path in RECEIVER_FULL_RX_VARIANTS \
+				or path in RECEIVER_FULL_MASK_RX_VARIANTS:
 			table = _tier_table(RECEIVER_FULL_VARIANTS, RECEIVER_FULL_GX_VARIANTS,
 					RECEIVER_FULL_MASK_VARIANTS)
 		var wanted: String = table[mask]

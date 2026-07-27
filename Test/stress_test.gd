@@ -49,6 +49,13 @@ var _opt_ysort := false
 # shadow_mask 3 so the occluder still casts for it, exercising the per-light tier.
 # tilemap puts every tileset occlusion layer on mask 2 (globally excluded tilemap case).
 var _opt_masks := "off"
+# maskcull=off: leave globally excluded occluders in the SDF (registry sdf_cull off,
+# driven directly), so the gx shader tier runs instead of tier-1 culling.
+var _opt_maskcull := "on"
+# rxmask=N: shadow_ignore_mask N on every Lit tilemap receiver (rx cost probe).
+var _opt_rxmask := 0
+# rxnode=NAME: shadow_ignore_mask 1 on the named LitSprite2D (small-receiver probe).
+var _opt_rxnode := ""
 
 # Clock value used for the deterministic capture frame.
 const CAPTURE_CLOCK := 60.0
@@ -114,6 +121,12 @@ func _ready() -> void:
 				_opt_ysort = kv[1] == "on"
 			"masks":
 				_opt_masks = kv[1]
+			"maskcull":
+				_opt_maskcull = kv[1]
+			"rxmask":
+				_opt_rxmask = int(kv[1])
+			"rxnode":
+				_opt_rxnode = kv[1]
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -171,6 +184,8 @@ func _setup() -> void:
 		RenderingServer.global_shader_parameter_set("lit_ysort_enabled", true)
 		RenderingServer.global_shader_parameter_set("lit_ysort_band", 12.0)
 		get_node("/root/LitManager")._registry.set_ysort(true)
+	if _opt_maskcull == "off":
+		get_node("/root/LitManager")._registry.sdf_cull = false
 
 	_compute_area()
 	_rng.seed = RNG_SEED
@@ -186,6 +201,14 @@ func _setup() -> void:
 			if ts != null:
 				for l in ts.get_occlusion_layers_count():
 					ts.set_occlusion_layer_light_mask(l, 2)
+	if _opt_rxmask != 0:
+		for tml in _find_all(scene, TileMapLayer):
+			if tml is LitTileMapLayer:
+				tml.shadow_ignore_mask = _opt_rxmask
+	if _opt_rxnode != "":
+		var rx_target := scene.find_child(_opt_rxnode, true, false)
+		if rx_target is LitSprite2D:
+			rx_target.shadow_ignore_mask = 1
 	for i in _opt_light_count:
 		var kind: String = _opt_kinds[i % _opt_kinds.size()]
 		_spawn_light(kind, Color.from_hsv(_rng.randf(), 0.85, 1.0))
