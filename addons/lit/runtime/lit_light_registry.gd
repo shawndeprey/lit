@@ -176,6 +176,19 @@ var shadow_samples_max: int = 32
 # math (it divides SCREEN_UV * viewport by lit_tile_size).
 const TILE_SIZE := 64
 
+# World-space shadow SDF: a hidden SubViewport shares the scene's World2D, framed over
+# the world region that can shadow the view (view rect + hull of visible shadow-casting
+# light positions - every march segment lies inside that hull). Godot generates its SDF
+# natively there; an encode quad copies it into the viewport's color target as signed
+# distance in world px, and receiver marches sample that instead of the screen SDF, so
+# shadows are zoom- and pan-invariant.
+const WORLD_SDF_SIZE := 1024
+const WORLD_SDF_NODE := "LitWorldSdf"
+
+var _wsdf_vp: SubViewport
+var _wsdf_mat: ShaderMaterial
+var _wsdf_xform := Transform2D()
+
 # Width of the flat tile-index texture; a flat index maps to (i % WIDTH, i / WIDTH).
 # Must match LIT_INDEX_TEX_WIDTH in lit_receiver_common.gdshaderinc.
 const INDEX_TEX_WIDTH := 2048
@@ -388,8 +401,10 @@ func set_ysort(enabled: bool) -> void:
 ## Gather visible lights, pack them into the light-data texture, build the tile grid,
 ## and publish the global shader uniforms. Call once per frame. receiver_root bounds
 ## the receiver-material walk for the shadow-algorithm variant swap (the game tree root
-## at runtime, the edited scene root in the editor); null skips that swap.
-func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) -> void:
+## at runtime, the edited scene root in the editor); null skips that swap. sdf_host owns
+## the world-SDF SubViewport (LitManager at runtime, the plugin in the editor); null
+## skips the world SDF (headless probes).
+func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sdf_host: Node = null) -> void:
 	if tree == null or viewport == null:
 		return
 
@@ -441,6 +456,9 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null) ->
 				visible.append(spot)
 
 	var count := visible.size()
+
+	if sdf_host != null:
+		_update_world_sdf(sdf_host, viewport, visible, canvas_xform, world_rect)
 
 	# Publish which non-raymarched shadow algorithms are in play and re-point receiver
 	# materials to a variant compiled with exactly those (base scenes stay on the base
@@ -1665,6 +1683,85 @@ func _visible_world_rect(canvas_xform: Transform2D, vp_size: Vector2) -> Rect2:
 	rect = rect.expand(inv * Vector2(0.0, vp_size.y))
 	rect = rect.expand(inv * vp_size)
 	return rect
+
+## Create (or re-find after a script reload) the world-SDF SubViewport under `host`.
+func _ensure_world_sdf(host: Node, viewport: Viewport) -> bool:
+	if _wsdf_vp != null and is_instance_valid(_wsdf_vp):
+		return true
+	var found := host.get_node_or_null(WORLD_SDF_NODE) as SubViewport
+	if found != null:
+		_wsdf_vp = found
+		_wsdf_mat = found.get_child(0).get_child(0).material as ShaderMaterial
+		return true
+	var vp := SubViewport.new()
+	vp.name = WORLD_SDF_NODE
+	vp.size = Vector2i(WORLD_SDF_SIZE, WORLD_SDF_SIZE)
+	vp.world_2d = viewport.world_2d
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.use_hdr_2d = true
+	vp.disable_3d = true
+	# Occluders still rasterize into the SDF under a restrictive cull mask, so the
+	# viewport draws nothing but the encode quad.
+	vp.canvas_cull_mask = 1 << 19
+	var layer := CanvasLayer.new()
+	var rect := ColorRect.new()
+	rect.size = Vector2(WORLD_SDF_SIZE, WORLD_SDF_SIZE)
+	rect.visibility_layer = 1 << 19
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://addons/lit/shaders/lit_world_sdf_encode.gdshader")
+	rect.material = mat
+	layer.add_child(rect)
+	vp.add_child(layer)
+	host.add_child(vp)
+	RenderingServer.viewport_set_sdf_oversize_and_scale(vp.get_viewport_rid(),
+			RenderingServer.VIEWPORT_SDF_OVERSIZE_100_PERCENT,
+			RenderingServer.VIEWPORT_SDF_SCALE_100_PERCENT)
+	_wsdf_vp = vp
+	_wsdf_mat = mat
+	return true
+
+## Frame the world-SDF viewport over everything that can shadow the view this frame
+## (view rect + shadow-casting light positions; directionals extend the rect one view
+## diagonal toward the light) and publish the sampling globals.
+func _update_world_sdf(host: Node, viewport: Viewport, visible: Array,
+		canvas_xform: Transform2D, world_rect: Rect2) -> void:
+	if not _ensure_world_sdf(host, viewport):
+		return
+	if _wsdf_vp.world_2d != viewport.world_2d:
+		_wsdf_vp.world_2d = viewport.world_2d
+
+	var rect := world_rect
+	var diag := world_rect.size.length()
+	for light in visible:
+		if not light.shadow_enabled:
+			continue
+		if light is LitDirectionalLight2D:
+			var toward := -Vector2.from_angle(light.global_rotation) * diag
+			rect = rect.expand(world_rect.position + toward).expand(world_rect.end + toward)
+		else:
+			rect = rect.expand(light.global_position)
+	rect = rect.grow(8.0)
+
+	var s := minf(float(WORLD_SDF_SIZE) / rect.size.x, float(WORLD_SDF_SIZE) / rect.size.y)
+	# Texel-quantized origin so a static scene never swims.
+	var texel := 1.0 / s
+	rect.position = (rect.position / texel).floor() * texel
+	var xf := Transform2D(Vector2(s, 0.0), Vector2(0.0, s), -rect.position * s)
+	if xf != _wsdf_xform:
+		_wsdf_vp.canvas_transform = xf
+		_wsdf_mat.set_shader_parameter("screen_to_world", texel)
+		_wsdf_xform = xf
+
+	# Fold screen px -> world -> world-SDF UV into one affine map for the shader.
+	var to_uv := Transform2D(
+			Vector2(s / float(WORLD_SDF_SIZE), 0.0),
+			Vector2(0.0, s / float(WORLD_SDF_SIZE)),
+			-rect.position * s / float(WORLD_SDF_SIZE))
+	var m := to_uv * canvas_xform.affine_inverse()
+	RenderingServer.global_shader_parameter_set("lit_wsdf_basis",
+			Vector4(m.x.x, m.x.y, m.y.x, m.y.y))
+	RenderingServer.global_shader_parameter_set("lit_wsdf_origin", m.origin)
+	RenderingServer.global_shader_parameter_set("lit_world_sdf", _wsdf_vp.get_texture())
 
 ## Upload _pack_buf (_tpl x count RGBAF) to the light-data texture, reusing the Image
 ## and ImageTexture across frames and only reallocating when count or width changes.

@@ -169,8 +169,6 @@ script = ExtResource("12_demo")
 visible = false
 script = ExtResource("7_iednq")
 shadow_enabled = true
-shadow_hardness = 0.415
-source_angle = 60.0
 shadow_samples = 32
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
@@ -220,7 +218,7 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 
 [node name="LitPointLight2D" type="Node2D" parent="LitLights/Cone Traced" unique_id=2029040104]
 z_index = 1
-position = Vector2(570, 182)
+position = Vector2(571, 180)
 script = ExtResource("4_lg8mm")
 color = Color(1, 0.5137255, 0, 1)
 range = 1024.0
@@ -232,12 +230,13 @@ metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D3" type="Node2D" parent="LitLights/Cone Traced" unique_id=2104560388]
 visible = false
-position = Vector2(630, 514)
+position = Vector2(403, 294)
 script = ExtResource("4_lg8mm")
 energy = 1.5
 range = 1024.0
 height = 45.0
 shadow_enabled = true
+shadow_mask = 17
 shadow_jitter = 0.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 

@@ -47,7 +47,7 @@ func _ready() -> void:
 		ProjectSettings.settings_changed.connect(_reload_settings)
 
 func _process(_delta: float) -> void:
-	_registry.refresh(get_tree(), get_viewport(), get_tree().root)
+	_registry.refresh(get_tree(), get_viewport(), get_tree().root, self)
 
 func _reload_settings() -> void:
 	# Render model selector; clamped to a known value so a stray setting can't index past

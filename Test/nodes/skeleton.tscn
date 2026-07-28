@@ -11,7 +11,7 @@
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_s7aw1"]
 shader = ExtResource("1_ae8ts")
-shader_parameter/rx_mask = 7
+shader_parameter/rx_mask = 0
 shader_parameter/rx_bounds = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/rx_bound_count = 0
 shader_parameter/emissive_strength = 0.0
@@ -48,6 +48,7 @@ scale = Vector2(5, 5)
 material = SubResource("ShaderMaterial_s7aw1")
 texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("7_826ig")
+shadow_ignore_mask = 1
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
 [node name="LightOccluder2D2" type="LightOccluder2D" parent="LitSprite2D" unique_id=599053142]
