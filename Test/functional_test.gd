@@ -11,6 +11,7 @@ extends Node2D
 ## Automated use (screenshots), after "--" on the CLI:
 ##   algo=raymarch|cone|stochastic   out=PATH (capture one frame, then quit)
 ##   radius=N   samples=N   jitter=X   hardness=X   range=N
+##   occmask=N   smask=N   exclude=on   rxmask=N (floor's shadow_ignore_mask)
 
 const ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 const ALGO_NAMES := ["raymarch", "cone", "stochastic"]
@@ -36,6 +37,7 @@ const ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 
 var _light: LitPointLight2D
 var _occ: LightOccluder2D
+var _floor: LitSprite2D
 var _hud: Label
 var _out := ""
 
@@ -47,19 +49,18 @@ func _ready() -> void:
 	canvas_modulate.color = Color(0.06, 0.06, 0.07)
 	add_child(canvas_modulate)
 
-	# Floor: full-screen neutral receiver the shadow falls on.
+	# Floor: full-screen neutral receiver the shadow falls on. A LitSprite2D (its _init
+	# assigns the same fast receiver material) so rxmask can drive shadow_receiver_mask.
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
 	var white := ImageTexture.create_from_image(img)
-	var floor_spr := Sprite2D.new()
+	var floor_spr := LitSprite2D.new()
 	floor_spr.texture = white
 	floor_spr.modulate = Color(0.75, 0.73, 0.7)
 	floor_spr.position = vp * 0.5
 	floor_spr.scale = vp
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://addons/lit/shaders/lit_receiver_fast.gdshader")
-	floor_spr.material = mat
 	add_child(floor_spr)
+	_floor = floor_spr
 
 	# The skull, set up like the Test scene's Skeleton: LitSprite2D at 5x scale with
 	# diffuse/normal/specular and the small base occluder that casts its shadow.
@@ -140,6 +141,8 @@ func _ready() -> void:
 				_light.shadow_mask = int(kv[1])
 			"exclude":
 				_light.exclude_scene_occluders = kv[1] == "on"
+			"rxmask":
+				_floor.shadow_ignore_mask = int(kv[1])
 
 	_update_hud()
 	if _out != "":

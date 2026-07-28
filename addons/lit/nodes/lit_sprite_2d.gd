@@ -85,6 +85,43 @@ const RECEIVER_YSORT_MASK_VARIANTS: Array[String] = [
 	"res://addons/lit/shaders/lit_receiver_stoch_ysort_mask.gdshader",
 	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_mask.gdshader",
 ]
+# Rx twins, used per node while its shadow_receiver_mask is non-default.
+const RECEIVER_FAST_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_rx.gdshader",
+]
+const RECEIVER_FULL_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_rx.gdshader",
+]
+const RECEIVER_YSORT_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_rx.gdshader",
+]
+const RECEIVER_FAST_MASK_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_fast_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_fast_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_fast_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_mask_rx.gdshader",
+]
+const RECEIVER_FULL_MASK_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_mask_rx.gdshader",
+]
+const RECEIVER_YSORT_MASK_RX_VARIANTS: Array[String] = [
+	"res://addons/lit/shaders/lit_receiver_ysort_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_ysort_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_stoch_ysort_mask_rx.gdshader",
+	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_mask_rx.gdshader",
+]
 
 ## Emissive strength: these pixels ignore the dark. Proxies to the material's
 ## `emissive_strength` uniform.
@@ -99,6 +136,15 @@ const RECEIVER_YSORT_MASK_VARIANTS: Array[String] = [
 	set(value):
 		receiver_mask = value
 		_set_param("receiver_mask", value)
+
+## Ignore shadows from these occluder layers: a shadow is skipped on this sprite when
+## its caster's occluder_light_mask shares a bit with this mask. Empty (the default)
+## receives every shadow. Proxies to `rx_mask`.
+@export_flags_2d_render var shadow_ignore_mask: int = 0:
+	set(value):
+		shadow_ignore_mask = value
+		_set_live_param("rx_mask", value)
+		LitLightRegistry.rx_set(self, value)
 
 ## Self-shadowing: when off (the default), this sprite's own occluders can't cast onto
 ## it — their shadows render behind it. "Own" means LightOccluder2D nodes that are
@@ -145,6 +191,19 @@ func _init() -> void:
 
 
 func _lit_ready() -> void:
+	# Instanced scenes share subresource materials, but per-node params (self rects,
+	# rx_mask) need one material per node; de-share at runtime.
+	if not Engine.is_editor_hint():
+		var mat := material as ShaderMaterial
+		if mat != null and mat.shader != null and not mat.resource_local_to_scene \
+				and LitLightRegistry._is_lit_receiver_path(mat.shader.resource_path):
+			material = mat.duplicate()
+	# Heal a stale rx_mask a scene save may have baked into the material.
+	if shadow_ignore_mask == 0 and material is ShaderMaterial:
+		var stale = (material as ShaderMaterial).get_shader_parameter("rx_mask")
+		if stale != null and int(stale) != 0:
+			_set_param("rx_mask", 0)
+
 	# Keep has_specular_map in sync so the Blinn-Phong path picks the half-vector specular
 	# only when a specular map is actually present (it blows out without one). texture_changed
 	# fires on texture swaps; we also subscribe to the CanvasTexture itself so assigning the
@@ -185,7 +244,7 @@ func _on_texture_changed() -> void:
 
 func _update_specular_flag() -> void:
 	var present := _watched_texture != null and _watched_texture.specular_texture != null
-	_set_param("has_specular_map", present)
+	_set_live_param("has_specular_map", present)
 
 
 func _process(_delta: float) -> void:
@@ -232,8 +291,8 @@ func _update_self_rect() -> void:
 	packed.resize(4)
 	for i in rects.size():
 		packed[i] = Vector4(rects[i].position.x, rects[i].position.y, rects[i].end.x, rects[i].end.y)
-	_set_param("self_rects", packed)
-	_set_param("self_rect_count", rects.size())
+	_set_live_param("self_rects", packed)
+	_set_live_param("self_rect_count", rects.size())
 
 	# Y-sort participation: occluder-owning sprites only, depth = footprint bottom.
 	var ys_on := false
@@ -256,8 +315,10 @@ func _update_self_rect() -> void:
 	if ys_on != _ysort_on_last or (ys_on and ys_y != _ysort_y_last):
 		_ysort_on_last = ys_on
 		_ysort_y_last = ys_y
-		_set_param("ysort_on", ys_on)
-		_set_param("ysort_y", ys_y)
+		_set_live_param("ysort_on", ys_on)
+		_set_live_param("ysort_y", ys_y)
+	if shadow_ignore_mask != 0:
+		_set_live_param("rx_mask", shadow_ignore_mask)
 
 
 # Swap to the receiver variant for this frame's needs: ysort/full/fast per the y-sort
@@ -265,7 +326,7 @@ func _update_self_rect() -> void:
 # on lights (published by the registry). Only materials already on a Lit variant are
 # touched; a custom shader is left alone.
 func _apply_shader_variant(wants_full: bool, wants_ysort: bool) -> void:
-	var mat := material as ShaderMaterial
+	var mat := _live_mat()
 	if mat == null or mat.shader == null:
 		return
 	var current: String = mat.shader.resource_path
@@ -274,14 +335,21 @@ func _apply_shader_variant(wants_full: bool, wants_ysort: bool) -> void:
 	var mask := LitLightRegistry.active_algos & 3
 	var masks := LitLightRegistry.masks_active
 	var gx := LitLightRegistry.gx_active
-	var table := RECEIVER_FAST_MASK_VARIANTS if masks \
-			else (RECEIVER_FAST_GX_VARIANTS if gx else RECEIVER_FAST_VARIANTS)
+	# Rx (per-receiver exclusion) has its own variant class carrying the tile test.
+	var rx := shadow_ignore_mask != 0
+	var table: Array[String]
 	if wants_ysort:
-		table = RECEIVER_YSORT_MASK_VARIANTS if masks \
-				else (RECEIVER_YSORT_GX_VARIANTS if gx else RECEIVER_YSORT_VARIANTS)
+		table = (RECEIVER_YSORT_MASK_RX_VARIANTS if masks else RECEIVER_YSORT_RX_VARIANTS) if rx \
+				else (RECEIVER_YSORT_MASK_VARIANTS if masks \
+				else (RECEIVER_YSORT_GX_VARIANTS if gx else RECEIVER_YSORT_VARIANTS))
 	elif wants_full:
-		table = RECEIVER_FULL_MASK_VARIANTS if masks \
-				else (RECEIVER_FULL_GX_VARIANTS if gx else RECEIVER_FULL_VARIANTS)
+		table = (RECEIVER_FULL_MASK_RX_VARIANTS if masks else RECEIVER_FULL_RX_VARIANTS) if rx \
+				else (RECEIVER_FULL_MASK_VARIANTS if masks \
+				else (RECEIVER_FULL_GX_VARIANTS if gx else RECEIVER_FULL_VARIANTS))
+	else:
+		table = (RECEIVER_FAST_MASK_RX_VARIANTS if masks else RECEIVER_FAST_RX_VARIANTS) if rx \
+				else (RECEIVER_FAST_MASK_VARIANTS if masks \
+				else (RECEIVER_FAST_GX_VARIANTS if gx else RECEIVER_FAST_VARIANTS))
 	var wanted: String = table[mask]
 	if current != wanted:
 		mat.shader = load(wanted)
@@ -290,3 +358,30 @@ func _apply_shader_variant(wants_full: bool, wants_ysort: bool) -> void:
 func _set_param(param: String, value: Variant) -> void:
 	if material is ShaderMaterial:
 		(material as ShaderMaterial).set_shader_parameter(param, value)
+
+
+# The material carrying live-driven state: in the editor a per-node RenderingServer
+# clone (the property material stays authored-only, so saves never bake volatile
+# state); at runtime the node's own (de-shared) material.
+var _live_last: ShaderMaterial = null
+
+func _live_mat() -> ShaderMaterial:
+	var mat := material as ShaderMaterial
+	if Engine.is_editor_hint() and mat != null and mat.shader != null \
+			and LitLightRegistry._is_lit_receiver_path(mat.shader.resource_path):
+		mat = LitLightRegistry.editor_live_material(self, mat)
+		if mat != _live_last:
+			# Fresh clone (first frame, or recreated after the editor's save-time
+			# script reload): drop the dedup caches so live params re-land on it.
+			_live_last = mat
+			_ysort_on_last = false
+			_ysort_y_last = 0.0
+			mat.set_shader_parameter("rx_mask", shadow_ignore_mask)
+			_update_specular_flag()
+	return mat
+
+
+func _set_live_param(param: String, value: Variant) -> void:
+	var mat := _live_mat()
+	if mat != null:
+		mat.set_shader_parameter(param, value)

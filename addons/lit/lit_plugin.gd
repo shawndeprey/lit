@@ -60,6 +60,7 @@ func _exit_tree() -> void:
 	# Session teardown only; no project.godot writes here.
 	set_process(false)
 	_registry = null
+	LitLightRegistryScript.editor_release_live()
 	remove_tool_menu_item(TOOL_MENU_ITEM)
 	_remove_live_globals()
 
