@@ -187,7 +187,8 @@ const WORLD_SDF_NODE := "LitWorldSdf"
 
 var _wsdf_vp: SubViewport
 var _wsdf_mat: ShaderMaterial
-var _wsdf_xform := Transform2D()
+var _wsdf_rect := Rect2()
+var _wsdf_cam_last := Transform2D(Vector2.ZERO, Vector2.ZERO, Vector2.ZERO)
 var _wsdf_basis_last := Vector4.INF
 var _wsdf_origin_last := Vector2.INF
 var _wsdf_tex_published := false
@@ -198,7 +199,7 @@ var _wsdf_hull := Rect2()
 var _wsdf_occs: Array = []       # [node, last global_transform, last visible]
 var _wsdf_list_dirty := true
 var _wsdf_list_frame := -1000
-var _wsdf_created_frame := -1000
+var _wsdf_warmup := 0
 
 # Width of the flat tile-index texture; a flat index maps to (i % WIDTH, i / WIDTH).
 # Must match LIT_INDEX_TEX_WIDTH in lit_receiver_common.gdshaderinc.
@@ -1725,6 +1726,7 @@ func _ensure_world_sdf(host: Node, viewport: Viewport) -> bool:
 	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	vp.use_hdr_2d = true
 	vp.disable_3d = true
+	vp.gui_disable_input = true
 	# Occluders still rasterize into the SDF under a restrictive cull mask, so the
 	# viewport draws nothing but the encode quad.
 	vp.canvas_cull_mask = 1 << 19
@@ -1744,7 +1746,7 @@ func _ensure_world_sdf(host: Node, viewport: Viewport) -> bool:
 	_wsdf_vp = vp
 	_wsdf_mat = mat
 	_wsdf_tex_published = false
-	_wsdf_created_frame = Engine.get_process_frames()
+	_wsdf_warmup = 30
 	return true
 
 ## Frame the world-SDF viewport over the caster hull accumulated by the collect loop,
@@ -1762,24 +1764,32 @@ func _update_world_sdf(host: Node, viewport: Viewport, canvas_xform: Transform2D
 
 	# Editor: no world-SDF work at all while the editor window is unfocused (a game
 	# running alongside would otherwise lose frame time to it); pending updates run
-	# on refocus.
+	# on refocus. A viewport left rendering (warmup) is parked so an unfocused editor
+	# never keeps re-rendering it.
 	if Engine.is_editor_hint():
 		var win := host.get_window()
 		if win == null or not win.has_focus():
+			if _wsdf_vp.render_target_update_mode == SubViewport.UPDATE_ALWAYS:
+				_wsdf_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+				_wsdf_dirty = true
 			return
 
-	# Coarse framing quantization: position and size snap keep the framing stable
-	# while lights orbit or the camera drifts inside the envelope.
-	var rect := _wsdf_hull.grow(8.0)
-	rect.position = (rect.position / 64.0).floor() * 64.0
-	rect.size = (rect.size / 128.0).ceil() * 128.0
-	var s := minf(float(WORLD_SDF_SIZE) / rect.size.x, float(WORLD_SDF_SIZE) / rect.size.y)
-	var xf := Transform2D(Vector2(s, 0.0), Vector2(0.0, s), -rect.position * s)
-	if xf != _wsdf_xform:
-		_wsdf_vp.canvas_transform = xf
+	# Containment framing with hysteresis: reframe only when the caster hull escapes
+	# the framed rect (or shrinks well below it), so lights orbiting and the camera
+	# drifting inside the margin never touch the framing.
+	var hull := _wsdf_hull.grow(8.0)
+	var reframed := false
+	if _wsdf_rect.size == Vector2.ZERO or not _wsdf_rect.encloses(hull) \
+			or hull.size.x < _wsdf_rect.size.x * 0.5 or hull.size.y < _wsdf_rect.size.y * 0.5:
+		var rect := hull.grow(maxf(hull.size.x, hull.size.y) * 0.15)
+		rect.position = (rect.position / 64.0).floor() * 64.0
+		rect.size = (rect.size / 64.0).ceil() * 64.0
+		_wsdf_rect = rect
+		var s := minf(float(WORLD_SDF_SIZE) / rect.size.x, float(WORLD_SDF_SIZE) / rect.size.y)
+		_wsdf_vp.canvas_transform = Transform2D(Vector2(s, 0.0), Vector2(0.0, s), -rect.position * s)
 		_wsdf_mat.set_shader_parameter("screen_to_world", 1.0 / s)
-		_wsdf_xform = xf
 		_wsdf_dirty = true
+		reframed = true
 
 	# Occluder motion poll against the debounced node list.
 	if _wsdf_list_dirty and Engine.get_process_frames() - _wsdf_list_frame >= 20:
@@ -1802,8 +1812,11 @@ func _update_world_sdf(host: Node, viewport: Viewport, canvas_xform: Transform2D
 
 	# Warmup: a lone UPDATE_ONCE on the viewport's very first frames races shader and
 	# pipeline readiness and can bake a bad render permanently; render unconditionally
-	# until it has settled, then hand over to the dirty policy.
-	if Engine.get_process_frames() - _wsdf_created_frame < 30:
+	# for its first 30 processed frames (a countdown, so warmup still completes when
+	# those frames run late, e.g. a viewport created while the editor was unfocused),
+	# then hand over to the dirty policy.
+	if _wsdf_warmup > 0:
+		_wsdf_warmup -= 1
 		_wsdf_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		_wsdf_dirty = true
 	elif _wsdf_dirty:
@@ -1811,10 +1824,15 @@ func _update_world_sdf(host: Node, viewport: Viewport, canvas_xform: Transform2D
 		_wsdf_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 	# Fold screen px -> world -> world-SDF UV into one affine map for the shader.
+	# Recomputed only when the camera or the framing moved.
+	if canvas_xform == _wsdf_cam_last and not reframed:
+		return
+	_wsdf_cam_last = canvas_xform
+	var fs := minf(float(WORLD_SDF_SIZE) / _wsdf_rect.size.x, float(WORLD_SDF_SIZE) / _wsdf_rect.size.y)
 	var to_uv := Transform2D(
-			Vector2(s / float(WORLD_SDF_SIZE), 0.0),
-			Vector2(0.0, s / float(WORLD_SDF_SIZE)),
-			-rect.position * s / float(WORLD_SDF_SIZE))
+			Vector2(fs / float(WORLD_SDF_SIZE), 0.0),
+			Vector2(0.0, fs / float(WORLD_SDF_SIZE)),
+			-_wsdf_rect.position * fs / float(WORLD_SDF_SIZE))
 	var m := to_uv * canvas_xform.affine_inverse()
 	var basis := Vector4(m.x.x, m.x.y, m.y.x, m.y.y)
 	if basis != _wsdf_basis_last:
