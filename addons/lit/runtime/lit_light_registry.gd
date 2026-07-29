@@ -188,6 +188,17 @@ const WORLD_SDF_NODE := "LitWorldSdf"
 var _wsdf_vp: SubViewport
 var _wsdf_mat: ShaderMaterial
 var _wsdf_xform := Transform2D()
+var _wsdf_basis_last := Vector4.INF
+var _wsdf_origin_last := Vector2.INF
+var _wsdf_tex_published := false
+# The SDF re-renders (UPDATE_ONCE) only when its content could have changed: framing
+# moved, an occluder/tilemap entered or left the tree, or a polled occluder moved.
+var _wsdf_dirty := true
+var _wsdf_hull := Rect2()
+var _wsdf_occs: Array = []       # [node, last global_transform, last visible]
+var _wsdf_list_dirty := true
+var _wsdf_list_frame := -1000
+var _wsdf_created_frame := -1000
 
 # Width of the flat tile-index texture; a flat index maps to (i % WIDTH, i / WIDTH).
 # Must match LIT_INDEX_TEX_WIDTH in lit_receiver_common.gdshaderinc.
@@ -436,6 +447,10 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# positionally culled. A freed node marks the cache dirty so it rebuilds next frame.
 	var lights := _get_cached_lights(tree)
 	var visible: Array = []
+	# The shadow-caster hull (view rect + shadow-casting light positions) accumulates
+	# here so the world SDF pays no second pass over the lights.
+	_wsdf_hull = world_rect
+	var wsdf_diag := world_rect.size.length()
 	for entry in lights:
 		var node: Node = entry[0]
 		if not is_instance_valid(node):
@@ -446,19 +461,28 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 			var directional := node as LitDirectionalLight2D
 			if directional.enabled and directional.is_visible_in_tree():
 				visible.append(directional)
+				if directional.shadow_enabled:
+					var toward := -Vector2.from_angle(directional.global_rotation) * wsdf_diag
+					_wsdf_hull = _wsdf_hull.expand(world_rect.position + toward) \
+							.expand(world_rect.end + toward)
 		elif kind == 0:
 			var point := node as LitPointLight2D
 			if point.enabled and point.is_visible_in_tree() and _aabb_visible(point.global_position, point.range, world_rect):
 				visible.append(point)
+				if point.shadow_enabled:
+					_wsdf_hull = _wsdf_hull.expand(point.global_position)
 		else:
 			var spot := node as LitSpotLight2D
 			if spot.enabled and spot.is_visible_in_tree() and _aabb_visible(spot.global_position, spot.range, world_rect):
 				visible.append(spot)
+				if spot.shadow_enabled:
+					_wsdf_hull = _wsdf_hull.expand(spot.global_position)
 
 	var count := visible.size()
 
 	if sdf_host != null:
-		_update_world_sdf(sdf_host, viewport, visible, canvas_xform, world_rect)
+		_update_world_sdf(sdf_host, viewport, canvas_xform,
+				receiver_root if receiver_root != null else tree.root)
 
 	# Publish which non-raymarched shadow algorithms are in play and re-point receiver
 	# materials to a variant compiled with exactly those (base scenes stay on the base
@@ -1692,12 +1716,13 @@ func _ensure_world_sdf(host: Node, viewport: Viewport) -> bool:
 	if found != null:
 		_wsdf_vp = found
 		_wsdf_mat = found.get_child(0).get_child(0).material as ShaderMaterial
+		_wsdf_tex_published = false
 		return true
 	var vp := SubViewport.new()
 	vp.name = WORLD_SDF_NODE
 	vp.size = Vector2i(WORLD_SDF_SIZE, WORLD_SDF_SIZE)
 	vp.world_2d = viewport.world_2d
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	vp.use_hdr_2d = true
 	vp.disable_3d = true
 	# Occluders still rasterize into the SDF under a restrictive cull mask, so the
@@ -1718,39 +1743,72 @@ func _ensure_world_sdf(host: Node, viewport: Viewport) -> bool:
 			RenderingServer.VIEWPORT_SDF_SCALE_100_PERCENT)
 	_wsdf_vp = vp
 	_wsdf_mat = mat
+	_wsdf_tex_published = false
+	_wsdf_created_frame = Engine.get_process_frames()
 	return true
 
-## Frame the world-SDF viewport over everything that can shadow the view this frame
-## (view rect + shadow-casting light positions; directionals extend the rect one view
-## diagonal toward the light) and publish the sampling globals.
-func _update_world_sdf(host: Node, viewport: Viewport, visible: Array,
-		canvas_xform: Transform2D, world_rect: Rect2) -> void:
+## Frame the world-SDF viewport over the caster hull accumulated by the collect loop,
+## publish the sampling globals, and queue a one-shot re-render only when the SDF's
+## content could have changed (framing crossed a quantization step, an occluder or
+## tilemap entered/left the tree, or a polled occluder moved). Everything else - camera
+## pans, light motion inside the quantized envelope - leaves the texture untouched.
+func _update_world_sdf(host: Node, viewport: Viewport, canvas_xform: Transform2D,
+		occ_root: Node) -> void:
 	if not _ensure_world_sdf(host, viewport):
 		return
 	if _wsdf_vp.world_2d != viewport.world_2d:
 		_wsdf_vp.world_2d = viewport.world_2d
+		_wsdf_dirty = true
 
-	var rect := world_rect
-	var diag := world_rect.size.length()
-	for light in visible:
-		if not light.shadow_enabled:
-			continue
-		if light is LitDirectionalLight2D:
-			var toward := -Vector2.from_angle(light.global_rotation) * diag
-			rect = rect.expand(world_rect.position + toward).expand(world_rect.end + toward)
-		else:
-			rect = rect.expand(light.global_position)
-	rect = rect.grow(8.0)
+	# Editor: no world-SDF work at all while the editor window is unfocused (a game
+	# running alongside would otherwise lose frame time to it); pending updates run
+	# on refocus.
+	if Engine.is_editor_hint():
+		var win := host.get_window()
+		if win == null or not win.has_focus():
+			return
 
+	# Coarse framing quantization: position and size snap keep the framing stable
+	# while lights orbit or the camera drifts inside the envelope.
+	var rect := _wsdf_hull.grow(8.0)
+	rect.position = (rect.position / 64.0).floor() * 64.0
+	rect.size = (rect.size / 128.0).ceil() * 128.0
 	var s := minf(float(WORLD_SDF_SIZE) / rect.size.x, float(WORLD_SDF_SIZE) / rect.size.y)
-	# Texel-quantized origin so a static scene never swims.
-	var texel := 1.0 / s
-	rect.position = (rect.position / texel).floor() * texel
 	var xf := Transform2D(Vector2(s, 0.0), Vector2(0.0, s), -rect.position * s)
 	if xf != _wsdf_xform:
 		_wsdf_vp.canvas_transform = xf
-		_wsdf_mat.set_shader_parameter("screen_to_world", texel)
+		_wsdf_mat.set_shader_parameter("screen_to_world", 1.0 / s)
 		_wsdf_xform = xf
+		_wsdf_dirty = true
+
+	# Occluder motion poll against the debounced node list.
+	if _wsdf_list_dirty and Engine.get_process_frames() - _wsdf_list_frame >= 20:
+		_wsdf_list_dirty = false
+		_wsdf_list_frame = Engine.get_process_frames()
+		_wsdf_occs.clear()
+		_wsdf_collect_occs(occ_root)
+	for entry in _wsdf_occs:
+		var n: Node2D = entry[0]
+		if not is_instance_valid(n):
+			_wsdf_dirty = true
+			_wsdf_list_dirty = true
+			continue
+		var nx := n.global_transform
+		var nv := n.is_visible_in_tree()
+		if nx != entry[1] or nv != entry[2]:
+			entry[1] = nx
+			entry[2] = nv
+			_wsdf_dirty = true
+
+	# Warmup: a lone UPDATE_ONCE on the viewport's very first frames races shader and
+	# pipeline readiness and can bake a bad render permanently; render unconditionally
+	# until it has settled, then hand over to the dirty policy.
+	if Engine.get_process_frames() - _wsdf_created_frame < 30:
+		_wsdf_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		_wsdf_dirty = true
+	elif _wsdf_dirty:
+		_wsdf_dirty = false
+		_wsdf_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 	# Fold screen px -> world -> world-SDF UV into one affine map for the shader.
 	var to_uv := Transform2D(
@@ -1758,10 +1816,22 @@ func _update_world_sdf(host: Node, viewport: Viewport, visible: Array,
 			Vector2(0.0, s / float(WORLD_SDF_SIZE)),
 			-rect.position * s / float(WORLD_SDF_SIZE))
 	var m := to_uv * canvas_xform.affine_inverse()
-	RenderingServer.global_shader_parameter_set("lit_wsdf_basis",
-			Vector4(m.x.x, m.x.y, m.y.x, m.y.y))
-	RenderingServer.global_shader_parameter_set("lit_wsdf_origin", m.origin)
-	RenderingServer.global_shader_parameter_set("lit_world_sdf", _wsdf_vp.get_texture())
+	var basis := Vector4(m.x.x, m.x.y, m.y.x, m.y.y)
+	if basis != _wsdf_basis_last:
+		_wsdf_basis_last = basis
+		RenderingServer.global_shader_parameter_set("lit_wsdf_basis", basis)
+	if m.origin != _wsdf_origin_last:
+		_wsdf_origin_last = m.origin
+		RenderingServer.global_shader_parameter_set("lit_wsdf_origin", m.origin)
+	if not _wsdf_tex_published:
+		_wsdf_tex_published = true
+		RenderingServer.global_shader_parameter_set("lit_world_sdf", _wsdf_vp.get_texture())
+
+func _wsdf_collect_occs(n: Node) -> void:
+	if n is LightOccluder2D or n is TileMapLayer:
+		_wsdf_occs.append([n, (n as Node2D).global_transform, n.is_visible_in_tree()])
+	for c in n.get_children():
+		_wsdf_collect_occs(c)
 
 ## Upload _pack_buf (_tpl x count RGBAF) to the light-data texture, reusing the Image
 ## and ImageTexture across frames and only reallocating when count or width changes.
@@ -1810,6 +1880,8 @@ func _on_tree_changed(node: Node) -> void:
 		_bare_dirty = true
 	if node is TileMapLayer or node is LightOccluder2D:
 		_occ_dirty = true
+		_wsdf_dirty = true
+		_wsdf_list_dirty = true
 		if node is LightOccluder2D:
 			if node.sdf_collision and node.occluder_light_mask != 1:
 				_occ_masks_seen = true
