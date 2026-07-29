@@ -109,7 +109,7 @@ func _process(delta: float) -> void:
 	_registry.shadow_samples_max = clampi(
 		int(ProjectSettings.get_setting("lit/quality/shadow_samples_max", 32)), 1, 32)
 	_registry.refresh(get_tree(), EditorInterface.get_editor_viewport_2d(),
-		EditorInterface.get_edited_scene_root())
+		EditorInterface.get_edited_scene_root(), self)
 
 # --- "Make Selected Nodes Lit" tool ------------------------------------------
 #
@@ -199,6 +199,12 @@ func _ps_global_defs() -> Array:
 		{"name": "lit_light_count", "def": {"type": "int", "value": 0}},
 		{"name": "lit_viewport_size", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{"name": "lit_canvas_scale", "def": {"type": "float", "value": 1.0}},
+		{
+			"name": "lit_world_sdf",
+			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
+		},
+		{"name": "lit_wsdf_basis", "def": {"type": "vec4", "value": Vector4()}},
+		{"name": "lit_wsdf_origin", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{"name": "lit_ambient_color", "def": {"type": "color", "value": Color(1, 1, 1, 1)}},
 		{"name": "lit_ambient_energy", "def": {"type": "float", "value": 1.0}},
 		{"name": "lit_shadow_steps_max", "def": {"type": "int", "value": 64}},
@@ -253,6 +259,9 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_light_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_viewport_size", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_canvas_scale", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
+		{"name": "lit_world_sdf", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_wsdf_basis", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
+		{"name": "lit_wsdf_origin", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_ambient_color", "type": RenderingServer.GLOBAL_VAR_TYPE_COLOR, "value": Color(1, 1, 1, 1)},
 		{"name": "lit_ambient_energy", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
 		{"name": "lit_shadow_steps_max", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 64},
