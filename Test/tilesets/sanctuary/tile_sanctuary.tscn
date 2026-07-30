@@ -1,0 +1,138 @@
+[gd_scene format=4 uid="uid://q4427lefmolf"]
+
+[ext_resource type="Texture2D" uid="uid://b50oe1mv1tq8u" path="res://Test/tilesets/sanctuary/sanctuary.png" id="1_g5y12"]
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/lit_receiver_fast.gdshader" id="1_uk7ci"]
+[ext_resource type="Texture2D" uid="uid://dvyqggxn16rx7" path="res://Test/tilesets/sanctuary/sanctuary_n.png" id="2_6cynu"]
+[ext_resource type="Script" uid="uid://c4ukaxjuidwha" path="res://Test/tilesets/game_tile.gd" id="3_7dvdw"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_7x70a"]
+shader = ExtResource("1_uk7ci")
+shader_parameter/emissive_strength = 1.0
+shader_parameter/receiver_mask = 1
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/footprint_shadow = 16.0
+shader_parameter/directional_horizontal_scale = 32.0
+shader_parameter/directional_shadow_reach = 1.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_2lfkm"]
+diffuse_texture = ExtResource("1_g5y12")
+normal_texture = ExtResource("2_6cynu")
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_jnrll"]
+resource_name = "Sanctuary"
+texture = SubResource("CanvasTexture_2lfkm")
+0:0/0 = 0
+1:0/0 = 0
+2:0/0 = 0
+3:0/0 = 0
+4:0/0 = 0
+5:0/0 = 0
+6:0/0 = 0
+0:16/0 = 0
+0:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(8, -8, -8, -8, -8, 8, -2.5180206, 8, -2.3381615, -0.17985725, 8, -0.17985725)
+1:16/0 = 0
+1:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, -0.5395756, -8, -0.35971642)
+2:16/0 = 0
+2:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, 2.5180206, 8, 2.3381615, -0.17985725, -8, -0.17985725)
+0:17/0 = 0
+0:17/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, -2.1583042, -8, -2.1583042, 8, -8, 8)
+2:17/0 = 0
+2:17/0/physics_layer_0/polygon_0/points = PackedVector2Array(8, -8, 2.1583042, -8, 2.1583042, 8, 8, 8)
+6:17/0 = 0
+6:17/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+3:18/0 = 0
+3:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(2.1583061, -8, 8, -8, 8, 8, 2.3381615, 8)
+5:18/0 = 0
+5:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(-2.1583061, -8, -8, -8, -8, 8, -2.3381615, 8)
+6:18/0 = 0
+6:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+3:19/0 = 0
+3:19/0/physics_layer_0/polygon_0/points = PackedVector2Array(8, -8, 2.3381634, -8, 2.1583042, -0.17985725, 8, -0.35971642)
+4:19/0 = 0
+4:19/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, -0.35971642, -8, -0.35971642)
+5:19/0 = 0
+5:19/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, -2.3381634, -8, -2.1583042, -0.17985725, -8, -0.35971642)
+6:19/0 = 0
+6:19/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+0:18/size_in_atlas = Vector2i(1, 2)
+0:18/0 = 0
+0:18/0/texture_origin = Vector2i(0, 8)
+0:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(-7.733925, -23.92121, -2.1583042, -24.101068, -2.1583042, -15.647709, 8, -8, 8, 8, -8, 8)
+1:18/size_in_atlas = Vector2i(1, 2)
+1:18/0 = 0
+1:18/0/texture_origin = Vector2i(0, 8)
+1:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+2:18/size_in_atlas = Vector2i(1, 2)
+2:18/0 = 0
+2:18/0/texture_origin = Vector2i(0, 8)
+2:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(7.733925, -23.92121, 2.1583042, -24.101068, 2.1583042, -15.647709, -8, -8, -8, 8, 8, 8)
+3:16/size_in_atlas = Vector2i(1, 2)
+3:16/0 = 0
+3:16/0/texture_origin = Vector2i(0, 8)
+3:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(2.1583061, -8, 8, -8, 8, 8, 2.3381615, 8)
+4:16/size_in_atlas = Vector2i(1, 2)
+4:16/0 = 0
+4:16/0/texture_origin = Vector2i(0, 8)
+4:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+5:16/size_in_atlas = Vector2i(1, 2)
+5:16/0 = 0
+5:16/0/texture_origin = Vector2i(0, 8)
+5:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(-2.1583061, -8, -8, -8, -8, 8, -2.3381615, 8)
+8:18/size_in_atlas = Vector2i(1, 2)
+8:18/0 = 0
+8:18/0/texture_origin = Vector2i(0, 8)
+8:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, -0.5395756, -2.3381634, -0.71943474, -2.3381634, 8, -8, 8)
+7:18/size_in_atlas = Vector2i(1, 2)
+7:18/0 = 0
+7:18/0/texture_origin = Vector2i(0, 8)
+7:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(8, -8, -8, -8, -8, -0.5395756, 2.3381634, -0.71943474, 2.3381634, 8, 8, 8)
+7:16/size_in_atlas = Vector2i(1, 2)
+7:16/0 = 0
+7:16/0/texture_origin = Vector2i(0, 8)
+7:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+8:16/size_in_atlas = Vector2i(1, 2)
+8:16/0 = 0
+8:16/0/texture_origin = Vector2i(0, 8)
+8:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+9:16/size_in_atlas = Vector2i(1, 2)
+9:16/0 = 0
+9:16/0/texture_origin = Vector2i(0, 8)
+9:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, 2.5180206, 8, 2.3381615, -0.5395756, -8, -0.5395756)
+10:16/size_in_atlas = Vector2i(1, 2)
+10:16/0 = 0
+10:16/0/texture_origin = Vector2i(0, 8)
+10:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(8, -8, -8, -8, -8, 8, -2.5180206, 8, -2.3381615, -0.5395756, 8, -0.5395756)
+9:19/0 = 0
+9:19/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, 2.5180206, 8, 2.3381615, -0.5395756, -8, -0.5395756)
+10:19/0 = 0
+10:19/0/physics_layer_0/polygon_0/points = PackedVector2Array(8, -8, -8, -8, -8, 8, -2.5180206, 8, -2.3381615, -0.5395756, 8, -0.5395756)
+11:16/size_in_atlas = Vector2i(1, 2)
+11:16/0 = 0
+11:16/0/texture_origin = Vector2i(0, 8)
+11:16/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
+12:16/size_in_atlas = Vector2i(1, 2)
+12:16/0 = 0
+12:16/0/texture_origin = Vector2i(0, 8)
+11:18/0 = 0
+
+[sub_resource type="TileSet" id="TileSet_07hdm"]
+occlusion_layer_0/light_mask = 1
+physics_layer_0/collision_layer = 0
+physics_layer_0/collision_mask = 0
+sources/0 = SubResource("TileSetAtlasSource_jnrll")
+
+[node name="TileSanctuary" type="TileMapLayer" unique_id=1527864823]
+material = SubResource("ShaderMaterial_7x70a")
+tile_set = SubResource("TileSet_07hdm")
+script = ExtResource("3_7dvdw")
+emissive_strength = 1.0
+shadow_ignore_mask = 16

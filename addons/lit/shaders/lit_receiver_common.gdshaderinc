@@ -25,6 +25,14 @@ global uniform int       lit_light_count;
 global uniform int       lit_directional_count;         // directionals occupy rows [0, this)
 global uniform vec2      lit_viewport_size;             // pixels
 global uniform float     lit_canvas_scale;              // world-to-screen px scale (camera/editor zoom)
+
+// World-space shadow SDF, rendered by the registry's SubViewport over the region that
+// can shadow the view. Texel .r is signed distance in world px; the basis/origin pair
+// maps screen px to its UV. Marches sample this instead of the screen-tied engine SDF,
+// so shadow casting is zoom- and pan-invariant.
+global uniform sampler2D lit_world_sdf;
+global uniform vec4      lit_wsdf_basis;                // screen-px -> UV, columns (xx, xy, yx, yy)
+global uniform vec2      lit_wsdf_origin;
 global uniform vec4      lit_ambient_color : source_color;
 global uniform float     lit_ambient_energy;
 
@@ -429,6 +437,39 @@ float lit_ysort_weight(vec2 p_canvas, vec2 p_px, float reach) {
 }
 #endif
 
+// March-space (engine sdf coords) point to world-SDF UV. The sdf<->screen mapping is
+// derived from screen_uv_to_sdf probes; every term is uniform, so compilers hoist the
+// whole chain out of march loops.
+vec2 lit_wsdf_uv(vec2 p_sdf) {
+	vec2 s0 = screen_uv_to_sdf(vec2(0.0));
+	vec2 sd = screen_uv_to_sdf(vec2(1.0)) - s0;
+	vec2 px = (p_sdf - s0) / sd * lit_viewport_size;
+	return vec2(dot(lit_wsdf_basis.xz, px), dot(lit_wsdf_basis.yw, px)) + lit_wsdf_origin;
+}
+
+// Signed distance at a march-space point, in march-space units, sampled from the
+// world SDF (world px -> screen px via lit_canvas_scale -> sdf units).
+float lit_sdf_sample(vec2 p_sdf) {
+	float d_world = textureLod(lit_world_sdf, lit_wsdf_uv(p_sdf), 0.0).r;
+	vec2 s0 = screen_uv_to_sdf(vec2(0.0));
+	float sd_x = screen_uv_to_sdf(vec2(1.0, 0.0)).x - s0.x;
+	return d_world * lit_canvas_scale * sd_x / lit_viewport_size.x;
+}
+
+// Distance along a march ray to the world SDF's coverage edge. Beyond it is unknown
+// territory, and unknown territory never casts; marches clamp their length to this so
+// boundary texels can't smear into phantom occluders.
+float lit_sdf_cov_exit(vec2 o, vec2 dir) {
+	vec2 s0 = screen_uv_to_sdf(vec2(0.0));
+	vec2 sd = screen_uv_to_sdf(vec2(1.0)) - s0;
+	vec2 o_uv = lit_wsdf_uv(o);
+	vec2 dir_px = dir / sd * lit_viewport_size;
+	vec2 dir_uv = vec2(dot(lit_wsdf_basis.xz, dir_px), dot(lit_wsdf_basis.yw, dir_px));
+	vec2 far = mix(vec2(0.002), vec2(0.998), step(vec2(0.0), dir_uv));
+	vec2 tt = (far - o_uv) / dir_uv;
+	return max(min(tt.x, tt.y), 0.0);
+}
+
 // Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| -
 // the distance field of occluder outlines - so a shape casts from its light-facing
 // silhouette and the shadow passes through its body. A fragment starting inside a
@@ -443,6 +484,7 @@ float lit_ysort_weight(vec2 p_canvas, vec2 p_px, float reach) {
 // march offsets into canvas space, and self_scale is the canvas length of one SDF unit.
 float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
+	maxd = min(maxd, lit_sdf_cov_exit(frag_sdf, dir));
 	float t = shadow_min_step;
 	float res = 1.0;
 	float prev_d = frag_d;                   // signed; tracks outline crossings
@@ -466,7 +508,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 		bool receding = false;
 		float prev_ad = 0.0;
 		for (; s < max_steps && t < maxd && t <= t_mk_end; s++) {
-			float d = texture_sdf(frag_sdf + dir * t);
+			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float ad = abs(d);
 			if (grace) {
 				prev_d = d;
@@ -563,7 +605,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
 		// body, which taxes the whole shader even on fragments that never take it.
 		for (; s < max_steps && t < maxd && t <= t_slow_end; s++) {
-			float d = texture_sdf(frag_sdf + dir * t); // signed: negative inside a shape
+			float d = lit_sdf_sample(frag_sdf + dir * t); // signed: negative inside a shape
 			float ad = abs(d);                         // distance to the nearest outline
 			if (grace) {
 				prev_d = d;
@@ -656,7 +698,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 			bool receding = false;
 			float prev_ad = 0.0;
 			for (; s < max_steps && t < maxd; s++) {
-				float d = texture_sdf(frag_sdf + dir * t); // signed: negative inside a shape
+				float d = lit_sdf_sample(frag_sdf + dir * t); // signed: negative inside a shape
 				if (d < 0.0) {
 					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
 					continue;
@@ -676,7 +718,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 			// the exited edge; the breaking sample follows the steady-state rules.
 			if (receding) {
 				for (; s < max_steps && t < maxd; s++) {
-					float d = texture_sdf(frag_sdf + dir * t);
+					float d = lit_sdf_sample(frag_sdf + dir * t);
 					if (d >= 0.001 && d >= prev_ad) {
 						prev_ad = d;
 						t += max(d, shadow_min_step);
@@ -697,7 +739,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 		float best_d = 1e20;
 		float best_t = 1.0;
 		for (; s < max_steps && t < maxd; s++) {
-			float d = texture_sdf(frag_sdf + dir * t);
+			float d = lit_sdf_sample(frag_sdf + dir * t);
 			if (d < 0.001) {
 				return 0.0;                  // fully occluded: inside, on, or across an outline
 			}
@@ -749,6 +791,10 @@ float lit_shadow_contrast(float s, float hardness) {
 float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_steps, float frag_d,
 		bool src_plane, bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas,
 		float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
+	// An off-coverage source plane has no SDF information to sample.
+	float t_cov = lit_sdf_cov_exit(frag_sdf, dir);
+	src_plane = src_plane && maxd <= t_cov;
+	maxd = min(maxd, t_cov);
 	float t = shadow_min_step;
 	float res = 1.0;
 	bool grace = frag_d < 0.0;
@@ -771,7 +817,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 		bool receding = false;
 		float prev_d = frag_d;
 		for (; s < max_steps && t < maxd && t <= t_mk_end; s++) {
-			float d = texture_sdf(frag_sdf + dir * t);
+			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float ad = abs(d);
 			if (grace) {
 				if (d < 0.0) {
@@ -856,7 +902,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
 		// body, which taxes the whole shader even on fragments that never take it.
 		for (; s < max_steps && t < maxd && t <= t_slow_end; s++) {
-			float d = texture_sdf(frag_sdf + dir * t);
+			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float ad = abs(d);
 			if (grace) {
 				// March out of the containing shape; apply its footprint shadow once,
@@ -935,7 +981,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			bool receding = false;
 			float prev_d = 0.0;
 			for (; s < max_steps && t < maxd; s++) {
-				float d = texture_sdf(frag_sdf + dir * t);
+				float d = lit_sdf_sample(frag_sdf + dir * t);
 				if (d < 0.0) {
 					t += max(-d, shadow_min_step);
 					continue;
@@ -955,7 +1001,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 			// breaking sample follows the steady-state rule.
 			if (receding) {
 				for (; s < max_steps && t < maxd; s++) {
-					float d = texture_sdf(frag_sdf + dir * t);
+					float d = lit_sdf_sample(frag_sdf + dir * t);
 					if (d >= prev_d) {
 						prev_d = d;
 						t += max(abs(d), shadow_min_step);
@@ -976,7 +1022,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 		}
 		// Steady state: bare signed-coverage march.
 		for (; s < max_steps && t < maxd; s++) {
-			float d = texture_sdf(frag_sdf + dir * t);
+			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float cand = 0.5 + d / (2.0 * w * t);
 			if (cand < res) {
 				res = max(cand, 0.0);
@@ -988,7 +1034,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 		}
 		if (src_plane && maxd > shadow_min_step) {
 			// Source-plane sample; see the header comment. Owned occluders stay exempt.
-			float d = texture_sdf(frag_sdf + dir * maxd);
+			float d = lit_sdf_sample(frag_sdf + dir * maxd);
 			float cand = 0.5 + d / (2.0 * w * maxd);
 			float own_r = (abs(d) + LIT_SELF_PAD_SDF) * self_scale;
 			bool own_exempt = self_ex && maxd <= t_self_end
@@ -1410,7 +1456,7 @@ void fragment() {
 	vec2 frag_sdf = screen_uv_to_sdf(SCREEN_UV);  // shadow-march space
 
 	// The fragment's own SDF sample, shared by every light's shadow march.
-	float frag_d = texture_sdf(frag_sdf);
+	float frag_d = lit_sdf_sample(frag_sdf);
 
 	// Screen diagonal in SDF units: the natural scale for a directional shadow's march
 	// distance, keeping the step budget well-sampled at any resolution.

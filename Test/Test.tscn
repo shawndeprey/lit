@@ -134,7 +134,7 @@ visible = false
 material = SubResource("ShaderMaterial_qpji4")
 scale = Vector2(5, 5)
 tile_map_data = PackedByteArray("AAAJAAMAAQAQAAgAAAALAAUAAQAWAA0AAAA=")
-shadow_ignore_mask = 2
+shadow_ignore_mask = 1
 
 [node name="GPUParticles2D" type="GPUParticles2D" parent="." unique_id=944146707]
 visible = false
@@ -232,7 +232,7 @@ metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D3" type="Node2D" parent="LitLights/Cone Traced" unique_id=2104560388]
 visible = false
-position = Vector2(630, 514)
+position = Vector2(446, 434)
 script = ExtResource("4_lg8mm")
 energy = 1.5
 range = 1024.0
