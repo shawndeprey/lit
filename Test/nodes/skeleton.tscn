@@ -1,6 +1,6 @@
 [gd_scene format=4 uid="uid://cpygp0wxw1iu7"]
 
-[ext_resource type="Shader" uid="uid://blplsl8x8nei4" path="res://addons/lit/shaders/lit_receiver_cone_mask_rx.gdshader" id="1_ae8ts"]
+[ext_resource type="Shader" uid="uid://ck1hue5r77ak" path="res://addons/lit/shaders/receiver/lit_receiver.gdshader" id="1_ae8ts"]
 [ext_resource type="Texture2D" uid="uid://b2nlbskimwprj" path="res://Test/cinderskull_preview_o.png" id="2_5pqrm"]
 [ext_resource type="Texture2D" uid="uid://cgevs35a2oh53" path="res://Test/cinderskull_preview_r.png" id="3_b3eui"]
 [ext_resource type="Texture2D" uid="uid://dsdqvt4rqrj7e" path="res://Test/cinderskull_preview.png" id="4_0nfxa"]
@@ -11,9 +11,6 @@
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_s7aw1"]
 shader = ExtResource("1_ae8ts")
-shader_parameter/rx_mask = 7
-shader_parameter/rx_bounds = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/rx_bound_count = 0
 shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false

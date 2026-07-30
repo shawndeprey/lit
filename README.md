@@ -141,3 +141,15 @@ quickest way to reach us.
 
 Lit is free and open-source under the **MIT License** — use it in anything, commercial or
 not, no credit required. See the [`LICENSE`](LICENSE) file for the details.
+
+---
+
+## The "Lit Shaders Precompiling" screen
+
+The first time your game runs on a machine, Lit briefly shows a **Lit Shaders
+Precompiling** screen. A GPU can only finish compiling shaders on the machine that will
+run them, so Lit builds all of its lighting and shadow shaders for that exact GPU and
+driver once, up front. The work is cached: the screen won't appear again until the
+shaders themselves change (a game update or a new Lit version), and in exchange gameplay
+never stutters to compile a shader mid-play. In the editor this happens silently in the
+background, so you'll only ever see the screen in a running game.

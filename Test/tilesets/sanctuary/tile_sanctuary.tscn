@@ -1,7 +1,7 @@
 [gd_scene format=4 uid="uid://q4427lefmolf"]
 
 [ext_resource type="Texture2D" uid="uid://b50oe1mv1tq8u" path="res://Test/tilesets/sanctuary/sanctuary.png" id="1_g5y12"]
-[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/lit_receiver_fast.gdshader" id="1_uk7ci"]
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="1_uk7ci"]
 [ext_resource type="Texture2D" uid="uid://dvyqggxn16rx7" path="res://Test/tilesets/sanctuary/sanctuary_n.png" id="2_6cynu"]
 [ext_resource type="Script" uid="uid://c4ukaxjuidwha" path="res://Test/tilesets/game_tile.gd" id="3_7dvdw"]
 

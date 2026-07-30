@@ -15,7 +15,7 @@ extends Node2D
 ## saved scene's props cast alongside the demo's circle props.
 
 # Fast variant: the demo's receivers never use self-shadow exclusion.
-const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
+const RECEIVER_SHADER := preload("res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader")
 
 const MAX_LIGHTS := 128
 const COOKIE_MAX_LIGHTS := 64

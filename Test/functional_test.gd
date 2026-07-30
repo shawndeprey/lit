@@ -180,6 +180,14 @@ func _update_hud() -> void:
 
 
 func _capture() -> void:
+	# Deterministic captures start after the launch precompile takeover, if one ran,
+	# including the overlay's fade-out.
+	var mgr := get_node_or_null("/root/LitManager")
+	if mgr != null and mgr.precompiler != null:
+		if mgr.precompiler.is_processing():
+			await mgr.precompiler.finished
+		while mgr.get_node_or_null("LitPrecompileOverlay") != null:
+			await RenderingServer.frame_post_draw
 	# Several frames so the registry's receiver-variant swap lands before the capture.
 	for i in 5:
 		await RenderingServer.frame_post_draw

@@ -18,7 +18,6 @@ extends EditorPlugin
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 
-const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver_fast.gdshader"
 const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
@@ -32,6 +31,7 @@ const EDITOR_REFRESH_INTERVAL := 1.0 / 30.0
 
 var _registry: LitLightRegistry
 var _refresh_accum := 0.0
+var _warm_pending: Array[int] = []
 
 
 # --- Lifecycle ---------------------------------------------------------------
@@ -54,6 +54,8 @@ func _enter_tree() -> void:
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
 	_registry = LitLightRegistryScript.new()
+	# Silent background warm so first-session editor tier swaps never pay a compile.
+	_warm_pending = LitShaderLibrary.all_variant_flags()
 	set_process(true)
 
 func _exit_tree() -> void:
@@ -88,6 +90,11 @@ func _ensure_autoload() -> void:
 # live-preview tradeoff. Idling when nothing changed would be a later optimization.
 
 func _process(delta: float) -> void:
+	if not _warm_pending.is_empty():
+		for i in 2:
+			if _warm_pending.is_empty():
+				break
+			LitShaderLibrary.get_receiver(_warm_pending.pop_back())
 	_refresh_accum += delta
 	if _refresh_accum < EDITOR_REFRESH_INTERVAL:
 		return
@@ -136,7 +143,7 @@ func _make_selected_nodes_lit() -> void:
 		push_warning("Make Selected Nodes Lit: select one or more 2D (CanvasItem) nodes first.")
 		return
 
-	var shader := load(RECEIVER_SHADER_PATH) as Shader
+	var shader := load(LitShaderLibrary.ENTRY_PATHS[0]) as Shader
 	var lit_sprite_script := load("res://addons/lit/nodes/lit_sprite_2d.gd") as Script
 	var undo := get_undo_redo()
 	undo.create_action(TOOL_MENU_ITEM)
@@ -339,6 +346,12 @@ func _project_setting_defs() -> Array:
 			"name": "lit/render/y_sorting",
 			"default": false,
 			"info": {"name": "lit/render/y_sorting", "type": TYPE_BOOL},
+		},
+		{
+			# Launch-time variant precompile takeover; marker-skipped once caches are warm.
+			"name": "lit/startup/precompile_shaders",
+			"default": true,
+			"info": {"name": "lit/startup/precompile_shaders", "type": TYPE_BOOL},
 		},
 		{
 			# Runtime SDF culling of occluders excluded from every light's shadow_mask.

@@ -13,115 +13,8 @@ class_name LitSprite2D
 ## receiver_mask) as @exports that proxy to this node's own ShaderMaterial, so every
 ## LitSprite2D can be tuned and masked independently.
 
-# Loaded lazily in _init rather than via a top-level `const preload`. Because this script
-# has a `class_name`, the editor parses it at startup to build the global class list, and a
-# `preload` const would compile the receiver shader right then, before the plugin's
-# _enter_tree has registered the lit_* global uniforms. On a fresh install that produces a
-# benign "Global uniform does not exist" error. Deferring to _init means the shader isn't
-# compiled until a LitSprite2D is actually instantiated, by which point the globals exist.
-#
-# Receiver variants along two axes, same features: fast has the self-shadow exclusion
-# compiled out, and the cone/stoch suffixes compile in the physical shadow algorithms.
-# _update_self_rect keeps the material on the full shader exactly while exclusion is
-# active and on the variant matching the algorithms lights actually use
-# (LitLightRegistry.active_algos); parameters are stored on the material by name, so
-# they survive every swap. The arrays are indexed by that active-algorithm bitmask
-# (bit 0 = Cone Traced, bit 1 = Stochastic).
-const RECEIVER_SHADER_PATH := "res://addons/lit/shaders/lit_receiver.gdshader"
-const RECEIVER_SHADER_FAST_PATH := "res://addons/lit/shaders/lit_receiver_fast.gdshader"
-const RECEIVER_FAST_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast.gdshader",
-]
-const RECEIVER_FULL_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader",
-]
-const RECEIVER_YSORT_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_ysort.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_ysort.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_ysort.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort.gdshader",
-]
-# Gx twins, used while globally excluded occluders exist (LitLightRegistry.gx_active).
-const RECEIVER_FAST_GX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_gx.gdshader",
-]
-const RECEIVER_FULL_GX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_gx.gdshader",
-]
-const RECEIVER_YSORT_GX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_ysort_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_ysort_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_ysort_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_gx.gdshader",
-]
-# Mask twins, used while any light carries per-light exclusions (LitLightRegistry.masks_active).
-const RECEIVER_FAST_MASK_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_mask.gdshader",
-]
-const RECEIVER_FULL_MASK_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_mask.gdshader",
-]
-const RECEIVER_YSORT_MASK_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_ysort_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_ysort_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_ysort_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_mask.gdshader",
-]
-# Rx twins, used per node while its shadow_receiver_mask is non-default.
-const RECEIVER_FAST_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_rx.gdshader",
-]
-const RECEIVER_FULL_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_rx.gdshader",
-]
-const RECEIVER_YSORT_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_ysort_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_ysort_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_ysort_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_rx.gdshader",
-]
-const RECEIVER_FAST_MASK_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_mask_rx.gdshader",
-]
-const RECEIVER_FULL_MASK_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_mask_rx.gdshader",
-]
-const RECEIVER_YSORT_MASK_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_ysort_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_ysort_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_ysort_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_ysort_mask_rx.gdshader",
-]
+# load, not preload: class_name parse at editor startup precedes the plugin registering
+# the lit_* globals, and a preload would compile the shader before they exist.
 
 ## Emissive strength: these pixels ignore the dark. Proxies to the material's
 ## `emissive_strength` uniform.
@@ -176,7 +69,7 @@ func _init() -> void:
 	if material == null:
 		var mat := ShaderMaterial.new()
 		# Fast by default: a fresh LitSprite2D has no owned occluders.
-		mat.shader = load(RECEIVER_SHADER_FAST_PATH)
+		mat.shader = load(LitShaderLibrary.ENTRY_PATHS[0])
 		material = mat
 		# Seed the proxy values only on a freshly-made material: an existing one may
 		# carry hand-set values that the export defaults must not stomp.
@@ -196,7 +89,7 @@ func _lit_ready() -> void:
 	if not Engine.is_editor_hint():
 		var mat := material as ShaderMaterial
 		if mat != null and mat.shader != null and not mat.resource_local_to_scene \
-				and LitLightRegistry._is_lit_receiver_path(mat.shader.resource_path):
+				and LitShaderLibrary.flags_of(mat.shader) >= 0:
 			material = mat.duplicate()
 	# Heal a stale rx_mask a scene save may have baked into the material.
 	if shadow_ignore_mask == 0 and material is ShaderMaterial:
@@ -321,38 +214,24 @@ func _update_self_rect() -> void:
 		_set_live_param("rx_mask", shadow_ignore_mask)
 
 
-# Swap to the receiver variant for this frame's needs: ysort/full/fast per the y-sort
-# participation and self-exclusion state, cone/stoch per the shadow algorithms active
-# on lights (published by the registry). Only materials already on a Lit variant are
-# touched; a custom shader is left alone.
+# Only materials already on a Lit variant are touched; a custom shader is left alone.
 func _apply_shader_variant(wants_full: bool, wants_ysort: bool) -> void:
 	var mat := _live_mat()
 	if mat == null or mat.shader == null:
 		return
-	var current: String = mat.shader.resource_path
-	if not LitLightRegistry._is_lit_receiver_path(current):
+	var flags: int = LitShaderLibrary.flags_of(mat.shader)
+	if flags < 0:
 		return
-	var mask := LitLightRegistry.active_algos & 3
-	var masks := LitLightRegistry.masks_active
-	var gx := LitLightRegistry.gx_active
-	# Rx (per-receiver exclusion) has its own variant class carrying the tile test.
-	var rx := shadow_ignore_mask != 0
-	var table: Array[String]
-	if wants_ysort:
-		table = (RECEIVER_YSORT_MASK_RX_VARIANTS if masks else RECEIVER_YSORT_RX_VARIANTS) if rx \
-				else (RECEIVER_YSORT_MASK_VARIANTS if masks \
-				else (RECEIVER_YSORT_GX_VARIANTS if gx else RECEIVER_YSORT_VARIANTS))
-	elif wants_full:
-		table = (RECEIVER_FULL_MASK_RX_VARIANTS if masks else RECEIVER_FULL_RX_VARIANTS) if rx \
-				else (RECEIVER_FULL_MASK_VARIANTS if masks \
-				else (RECEIVER_FULL_GX_VARIANTS if gx else RECEIVER_FULL_VARIANTS))
-	else:
-		table = (RECEIVER_FAST_MASK_RX_VARIANTS if masks else RECEIVER_FAST_RX_VARIANTS) if rx \
-				else (RECEIVER_FAST_MASK_VARIANTS if masks \
-				else (RECEIVER_FAST_GX_VARIANTS if gx else RECEIVER_FAST_VARIANTS))
-	var wanted: String = table[mask]
-	if current != wanted:
-		mat.shader = load(wanted)
+	assert(LitLightRegistry.activity_flags == LitLightRegistry._activity_mirror())
+	var tier := (LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT) if wants_ysort \
+			else (LitShaderLibrary.F_SELF_EXCL if wants_full else 0)
+	var wanted := LitShaderLibrary.resolve(tier, _lit_node_flags(), LitLightRegistry.activity_flags)
+	if flags != wanted:
+		mat.shader = LitShaderLibrary.get_receiver(wanted)
+
+
+func _lit_node_flags() -> int:
+	return LitShaderLibrary.F_RX if shadow_ignore_mask != 0 else 0
 
 
 func _set_param(param: String, value: Variant) -> void:
@@ -368,7 +247,7 @@ var _live_last: ShaderMaterial = null
 func _live_mat() -> ShaderMaterial:
 	var mat := material as ShaderMaterial
 	if Engine.is_editor_hint() and mat != null and mat.shader != null \
-			and LitLightRegistry._is_lit_receiver_path(mat.shader.resource_path):
+			and LitShaderLibrary.flags_of(mat.shader) >= 0:
 		mat = LitLightRegistry.editor_live_material(self, mat)
 		if mat != _live_last:
 			# Fresh clone (first frame, or recreated after the editor's save-time

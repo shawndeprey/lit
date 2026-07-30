@@ -9,7 +9,10 @@ extends Node
 ## is fine; the registry caches the light list and only rebuilds it on tree changes.
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
+const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
+const LitPrecompileOverlayScript := preload("res://addons/lit/nodes/lit_precompile_overlay.gd")
 
+const SETTING_PRECOMPILE := "lit/startup/precompile_shaders"
 const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_Y_SORTING := "lit/render/y_sorting"
 const SETTING_Y_SORT_SMOOTHING := "lit/render/y_sort_smoothing"
@@ -30,6 +33,7 @@ const DEFAULT_SHADOW_STEPS_MAX := 64
 const DEFAULT_SHADOW_SAMPLES_MAX := 32
 
 var _registry: LitLightRegistry
+var precompiler: Node = null
 
 var lighting_model: int = DEFAULT_LIGHTING_MODEL
 var shadow_step_scaling: bool = DEFAULT_SHADOW_STEP_SCALING
@@ -45,6 +49,24 @@ func _ready() -> void:
 	_reload_settings()
 	if not ProjectSettings.settings_changed.is_connected(_reload_settings):
 		ProjectSettings.settings_changed.connect(_reload_settings)
+
+	_boot_self_check()
+	if bool(ProjectSettings.get_setting(SETTING_PRECOMPILE, true)):
+		precompiler = LitShaderPrecompilerScript.new()
+		add_child(precompiler)
+		var fresh: bool = LitShaderPrecompilerScript.marker_fresh(LitShaderPrecompilerScript.work_list())
+		if not fresh:
+			var overlay: Node = LitPrecompileOverlayScript.new()
+			overlay.name = "LitPrecompileOverlay"
+			add_child(overlay)
+			overlay.attach(precompiler)
+		precompiler.start(fresh)
+
+# Exports drop bare .gdshaderinc dependencies; the library preload normally carries the
+# spine through, so a miss here means the preload chain was broken.
+func _boot_self_check() -> void:
+	if not ResourceLoader.exists(LitShaderLibrary.COMMON_INCLUDE_PATH):
+		push_error("Lit: %s failed to resolve; no receiver variant can compile. If this is an exported build, add '*.gdshaderinc' to the export's resource filters." % LitShaderLibrary.COMMON_INCLUDE_PATH)
 
 func _process(_delta: float) -> void:
 	_registry.refresh(get_tree(), get_viewport(), get_tree().root, self)

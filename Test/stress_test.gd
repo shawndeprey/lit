@@ -7,7 +7,7 @@ extends Node2D
 ## Run fullscreen for true (uncapped) frame times:
 ##   godot --path . res://Test/StressTest.tscn --fullscreen
 
-const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
+const RECEIVER_SHADER := preload("res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader")
 
 const SHADOW_ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 const SHADOW_ALGO_NAMES := ["raymarch", "cone", "stochastic"]
