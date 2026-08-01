@@ -105,6 +105,7 @@ var _restart_btn: Button
 var _skip_btn: Button
 var _stop_btn: Button
 var _splash_btn: Button
+var _precompile_btn: Button
 var _feature_lbl: Label
 var _desc_lbl: Label
 var _counter_lbl: Label
@@ -207,6 +208,10 @@ func _build_ui() -> void:
 	_set_rect(_splash_btn, 0, 1, 0, 1, 356, -58, 560, -16)
 	_splash_btn.pressed.connect(_play_splash)
 
+	_precompile_btn = _make_button(root, "Precompile Shaders")
+	_set_rect(_precompile_btn, 0, 1, 0, 1, 576, -58, 826, -16)
+	_precompile_btn.pressed.connect(_on_precompile_pressed)
+
 
 func _make_label(parent: Control, size: int, color: Color, align: HorizontalAlignment) -> Label:
 	var l := Label.new()
@@ -244,6 +249,7 @@ func _set_ui_state(state: String) -> void:
 	_desc_lbl.visible = running
 	_counter_lbl.visible = running
 	_splash_btn.visible = state == "idle"
+	_precompile_btn.visible = state == "idle"
 	# Always visible: the demo scene doubles as the manual performance test.
 	_perf_lbl.visible = true
 
@@ -276,6 +282,27 @@ func _play_splash() -> void:
 	var splash := LitSplashScreen.new()
 	splash.finished.connect(func() -> void: _splash_btn.disabled = false)
 	add_child(splash)
+
+
+func _on_precompile_pressed() -> void:
+	var mgr := get_node_or_null("/root/LitManager")
+	if mgr == null or not mgr.precompile_shaders():
+		return
+	_precompile_btn.disabled = true
+	mgr.precompile_progress.connect(_on_precompile_progress)
+	mgr.precompile_finished.connect(_on_precompile_finished, CONNECT_ONE_SHOT)
+
+
+func _on_precompile_progress(done: int, total: int, _label: String) -> void:
+	_precompile_btn.text = "%d/%d Shaders" % [done, total]
+
+
+func _on_precompile_finished() -> void:
+	var mgr := get_node_or_null("/root/LitManager")
+	if mgr != null and mgr.precompile_progress.is_connected(_on_precompile_progress):
+		mgr.precompile_progress.disconnect(_on_precompile_progress)
+	_precompile_btn.text = "Precompile Shaders"
+	_precompile_btn.disabled = false
 
 
 func _teardown() -> void:

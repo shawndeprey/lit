@@ -8,6 +8,9 @@ extends Node
 ## The cost here is the pack, not the per-pixel lighting, so a full repack every frame
 ## is fine; the registry caches the light list and only rebuilds it on tree changes.
 
+signal precompile_progress(done: int, total: int, label: String)
+signal precompile_finished
+
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const LitPrecompileOverlayScript := preload("res://addons/lit/nodes/lit_precompile_overlay.gd")
@@ -36,6 +39,7 @@ const DEFAULT_SHADOW_SAMPLES_MAX := 32
 
 var _registry: LitLightRegistry
 var precompiler: Node = null
+var _api_precompiler: Node = null
 
 var lighting_model: int = DEFAULT_LIGHTING_MODEL
 var shadow_step_scaling: bool = DEFAULT_SHADOW_STEP_SCALING
@@ -93,8 +97,10 @@ func _spawn_worker() -> int:
 		args.append_array(PackedStringArray(["--path", ProjectSettings.globalize_path("res://")]))
 	args.append_array(PackedStringArray(["--", WORKER_ARG, str(OS.get_process_id())]))
 	if OS.get_name() == "Windows":
-		# start /min births the window minimized so it never flashes on screen.
-		var cargs := PackedStringArray(["/c", "start", "/min", "", exe])
+		# start /min births the window minimized so it never flashes on screen. The spaced
+		# title is required: create_process drops empty args, and start reads the first
+		# quoted token as its title - which would swallow a quoted (spaced) exe path.
+		var cargs := PackedStringArray(["/c", "start", "Lit Worker", "/min", exe])
 		cargs.append_array(args)
 		return OS.create_process("cmd.exe", cargs)
 	return OS.create_process(exe, args)
@@ -105,6 +111,30 @@ func _boot_worker(parent_pid: int) -> void:
 	precompiler = LitShaderPrecompilerScript.new()
 	add_child(precompiler)
 	precompiler.start_worker(parent_pid)
+
+
+## Public API: run the precompile pipeline on demand (always worker-backed); wire UI to
+## precompile_progress / precompile_finished. False if a precompile is already in flight.
+func precompile_shaders() -> bool:
+	if _api_precompiler != null or (precompiler != null and precompiler.is_processing()):
+		return false
+	_api_precompiler = LitShaderPrecompilerScript.new()
+	add_child(_api_precompiler)
+	_api_precompiler.progress.connect(_on_api_progress)
+	_api_precompiler.finished.connect(_on_api_finished)
+	_api_precompiler.start(false, true, _spawn_worker())
+	return true
+
+
+func _on_api_progress(done: int, total: int, label: String) -> void:
+	precompile_progress.emit(done, total, label)
+
+
+func _on_api_finished() -> void:
+	var pre := _api_precompiler
+	_api_precompiler = null
+	pre.queue_free()
+	precompile_finished.emit()
 
 # Exports drop bare .gdshaderinc dependencies; the library preload normally carries the
 # spine through, so a miss here means the preload chain was broken.
