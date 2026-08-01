@@ -65,7 +65,10 @@ show off what you built? Come hang out in our Discord:
    color, energy, and range to taste.
 5. **Want shadows?** On the light, tick **Shadow Enabled**. Then give the world something to
    block the light: add a `LightOccluder2D` to a sprite, or for tiles enable **SDF
-   Collision** on your TileSet's occlusion layer.
+   Collision** on your TileSet's occlusion layer. A sprite carrying the receiver
+   material — `LitSprite2D`, tool-converted, or hand-assigned — never shadows itself:
+   its occluder's shadow falls behind it (flip **Self Shadow** on the sprite if you
+   want plain SDF shadowing back).
 6. **Want a look?** Add a **`LitPostProcess`** node and switch on bloom, color grade, CRT,
    or any of the other effects.
 
@@ -114,7 +117,9 @@ That's it — everything updates live in the editor as you build.
 | `LitSpotLight2D` | A cone of light you can aim. |
 | `LitCanvasModulate` | Sets the scene's darkness/ambient color. |
 | `LitSprite2D` | A `Sprite2D` that's already set up to receive light. |
+| `LitTileMapLayer` | A `TileMapLayer` that's already set up to receive light. |
 | `LitPostProcess` | The post-processing stack (bloom, grading, CRT, and friends). |
+| `LitSplashScreen` | A drop-in branded splash (glitch-fade logo, skippable). |
 
 ---
 
@@ -141,29 +146,3 @@ quickest way to reach us.
 
 Lit is free and open-source under the **MIT License** — use it in anything, commercial or
 not, no credit required. See the [`LICENSE`](LICENSE) file for the details.
-
----
-
-## The "Lit Shaders Precompiling" screen
-
-The first time your game runs on a machine, Lit briefly shows a **Lit Shaders
-Precompiling** screen. What it's doing is preparing that machine to run your lighting.
-A GPU can only run machine code built for it, and that code can't ship in a
-download; games that build it mid-play are the ones that hitch the first time an effect
-appears on screen. So Lit builds all of it up front: the player's graphics driver
-translates every lighting and shadow shader into machine code for that exact GPU, saved
-as a cache in the game's user data folder (the pipeline cache file is literally named
-after the graphics card it was built for). What that preparation gets you:
-
-- **No shader stutter, ever.** Every shader's machine code is on disk before play
-  begins; from then on, launches just load the cache.
-- **Every moment covered, not just the common ones.** Lit swaps shaders as your game
-  changes state (a masked light appears, a shadow algorithm changes) - lazily-built
-  caches hitch exactly there; a complete one never does.
-- **Once per machine.** The screen returns only when the shaders change (a game update
-  or a new Lit version).
-- **Same fps.** Shaders run at whatever speed the card runs them - preparation just
-  moves the build cost out of gameplay.
-
-In the editor the same warm-up happens silently in the background, so the screen only
-ever appears in a running game.

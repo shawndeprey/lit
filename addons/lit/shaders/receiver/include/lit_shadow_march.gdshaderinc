@@ -27,7 +27,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 #ifdef LIT_OCC_MASKS
 	// Mask pre-pass: exempt casters can only matter within this march's crossing of the
 	// exempt bounds, so the exclusion tests live in this loop alone and the untouched
-	// phases below run at full speed. Keep the body aligned with the slow phase below.
+	// phases below run at full speed. Keep the body aligned with the slow phase below;
+	// the alignment contract is gated behaviorally by Test/march_matrix.md.
 	if (mk_on) {
 		vec2 dir_canvas = sdf_to_canvas * dir;
 #if defined(LIT_YSORT) || defined(LIT_OCC_RX)

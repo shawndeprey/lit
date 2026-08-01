@@ -9,6 +9,8 @@ extends RefCounted
 
 const WORLD_SDF_SIZE := 2048
 const WORLD_SDF_NODE := "LitWorldSdf"
+# Also warmed by the shader precompiler (against a matching HDR target).
+const ENCODE_SHADER_PATH := "res://addons/lit/shaders/sdf/lit_world_sdf_encode.gdshader"
 # Frames of unconditional rendering after (re)creation; a lone UPDATE_ONCE on a fresh
 # viewport races pipeline readiness and bakes a black SDF.
 const WORLD_SDF_WARMUP := 30
@@ -66,7 +68,7 @@ func _ensure_world_sdf(host: Node, viewport: Viewport) -> bool:
 	rect.size = Vector2(WORLD_SDF_SIZE, WORLD_SDF_SIZE)
 	rect.visibility_layer = 1 << 19
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://addons/lit/shaders/sdf/lit_world_sdf_encode.gdshader")
+	mat.shader = load(ENCODE_SHADER_PATH)
 	rect.material = mat
 	layer.add_child(rect)
 	vp.add_child(layer)

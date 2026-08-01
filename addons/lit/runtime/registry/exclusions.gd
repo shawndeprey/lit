@@ -15,6 +15,34 @@ var _prev_excl_masks := PackedInt32Array()
 var _prev_excl_owners := PackedInt32Array()
 
 
+# --- Facade seam ----------------------------------------------------------------
+# Dictionary accessors return the live references; the facade passes them onward as
+# explicit module arguments (the data spine), never mutates them itself.
+
+func gx_masks() -> Dictionary:
+	return _gx_masks
+
+
+func smasks() -> Dictionary:
+	return _excl_smasks
+
+
+func owners() -> Dictionary:
+	return _excl_owners
+
+
+func has_exclusions() -> bool:
+	return not _excl_info.is_empty()
+
+
+func info() -> Dictionary:
+	return _excl_info
+
+
+func lists() -> Dictionary:
+	return _excl_lists
+
+
 func clear_frame() -> void:
 	_excl_info.clear()
 	_excl_smasks.clear()

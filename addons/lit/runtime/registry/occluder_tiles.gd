@@ -39,8 +39,9 @@ var _occ_header_tex: ImageTexture
 var _occ_index_tex: ImageTexture
 var _gx_frame := false
 
-# Facade-owned frame state, re-bound at build() entry (dict/array refs mutate the
-# facade's instances; their context home lands at plan-3 step 7).
+# Frame state re-bound at build() entry: aliases of the FrameContext outputs (occ_*)
+# and of the exclusions module's dictionaries, so the moved bodies read/write the
+# shared instances (packed arrays and dicts are pass-by-reference).
 var _occ_rects: Array[Rect2] = []
 var _occ_masks := PackedInt32Array()
 var _occ_owners := PackedInt32Array()
@@ -58,6 +59,45 @@ func set_fan_out(cb: Callable) -> void:
 	_on_changed = cb
 
 
+# --- Facade seam ----------------------------------------------------------------
+# The named surface the facade drives this module through; dictionary accessors
+# return the live references (shared-mutation by design, like the ctx spine).
+
+func mark_dirty() -> void:
+	_occ_dirty = true
+
+
+func note_mask_seen() -> void:
+	_occ_masks_seen = true
+
+
+func masks_seen() -> bool:
+	return _occ_masks_seen
+
+
+func mask_set() -> Dictionary:
+	return _occ_mask_set
+
+
+func scope_ids() -> Dictionary:
+	return _scope_ids
+
+
+func scope_occ_masks() -> Dictionary:
+	return _scope_occ_masks
+
+
+## Whether the last build published any globally exempt rects.
+func gx_this_frame() -> bool:
+	return _gx_frame
+
+
+## Force the next build to re-pack and re-bin (framing semantics changed, e.g. the
+## y-sort toggle flipping which casters the pack includes).
+func reset_pack_memo() -> void:
+	_occ_prev_pack = PackedFloat32Array()
+
+
 ## Pack every SDF-casting occluder's canvas rect (max.y doubles as its depth line) and
 ## bin the rects into the light tile grid; mirrors _build_tiles. Header texel z carries
 ## the tile's min depth so the shader can dismiss whole tiles with one fetch. Frames
@@ -69,7 +109,6 @@ func build(ctx: FrameContext, root: Node, lights: Array, gx_masks: Dictionary,
 	var canvas_xform: Transform2D = ctx.canvas_xform
 	var vp_size: Vector2 = ctx.vp_size
 	var world_rect: Rect2 = ctx.world_rect
-	var scale: float = ctx.canvas_scale
 	_occ_rects = ctx.occ_rects
 	_occ_masks = ctx.occ_masks
 	_occ_owners = ctx.occ_owners

@@ -21,6 +21,11 @@ static func rx_set(node: CanvasItem, mask: int) -> void:
 	else:
 		_rx_nodes[node] = mask
 
+
+## Facade seam: the live registered-node map (node -> mask).
+static func nodes() -> Dictionary:
+	return _rx_nodes
+
 ## The editor reloads @tool scripts in place on every scene save, reinitializing all
 ## statics while the tree lives on; setter-driven registration therefore cannot be
 ## trusted there. Rebuilt from the tree each editor refresh instead (the setters stay

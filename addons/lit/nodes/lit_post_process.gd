@@ -580,27 +580,77 @@ const PRESET_LUTS := [
 		focus_dream = value
 		_apply_params()
 
-# Generated pass materials, kept so parameter edits push without a rebuild.
-var _threshold_material: ShaderMaterial
-var _bloom_material: ShaderMaterial
-var _halation_material: ShaderMaterial
-var _glitch_material: ShaderMaterial
-var _grade_material: ShaderMaterial
-var _lut_material: ShaderMaterial
-var _pixelate_material: ShaderMaterial
-var _posterize_material: ShaderMaterial
-var _outline_material: ShaderMaterial
-var _halftone_material: ShaderMaterial
-var _dither_material: ShaderMaterial
-var _lens_material: ShaderMaterial
-var _vhs_material: ShaderMaterial
-var _crt_material: ShaderMaterial
-var _aberration_material: ShaderMaterial
-var _leaks_material: ShaderMaterial
-var _grain_material: ShaderMaterial
-var _vignette_material: ShaderMaterial
-var _letterbox_material: ShaderMaterial
-var _focus_material: ShaderMaterial
+# The chain, in its fixed render order (the class doc explains the rationale): one
+# row per pass with its enabled-gate property, shader, and shader_param -> property
+# map. _rebuild and _apply_params iterate this; adding a pass is one row here plus
+# its @export block above. Letterbox marks the content/display boundary; the display
+# media (lens, vhs, crt, aberration, leaks, grain, vignette, focus) follow it.
+const PASS_DEFS := [
+	{"key": "threshold", "enabled": "threshold_enabled", "shader": THRESHOLD_SHADER,
+		"params": {"cutoff": "threshold_cutoff"}},
+	{"key": "bloom", "enabled": "bloom_enabled", "shader": BLOOM_SHADER,
+		"params": {"threshold": "bloom_threshold", "intensity": "bloom_intensity",
+			"bloom_radius": "bloom_radius"}},
+	{"key": "halation", "enabled": "halation_enabled", "shader": HALATION_SHADER,
+		"params": {"threshold": "halation_threshold", "intensity": "halation_intensity",
+			"halation_radius": "halation_radius", "tint": "halation_tint"}},
+	{"key": "glitch", "enabled": "glitch_enabled", "shader": GLITCH_SHADER,
+		"params": {"intensity": "glitch_intensity", "block_size": "glitch_block_size",
+			"rgb_shift": "glitch_rgb_shift", "speed": "glitch_speed"}},
+	{"key": "grade", "enabled": "grade_enabled", "shader": GRADE_SHADER,
+		"params": {"exposure": "exposure", "contrast": "contrast",
+			"saturation": "saturation", "tint": "tint"}},
+	{"key": "lut", "enabled": "lut_enabled", "shader": LUT_SHADER,
+		"params": {"amount": "lut_amount"}},
+	{"key": "pixelate", "enabled": "pixelate_enabled", "shader": PIXELATE_SHADER,
+		"params": {"pixel_size": "pixelate_size"}},
+	{"key": "posterize", "enabled": "posterize_enabled", "shader": POSTERIZE_SHADER,
+		"params": {"levels": "posterize_levels", "strength": "posterize_strength"}},
+	{"key": "outline", "enabled": "outline_enabled", "shader": OUTLINE_SHADER,
+		"params": {"outline_color": "outline_color", "thickness": "outline_thickness",
+			"threshold": "outline_threshold", "softness": "outline_softness",
+			"strength": "outline_strength"}},
+	{"key": "halftone", "enabled": "halftone_enabled", "shader": HALFTONE_SHADER,
+		"params": {"dot_size": "halftone_dot_size", "angle": "halftone_angle",
+			"amount": "halftone_amount", "ink_color": "halftone_ink_color",
+			"paper_color": "halftone_paper_color"}},
+	{"key": "dither", "enabled": "dither_enabled", "shader": DITHER_SHADER,
+		"params": {"levels": "dither_levels", "scale": "dither_scale",
+			"monochrome": "dither_monochrome", "strength": "dither_strength"}},
+	{"key": "letterbox", "enabled": "letterbox_enabled", "shader": LETTERBOX_SHADER,
+		"params": {"bar_size": "letterbox_size", "softness": "letterbox_softness",
+			"bar_color": "letterbox_color"}},
+	{"key": "lens", "enabled": "lens_enabled", "shader": LENS_SHADER,
+		"params": {"amount": "lens_amount", "zoom": "lens_zoom",
+			"edge_color": "lens_edge_color"}},
+	{"key": "vhs", "enabled": "vhs_enabled", "shader": VHS_SHADER,
+		"params": {"wobble_strength": "vhs_wobble_strength", "wobble_speed": "vhs_wobble_speed",
+			"chroma_shift": "vhs_chroma_shift", "bleed": "vhs_bleed", "grain": "vhs_grain",
+			"tracking_strength": "vhs_tracking_strength", "tracking_speed": "vhs_tracking_speed",
+			"roll_strength": "vhs_roll_strength"}},
+	{"key": "crt", "enabled": "crt_enabled", "shader": CRT_SHADER,
+		"params": {"curvature": "crt_curvature", "scanline_strength": "crt_scanline_strength",
+			"scanline_count": "crt_scanline_count", "mask_strength": "crt_mask_strength",
+			"aberration": "crt_aberration", "vignette": "crt_vignette",
+			"brightness": "crt_brightness"}},
+	{"key": "aberration", "enabled": "aberration_enabled", "shader": ABERRATION_SHADER,
+		"params": {"amount": "aberration_amount", "edge_falloff": "aberration_edge_falloff"}},
+	{"key": "leaks", "enabled": "leaks_enabled", "shader": LIGHT_LEAKS_SHADER,
+		"params": {"intensity": "leaks_intensity", "speed": "leaks_speed",
+			"color1": "leaks_color1", "color2": "leaks_color2",
+			"leak_texture": "leaks_texture"}},
+	{"key": "grain", "enabled": "grain_enabled", "shader": GRAIN_SHADER,
+		"params": {"intensity": "grain_intensity", "grain_size": "grain_size",
+			"luminance_response": "grain_luminance_response", "colored": "grain_colored"}},
+	{"key": "vignette", "enabled": "vignette_enabled", "shader": VIGNETTE_SHADER,
+		"params": {"strength": "vignette_strength", "softness": "vignette_softness"}},
+	{"key": "focus", "enabled": "focus_enabled", "shader": FOCUS_SHADER,
+		"params": {"amount": "focus_amount", "radius": "focus_radius", "dream": "focus_dream"}},
+]
+
+# Generated pass materials by PASS_DEFS key, kept so parameter edits push without a
+# rebuild.
+var _materials := {}
 # The base `layer` the current chain was built against, so an inspector edit to the
 # node's layer can re-sync the pass child-layers live (editor only).
 var _built_layer: int = 0
@@ -627,7 +677,9 @@ func _process(_delta: float) -> void:
 		_rebuild()
 
 
-## Tear down the generated pass chain and rebuild it from the enabled toggles.
+## Tear down the generated pass chain and rebuild it from the enabled toggles, in
+## PASS_DEFS order. Lower-layer passes render first, so each reads the result of the
+## ones before it.
 func _rebuild() -> void:
 	if not is_inside_tree():
 		return
@@ -635,97 +687,13 @@ func _rebuild() -> void:
 		if child.has_meta(PASS_META):
 			remove_child(child)
 			child.queue_free()
-	_threshold_material = null
-	_bloom_material = null
-	_halation_material = null
-	_glitch_material = null
-	_grade_material = null
-	_lut_material = null
-	_pixelate_material = null
-	_posterize_material = null
-	_outline_material = null
-	_halftone_material = null
-	_dither_material = null
-	_lens_material = null
-	_vhs_material = null
-	_crt_material = null
-	_aberration_material = null
-	_leaks_material = null
-	_grain_material = null
-	_vignette_material = null
-	_letterbox_material = null
-	_focus_material = null
+	_materials.clear()
 
-	# Fixed pass order (the class doc explains the rationale). Lower-layer passes render
-	# first, so each reads the result of the ones before it. Letterbox marks the
-	# content/display boundary: it mattes the finished image, then the display medium
-	# (lens, vhs, crt, aberration, grain, vignette) renders over the bars.
 	var index := 0
-	if threshold_enabled:
-		_threshold_material = _make_pass(THRESHOLD_SHADER, index)
-		index += 1
-	if bloom_enabled:
-		_bloom_material = _make_pass(BLOOM_SHADER, index)
-		index += 1
-	if halation_enabled:
-		_halation_material = _make_pass(HALATION_SHADER, index)
-		index += 1
-	if glitch_enabled:
-		_glitch_material = _make_pass(GLITCH_SHADER, index)
-		index += 1
-	if grade_enabled:
-		_grade_material = _make_pass(GRADE_SHADER, index)
-		index += 1
-	# A LUT is always available (a baked preset, or the custom override), so the
-	# pass exists whenever it's enabled.
-	if lut_enabled:
-		_lut_material = _make_pass(LUT_SHADER, index)
-		index += 1
-	if pixelate_enabled:
-		_pixelate_material = _make_pass(PIXELATE_SHADER, index)
-		index += 1
-	if posterize_enabled:
-		_posterize_material = _make_pass(POSTERIZE_SHADER, index)
-		index += 1
-	if outline_enabled:
-		_outline_material = _make_pass(OUTLINE_SHADER, index)
-		index += 1
-	if halftone_enabled:
-		_halftone_material = _make_pass(HALFTONE_SHADER, index)
-		index += 1
-	if dither_enabled:
-		_dither_material = _make_pass(DITHER_SHADER, index)
-		index += 1
-	# Letterbox mattes the finished content; the display medium below renders over it.
-	if letterbox_enabled:
-		_letterbox_material = _make_pass(LETTERBOX_SHADER, index)
-		index += 1
-	# Display medium: lens warps the framed content, then tape, tube, film.
-	if lens_enabled:
-		_lens_material = _make_pass(LENS_SHADER, index)
-		index += 1
-	if vhs_enabled:
-		_vhs_material = _make_pass(VHS_SHADER, index)
-		index += 1
-	if crt_enabled:
-		_crt_material = _make_pass(CRT_SHADER, index)
-		index += 1
-	if aberration_enabled:
-		_aberration_material = _make_pass(ABERRATION_SHADER, index)
-		index += 1
-	if leaks_enabled:
-		_leaks_material = _make_pass(LIGHT_LEAKS_SHADER, index)
-		index += 1
-	if grain_enabled:
-		_grain_material = _make_pass(GRAIN_SHADER, index)
-		index += 1
-	if vignette_enabled:
-		_vignette_material = _make_pass(VIGNETTE_SHADER, index)
-		index += 1
-	# Final lens focus: dream blur / sharpen on the completed image.
-	if focus_enabled:
-		_focus_material = _make_pass(FOCUS_SHADER, index)
-		index += 1
+	for def in PASS_DEFS:
+		if get(def.enabled):
+			_materials[def.key] = _make_pass(def.shader, index)
+			index += 1
 
 	_built_layer = layer
 	_apply_params()
@@ -761,98 +729,20 @@ func _active_lut() -> Texture2D:
 	return PRESET_LUTS[lut_preset]
 
 
-## Push current parameters onto the generated pass materials (no rebuild needed).
+## Push current parameters onto the generated pass materials (no rebuild needed):
+## each pass's shader_param -> property map from PASS_DEFS, plus the two derived
+## params below it.
 func _apply_params() -> void:
-	if _threshold_material != null:
-		_threshold_material.set_shader_parameter("cutoff", threshold_cutoff)
-	if _bloom_material != null:
-		_bloom_material.set_shader_parameter("threshold", bloom_threshold)
-		_bloom_material.set_shader_parameter("intensity", bloom_intensity)
-		_bloom_material.set_shader_parameter("bloom_radius", bloom_radius)
-	if _halation_material != null:
-		_halation_material.set_shader_parameter("threshold", halation_threshold)
-		_halation_material.set_shader_parameter("intensity", halation_intensity)
-		_halation_material.set_shader_parameter("halation_radius", halation_radius)
-		_halation_material.set_shader_parameter("tint", halation_tint)
-	if _glitch_material != null:
-		_glitch_material.set_shader_parameter("intensity", glitch_intensity)
-		_glitch_material.set_shader_parameter("block_size", glitch_block_size)
-		_glitch_material.set_shader_parameter("rgb_shift", glitch_rgb_shift)
-		_glitch_material.set_shader_parameter("speed", glitch_speed)
-	if _grade_material != null:
-		_grade_material.set_shader_parameter("exposure", exposure)
-		_grade_material.set_shader_parameter("contrast", contrast)
-		_grade_material.set_shader_parameter("saturation", saturation)
-		_grade_material.set_shader_parameter("tint", tint)
-	if _lut_material != null:
-		_lut_material.set_shader_parameter("lut", _active_lut())
-		_lut_material.set_shader_parameter("amount", lut_amount)
-	if _pixelate_material != null:
-		_pixelate_material.set_shader_parameter("pixel_size", pixelate_size)
-	if _posterize_material != null:
-		_posterize_material.set_shader_parameter("levels", posterize_levels)
-		_posterize_material.set_shader_parameter("strength", posterize_strength)
-	if _outline_material != null:
-		_outline_material.set_shader_parameter("outline_color", outline_color)
-		_outline_material.set_shader_parameter("thickness", outline_thickness)
-		_outline_material.set_shader_parameter("threshold", outline_threshold)
-		_outline_material.set_shader_parameter("softness", outline_softness)
-		_outline_material.set_shader_parameter("strength", outline_strength)
-	if _halftone_material != null:
-		_halftone_material.set_shader_parameter("dot_size", halftone_dot_size)
-		_halftone_material.set_shader_parameter("angle", halftone_angle)
-		_halftone_material.set_shader_parameter("amount", halftone_amount)
-		_halftone_material.set_shader_parameter("ink_color", halftone_ink_color)
-		_halftone_material.set_shader_parameter("paper_color", halftone_paper_color)
-	if _dither_material != null:
-		_dither_material.set_shader_parameter("levels", dither_levels)
-		_dither_material.set_shader_parameter("scale", dither_scale)
-		_dither_material.set_shader_parameter("monochrome", dither_monochrome)
-		_dither_material.set_shader_parameter("strength", dither_strength)
-	if _lens_material != null:
-		_lens_material.set_shader_parameter("amount", lens_amount)
-		_lens_material.set_shader_parameter("zoom", lens_zoom)
-		_lens_material.set_shader_parameter("edge_color", lens_edge_color)
-	if _vhs_material != null:
-		_vhs_material.set_shader_parameter("wobble_strength", vhs_wobble_strength)
-		_vhs_material.set_shader_parameter("wobble_speed", vhs_wobble_speed)
-		_vhs_material.set_shader_parameter("chroma_shift", vhs_chroma_shift)
-		_vhs_material.set_shader_parameter("bleed", vhs_bleed)
-		_vhs_material.set_shader_parameter("grain", vhs_grain)
-		_vhs_material.set_shader_parameter("tracking_strength", vhs_tracking_strength)
-		_vhs_material.set_shader_parameter("tracking_speed", vhs_tracking_speed)
-		_vhs_material.set_shader_parameter("roll_strength", vhs_roll_strength)
-	if _crt_material != null:
-		_crt_material.set_shader_parameter("curvature", crt_curvature)
-		_crt_material.set_shader_parameter("scanline_strength", crt_scanline_strength)
-		_crt_material.set_shader_parameter("scanline_count", crt_scanline_count)
-		_crt_material.set_shader_parameter("mask_strength", crt_mask_strength)
-		_crt_material.set_shader_parameter("aberration", crt_aberration)
-		_crt_material.set_shader_parameter("vignette", crt_vignette)
-		_crt_material.set_shader_parameter("brightness", crt_brightness)
-	if _aberration_material != null:
-		_aberration_material.set_shader_parameter("amount", aberration_amount)
-		_aberration_material.set_shader_parameter("edge_falloff", aberration_edge_falloff)
-	if _leaks_material != null:
-		_leaks_material.set_shader_parameter("intensity", leaks_intensity)
-		_leaks_material.set_shader_parameter("speed", leaks_speed)
-		_leaks_material.set_shader_parameter("color1", leaks_color1)
-		_leaks_material.set_shader_parameter("color2", leaks_color2)
-		_leaks_material.set_shader_parameter("has_texture", leaks_texture != null)
-		_leaks_material.set_shader_parameter("leak_texture", leaks_texture)
-	if _grain_material != null:
-		_grain_material.set_shader_parameter("intensity", grain_intensity)
-		_grain_material.set_shader_parameter("grain_size", grain_size)
-		_grain_material.set_shader_parameter("luminance_response", grain_luminance_response)
-		_grain_material.set_shader_parameter("colored", grain_colored)
-	if _vignette_material != null:
-		_vignette_material.set_shader_parameter("strength", vignette_strength)
-		_vignette_material.set_shader_parameter("softness", vignette_softness)
-	if _letterbox_material != null:
-		_letterbox_material.set_shader_parameter("bar_size", letterbox_size)
-		_letterbox_material.set_shader_parameter("softness", letterbox_softness)
-		_letterbox_material.set_shader_parameter("bar_color", letterbox_color)
-	if _focus_material != null:
-		_focus_material.set_shader_parameter("amount", focus_amount)
-		_focus_material.set_shader_parameter("radius", focus_radius)
-		_focus_material.set_shader_parameter("dream", focus_dream)
+	for def in PASS_DEFS:
+		var mat: ShaderMaterial = _materials.get(def.key)
+		if mat == null:
+			continue
+		for uniform in def.params:
+			mat.set_shader_parameter(uniform, get(def.params[uniform]))
+	# Derived params (not plain property mirrors).
+	var lut_mat: ShaderMaterial = _materials.get("lut")
+	if lut_mat != null:
+		lut_mat.set_shader_parameter("lut", _active_lut())
+	var leaks_mat: ShaderMaterial = _materials.get("leaks")
+	if leaks_mat != null:
+		leaks_mat.set_shader_parameter("has_texture", leaks_texture != null)

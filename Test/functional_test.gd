@@ -12,6 +12,8 @@ extends Node2D
 ##   algo=raymarch|cone|stochastic   out=PATH (capture one frame, then quit)
 ##   radius=N   samples=N   jitter=X   hardness=X   range=N
 ##   occmask=N   smask=N   exclude=on   rxmask=N (floor's shadow_ignore_mask)
+##   ysort=on (runtime y-sorting + a deep floor occluder strip, so the skull's
+##   shadow is depth-exempted on the floor; see Test/march_matrix.md)
 
 const ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 const ALGO_NAMES := ["raymarch", "cone", "stochastic"]
@@ -143,10 +145,46 @@ func _ready() -> void:
 				_light.exclude_scene_occluders = kv[1] == "on"
 			"rxmask":
 				_floor.shadow_ignore_mask = int(kv[1])
+			"ysort":
+				if kv[1] == "on":
+					_enable_ysort()
 
 	_update_hud()
 	if _out != "":
 		_capture.call_deferred()
+
+
+## March-matrix ysort cell: turn on y-sorting for this run (runtime setting only,
+## never saved) and pin BOTH weight directions:
+##  - exempt: the floor gets a deep owned occluder strip (its own shadow is
+##    self-excluded, it only sets the floor's depth line), so the skull - whose
+##    footprint bottom is higher - must lose its shadow on the floor;
+##  - keep: a second occluder under a plain Node2D wrapper (owned by no sprite)
+##    sits deeper than the floor's line, so its shadow must survive on the floor.
+## The floor strip is a floor child with the viewport-sized scale inverted, so its
+## polygon is authored in screen pixels.
+func _enable_ysort() -> void:
+	ProjectSettings.set_setting("lit/render/y_sorting", true)
+	var vp := get_viewport_rect().size
+
+	var strip := LightOccluder2D.new()
+	var strip_poly := OccluderPolygon2D.new()
+	strip_poly.polygon = PackedVector2Array([
+		Vector2(-160, -8), Vector2(160, -8), Vector2(160, 8), Vector2(-160, 8)])
+	strip.occluder = strip_poly
+	strip.scale = Vector2(1.0 / vp.x, 1.0 / vp.y)
+	strip.position = Vector2(0.0, 0.30)  # floor depth line at ~0.80 * vp.y
+	_floor.add_child(strip)
+
+	var wrapper := Node2D.new()
+	var deep := LightOccluder2D.new()
+	var deep_poly := OccluderPolygon2D.new()
+	deep_poly.polygon = PackedVector2Array([
+		Vector2(-40, -8), Vector2(40, -8), Vector2(40, 8), Vector2(-40, 8)])
+	deep.occluder = deep_poly
+	deep.position = Vector2(vp.x * 0.55, vp.y * 0.85)  # bottom below the floor line
+	wrapper.add_child(deep)
+	add_child(wrapper)
 
 
 func _input(event: InputEvent) -> void:

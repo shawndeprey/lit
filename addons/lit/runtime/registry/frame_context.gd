@@ -2,8 +2,8 @@ extends RefCounted
 
 ## Per-frame data spine: view data computed once in begin(), frame state written by
 ## exactly one owner each and passed to modules explicitly. Reused across frames,
-## never reallocated. The public activity statics on LitLightRegistry stay the
-## node-facing mirrors; this object carries the internal frame plumbing.
+## never reallocated. LitLightRegistry.activity_flags stays the node-facing surface
+## (published once per refresh); this object carries the internal frame plumbing.
 
 # View data, computed once per begin().
 var canvas_xform: Transform2D

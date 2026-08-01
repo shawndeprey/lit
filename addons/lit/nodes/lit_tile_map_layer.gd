@@ -37,8 +37,9 @@ class_name LitTileMapLayer
 var _self_occluders: Array = []
 var _tile_rects: Array[Rect2] = []
 var _tile_rect_dirty := true
-var _last_packed := PackedVector4Array()
-var _last_count := -1
+
+# Dedup memo for the shared driving in LitReceiverHelper.
+var _drive_state := LitReceiverHelper.DriveState.new()
 
 
 func _init() -> void:
@@ -104,62 +105,18 @@ func _refresh_occluder_cache() -> void:
 		_self_occluders.append(child)
 
 
+# Rects, variant tier, and live params all land through the shared helper; tilemaps
+# never participate in y-sort.
 func _update_self_rect() -> void:
 	if not is_inside_tree():
 		return
 	if _tile_rect_dirty:
 		_tile_rect_dirty = false
 		_tile_rects = LitLightRegistry.tile_occluder_rects(self)
-	var rects: Array[Rect2] = []
-	for tile_rect in _tile_rects:
-		rects.append(global_transform * tile_rect)
-	for node in _self_occluders:
-		if not is_instance_valid(node):
-			continue
-		var occ := node as LightOccluder2D
-		if occ == null or not occ.is_inside_tree() \
-				or occ.occluder == null or occ.occluder.polygon.is_empty():
-			continue
-		var xf := occ.global_transform
-		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
-		for p in occ.occluder.polygon:
-			r = r.expand(xf * p)
-		rects.append(r)
-	while rects.size() > 4:
-		rects[3] = rects[3].merge(rects.pop_back())
-	var packed := PackedVector4Array()
-	packed.resize(4)
-	for i in rects.size():
-		packed[i] = Vector4(rects[i].position.x, rects[i].position.y, rects[i].end.x, rects[i].end.y)
-	if packed != _last_packed or rects.size() != _last_count:
-		_last_packed = packed
-		_last_count = rects.size()
-		_set_live_param("self_rects", packed)
-		_set_live_param("self_rect_count", rects.size())
-
-	# The material param decides, so the flag also works when set directly on a
-	# hand-assigned receiver material; the export is a proxy that writes it.
-	var flag: Variant = null
-	if material is ShaderMaterial:
-		flag = (material as ShaderMaterial).get_shader_parameter("self_shadow")
-	_apply_shader_variant(rects.size() > 0 and flag != true)
-	# After the swap, so the param lands on a shader declaring it.
+	LitReceiverHelper.drive(self, _live_mat(), _self_occluders, _tile_rects, false,
+			_lit_node_flags(), _drive_state)
 	if shadow_ignore_mask != 0:
 		_set_live_param("rx_mask", shadow_ignore_mask)
-
-
-func _apply_shader_variant(wants_full: bool) -> void:
-	var mat := _live_mat()
-	if mat == null or mat.shader == null:
-		return
-	var flags: int = LitShaderLibrary.flags_of(mat.shader)
-	if flags < 0:
-		return
-	assert(LitLightRegistry.activity_flags == LitLightRegistry._activity_mirror())
-	var tier := LitShaderLibrary.F_SELF_EXCL if wants_full else 0
-	var wanted := LitShaderLibrary.resolve(tier, _lit_node_flags(), LitLightRegistry.activity_flags)
-	if flags != wanted:
-		mat.shader = LitShaderLibrary.get_receiver(wanted)
 
 
 func _lit_node_flags() -> int:
@@ -183,10 +140,9 @@ func _live_mat() -> ShaderMaterial:
 		mat = LitLightRegistry.editor_live_material(self, mat)
 		if mat != _live_last:
 			# Fresh clone (first frame, or recreated after the editor's save-time
-			# script reload): drop the dedup caches so live params re-land on it.
+			# script reload): re-land the node-owned params (the helper re-lands its
+			# own through DriveState).
 			_live_last = mat
-			_last_packed = PackedVector4Array()
-			_last_count = -1
 			mat.set_shader_parameter("rx_mask", shadow_ignore_mask)
 	return mat
 

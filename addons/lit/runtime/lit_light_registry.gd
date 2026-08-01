@@ -13,25 +13,22 @@ const TEXELS_PER_LIGHT := 14
 
 # Which shadow algorithms the shaders must support this frame, from the last refresh()
 # in this process (bit 0 = Cone Traced, bit 1 = Stochastic, among enabled shadow-casting
-# lights). LitSprite2D reads it every frame to pick its receiver shader variant, and
-# refresh() itself re-points every other Lit receiver material via the receiver
-# driver's variant walk, so the per-light algorithm dropdown works on all receivers
-# (tool-converted nodes, tilemaps, hand-assigned materials) with no manual shader swap.
+# lights). Internal working state; nodes read activity_flags below instead.
 static var active_algos: int = 0
 
-# LitShaderLibrary F_* activity bits, published once per refresh; active_algos /
-# masks_active / gx_active remain the authoritative mirrors until plan 3 finalizes them.
+# The sole node-facing activity surface: LitShaderLibrary F_* bits derived from the
+# working state (active_algos / masks_active / gx_active) at exactly one point, the
+# end of refresh(). LitReceiverHelper reads it every frame to resolve receiver
+# variants, and refresh() itself re-points every other Lit receiver material via the
+# receiver driver's variant walk, so the per-light algorithm dropdown works on all
+# receivers (tool-converted nodes, tilemaps, hand-assigned materials) with no manual
+# shader swap. Stable between refreshes; wiped to 0 with the statics and republished
+# on the next refresh.
 static var activity_flags: int = 0
 
 # False again after the editor's save-time script reload wipes statics; any registry
 # refreshing then re-walks so RS-clone previews (wiped with the statics) rebuild.
 static var _statics_alive := false
-
-static func _activity_mirror() -> int:
-	return (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
-			| (LitShaderLibrary.F_STOCH if active_algos & 2 != 0 else 0) \
-			| (LitShaderLibrary.F_MASKS if masks_active else 0) \
-			| (LitShaderLibrary.F_GX if gx_active else 0)
 
 # Receiver variant application and bare-receiver driving: registry/receiver_driver.gd
 # owns the published-variant memo and the bare cache.
@@ -54,10 +51,6 @@ const LightPackerScript := preload("res://addons/lit/runtime/registry/light_pack
 const ScreenTilesScript := preload("res://addons/lit/runtime/registry/screen_tiles.gd")
 var _light_packer := LightPackerScript.new()
 var _screen_tiles := ScreenTilesScript.new()
-
-# Shared with the occluder tile grid below until its own module lands.
-const TILE_SIZE := ScreenTilesScript.TILE_SIZE
-const INDEX_TEX_WIDTH := ScreenTilesScript.INDEX_TEX_WIDTH
 
 # Per-frame data spine shared with the modules (view data, light set, frame outputs).
 const FrameContextScript := preload("res://addons/lit/runtime/registry/frame_context.gd")
@@ -110,8 +103,8 @@ static func editor_release_live() -> void:
 	EditorLiveScript.release_all()
 
 # Occluder identity subsystem: registry/occluder_tiles.gd owns the caster cache, tile
-# binning, gx publish, and sdf-cull state. Exclusion code below still reaches its cache
-# fields directly; that surface dissolves when exclusions extract (step 5).
+# binning, gx publish, and sdf-cull state; the facade drives it through its named
+# facade-seam methods and passes its dictionaries onward as explicit arguments.
 const OccluderTilesScript := preload("res://addons/lit/runtime/registry/occluder_tiles.gd")
 var _occluder_tiles := OccluderTilesScript.new()
 
@@ -130,9 +123,9 @@ func set_ysort(enabled: bool) -> void:
 	if ysort_enabled == enabled:
 		return
 	ysort_enabled = enabled
-	_receiver_driver._bare_dirty = true
-	_occluder_tiles._occ_dirty = true
-	_occluder_tiles._occ_prev_pack = PackedFloat32Array()
+	_receiver_driver.mark_bare_dirty()
+	_occluder_tiles.mark_dirty()
+	_occluder_tiles.reset_pack_memo()
 
 ## Gather visible lights, pack them into the light-data texture, build the tile grid,
 ## and publish the global shader uniforms. Call once per frame. receiver_root bounds
@@ -163,11 +156,11 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# set, so camera movement past a light's AABB never thrashes receiver shaders. Only
 	# shadow-casting lights count: an algorithm on a shadowless light is never marched.
 	var algos := 0
-	var mask_potential: bool = _occluder_tiles._occ_masks_seen
+	var mask_potential: bool = _occluder_tiles.masks_seen()
 	var smask_union := 0
 	# The per-light reads only matter once a light or occluder has ever shown mask
 	# potential; the editor always reads so live inspector edits are never missed.
-	var read_masks: bool = light_masks_seen or _occluder_tiles._occ_masks_seen \
+	var read_masks: bool = light_masks_seen or _occluder_tiles.masks_seen() \
 			or Engine.is_editor_hint()
 	for entry in lights:
 		# Untyped: enabled/shadow_enabled/shadow_algorithm live on each light class,
@@ -187,8 +180,8 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# both calls are provably no-ops (their state is empty by construction).
 	if read_masks or not _mask_seed_done:
 		_classify_exclusions(lights, receiver_root, mask_potential, smask_union)
-		_occluder_tiles.restore_unculled(_exclusions._gx_masks)
-	_ctx.excl_active = not _exclusions._excl_info.is_empty()
+		_occluder_tiles.restore_unculled(_exclusions.gx_masks())
+	_ctx.excl_active = _exclusions.has_exclusions()
 	if masks_active:
 		_ctx.texels_per_light = TEXELS_PER_LIGHT
 
@@ -197,17 +190,17 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	if Engine.is_editor_hint():
 		if not _statics_alive:
 			_statics_alive = true
-			_receiver_driver._receiver_dirty = true
+			_receiver_driver.mark_receivers_dirty()
 		RxRegistryScript.rescan_editor(receiver_root)
-	if RxRegistryScript._rx_nodes.is_empty():
+	if RxRegistryScript.nodes().is_empty():
 		_ctx.rx_union = 0
-	if ysort_enabled or masks_active or not _exclusions._gx_masks.is_empty() \
-			or not RxRegistryScript._rx_nodes.is_empty():
+	if ysort_enabled or masks_active or not _exclusions.gx_masks().is_empty() \
+			or not RxRegistryScript.nodes().is_empty():
 		_ctx.rx_union = _rx_registry.compute_union()
 		var pack_same: bool = _occluder_tiles.build(_ctx, receiver_root, lights,
-				_exclusions._gx_masks, _exclusions._excl_smasks, _exclusions._excl_owners,
+				_exclusions.gx_masks(), _exclusions.smasks(), _exclusions.owners(),
 				ysort_enabled, sdf_cull)
-		gx_active = _occluder_tiles._gx_frame
+		gx_active = _occluder_tiles.gx_this_frame()
 		if masks_active:
 			_exclusions.maybe_rebuild_lists(pack_same, _ctx.occ_rects, _ctx.occ_masks,
 					_ctx.occ_owners)
@@ -215,11 +208,15 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 		gx_active = false
 		_occluder_tiles.publish_gx_empty()
 
-	activity_flags = _activity_mirror()
-	_receiver_driver.apply(receiver_root, activity_flags, RxRegistryScript._rx_nodes,
+	# The one activity publish point: everything the working state decided this
+	# refresh lands in the node-facing flags together.
+	activity_flags = (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
+			| (LitShaderLibrary.F_STOCH if active_algos & 2 != 0 else 0) \
+			| (LitShaderLibrary.F_MASKS if masks_active else 0) \
+			| (LitShaderLibrary.F_GX if gx_active else 0)
+	_receiver_driver.apply(receiver_root, activity_flags, RxRegistryScript.nodes(),
 			editor_live_material)
-	_receiver_driver.drive_bare(receiver_root, activity_flags, ysort_enabled,
-			editor_live_material)
+	_receiver_driver.drive_bare(receiver_root, editor_live_material)
 	if _ctx.rx_union != 0:
 		_rx_registry.drive_bounds(_ctx.occ_rects, _ctx.occ_masks, editor_live_material)
 	if Engine.is_editor_hint():
@@ -247,7 +244,7 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 
 	# Cookie atlas + pack + light-data globals, then the screen-tile grid the shader
 	# culls against; row order in the data texture matches ctx.visible for both.
-	_light_packer.pack_and_publish(_ctx, _exclusions._excl_info, _exclusions._excl_lists,
+	_light_packer.pack_and_publish(_ctx, _exclusions.info(), _exclusions.lists(),
 			shadow_samples_max)
 	_screen_tiles.build_and_publish(_ctx)
 
@@ -267,35 +264,35 @@ func _classify_exclusions(lights: Array, root: Node, potential: bool, smask_unio
 		# Pre-gate: live mask edits must be seen while masks are inactive too, or the
 		# first non-default mask can never open the gate below (stuck until reload).
 		_occluder_tiles.ensure_fresh(root, _light_cache.all(), true)
-	if smask_union == 0 or not (potential or _occluder_tiles._occ_masks_seen):
+	if smask_union == 0 or not (potential or _occluder_tiles.masks_seen()):
 		return
 	_occluder_tiles.ensure_fresh(root, _light_cache.all(), false)
-	masks_active = _exclusions.classify(lights, smask_union, _occluder_tiles._occ_mask_set,
-			_occluder_tiles._scope_ids, _occluder_tiles._scope_occ_masks)
+	masks_active = _exclusions.classify(lights, smask_union, _occluder_tiles.mask_set(),
+			_occluder_tiles.scope_ids(), _occluder_tiles.scope_occ_masks())
 
 func _on_tree_changed(node: Node) -> void:
-	_receiver_driver._receiver_dirty = true
+	_receiver_driver.mark_receivers_dirty()
 	if node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer or node is LightOccluder2D:
-		_receiver_driver._bare_dirty = true
+		_receiver_driver.mark_bare_dirty()
 	if node is TileMapLayer or node is LightOccluder2D:
-		_occluder_tiles._occ_dirty = true
+		_occluder_tiles.mark_dirty()
 		_world_sdf.mark_content_dirty()
 		if node is LightOccluder2D:
 			if node.sdf_collision and node.occluder_light_mask != 1:
-				_occluder_tiles._occ_masks_seen = true
+				_occluder_tiles.note_mask_seen()
 		elif node.tile_set != null:
 			var ts: TileSet = node.tile_set
 			for l in ts.get_occlusion_layers_count():
 				if ts.get_occlusion_layer_light_mask(l) != 1:
-					_occluder_tiles._occ_masks_seen = true
+					_occluder_tiles.note_mask_seen()
 					break
 	elif node is LitPointLight2D or node is LitSpotLight2D or node is LitDirectionalLight2D:
 		# Scope roots follow the light set.
-		_occluder_tiles._occ_dirty = true
+		_occluder_tiles.mark_dirty()
 
 func _on_tilemap_changed() -> void:
-	_receiver_driver._bare_dirty = true
-	_occluder_tiles._occ_dirty = true
+	_receiver_driver.mark_bare_dirty()
+	_occluder_tiles.mark_dirty()
 
 ## Node-facing static API; the walk lives in registry/receiver_driver.gd.
 static func tile_occluder_rects(layer: TileMapLayer) -> Array[Rect2]:

@@ -227,7 +227,7 @@ metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitPointLight2D3" type="Node2D" parent="LitLights/Cone Traced" unique_id=2104560388]
 visible = false
-position = Vector2(414, 323)
+position = Vector2(272, 403)
 script = ExtResource("4_lg8mm")
 energy = 1.5
 range = 1024.0

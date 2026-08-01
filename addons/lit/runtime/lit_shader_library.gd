@@ -2,6 +2,20 @@ extends RefCounted
 class_name LitShaderLibrary
 
 ## Receiver variant matrix source of truth; nothing else may name a receiver shader path or define.
+## Also the one home of the light-node contracts (the enums below): the node scripts
+## alias them (const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm) so the
+## public per-node names keep working.
+
+enum BlendMode { ADD, SUBTRACT }
+
+## Sizing mode for a light's cookie texture.
+enum TextureSizeMode { NATIVE, FIT_RANGE }
+
+## Per-light shadow algorithm. The order is a wire format: light_packer.gd packs it
+## into flags bits 3-4 of the light's data row and the shader decodes it there, and
+## the registry derives active_algos (bit 0 = CONE_TRACED, bit 1 = STOCHASTIC) from
+## it for the variant swap. Append new algorithms; never reorder.
+enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
 
 const F_SELF_EXCL := 1
 const F_YSORT := 2
@@ -157,6 +171,18 @@ static func all_variant_flags() -> Array[int]:
 		out.append(f)
 	out.sort()
 	return out
+
+
+## Shared _validate_property body for the light nodes: show only the dials the
+## selected algorithm reads. source_prop is "source_radius" on point/spot lights and
+## "source_angle" on directionals.
+static func validate_light_property(property: Dictionary, algorithm: int, source_prop: String) -> void:
+	if property.name == source_prop:
+		if algorithm == ShadowAlgorithm.RAYMARCHED:
+			property.usage &= ~PROPERTY_USAGE_EDITOR
+	elif property.name == "shadow_samples" or property.name == "shadow_jitter":
+		if algorithm != ShadowAlgorithm.STOCHASTIC:
+			property.usage &= ~PROPERTY_USAGE_EDITOR
 
 
 static func _get_version() -> String:
