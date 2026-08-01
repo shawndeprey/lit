@@ -147,9 +147,23 @@ not, no credit required. See the [`LICENSE`](LICENSE) file for the details.
 ## The "Lit Shaders Precompiling" screen
 
 The first time your game runs on a machine, Lit briefly shows a **Lit Shaders
-Precompiling** screen. A GPU can only finish compiling shaders on the machine that will
-run them, so Lit builds all of its lighting and shadow shaders for that exact GPU and
-driver once, up front. The work is cached: the screen won't appear again until the
-shaders themselves change (a game update or a new Lit version), and in exchange gameplay
-never stutters to compile a shader mid-play. In the editor this happens silently in the
-background, so you'll only ever see the screen in a running game.
+Precompiling** screen. What it's doing is preparing that machine to run your lighting.
+A GPU can only run machine code built for it, and that code can't ship in a
+download; games that build it mid-play are the ones that hitch the first time an effect
+appears on screen. So Lit builds all of it up front: the player's graphics driver
+translates every lighting and shadow shader into machine code for that exact GPU, saved
+as a cache in the game's user data folder (the pipeline cache file is literally named
+after the graphics card it was built for). What that preparation gets you:
+
+- **No shader stutter, ever.** Every shader's machine code is on disk before play
+  begins; from then on, launches just load the cache.
+- **Every moment covered, not just the common ones.** Lit swaps shaders as your game
+  changes state (a masked light appears, a shadow algorithm changes) - lazily-built
+  caches hitch exactly there; a complete one never does.
+- **Once per machine.** The screen returns only when the shaders change (a game update
+  or a new Lit version).
+- **Same fps.** Shaders run at whatever speed the card runs them - preparation just
+  moves the build cost out of gameplay.
+
+In the editor the same warm-up happens silently in the background, so the screen only
+ever appears in a running game.
