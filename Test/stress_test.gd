@@ -474,6 +474,23 @@ func _report() -> void:
 	var rcpu_ms := _mean(_render_cpu)
 	var rgpu_ms := _mean(_render_gpu)
 
+	var stall := 0
+	var hitch := 0
+	var smooth := 0
+	var worst := 0.0
+	var smooth_time := 0.0
+	for t in _frame_times:
+		worst = maxf(worst, t)
+		if t > 0.1:
+			stall += 1
+		elif t > 0.025:
+			hitch += 1
+		else:
+			smooth += 1
+			smooth_time += t
+	print("LITBENCH histo stall100=%d hitch25=%d smooth=%d worst_ms=%.1f smooth_share=%.2f"
+			% [stall, hitch, smooth, worst * 1000.0, smooth_time / total])
+
 	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
 	print("LITBENCH frames=%d" % n)
 	print("LITBENCH avg_fps=%.2f" % fps)

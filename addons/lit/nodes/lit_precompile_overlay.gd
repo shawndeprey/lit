@@ -124,7 +124,7 @@ func _on_progress(done: int, total: int, label: String) -> void:
 	_bar.max_value = total
 	_bar.value = done
 	_count.text = "%d/%d" % [done, total]
-	if _detail != null:
+	if _detail != null and label != "":
 		_detail.text = label
 
 
