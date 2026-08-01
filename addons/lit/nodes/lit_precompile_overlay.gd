@@ -19,6 +19,9 @@ const POS_FLAGS := [
 	[Control.SIZE_SHRINK_END, Control.SIZE_SHRINK_END],
 ]
 
+## Set before adding to the tree: the worker window always shows the takeover layout.
+var force_takeover := false
+
 var _root: Control
 var _bar: ProgressBar
 var _count: Label
@@ -36,7 +39,7 @@ func _ready() -> void:
 	var title_text := str(ProjectSettings.get_setting("lit/startup/precompile_title", ""))
 	if title_text.strip_edges().is_empty():
 		title_text = DEFAULT_TITLE
-	if asynchronous:
+	if asynchronous and not force_takeover:
 		_build_async(title_text, verbose)
 	else:
 		_build_takeover(title_text, verbose)
