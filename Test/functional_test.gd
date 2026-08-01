@@ -186,7 +186,7 @@ func _capture() -> void:
 	if mgr != null and mgr.precompiler != null:
 		if mgr.precompiler.is_processing():
 			await mgr.precompiler.finished
-		while mgr.get_node_or_null("LitPrecompileOverlay") != null:
+		while get_tree().root.get_node_or_null("LitPrecompileOverlay") != null:
 			await RenderingServer.frame_post_draw
 	# Several frames so the registry's receiver-variant swap lands before the capture.
 	for i in 5:

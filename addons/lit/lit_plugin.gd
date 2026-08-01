@@ -342,6 +342,15 @@ func _project_setting_defs() -> Array:
 			},
 		},
 		{
+			# Runtime SDF culling of occluders excluded from every light's shadow_mask.
+			# The canvas SDF also feeds GPUParticles2D collision; turn this off if
+			# excluded occluders must keep colliding with particles (they then fall back
+			# to in-shader exemption).
+			"name": "lit/render/occluder_mask_sdf_culling",
+			"default": true,
+			"info": {"name": "lit/render/occluder_mask_sdf_culling", "type": TYPE_BOOL},
+		},
+		{
 			# Top-down shadow depth by occluder footprint bottoms; not Godot y-sort.
 			"name": "lit/render/y_sorting",
 			"default": false,
@@ -354,13 +363,32 @@ func _project_setting_defs() -> Array:
 			"info": {"name": "lit/startup/precompile_shaders", "type": TYPE_BOOL},
 		},
 		{
-			# Runtime SDF culling of occluders excluded from every light's shadow_mask.
-			# The canvas SDF also feeds GPUParticles2D collision; turn this off if
-			# excluded occluders must keep colliding with particles (they then fall back
-			# to in-shader exemption).
-			"name": "lit/render/occluder_mask_sdf_culling",
+			# Custom precompile screen title; empty uses "Lit Shaders Precompiling".
+			"name": "lit/startup/precompile_title",
+			"default": "",
+			"info": {"name": "lit/startup/precompile_title", "type": TYPE_STRING},
+		},
+		{
+			# Show the variant being compiled below the progress bar.
+			"name": "lit/startup/precompile_verbose",
 			"default": true,
-			"info": {"name": "lit/render/occluder_mask_sdf_culling", "type": TYPE_BOOL},
+			"info": {"name": "lit/startup/precompile_verbose", "type": TYPE_BOOL},
+		},
+		{
+			# Compile behind the running game (no takeover) with a floating progress box.
+			"name": "lit/startup/precompile_async",
+			"default": false,
+			"info": {"name": "lit/startup/precompile_async", "type": TYPE_BOOL},
+		},
+		{
+			"name": "lit/startup/precompile_async_position",
+			"default": 8,
+			"info": {
+				"name": "lit/startup/precompile_async_position",
+				"type": TYPE_INT,
+				"hint": PROPERTY_HINT_ENUM,
+				"hint_string": "Top Left,Top Center,Top Right,Center Left,Center,Center Right,Bottom Left,Bottom Center,Bottom Right",
+			},
 		},
 		{
 			# Fade half-width in world pixels around the depth boundary.
@@ -418,12 +446,19 @@ func _project_setting_defs() -> Array:
 ## default and the typed editor even when the key already exists.
 func _persist_project_settings() -> void:
 	var changed := false
-	for d in _project_setting_defs():
+	var defs := _project_setting_defs()
+	for d in defs:
 		if not ProjectSettings.has_setting(d.name):
 			ProjectSettings.set_setting(d.name, d.default)
 			changed = true
 		ProjectSettings.set_initial_value(d.name, d.default)
 		ProjectSettings.add_property_info(d.info)
+	# Display order follows defs order; without this, any setting changed from its
+	# default persists into project.godot and jumps to file order in the dialog.
+	var order := ProjectSettings.get_order(defs[0].name)
+	for d in defs:
+		ProjectSettings.set_order(d.name, order)
+		order += 1
 	if changed:
 		ProjectSettings.save()
 

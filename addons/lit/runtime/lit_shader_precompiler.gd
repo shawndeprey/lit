@@ -19,6 +19,7 @@ var _next := 0
 var _pending: Array[int] = []
 var _batch := 4
 var _silent := false
+var _async := false
 var _prev_paused := false
 var _last_tick := 0
 var _quad_layer: CanvasLayer
@@ -63,16 +64,18 @@ static func variant_label(flags: int) -> String:
 	return " + ".join(parts)
 
 
-func start(silent: bool) -> void:
+func start(silent: bool, asynchronous: bool = false) -> void:
 	_work = work_list()
 	_silent = silent
+	_async = asynchronous
 	LitShaderLibrary._warmed.clear()
 	for f in _work:
 		LitShaderLibrary._warmed[f] = true
 	if not silent:
-		took_over = true
-		_prev_paused = get_tree().paused
-		get_tree().paused = true
+		if not _async:
+			took_over = true
+			_prev_paused = get_tree().paused
+			get_tree().paused = true
 		_build_quads()
 	_last_tick = Time.get_ticks_usec()
 	set_process(true)
@@ -125,7 +128,8 @@ func _process(_delta: float) -> void:
 func _finish() -> void:
 	if not _silent:
 		_write_marker()
-		get_tree().paused = _prev_paused
+		if not _async:
+			get_tree().paused = _prev_paused
 		if _quad_layer != null:
 			_quad_layer.queue_free()
 			_quad_layer = null
@@ -143,11 +147,11 @@ func _write_marker() -> void:
 	cfg.save(MARKER_PATH)
 
 
-# 4x4 quads drawn behind the overlay's opaque cover, matching real receiver render
-# state (default canvas_item vertex format and blend); their draw forces tier C.
+# 4x4 quads drawn behind the overlay's opaque cover (async: behind the game, near-
+# transparent), matching real receiver render state; their draw forces tier C.
 func _build_quads() -> void:
 	_quad_layer = CanvasLayer.new()
-	_quad_layer.layer = 99
+	_quad_layer.layer = -128 if _async else 99
 	add_child(_quad_layer)
 	var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -159,5 +163,7 @@ func _build_quads() -> void:
 		s.position = Vector2(4 + i * 6, 4)
 		s.material = ShaderMaterial.new()
 		s.visible = false
+		if _async:
+			s.modulate.a = 0.02
 		_quad_layer.add_child(s)
 		_quads.append(s)

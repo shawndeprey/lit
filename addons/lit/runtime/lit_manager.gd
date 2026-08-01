@@ -13,6 +13,7 @@ const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader
 const LitPrecompileOverlayScript := preload("res://addons/lit/nodes/lit_precompile_overlay.gd")
 
 const SETTING_PRECOMPILE := "lit/startup/precompile_shaders"
+const SETTING_PRECOMPILE_ASYNC := "lit/startup/precompile_async"
 const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_Y_SORTING := "lit/render/y_sorting"
 const SETTING_Y_SORT_SMOOTHING := "lit/render/y_sort_smoothing"
@@ -58,9 +59,11 @@ func _ready() -> void:
 		if not fresh:
 			var overlay: Node = LitPrecompileOverlayScript.new()
 			overlay.name = "LitPrecompileOverlay"
-			add_child(overlay)
 			overlay.attach(precompiler)
-		precompiler.start(fresh)
+			# Deferred root add lands after the main scene in tree order, so the cover
+			# wins same-layer ties against game HUDs at layer 128.
+			get_tree().root.add_child.call_deferred(overlay)
+		precompiler.start(fresh, bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false)))
 
 # Exports drop bare .gdshaderinc dependencies; the library preload normally carries the
 # spine through, so a miss here means the preload chain was broken.
