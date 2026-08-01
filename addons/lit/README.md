@@ -1,11 +1,11 @@
 # Lit
 
-**Drop-in 2D lighting for Godot 4 — with no light limit.** ([Docs](https://fadinglantern.com/docs/lit))
+**Drop-in 2D lighting for Godot 4 - with no light limit.** ([Docs](https://fadinglantern.com/docs/lit))
 
 Lit is an alongside replacement for Godot's built-in 2D lights. It keeps the parts you
 like (add a node, set some values, done) and fixes the part you don't: the hard cap of
 ~15 lights per object. Light a whole scene with as many lights as you want, get real soft
-shadows, and stack on a pile of post-processing — all without leaving the node workflow.
+shadows, and stack on a pile of post-processing - all without leaving the node workflow.
 
 *▶ [Watch the tech demo](https://www.youtube.com/watch?v=mWrhQRTlI8w)*
 
@@ -53,13 +53,20 @@ That's it — everything updates live in the editor as you build.
 
 ## What you get
 
-- **Uncapped lights & Shadows.** No 15-light limit. Use as many as your scene needs.
+- **Uncapped lights & shadows.** No 15-light limit. Use as many as your scene needs.
 - **Three light types.** Point, Directional (a sun), and Spot (a cone).
 - **Light textures (cookies).** Drop a texture on a point or spot light to shape it —
   window panes, canopy dapple, blinds — just like the engine's `PointLight2D` texture.
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
-- **No self-shadowing.** A sprite's own occluder casts behind it, not onto it, so you
-  don't have to trace silhouette-perfect polygons. Per-sprite **Self Shadow** toggle.
+- **Three shadow algorithms, per light.** **Cone Traced** (the default: a single
+  signed-coverage cone march driven by a physical **Source Radius** — penumbras widen
+  with distance, the umbra tapers closed behind small occluders, and an antumbra
+  re-brightens, beyond Unreal's penumbra-only SDF shadows at a modest cost),
+  **Raymarched** (the fastest, stylized option — penumbra shaped by the hardness
+  slider alone), and **Stochastic** (splits the source into sampled sub-cones —
+  ground truth, correct even where several occluders share one penumbra, with
+  samples/jitter dials; a cone penumbra gate keeps its cost down outside true
+  penumbra). Pick per light with the **Shadow Algorithm** dropdown.
 - **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` — no wiring.
 - **Blinn–Phong or PBR.** Pick the lighting model in Project Settings → Lit. PBR adds
   optional metallic / roughness / AO inputs on the receiver material; switch back to
@@ -85,7 +92,9 @@ That's it — everything updates live in the editor as you build.
 | `LitSpotLight2D` | A cone of light you can aim. |
 | `LitCanvasModulate` | Sets the scene's darkness/ambient color. |
 | `LitSprite2D` | A `Sprite2D` that's already set up to receive light. |
+| `LitTileMapLayer` | A `TileMapLayer` that's already set up to receive light. |
 | `LitPostProcess` | The post-processing stack (bloom, grading, CRT, and friends). |
+| `LitSplashScreen` | A drop-in branded splash (glitch-fade logo, skippable). |
 
 ---
 
@@ -114,3 +123,59 @@ quickest way to reach us.
 
 Lit is free and open-source under the **MIT License** — use it in anything, commercial or
 not, no credit required. See the [`LICENSE`](LICENSE) file for the details.
+
+
+---
+
+## Shader precompilation
+
+The first time your game runs on a machine, Lit prepares that machine to run your
+lighting. A GPU can only run machine code built for it, and that code can't ship in a
+download; games that build it mid-play are the ones that hitch the first time an
+effect appears on screen. So Lit builds all of it up front: the player's graphics
+driver translates every lighting and shadow shader into machine code for that exact
+GPU, saved as a cache in the game's user data folder (the pipeline cache file is
+literally named after the graphics card it was built for). What that preparation gets
+you:
+
+- **No lighting stutter, ever.** Every lighting and shadow shader's machine code is
+  on disk before play begins; from then on, launches just load the cache. (The one
+  documented exception is the post-processing passes: a pass compiles the first time
+  you enable it, since Lit can't know which of the 20 your game uses. If you need a
+  pass hitch-free, toggle it on once during your own loading flow.)
+- **Every moment covered, not just the common ones.** Lit swaps shaders as your game
+  changes state (a masked light appears, a shadow algorithm changes) - lazily-built
+  caches hitch exactly there; a complete one never does.
+- **Once per machine.** Precompilation returns only when the shaders change (a game
+  update or a new Lit version).
+- **Same fps.** Shaders run at whatever speed the card runs them - preparation just
+  moves the build cost out of gameplay.
+
+In the editor the same warm-up happens silently in the background, so precompilation
+only ever runs in a running game. You choose how it runs, in Project Settings → Lit:
+
+**Synchronous (the default).** A **Lit Shaders Precompiling** screen covers the game
+until every shader is built - the classic "preparing shaders" boot screen. Fastest
+total build, nothing else runs.
+
+**Asynchronous** (`lit/startup/precompile_async`). The game starts immediately and
+plays normally while a hidden second process builds the shaders in parallel at full
+speed; a small floating progress box shows the countdown. Shaders your scenes demand
+before they're ready still compile on the spot (a menu scene typically hits one or
+two), so this trades a guaranteed-clean first session for an instant start.
+
+**API-initiated.** Turn off `lit/startup/precompile_shaders` and run the same
+worker-backed build yourself, wherever it fits your flow (a settings screen, behind
+your own loader, after a "prepare shaders?" prompt):
+
+```gdscript
+if LitManager.precompile_shaders():          # false if one is already running
+	LitManager.precompile_progress.connect(
+		func(done, total, label): my_bar.value = float(done) / total)
+	await LitManager.precompile_finished
+```
+
+The `lit/startup/*` settings: `precompile_shaders` (the launch-time build on/off),
+`precompile_async` (worker-backed background mode), `precompile_title` (custom screen
+title), `precompile_verbose` (show the shader being compiled), and
+`precompile_async_position` (where the floating progress box sits).

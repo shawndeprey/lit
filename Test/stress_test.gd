@@ -7,7 +7,7 @@ extends Node2D
 ## Run fullscreen for true (uncapped) frame times:
 ##   godot --path . res://Test/StressTest.tscn --fullscreen
 
-const RECEIVER_SHADER := preload("res://addons/lit/shaders/lit_receiver_fast.gdshader")
+const RECEIVER_SHADER := preload("res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader")
 
 const SHADOW_ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 const SHADOW_ALGO_NAMES := ["raymarch", "cone", "stochastic"]
@@ -473,6 +473,23 @@ func _report() -> void:
 	var proc_ms := _mean(_process_times) * 1000.0
 	var rcpu_ms := _mean(_render_cpu)
 	var rgpu_ms := _mean(_render_gpu)
+
+	var stall := 0
+	var hitch := 0
+	var smooth := 0
+	var worst := 0.0
+	var smooth_time := 0.0
+	for t in _frame_times:
+		worst = maxf(worst, t)
+		if t > 0.1:
+			stall += 1
+		elif t > 0.025:
+			hitch += 1
+		else:
+			smooth += 1
+			smooth_time += t
+	print("LITBENCH histo stall100=%d hitch25=%d smooth=%d worst_ms=%.1f smooth_share=%.2f"
+			% [stall, hitch, smooth, worst * 1000.0, smooth_time / total])
 
 	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
 	print("LITBENCH frames=%d" % n)

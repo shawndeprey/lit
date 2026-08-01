@@ -42,6 +42,9 @@ ios/
 # Export presets (contains project-specific paths)
 export_presets.cfg
 
+# Planning docs (local only)
+docs/plans/
+
 # Logs
 *.log
 

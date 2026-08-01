@@ -7,7 +7,7 @@ signal finished
 
 const DEFAULT_LOGO := preload("res://addons/lit/branding/Lit-Logo-Text.png")
 const DEFAULT_SFX := preload("res://addons/lit/branding/glitch.mp3")
-const GLITCH_SHADER := preload("res://addons/lit/shaders/lit_post_glitch.gdshader")
+const GLITCH_SHADER := preload("res://addons/lit/shaders/post/lit_post_glitch.gdshader")
 
 @export var autoplay := true
 @export var skippable := true

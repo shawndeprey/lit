@@ -65,7 +65,10 @@ show off what you built? Come hang out in our Discord:
    color, energy, and range to taste.
 5. **Want shadows?** On the light, tick **Shadow Enabled**. Then give the world something to
    block the light: add a `LightOccluder2D` to a sprite, or for tiles enable **SDF
-   Collision** on your TileSet's occlusion layer.
+   Collision** on your TileSet's occlusion layer. A sprite carrying the receiver
+   material — `LitSprite2D`, tool-converted, or hand-assigned — never shadows itself:
+   its occluder's shadow falls behind it (flip **Self Shadow** on the sprite if you
+   want plain SDF shadowing back).
 6. **Want a look?** Add a **`LitPostProcess`** node and switch on bloom, color grade, CRT,
    or any of the other effects.
 
@@ -114,7 +117,9 @@ That's it — everything updates live in the editor as you build.
 | `LitSpotLight2D` | A cone of light you can aim. |
 | `LitCanvasModulate` | Sets the scene's darkness/ambient color. |
 | `LitSprite2D` | A `Sprite2D` that's already set up to receive light. |
+| `LitTileMapLayer` | A `TileMapLayer` that's already set up to receive light. |
 | `LitPostProcess` | The post-processing stack (bloom, grading, CRT, and friends). |
+| `LitSplashScreen` | A drop-in branded splash (glitch-fade logo, skippable). |
 
 ---
 

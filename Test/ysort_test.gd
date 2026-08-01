@@ -32,7 +32,7 @@ func _ready() -> void:
 	floor_spr.position = vp * 0.5
 	floor_spr.scale = vp
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://addons/lit/shaders/lit_receiver_fast.gdshader")
+	mat.shader = load("res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader")
 	floor_spr.material = mat
 	add_child(floor_spr)
 

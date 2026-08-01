@@ -7,70 +7,6 @@ class_name LitTileMapLayer
 ## counterpart for tilemaps. Own occluders are the tileset occlusion polygons of the
 ## painted cells plus any LightOccluder2D descendants.
 
-const RECEIVER_SHADER_FAST_PATH := "res://addons/lit/shaders/lit_receiver_fast.gdshader"
-const RECEIVER_FAST_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast.gdshader",
-]
-const RECEIVER_FULL_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch.gdshader",
-]
-# Gx twins, used while globally excluded occluders exist (LitLightRegistry.gx_active).
-const RECEIVER_FAST_GX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_gx.gdshader",
-]
-const RECEIVER_FULL_GX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_gx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_gx.gdshader",
-]
-# Mask twins, used while any light carries per-light exclusions (LitLightRegistry.masks_active).
-const RECEIVER_FAST_MASK_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_mask.gdshader",
-]
-const RECEIVER_FULL_MASK_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_mask.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_mask.gdshader",
-]
-# Rx twins, used while this layer's shadow_receiver_mask is non-default.
-const RECEIVER_FAST_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_rx.gdshader",
-]
-const RECEIVER_FULL_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_rx.gdshader",
-]
-const RECEIVER_FAST_MASK_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_fast_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_fast_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_fast_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_fast_mask_rx.gdshader",
-]
-const RECEIVER_FULL_MASK_RX_VARIANTS: Array[String] = [
-	"res://addons/lit/shaders/lit_receiver_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_stoch_mask_rx.gdshader",
-	"res://addons/lit/shaders/lit_receiver_cone_stoch_mask_rx.gdshader",
-]
 
 @export var emissive_strength: float = 0.0:
 	set(value):
@@ -101,8 +37,9 @@ const RECEIVER_FULL_MASK_RX_VARIANTS: Array[String] = [
 var _self_occluders: Array = []
 var _tile_rects: Array[Rect2] = []
 var _tile_rect_dirty := true
-var _last_packed := PackedVector4Array()
-var _last_count := -1
+
+# Dedup memo for the shared driving in LitReceiverHelper.
+var _drive_state := LitReceiverHelper.DriveState.new()
 
 
 func _init() -> void:
@@ -110,7 +47,7 @@ func _init() -> void:
 	# hand-set values that the export defaults must not stomp.
 	if material == null:
 		var mat := ShaderMaterial.new()
-		mat.shader = load(RECEIVER_SHADER_FAST_PATH)
+		mat.shader = load(LitShaderLibrary.ENTRY_PATHS[0])
 		material = mat
 		_set_param("emissive_strength", emissive_strength)
 		_set_param("receiver_mask", receiver_mask)
@@ -126,7 +63,7 @@ func _lit_ready() -> void:
 	if not Engine.is_editor_hint():
 		var mat := material as ShaderMaterial
 		if mat != null and mat.shader != null and not mat.resource_local_to_scene \
-				and LitLightRegistry._is_lit_receiver_path(mat.shader.resource_path):
+				and LitShaderLibrary.flags_of(mat.shader) >= 0:
 			material = mat.duplicate()
 	# Heal a stale rx_mask a scene save may have baked into the material.
 	if shadow_ignore_mask == 0 and material is ShaderMaterial:
@@ -168,74 +105,22 @@ func _refresh_occluder_cache() -> void:
 		_self_occluders.append(child)
 
 
+# Rects, variant tier, and live params all land through the shared helper; tilemaps
+# never participate in y-sort.
 func _update_self_rect() -> void:
 	if not is_inside_tree():
 		return
 	if _tile_rect_dirty:
 		_tile_rect_dirty = false
 		_tile_rects = LitLightRegistry.tile_occluder_rects(self)
-	var rects: Array[Rect2] = []
-	for tile_rect in _tile_rects:
-		rects.append(global_transform * tile_rect)
-	for node in _self_occluders:
-		if not is_instance_valid(node):
-			continue
-		var occ := node as LightOccluder2D
-		if occ == null or not occ.is_inside_tree() \
-				or occ.occluder == null or occ.occluder.polygon.is_empty():
-			continue
-		var xf := occ.global_transform
-		var r := Rect2(xf * occ.occluder.polygon[0], Vector2.ZERO)
-		for p in occ.occluder.polygon:
-			r = r.expand(xf * p)
-		rects.append(r)
-	while rects.size() > 4:
-		rects[3] = rects[3].merge(rects.pop_back())
-	var packed := PackedVector4Array()
-	packed.resize(4)
-	for i in rects.size():
-		packed[i] = Vector4(rects[i].position.x, rects[i].position.y, rects[i].end.x, rects[i].end.y)
-	if packed != _last_packed or rects.size() != _last_count:
-		_last_packed = packed
-		_last_count = rects.size()
-		_set_live_param("self_rects", packed)
-		_set_live_param("self_rect_count", rects.size())
-
-	# The material param decides, so the flag also works when set directly on a
-	# hand-assigned receiver material; the export is a proxy that writes it.
-	var flag: Variant = null
-	if material is ShaderMaterial:
-		flag = (material as ShaderMaterial).get_shader_parameter("self_shadow")
-	_apply_shader_variant(rects.size() > 0 and flag != true)
-	# After the swap, so the param lands on a shader declaring it.
+	LitReceiverHelper.drive(self, _live_mat(), _self_occluders, _tile_rects, false,
+			_lit_node_flags(), _drive_state)
 	if shadow_ignore_mask != 0:
 		_set_live_param("rx_mask", shadow_ignore_mask)
 
 
-func _apply_shader_variant(wants_full: bool) -> void:
-	var mat := _live_mat()
-	if mat == null or mat.shader == null:
-		return
-	var current: String = mat.shader.resource_path
-	if not LitLightRegistry._is_lit_receiver_path(current):
-		return
-	var mask := LitLightRegistry.active_algos & 3
-	var masks := LitLightRegistry.masks_active
-	var gx := LitLightRegistry.gx_active
-	# Rx (per-receiver exclusion) has its own variant class carrying the tile test.
-	var rx := shadow_ignore_mask != 0
-	var table: Array[String]
-	if wants_full:
-		table = (RECEIVER_FULL_MASK_RX_VARIANTS if masks else RECEIVER_FULL_RX_VARIANTS) if rx \
-				else (RECEIVER_FULL_MASK_VARIANTS if masks \
-				else (RECEIVER_FULL_GX_VARIANTS if gx else RECEIVER_FULL_VARIANTS))
-	else:
-		table = (RECEIVER_FAST_MASK_RX_VARIANTS if masks else RECEIVER_FAST_RX_VARIANTS) if rx \
-				else (RECEIVER_FAST_MASK_VARIANTS if masks \
-				else (RECEIVER_FAST_GX_VARIANTS if gx else RECEIVER_FAST_VARIANTS))
-	var wanted: String = table[mask]
-	if current != wanted:
-		mat.shader = load(wanted)
+func _lit_node_flags() -> int:
+	return LitShaderLibrary.F_RX if shadow_ignore_mask != 0 else 0
 
 
 func _set_param(param: String, value: Variant) -> void:
@@ -251,14 +136,13 @@ var _live_last: ShaderMaterial = null
 func _live_mat() -> ShaderMaterial:
 	var mat := material as ShaderMaterial
 	if Engine.is_editor_hint() and mat != null and mat.shader != null \
-			and LitLightRegistry._is_lit_receiver_path(mat.shader.resource_path):
+			and LitShaderLibrary.flags_of(mat.shader) >= 0:
 		mat = LitLightRegistry.editor_live_material(self, mat)
 		if mat != _live_last:
 			# Fresh clone (first frame, or recreated after the editor's save-time
-			# script reload): drop the dedup caches so live params re-land on it.
+			# script reload): re-land the node-owned params (the helper re-lands its
+			# own through DriveState).
 			_live_last = mat
-			_last_packed = PackedVector4Array()
-			_last_count = -1
 			mat.set_shader_parameter("rx_mask", shadow_ignore_mask)
 	return mat
 

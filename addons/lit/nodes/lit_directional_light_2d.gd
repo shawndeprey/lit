@@ -16,10 +16,10 @@ class_name LitDirectionalLight2D
 ## property ("Visibility" in the inspector) and is matched against each receiver's
 ## `receiver_mask`.
 
-enum BlendMode { ADD, SUBTRACT }
-
-## Per-light shadow algorithm; order must match the flags bits packed by the registry.
-enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
+# Shared contracts, aliased so LitDirectionalLight2D.BlendMode etc. remain the
+# public names; the definitions (and the wire-format rules) live in LitShaderLibrary.
+const BlendMode = LitShaderLibrary.BlendMode
+const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 
 @export var enabled: bool = true
 @export var color: Color = Color.WHITE
@@ -81,13 +81,7 @@ enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
 
 
 func _validate_property(property: Dictionary) -> void:
-	# Show only the dials the selected algorithm reads.
-	if property.name == "source_angle":
-		if shadow_algorithm == ShadowAlgorithm.RAYMARCHED:
-			property.usage &= ~PROPERTY_USAGE_EDITOR
-	elif property.name == "shadow_samples" or property.name == "shadow_jitter":
-		if shadow_algorithm != ShadowAlgorithm.STOCHASTIC:
-			property.usage &= ~PROPERTY_USAGE_EDITOR
+	LitShaderLibrary.validate_light_property(property, shadow_algorithm, "source_angle")
 
 
 func _enter_tree() -> void:

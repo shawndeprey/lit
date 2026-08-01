@@ -8,8 +8,19 @@ extends Node
 ## The cost here is the pack, not the per-pixel lighting, so a full repack every frame
 ## is fine; the registry caches the light list and only rebuilds it on tree changes.
 
-const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
+signal precompile_progress(done: int, total: int, label: String)
+signal precompile_finished
 
+const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
+const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
+const LitPrecompileOverlayScript := preload("res://addons/lit/nodes/lit_precompile_overlay.gd")
+
+const SETTING_PRECOMPILE := "lit/startup/precompile_shaders"
+const SETTING_PRECOMPILE_ASYNC := "lit/startup/precompile_async"
+const WORKER_ARG := "lit-worker"
+const WORKER_SCENE_PATH := "res://addons/lit/runtime/lit_worker_scene.tscn"
+# Preloaded so exports always pack the worker scene.
+const WorkerScene := preload("res://addons/lit/runtime/lit_worker_scene.tscn")
 const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_Y_SORTING := "lit/render/y_sorting"
 const SETTING_Y_SORT_SMOOTHING := "lit/render/y_sort_smoothing"
@@ -30,6 +41,8 @@ const DEFAULT_SHADOW_STEPS_MAX := 64
 const DEFAULT_SHADOW_SAMPLES_MAX := 32
 
 var _registry: LitLightRegistry
+var precompiler: Node = null
+var _api_precompiler: Node = null
 
 var lighting_model: int = DEFAULT_LIGHTING_MODEL
 var shadow_step_scaling: bool = DEFAULT_SHADOW_STEP_SCALING
@@ -41,10 +54,116 @@ func _ready() -> void:
 	# Run after gameplay scripts have moved their lights this frame.
 	process_priority = 1000
 
+	var uargs := OS.get_cmdline_user_args()
+	var widx := uargs.find(WORKER_ARG)
+	if widx != -1:
+		_boot_worker(int(uargs[widx + 1]) if widx + 1 < uargs.size() else -1)
+		return
+
 	# Pick up the lit/* project settings now and whenever they change at runtime.
 	_reload_settings()
 	if not ProjectSettings.settings_changed.is_connected(_reload_settings):
 		ProjectSettings.settings_changed.connect(_reload_settings)
+
+	_boot_self_check()
+	if bool(ProjectSettings.get_setting(SETTING_PRECOMPILE, true)):
+		precompiler = LitShaderPrecompilerScript.new()
+		add_child(precompiler)
+		var fresh: bool = LitShaderPrecompilerScript.marker_fresh(LitShaderPrecompilerScript.work_list())
+		if not fresh:
+			var overlay: Node = LitPrecompileOverlayScript.new()
+			overlay.name = "LitPrecompileOverlay"
+			overlay.attach(precompiler)
+			# Deferred root add lands after the main scene in tree order, so the cover
+			# wins same-layer ties against game HUDs at layer 128.
+			get_tree().root.add_child.call_deferred(overlay)
+			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false))
+			precompiler.start(fresh, asynchronous, _spawn_worker() if asynchronous else -1)
+		else:
+			precompiler.start(fresh)
+
+
+## Hidden second instance of this process: bakes every variant into the shared shader
+## caches flat out, so the main process introduces cache hits instead of compiles.
+func _spawn_worker() -> int:
+	var wd := ProjectSettings.globalize_path(LitShaderPrecompilerScript.WORKER_DIR)
+	if DirAccess.dir_exists_absolute(wd):
+		for f in DirAccess.get_files_at(wd):
+			DirAccess.remove_absolute(wd.path_join(f))
+	DirAccess.make_dir_recursive_absolute(wd)
+	var hb := FileAccess.open(wd.path_join("parent_alive"), FileAccess.WRITE)
+	if hb != null:
+		hb.close()
+	var exe := OS.get_executable_path()
+	var args := PackedStringArray(["--position", "-32000,-32000", "--resolution", "640x220"])
+	if OS.has_feature("editor"):
+		args.append_array(PackedStringArray(["--path", ProjectSettings.globalize_path("res://")]))
+	# Boot the empty worker scene, never the game's main scene.
+	args.append(WORKER_SCENE_PATH)
+	args.append_array(PackedStringArray(["--", WORKER_ARG, str(OS.get_process_id())]))
+	if OS.get_name() == "Windows":
+		# start /min births the window minimized so it never flashes on screen. The spaced
+		# title is required: create_process drops empty args, and start reads the first
+		# quoted token as its title - which would swallow a quoted (spaced) exe path.
+		var cargs := PackedStringArray(["/c", "start", "Lit Worker", "/min", exe])
+		cargs.append_array(args)
+		return OS.create_process("cmd.exe", cargs)
+	return OS.create_process(exe, args)
+
+
+func _boot_worker(parent_pid: int) -> void:
+	var w := get_window()
+	w.title = "Lit Shader Worker"
+	w.mode = Window.MODE_MINIMIZED
+	# Unfocusable maps to WS_EX_NOACTIVATE on Windows, which also drops the taskbar
+	# button - the worker can't be clicked into view.
+	w.unfocusable = true
+	w.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	precompiler = LitShaderPrecompilerScript.new()
+	add_child(precompiler)
+	# Some launch shapes ignore the boot-scene argument; swap the main scene out either way.
+	_ensure_worker_scene.call_deferred()
+	var overlay: Node = LitPrecompileOverlayScript.new()
+	overlay.force_takeover = true
+	overlay.attach(precompiler)
+	get_tree().root.add_child.call_deferred(overlay)
+	precompiler.start_worker(parent_pid)
+
+
+func _ensure_worker_scene() -> void:
+	var cs := get_tree().current_scene
+	if cs == null or cs.scene_file_path != WORKER_SCENE_PATH:
+		get_tree().change_scene_to_packed(WorkerScene)
+
+
+## Public API: run the precompile pipeline on demand (always worker-backed); wire UI to
+## precompile_progress / precompile_finished. False if a precompile is already in flight.
+func precompile_shaders() -> bool:
+	if _api_precompiler != null or (precompiler != null and precompiler.is_processing()):
+		return false
+	_api_precompiler = LitShaderPrecompilerScript.new()
+	add_child(_api_precompiler)
+	_api_precompiler.progress.connect(_on_api_progress)
+	_api_precompiler.finished.connect(_on_api_finished)
+	_api_precompiler.start(false, true, _spawn_worker())
+	return true
+
+
+func _on_api_progress(done: int, total: int, label: String) -> void:
+	precompile_progress.emit(done, total, label)
+
+
+func _on_api_finished() -> void:
+	var pre := _api_precompiler
+	_api_precompiler = null
+	pre.queue_free()
+	precompile_finished.emit()
+
+# Exports drop bare .gdshaderinc dependencies; the library preload normally carries the
+# spine through, so a miss here means the preload chain was broken.
+func _boot_self_check() -> void:
+	if not ResourceLoader.exists(LitShaderLibrary.COMMON_INCLUDE_PATH):
+		push_error("Lit: %s failed to resolve; no receiver variant can compile. If this is an exported build, add '*.gdshaderinc' to the export's resource filters." % LitShaderLibrary.COMMON_INCLUDE_PATH)
 
 func _process(_delta: float) -> void:
 	_registry.refresh(get_tree(), get_viewport(), get_tree().root, self)
