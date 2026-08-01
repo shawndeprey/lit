@@ -2,7 +2,7 @@
 A release must be tagged prior to uploading to the Asset Library.
 
 ```
-git tag -a v1.0.0 -m "Release v1.0.0"
+git tag -a v1.0.7 -m "Release v1.0.7"
 git push origin --tags
 ```
 
