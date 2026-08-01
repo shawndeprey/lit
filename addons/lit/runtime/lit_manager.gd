@@ -14,6 +14,7 @@ const LitPrecompileOverlayScript := preload("res://addons/lit/nodes/lit_precompi
 
 const SETTING_PRECOMPILE := "lit/startup/precompile_shaders"
 const SETTING_PRECOMPILE_ASYNC := "lit/startup/precompile_async"
+const WORKER_ARG := "lit-worker"
 const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_Y_SORTING := "lit/render/y_sorting"
 const SETTING_Y_SORT_SMOOTHING := "lit/render/y_sort_smoothing"
@@ -46,6 +47,12 @@ func _ready() -> void:
 	# Run after gameplay scripts have moved their lights this frame.
 	process_priority = 1000
 
+	var uargs := OS.get_cmdline_user_args()
+	var widx := uargs.find(WORKER_ARG)
+	if widx != -1:
+		_boot_worker(int(uargs[widx + 1]) if widx + 1 < uargs.size() else -1)
+		return
+
 	# Pick up the lit/* project settings now and whenever they change at runtime.
 	_reload_settings()
 	if not ProjectSettings.settings_changed.is_connected(_reload_settings):
@@ -63,7 +70,41 @@ func _ready() -> void:
 			# Deferred root add lands after the main scene in tree order, so the cover
 			# wins same-layer ties against game HUDs at layer 128.
 			get_tree().root.add_child.call_deferred(overlay)
-		precompiler.start(fresh, bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false)))
+			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false))
+			precompiler.start(fresh, asynchronous, _spawn_worker() if asynchronous else -1)
+		else:
+			precompiler.start(fresh)
+
+
+## Hidden second instance of this process: bakes every variant into the shared shader
+## caches flat out, so the main process introduces cache hits instead of compiles.
+func _spawn_worker() -> int:
+	var wd := ProjectSettings.globalize_path(LitShaderPrecompilerScript.WORKER_DIR)
+	if DirAccess.dir_exists_absolute(wd):
+		for f in DirAccess.get_files_at(wd):
+			DirAccess.remove_absolute(wd.path_join(f))
+	DirAccess.make_dir_recursive_absolute(wd)
+	var hb := FileAccess.open(wd.path_join("parent_alive"), FileAccess.WRITE)
+	if hb != null:
+		hb.close()
+	var exe := OS.get_executable_path()
+	var args := PackedStringArray(["--position", "-32000,-32000"])
+	if OS.has_feature("editor"):
+		args.append_array(PackedStringArray(["--path", ProjectSettings.globalize_path("res://")]))
+	args.append_array(PackedStringArray(["--", WORKER_ARG, str(OS.get_process_id())]))
+	if OS.get_name() == "Windows":
+		# start /min births the window minimized so it never flashes on screen.
+		var cargs := PackedStringArray(["/c", "start", "/min", "", exe])
+		cargs.append_array(args)
+		return OS.create_process("cmd.exe", cargs)
+	return OS.create_process(exe, args)
+
+
+func _boot_worker(parent_pid: int) -> void:
+	get_window().mode = Window.MODE_MINIMIZED
+	precompiler = LitShaderPrecompilerScript.new()
+	add_child(precompiler)
+	precompiler.start_worker(parent_pid)
 
 # Exports drop bare .gdshaderinc dependencies; the library preload normally carries the
 # spine through, so a miss here means the preload chain was broken.

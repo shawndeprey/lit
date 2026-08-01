@@ -34,6 +34,8 @@ enabled=PackedStringArray("res://addons/lit/plugin.cfg")
 [lit]
 
 render/lighting_model=1
+startup/precompile_async=true
+startup/precompile_async_position=1
 
 [physics]
 

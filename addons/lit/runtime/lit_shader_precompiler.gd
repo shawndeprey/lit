@@ -8,11 +8,21 @@ signal progress(done: int, total: int, label: String)
 signal finished
 
 const MARKER_PATH := "user://lit_shaders.cfg"
+const WORKER_DIR := "user://lit_worker"
 const BUILD_BUDGET_MS := 8.0
 const SILENT_PER_FRAME := 4
 const QUAD_POOL := 16
 
 var took_over := false
+
+var _worker_pid := -1
+var _parent_check := 0.0
+var _hb_accum := 0.0
+var _hb_wait := 0.0
+var _worker_wait := 0.0
+var _report_done := false
+var _hb_thread: Thread
+var _hb_exit := false
 
 var _work: Array[int] = []
 var _next := 0
@@ -64,10 +74,42 @@ static func variant_label(flags: int) -> String:
 	return " + ".join(parts)
 
 
-func start(silent: bool, asynchronous: bool = false) -> void:
+## Worker-process entry: compile the full worklist flat out in a hidden instance,
+## reporting each baked variant via a done-file the parent polls.
+func start_worker(_parent_pid: int) -> void:
+	_report_done = true
+	DirAccess.make_dir_recursive_absolute(WORKER_DIR)
+	# Heartbeat from a thread: compile frames can stall for seconds, and a frame-bound
+	# heartbeat reads as death to the parent mid-stall.
+	_hb_thread = Thread.new()
+	_hb_thread.start(_hb_loop)
+	start(false)
+
+
+func _hb_loop() -> void:
+	while not _hb_exit:
+		var fa := FileAccess.open(WORKER_DIR + "/worker_alive", FileAccess.WRITE)
+		if fa != null:
+			fa.close()
+		OS.delay_msec(1000)
+
+
+func _stop_hb() -> void:
+	if _hb_thread != null:
+		_hb_exit = true
+		_hb_thread.wait_to_finish()
+		_hb_thread = null
+
+
+func _exit_tree() -> void:
+	_stop_hb()
+
+
+func start(silent: bool, asynchronous: bool = false, worker_pid: int = -1) -> void:
 	_work = work_list()
 	_silent = silent
 	_async = asynchronous
+	_worker_pid = worker_pid if asynchronous else -1
 	LitShaderLibrary._warmed.clear()
 	for f in _work:
 		LitShaderLibrary._warmed[f] = true
@@ -81,7 +123,27 @@ func start(silent: bool, asynchronous: bool = false) -> void:
 	set_process(true)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	# Worker liveness: pid APIs are unreliable for non-child processes, so the parent
+	# heartbeats a file once a second and the worker quits when it goes stale.
+	if _report_done:
+		_parent_check += delta
+		if _parent_check >= 1.0:
+			_parent_check = 0.0
+			_hb_wait += 1.0
+			var hb := FileAccess.get_modified_time(WORKER_DIR + "/parent_alive")
+			if (hb > 0 and Time.get_unix_time_from_system() - hb > 5.0) \
+					or (hb == 0 and _hb_wait > 10.0):
+				get_tree().quit()
+				return
+	elif _worker_pid > 0:
+		_hb_accum += delta
+		if _hb_accum >= 1.0:
+			_hb_accum = 0.0
+			_worker_wait += 1.0
+			var fa := FileAccess.open(WORKER_DIR + "/parent_alive", FileAccess.WRITE)
+			if fa != null:
+				fa.close()
 	if _silent:
 		for i in SILENT_PER_FRAME:
 			if _next >= _work.size():
@@ -92,6 +154,11 @@ func _process(_delta: float) -> void:
 		return
 
 	# Whatever was assigned last frame has drawn by now: its pipelines are warm.
+	if _report_done:
+		for f in _pending:
+			var fa := FileAccess.open("%s/f_%d.done" % [WORKER_DIR, f], FileAccess.WRITE)
+			if fa != null:
+				fa.close()
 	var done := _next - _pending.size()
 	if _pending.is_empty() and _next >= _work.size():
 		_finish()
@@ -111,6 +178,15 @@ func _process(_delta: float) -> void:
 	var quad := 0
 	while _next < _work.size() and quad < _batch:
 		var flags := _work[_next]
+		# Follow the worker: introduce only variants it has baked (cache hits). Worker
+		# death is judged by its heartbeat going stale (spawn shells hide the real pid);
+		# on death, drop to self-compiling the remainder. Both cases stay silent.
+		if _worker_pid > 0 and not FileAccess.file_exists("%s/f_%d.done" % [WORKER_DIR, flags]):
+			var wa := FileAccess.get_modified_time(WORKER_DIR + "/worker_alive")
+			if (wa > 0 and Time.get_unix_time_from_system() - wa < 5.0) \
+					or (wa == 0 and _worker_wait < 15.0):
+				break
+			_worker_pid = -1
 		(_quads[quad].material as ShaderMaterial).shader = LitShaderLibrary.get_receiver(flags)
 		_quads[quad].visible = true
 		_pending.append(flags)
@@ -137,6 +213,9 @@ func _finish() -> void:
 	progress.emit(_work.size(), _work.size(), "")
 	set_process(false)
 	finished.emit()
+	if _report_done:
+		_stop_hb()
+		get_tree().quit()
 
 
 func _write_marker() -> void:
