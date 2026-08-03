@@ -37,6 +37,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 	int s = 0;
 	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
 	float t_self_end = 0.0;
+	float t_ex_end = 0.0;                                  // reach of the exclusion-aware phases
 #ifdef LIT_OCC_MASKS
 	float t_mk_end = 0.0;
 
@@ -51,6 +52,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 #endif
 		float pad = (max(w * maxd, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
 		t_mk_end = lit_rect_segment_exit(self_canvas, dir_canvas * maxd, mk_rect, pad) * maxd;
+		t_ex_end = t_mk_end;
 		bool receding = false;
 		float prev_d = frag_d;
 		for (; s < max_steps && t < maxd && t <= t_mk_end; s++) {
@@ -134,6 +136,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, rx_bounds[bi], pad) * maxd);
 		}
 #endif
+		t_ex_end = max(t_ex_end, t_slow_end);
 		bool receding = false;
 		float prev_d = frag_d;
 		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
@@ -268,6 +271,27 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float w, int max_step
 				}
 			}
 			t += max(abs(d), shadow_min_step);
+		}
+		// Sphere tracing has no step bound on a near-tangent ray: it crawls one clearance
+		// per step alongside an edge and can spend the whole budget short of the source,
+		// leaving a caster beyond it unseen and the fragment reported lit. Finish such a
+		// march with a bounded sweep whose floor forces the rest of the ray into the steps
+		// that remain. It runs the plain tests, so it starts past the exclusion phases'
+		// reach, where an exempt caster can no longer be mistaken for a real one.
+		t = max(t, t_ex_end);
+		if (t < maxd) {
+			int tail = max(max_steps >> 2, 4);
+			for (int e = 0; e < tail && t < maxd; e++) {
+				float d = lit_sdf_sample(frag_sdf + dir * t);
+				float cand = 0.5 + d / (2.0 * w * t);
+				if (cand < res) {
+					res = max(cand, 0.0);
+					if (res <= 0.0) {
+						return 0.0;
+					}
+				}
+				t += max(abs(d), (maxd - t) / float(tail - e));
+			}
 		}
 		if (src_plane && maxd > shadow_min_step) {
 			// Source-plane sample; see the header comment. Owned occluders stay exempt.

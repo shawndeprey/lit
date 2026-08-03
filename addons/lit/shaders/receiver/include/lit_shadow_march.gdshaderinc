@@ -23,6 +23,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 	bool grace = prev_d < 0.0;
 	int s = 0;
 	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);      // keep the compile-time cap
+	float t_ex_end = 0.0;                                  // reach of the exclusion-aware phases
 
 #ifdef LIT_OCC_MASKS
 	// Mask pre-pass: exempt casters can only matter within this march's crossing of the
@@ -36,6 +37,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 #endif
 		float pad = (max(maxd / k, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
 		float t_mk_end = lit_rect_segment_exit(self_canvas, dir_canvas * maxd, mk_rect, pad) * maxd;
+		t_ex_end = t_mk_end;
 		bool receding = false;
 		float prev_ad = 0.0;
 		for (; s < max_steps && t < maxd && t <= t_mk_end; s++) {
@@ -130,6 +132,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, rx_bounds[bi], pad) * maxd);
 		}
 #endif
+		t_ex_end = max(t_ex_end, t_slow_end);
 		// Mutes penumbra accumulation while the ray still recedes from the exited edge.
 		bool receding = false;
 		float prev_ad = 0.0;
@@ -279,6 +282,27 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 				best_t = t;
 			}
 			t += max(d, shadow_min_step);    // sphere-trace advance
+		}
+		// Sphere tracing has no step bound on a near-tangent ray: it crawls one clearance
+		// per step alongside an edge and can spend the whole budget short of the light,
+		// leaving a caster beyond it unseen and the fragment reported lit. Finish such a
+		// march with a bounded sweep whose floor forces the rest of the ray into the steps
+		// that remain. It runs the plain tests, so it starts past the exclusion phases'
+		// reach, where an exempt caster can no longer be mistaken for a real one.
+		t = max(t, t_ex_end);
+		if (t < maxd) {
+			int tail = max(max_steps >> 2, 4);
+			for (int e = 0; e < tail && t < maxd; e++) {
+				float d = lit_sdf_sample(frag_sdf + dir * t);
+				if (d < 0.001) {
+					return 0.0;
+				}
+				if (d * best_t < best_d * t) {
+					best_d = d;
+					best_t = t;
+				}
+				t += max(d, (maxd - t) / float(tail - e));
+			}
 		}
 		return clamp(min(res, k * best_d / best_t), 0.0, 1.0);
 	}
