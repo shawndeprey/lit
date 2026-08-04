@@ -341,44 +341,38 @@ visible = false
 script = ExtResource("11_ngwpp")
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
 
-[node name="Bloom" type="CanvasLayer" parent="LitPostProcess" unique_id=1245330919]
-layer = 2
+[node name="Bloom" type="Node2D" parent="LitPostProcess" unique_id=1245330919]
 script = ExtResource("22_pbloom")
 threshold = 0.14
 intensity = 1.83
 radius = 3.56
 
-[node name="Halation" type="CanvasLayer" parent="LitPostProcess" unique_id=1521543814]
-layer = 3
+[node name="Halation" type="Node2D" parent="LitPostProcess" unique_id=1521543814]
 script = ExtResource("23_phalat")
 threshold = 0.17
 intensity = 0.59
 radius = 5.04
 tint = Color(0.8427926, 0.06220977, 0.55192626, 1)
 
-[node name="ColorGrade" type="CanvasLayer" parent="LitPostProcess" unique_id=1986543051]
-layer = 4
+[node name="ColorGrade" type="Node2D" parent="LitPostProcess" unique_id=1986543051]
 visible = false
 script = ExtResource("24_pgrade")
 exposure = 2.12
 
-[node name="Lut" type="CanvasLayer" parent="LitPostProcess" unique_id=915155402]
-layer = 5
+[node name="Lut" type="Node2D" parent="LitPostProcess" unique_id=915155402]
 visible = false
 script = ExtResource("25_plut")
 preset = 7
 amount = 0.77
 
-[node name="EdgeOutline" type="CanvasLayer" parent="LitPostProcess" unique_id=118715400]
-layer = 6
+[node name="EdgeOutline" type="Node2D" parent="LitPostProcess" unique_id=118715400]
 visible = false
 script = ExtResource("22_g0h2s")
 thickness = 1.8
 threshold = 0.0
 softness = 0.36
 
-[node name="Posterize" type="CanvasLayer" parent="LitPostProcess" unique_id=138184359]
-layer = 7
+[node name="Posterize" type="Node2D" parent="LitPostProcess" unique_id=138184359]
 script = ExtResource("21_ys512")
 levels = 9.0
 

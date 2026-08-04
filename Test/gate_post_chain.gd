@@ -1,4 +1,4 @@
-﻿extends Node2D
+extends Node2D
 
 ## Post-chain hash gate: a deterministic procedural base image run through the
 ## LitPostProcess chain (built from LitPostEffect child nodes) with passes at
