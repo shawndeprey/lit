@@ -18,9 +18,16 @@ class_name LitPostEffect
 ## _effect_process() to track data over time (the base class only enables processing
 ## when a subclass overrides it).
 ##
-## Subclasses override _shader(), _rank() (canonical chain position), and _param_map()
+## Subclasses override _shader(), _rank() (default insertion slot), and _param_map()
 ## (shader uniform -> property name), plus _apply_extra_params() for uniforms derived
 ## rather than mirrored from a property. Export setters call apply_params().
+##
+## Custom effects: extend this class in your own script and it's a first-class pass.
+## The minimum is a class_name, a _shader() override returning a canvas_item shader
+## that reads the frame via a `hint_screen_texture` sampler, and _param_map() entries
+## for your exported knobs (with a class_name, your effect also appears in the "Add
+## Effect" menu under Custom). The "New Custom Effect..." item in that menu generates
+## a working starter script + shader to build from.
 
 var _host: LitPostProcess = null
 var _rect: ColorRect = null
@@ -101,9 +108,11 @@ func _shader() -> Shader:
 
 ## Canonical default slot in the chain, used only when inserting via
 ## LitPostProcess.add_effect() or the inspector's "Add Effect" button. The actual draw
-## order is the child order. See LitPostProcess for the pipeline rationale.
+## order is the child order. Built-in passes use 10..200; the 1000 default appends
+## custom effects at the end of the chain. See LitPostProcess for the pipeline
+## rationale.
 func _rank() -> int:
-	return 0
+	return 1000
 
 
 ## shader uniform -> exported property name, applied by apply_params().

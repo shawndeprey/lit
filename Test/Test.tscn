@@ -337,12 +337,12 @@ metadata/_custom_type_script = "uid://blronx1n8oliq"
 position = Vector2(576, 324)
 
 [node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=873612067]
+visible = false
 script = ExtResource("11_ngwpp")
 metadata/_custom_type_script = "uid://djrtgftop1i8a"
 
 [node name="Bloom" type="CanvasLayer" parent="LitPostProcess" unique_id=1245330919]
 layer = 2
-visible = false
 script = ExtResource("22_pbloom")
 threshold = 0.14
 intensity = 1.83
@@ -350,7 +350,6 @@ radius = 3.56
 
 [node name="Halation" type="CanvasLayer" parent="LitPostProcess" unique_id=1521543814]
 layer = 3
-visible = false
 script = ExtResource("23_phalat")
 threshold = 0.17
 intensity = 0.59
@@ -367,6 +366,7 @@ exposure = 2.12
 layer = 5
 visible = false
 script = ExtResource("25_plut")
+preset = 7
 amount = 0.77
 
 [node name="EdgeOutline" type="CanvasLayer" parent="LitPostProcess" unique_id=118715400]
@@ -379,7 +379,6 @@ softness = 0.36
 
 [node name="Posterize" type="CanvasLayer" parent="LitPostProcess" unique_id=138184359]
 layer = 7
-visible = false
 script = ExtResource("21_ys512")
 levels = 9.0
 
