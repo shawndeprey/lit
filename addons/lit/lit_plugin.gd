@@ -21,6 +21,7 @@ const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
+const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
 
 # Editor-live refresh cadence. Polling a few times a second relights the viewport when
 # a light moves, a property changes, or the 2D editor camera pans or zooms, without
@@ -32,6 +33,7 @@ const EDITOR_REFRESH_INTERVAL := 1.0 / 30.0
 var _registry: LitLightRegistry
 var _refresh_accum := 0.0
 var _warm_pending: Array[int] = []
+var _post_inspector: EditorInspectorPlugin
 
 
 # --- Lifecycle ---------------------------------------------------------------
@@ -52,6 +54,10 @@ func _enter_tree() -> void:
 	_persist_project_settings() # guarded: same, for the lit/* settings
 	_ensure_autoload()          # guarded: adds only if not already registered
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
+	# The "Add Effect" button on the LitPostProcess inspector.
+	_post_inspector = LitPostInspectorScript.new()
+	_post_inspector.undo_redo = get_undo_redo()
+	add_inspector_plugin(_post_inspector)
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
 	_registry = LitLightRegistryScript.new()
 	# Silent background warm so first-session editor tier swaps never pay a compile.
@@ -64,6 +70,8 @@ func _exit_tree() -> void:
 	_registry = null
 	LitLightRegistryScript.editor_release_live()
 	remove_tool_menu_item(TOOL_MENU_ITEM)
+	remove_inspector_plugin(_post_inspector)
+	_post_inspector = null
 	_remove_live_globals()
 
 func _disable_plugin() -> void:
