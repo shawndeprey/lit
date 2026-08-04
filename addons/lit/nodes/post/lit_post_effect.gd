@@ -7,11 +7,11 @@ class_name LitPostEffect
 ##
 ## Each effect is a CanvasLayer child of a LitPostProcess chain. The layer boundary
 ## makes the pass re-read the accumulated screen via hint_screen_texture, and the host
-## assigns `layer` so the chain renders in its canonical order regardless of child
-## order. The effect owns its fullscreen ColorRect and ShaderMaterial and pushes its
-## exported parameters to the material when they change. Toggle the node's `visible`
-## (the scene-tree eye) to enable or disable the pass; hiding the host LitPostProcess
-## disables the whole chain.
+## assigns `layer` from the child order, so the chain renders in tree order: reorder
+## the children to reorder the passes. The effect owns its fullscreen ColorRect and
+## ShaderMaterial and pushes its exported parameters to the material when they change.
+## Toggle the node's `visible` (the scene-tree eye) to enable or disable the pass;
+## hiding the host LitPostProcess disables the whole chain.
 ##
 ## Effects only render under a LitPostProcess parent; anywhere else the node shows a
 ## configuration warning and stays inert. Stateful effects can override
@@ -99,8 +99,9 @@ func _shader() -> Shader:
 	return null
 
 
-## Canonical position in the chain; the host sorts passes by this, ties keep child
-## order. See LitPostProcess for the pipeline rationale.
+## Canonical default slot in the chain, used only when inserting via
+## LitPostProcess.add_effect() or the inspector's "Add Effect" button. The actual draw
+## order is the child order. See LitPostProcess for the pipeline rationale.
 func _rank() -> int:
 	return 0
 

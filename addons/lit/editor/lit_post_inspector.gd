@@ -3,8 +3,9 @@ extends EditorInspectorPlugin
 
 ## The "Add Effect" button at the top of the LitPostProcess inspector: a categorized
 ## menu of the built-in passes, grouped by pipeline stage in canonical chain order.
-## Picking one adds that effect node as a child (undoable) and selects it. Effects
-## already in the chain are greyed out; duplicates can still be made by hand if wanted.
+## Picking one adds that effect node as a child at its canonical pipeline position
+## (undoable) and selects it; child order is the draw order, so reorder freely after.
+## Effects already in the chain are greyed out; duplicates can still be made by hand.
 
 const CATEGORIES := [
 	["Glow", [
@@ -78,7 +79,7 @@ func _on_pick(id: int, menu: PopupMenu, host: LitPostProcess) -> void:
 	fx.name = StringName(String(menu.get_item_text(index)).replace(" ", ""))
 	var owner_node: Node = host.owner if host.owner != null else host
 	undo_redo.create_action("Add Post Effect")
-	undo_redo.add_do_method(host, "add_child", fx)
+	undo_redo.add_do_method(host, "add_effect", fx)
 	undo_redo.add_do_method(fx, "set_owner", owner_node)
 	undo_redo.add_do_reference(fx)
 	undo_redo.add_undo_method(host, "remove_child", fx)

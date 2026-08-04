@@ -1,4 +1,4 @@
-extends Node2D
+﻿extends Node2D
 
 ## Post-chain hash gate: a deterministic procedural base image run through the
 ## LitPostProcess chain (built from LitPostEffect child nodes) with passes at
@@ -10,14 +10,17 @@ extends Node2D
 ## table code, covered by review.
 ##
 ## Usage:
-##   godot --path . res://Test/gate_post_chain.tscn -- out=PATH [subset=display]
+##   godot --path . res://Test/gate_post_chain.tscn -- out=PATH [subset=display|reorder]
 ##   subset=display enables only the display-medium tail (order-sensitivity check);
+##   subset=reorder builds that same tail in reversed child order (child order is the
+##   draw order, so its hash must differ from display's while staying stable);
 ##   default enables every deterministic pass.
 ##
 ## Baselines (RX 7900 XTX, 1920x1080, 2026-08-01; hashes are machine-local - compare
 ## pre/post within one machine, re-baseline only with an intended visual change):
 ##   all     c38752ba5c32f7bdbf0a1d9f0af405b4
 ##   display 9d3fc542807fe787ba25e89dc611c823
+##   reorder (recorded 2026-08-03) d555da81e84b5572adc628617b8e94c5
 
 var _out := ""
 var _subset := "all"
@@ -66,73 +69,71 @@ func _ready() -> void:
 
 func _build_chain() -> LitPostProcess:
 	var post := LitPostProcess.new()
-	var display_only := _subset == "display"
+	var display_only := _subset != "all"
 	if not display_only:
 		var threshold := LitPostThreshold.new()
 		threshold.cutoff = 0.12
-		post.add_child(threshold)
+		post.add_effect(threshold)
 		var bloom := LitPostBloom.new()
 		bloom.threshold = 0.5
 		bloom.intensity = 1.2
 		bloom.radius = 5.5
-		post.add_child(bloom)
+		post.add_effect(bloom)
 		var halation := LitPostHalation.new()
 		halation.threshold = 0.45
 		halation.intensity = 1.1
 		halation.tint = Color(0.9, 0.35, 0.15)
-		post.add_child(halation)
+		post.add_effect(halation)
 		var glitch := LitPostGlitch.new()
 		glitch.intensity = 0.6
 		glitch.block_size = 18.0
 		glitch.rgb_shift = 6.0
 		glitch.speed = 0.0                 # frozen: deterministic capture
-		post.add_child(glitch)
+		post.add_effect(glitch)
 		var grade := LitPostColorGrade.new()
 		grade.exposure = 1.25
 		grade.contrast = 1.15
 		grade.saturation = 0.8
 		grade.tint = Color(0.95, 0.9, 1.0)
-		post.add_child(grade)
+		post.add_effect(grade)
 		var lut := LitPostLut.new()
 		lut.preset = LitPostLut.LutPreset.TEAL_ORANGE
 		lut.amount = 0.7
-		post.add_child(lut)
+		post.add_effect(lut)
 		var pixelate := LitPostPixelate.new()
 		pixelate.pixel_size = 3.0
-		post.add_child(pixelate)
+		post.add_effect(pixelate)
 		var posterize := LitPostPosterize.new()
 		posterize.levels = 6.0
 		posterize.strength = 0.8
-		post.add_child(posterize)
+		post.add_effect(posterize)
 		var outline := LitPostOutline.new()
 		outline.color = Color(0.1, 0.0, 0.2)
 		outline.thickness = 1.5
 		outline.threshold = 0.15
 		outline.strength = 0.9
-		post.add_child(outline)
+		post.add_effect(outline)
 		var halftone := LitPostHalftone.new()
 		halftone.dot_size = 7.0
 		halftone.angle = 25.0
 		halftone.amount = 0.5
-		post.add_child(halftone)
+		post.add_effect(halftone)
 		var dither := LitPostDither.new()
 		dither.levels = 5.0
 		dither.pattern_scale = 2.0
 		dither.strength = 0.6
-		post.add_child(dither)
+		post.add_effect(dither)
 		var leaks := LitPostLightLeaks.new()
 		leaks.intensity = 0.8
 		leaks.speed = 0.0                  # frozen: deterministic capture
 		leaks.color1 = Color(1.0, 0.4, 0.1)
-		post.add_child(leaks)
+		post.add_effect(leaks)
 	var letterbox := LitPostLetterbox.new()
 	letterbox.size = 0.09
 	letterbox.softness = 0.02
-	post.add_child(letterbox)
 	var lens := LitPostLensDistortion.new()
 	lens.amount = 0.3
 	lens.zoom = 1.05
-	post.add_child(lens)
 	var vhs := LitPostVhs.new()
 	vhs.wobble_strength = 3.0
 	vhs.wobble_speed = 0.0                 # frozen: deterministic capture
@@ -143,26 +144,31 @@ func _build_chain() -> LitPostProcess:
 	vhs.tracking_strength = 0.0
 	vhs.tracking_speed = 0.0
 	vhs.roll_strength = 0.0                # frozen: deterministic capture
-	post.add_child(vhs)
 	var crt := LitPostCrt.new()
 	crt.curvature = 0.3
 	crt.scanline_strength = 0.4
 	crt.scanline_count = 200.0
 	crt.mask_strength = 0.35
 	crt.brightness = 1.3
-	post.add_child(crt)
 	var aberration := LitPostAberration.new()
 	aberration.amount = 4.0
-	post.add_child(aberration)
 	var vignette := LitPostVignette.new()
 	vignette.strength = 0.5
 	vignette.softness = 0.4
-	post.add_child(vignette)
 	var focus := LitPostFocus.new()
 	focus.amount = -0.4
 	focus.radius = 2.5
 	focus.dream = 0.3
-	post.add_child(focus)
+	var display_chain := [letterbox, lens, vhs, crt, aberration, vignette, focus]
+	if _subset == "reorder":
+		# Child order IS the draw order: the same passes added bottom-up must produce
+		# a different (stable) image than the canonical display chain.
+		display_chain.reverse()
+		for fx in display_chain:
+			post.add_child(fx)
+	else:
+		for fx in display_chain:
+			post.add_effect(fx)
 	return post
 
 

@@ -646,7 +646,7 @@ func _post_fx(effect_script: GDScript) -> LitPostEffect:
 			break
 	if fx == null:
 		fx = effect_script.new()
-		_post.add_child(fx)
+		_post.add_effect(fx)
 		_demo_fx.append(fx)
 	fx.visible = true
 	return fx

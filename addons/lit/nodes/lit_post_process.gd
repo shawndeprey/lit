@@ -11,15 +11,20 @@ class_name LitPostProcess
 ## screen as drawn so far, and the per-pass CanvasLayer boundary makes each pass
 ## re-read the accumulated result, so passes compose in order.
 ##
-## Passes always run in a fixed canonical order, regardless of child order:
-##   threshold, bloom, halation, glitch, grade, lut, pixelate, posterize, outline,
-##   halftone, dither, letterbox, lens, vhs, crt, aberration, leaks, grain, vignette,
-##   focus.
-## Lower layers render first, so each pass reads the result of the ones before it. The
-## order follows a signal-to-display pipeline: correct and glow the image, grade its
-## color, stylize it, then matte it and run it through the display medium (tape, then
-## tube, then film grain). Letterbox sits at the content/display boundary, so the
-## display passes render over the bars.
+## Draw order is the child order, exactly like Godot's own node draw order: the top
+## child runs first, each later child reads the accumulated result of the ones above
+## it, and the bottom child draws last (on top). Reordering children in the scene tree
+## reorders the chain live, so effects stack in whatever order you want (e.g. move
+## Edge Outline below Posterize or Pixelate to ink a flattened, chunky image).
+##
+## The recommended default is a signal-to-display pipeline: correct and glow the image
+## (threshold, bloom, halation), corrupt the signal (glitch), grade its color (grade,
+## lut), stylize it (pixelate, posterize, outline, halftone, dither), then matte it
+## (letterbox) and run it through the display medium (lens, vhs, crt, aberration,
+## leaks, grain, vignette, focus). Letterbox sits at the content/display boundary, so
+## the display passes render over the bars. add_effect() and the inspector's "Add
+## Effect" button insert new passes at that canonical position (each effect's _rank());
+## the tree order stays yours to rearrange afterward.
 ##
 ## Placement: set this node's `layer` above your Lit receivers and below your UI. Pass
 ## child-layers increment from this node's `layer`, so wherever you park it the passes
@@ -52,30 +57,27 @@ func _process(_delta: float) -> void:
 		_relayer()
 
 
-## The chain's LitPostEffect children in canonical order: sorted by each effect's
-## _rank(), ties keeping child order.
-func effects() -> Array:
-	var keyed := []
+## Add an effect as a child at its canonical pipeline position (the first spot before
+## any existing effect with a higher _rank(); after its equals). The insertion point is
+## just a sensible default: child order IS the draw order, reorder freely afterward.
+func add_effect(fx: LitPostEffect) -> void:
+	add_child(fx)
+	for i in get_child_count():
+		var other := get_child(i) as LitPostEffect
+		if other != null and other != fx and other._rank() > fx._rank():
+			move_child(fx, i)
+			break
+
+
+## Assign each pass's CanvasLayer `layer` from the child order. Lower-layer passes
+## render first, so each reads the result of the ones before it.
+func _relayer() -> void:
 	var index := 0
 	for child in get_children():
 		var fx := child as LitPostEffect
 		if fx != null:
-			keyed.append([fx._rank(), index, fx])
+			fx.layer = layer + index + 1    # above this node's base layer, in order
 			index += 1
-	keyed.sort()
-	var out := []
-	for k in keyed:
-		out.append(k[2])
-	return out
-
-
-## Assign each pass's CanvasLayer `layer` from the canonical order. Lower-layer passes
-## render first, so each reads the result of the ones before it.
-func _relayer() -> void:
-	var index := 0
-	for fx in effects():
-		fx.layer = layer + index + 1    # above this node's base layer, in order
-		index += 1
 	_built_layer = layer
 
 
