@@ -167,8 +167,9 @@ func _setup() -> void:
 	var post := _find_first(scene, LitPostProcess)
 	if post:
 		post.visible = false
-		for k in ["bloom_enabled", "grade_enabled", "lut_enabled", "crt_enabled", "vhs_enabled", "glitch_enabled"]:
-			post.set(k, false)
+		for c in post.get_children():
+			if c is LitPostEffect:
+				c.visible = false
 
 	for occ in _find_all(scene, LightOccluder2D):
 		occ.sdf_collision = false

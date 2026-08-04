@@ -79,7 +79,9 @@ var _orig_lights: Array = []
 var _modulate: Node = null
 var _orig_modulate_color := Color.BLACK
 var _post: Node = null
-var _post_orig := {}
+var _post_orig_visible := false
+var _post_scene_fx := {}     # scene-authored LitPostEffect -> original visible
+var _demo_fx: Array = []     # effects the demo added; freed at teardown
 
 # The lighting model in effect before the demo touched it, captured on start and restored
 # on teardown. The PBR stage overrides the live global; everything else runs Phong.
@@ -316,10 +318,16 @@ func _teardown() -> void:
 	_orig_lights.clear()
 	if is_instance_valid(_modulate):
 		_modulate.color = _orig_modulate_color
+	for fx in _demo_fx:
+		if is_instance_valid(fx):
+			fx.queue_free()
+	_demo_fx.clear()
+	for fx in _post_scene_fx:
+		if is_instance_valid(fx):
+			fx.visible = _post_scene_fx[fx]
+	_post_scene_fx.clear()
 	if is_instance_valid(_post):
-		for k in _post_orig:
-			_post.set(k, _post_orig[k])
-	_post_orig.clear()
+		_post.visible = _post_orig_visible
 	# Put the lighting model back the way the scene had it.
 	RenderingServer.global_shader_parameter_set("lit_lighting_model", _orig_lighting_model)
 	_props_are_skulls = false
@@ -346,8 +354,10 @@ func _capture_scene_state() -> void:
 
 	_post = _find_first(scene, LitPostProcess)
 	if _post:
-		for k in ["visible", "bloom_enabled", "grade_enabled", "lut_enabled", "crt_enabled", "vhs_enabled", "glitch_enabled"]:
-			_post_orig[k] = _post.get(k)
+		_post_orig_visible = _post.visible
+		for c in _post.get_children():
+			if c is LitPostEffect:
+				_post_scene_fx[c] = c.visible
 		_post_all_off()
 
 	# The scene's own occluders (e.g. the skull's LightOccluder2D) stay live in the
@@ -621,8 +631,25 @@ func _post_all_off() -> void:
 	if not is_instance_valid(_post):
 		return
 	_post.visible = false
-	for k in ["bloom_enabled", "grade_enabled", "lut_enabled", "crt_enabled", "vhs_enabled", "glitch_enabled"]:
-		_post.set(k, false)
+	for c in _post.get_children():
+		if c is LitPostEffect:
+			c.visible = false
+
+
+## The chain's pass of the given effect class, shown; found among the host's children
+## (scene-authored or demo-added) or created and added on first use.
+func _post_fx(effect_script: GDScript) -> LitPostEffect:
+	var fx: LitPostEffect = null
+	for c in _post.get_children():
+		if c.get_script() == effect_script:
+			fx = c
+			break
+	if fx == null:
+		fx = effect_script.new()
+		_post.add_child(fx)
+		_demo_fx.append(fx)
+	fx.visible = true
+	return fx
 
 
 # =====================================================================================
@@ -740,54 +767,53 @@ func _enter_stage(idx: int) -> void:
 		"fx_bloom":
 			_ensure_count(8, ["point", "spot", "point", "dir"], true)   # thin out so the FX aren't blown out
 			if _post:
-				_post.bloom_threshold = 0.45
-				_post.bloom_intensity = 1.1
-				_post.bloom_radius = 4.0
+				var bloom := _post_fx(LitPostBloom)
+				bloom.threshold = 0.45
+				bloom.intensity = 1.1
+				bloom.radius = 4.0
 				_post.visible = true
-				_post.bloom_enabled = true
 		"fx_halation":
 			# Bloom stays on from the previous stage; layer fiery halation over it.
 			if _post:
-				_post.bloom_enabled = true
-				_post.bloom_threshold = 0.42
-				_post.bloom_intensity = 1.2
-				_post.bloom_radius = 4.5
-				_post.halation_threshold = 0.5
-				_post.halation_intensity = 0.95
-				_post.halation_radius = 6.0
-				_post.halation_tint = Color(1.0, 0.3, 0.1)
+				var bloom := _post_fx(LitPostBloom)
+				bloom.threshold = 0.42
+				bloom.intensity = 1.2
+				bloom.radius = 4.5
+				var halation := _post_fx(LitPostHalation)
+				halation.threshold = 0.5
+				halation.intensity = 0.95
+				halation.radius = 6.0
+				halation.tint = Color(1.0, 0.3, 0.1)
 				_post.visible = true
-				_post.halation_enabled = true
 		"fx_grade":
 			if _post:
-				_post.lut_preset = LitPostProcess.LutPreset.TEAL_ORANGE
-				_post.contrast = 1.12
-				_post.saturation = 1.2
+				_post_fx(LitPostBloom)
+				var grade := _post_fx(LitPostColorGrade)
+				grade.contrast = 1.12
+				grade.saturation = 1.2
+				var lut := _post_fx(LitPostLut)
+				lut.preset = LitPostLut.LutPreset.TEAL_ORANGE
 				_post.visible = true
-				_post.bloom_enabled = true
-				_post.grade_enabled = true
-				_post.lut_enabled = true
 		"fx_crt":
 			if _post:
+				_post_fx(LitPostBloom)
+				_post_fx(LitPostCrt)
 				_post.visible = true
-				_post.bloom_enabled = true
-				_post.crt_enabled = true
 		"fx_vhs":
 			if _post:
+				_post_fx(LitPostBloom)
+				_post_fx(LitPostVhs)
 				_post.visible = true
-				_post.bloom_enabled = true
-				_post.vhs_enabled = true
 		"fx_glitch":
 			if _post:
-				_post.glitch_intensity = 0.5
+				_post_fx(LitPostBloom)
+				_post_fx(LitPostGlitch).intensity = 0.5
 				_post.visible = true
-				_post.bloom_enabled = true
-				_post.glitch_enabled = true
 		"finale":
 			_ensure_count(8, ["point", "spot", "point", "dir"], true)
 			if _post:
+				_post_fx(LitPostBloom)
 				_post.visible = true
-				_post.bloom_enabled = true
 
 
 # Apply one shadow algorithm to every live demo light. The Shadow Algorithms section
