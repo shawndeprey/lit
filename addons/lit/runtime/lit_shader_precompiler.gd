@@ -51,8 +51,74 @@ func _init() -> void:
 static func work_list() -> Array:
 	var out: Array = []
 	out.append_array(static_shaders())
+	out.append_array(used_post_shaders())
 	out.append_array(LitShaderLibrary.all_variant_flags())
 	return out
+
+
+static var _post_scan = null
+
+## Post-effect shaders referenced by any project scene, found by reading scene
+## dependency headers (never loading the scenes themselves). Effects added purely from
+## code at runtime are invisible here and compile on first use, as before.
+static func used_post_shaders() -> Array:
+	if _post_scan != null:
+		return _post_scan
+	var effect_scripts := _post_effect_scripts()
+	var found := {}
+	if not effect_scripts.is_empty():
+		var scenes: Array[String] = []
+		_collect_scenes("res://", scenes)
+		for scene in scenes:
+			for dep in _scene_deps(scene):
+				var path := dep.get_slice("::", dep.get_slice_count("::") - 1)
+				if effect_scripts.has(path):
+					var script := load(path) as Script
+					var sh: Variant = script.get_script_constant_map().get("SHADER") if script != null else null
+					if sh is Shader and not (sh as Shader).resource_path.is_empty():
+						found[(sh as Shader).resource_path] = true
+	var out: Array = found.keys()
+	out.sort()
+	_post_scan = out
+	return out
+
+
+## Script paths of every global class extending LitPostEffect (the SHADER const
+## convention covers built-ins and generated custom effects).
+static func _post_effect_scripts() -> Dictionary:
+	var classes := ProjectSettings.get_global_class_list()
+	var by_name := {}
+	for c in classes:
+		by_name[c["class"]] = c
+	var out := {}
+	for c in classes:
+		var base: StringName = c.base
+		while by_name.has(base):
+			if base == &"LitPostEffect":
+				out[c.path] = true
+				break
+			base = by_name[base].base
+	return out
+
+
+static func _collect_scenes(dir: String, out: Array[String]) -> void:
+	for f in DirAccess.get_files_at(dir):
+		var path := String(dir.path_join(f)).trim_suffix(".remap")
+		if path.get_extension() == "tscn" or path.get_extension() == "scn":
+			out.append(path)
+	for d in DirAccess.get_directories_at(dir):
+		if not d.begins_with("."):
+			_collect_scenes(dir.path_join(d), out)
+
+
+static func _scene_deps(scene: String) -> PackedStringArray:
+	var deps := ResourceLoader.get_dependencies(scene)
+	# Exported PCKs remap converted scenes; follow the redirect by hand if the loader didn't.
+	if deps.is_empty() and FileAccess.file_exists(scene + ".remap"):
+		var cfg := ConfigFile.new()
+		if cfg.load(scene + ".remap") == OK:
+			deps = ResourceLoader.get_dependencies(str(cfg.get_value("remap", "path", "")))
+	return deps
 
 
 ## The disk shaders warmed as-is: the three tier entry files (what authored scene
