@@ -3,7 +3,7 @@ shader_type canvas_item;
 // 2x1 state, ping-ponged through prev_tex: pixel 0 = applied EV (B = validity),
 // pixel 1 = slow scene-baseline EV (B = has seen a lit frame). Only deviation from
 // the baseline is countered, so a stable scene rests at the authored look.
-uniform sampler2D reduce_tex : hint_default_black, filter_nearest;
+uniform sampler2D hist_tex : hint_default_black, filter_nearest;
 uniform sampler2D prev_tex : hint_default_black, filter_nearest;
 
 uniform float delta_t = 0.016;
@@ -14,13 +14,13 @@ uniform float max_exposure = 1.5;
 uniform float light_adapt_time = 0.85;
 uniform float dark_adapt_time = 3.0;
 uniform float acclimate_time = 6.0;
-uniform float center_weight = 0.6;
 uniform float histogram_low = 0.7;
 uniform float histogram_high = 0.97;
 
 const int RW = 64;                 // must match the node's _REDUCE_SIZE
 const int RH = 36;
-const int BINS = 64;
+const int BINS = 64;               // must match the hist shader
+const int GROUPS = 6;              // must match the hist shader
 const float EV_MIN = -12.0;        // must match the reduce shader's encoding range
 const float EV_MAX = 0.0;
 const float GEV = 6.0;             // applied-exposure range, must match apply shader
@@ -38,20 +38,20 @@ float decode16(vec2 rg) {
 	return (rg.x * 255.0 * 256.0 + rg.y * 255.0) / 65535.0;
 }
 
+float decode24(vec3 rgb) {
+	return (rgb.r * 255.0 * 65536.0 + rgb.g * 255.0 * 256.0 + rgb.b * 255.0) / 16777215.0;
+}
+
 void fragment() {
 	float hist[BINS];
-	for (int i = 0; i < BINS; i++) {
-		hist[i] = 0.0;
-	}
 	float total = 0.0;
-	for (int y = 0; y < RH; y++) {
-		for (int x = 0; x < RW; x++) {
-			vec2 n = (vec2(float(x), float(y)) + 0.5) / vec2(float(RW), float(RH)) - 0.5;
-			float w = mix(1.0, exp(-12.0 * dot(n, n)), center_weight);
-			int b = int(texelFetch(reduce_tex, ivec2(x, y), 0).r * float(BINS - 1) + 0.5);
-			hist[b] += w;
-			total += w;
+	for (int i = 0; i < BINS; i++) {
+		float m = 0.0;
+		for (int g = 0; g < GROUPS; g++) {
+			m += decode24(texelFetch(hist_tex, ivec2(i, g), 0).rgb);
 		}
+		hist[i] = m * float(RW * RH);
+		total += hist[i];
 	}
 
 	// average EV of the histogram mass between the two percentiles

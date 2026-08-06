@@ -9,9 +9,11 @@ class_name LitPostAutoExposure
 
 const SHADER := preload("res://addons/lit/shaders/post/lit_post_auto_exposure.gdshader")
 const REDUCE_SHADER := preload("res://addons/lit/shaders/post/lit_post_auto_exposure_reduce.gdshader")
+const HIST_SHADER := preload("res://addons/lit/shaders/post/lit_post_auto_exposure_hist.gdshader")
 const ADAPT_SHADER := preload("res://addons/lit/shaders/post/lit_post_auto_exposure_adapt.gdshader")
 
-const _REDUCE_SIZE := Vector2i(64, 36)   # must match RW/RH in the adapt shader
+const _REDUCE_SIZE := Vector2i(64, 36)   # must match RW/RH in the hist/adapt shaders
+const _HIST_SIZE := Vector2i(64, 6)      # must match BINS/GROUPS in the hist/adapt shaders
 
 ## How strongly the effect is applied overall. 1.0 = full effect, 0.0 = off, and
 ## values in between are a partial blend (animate this from code to fade the whole
@@ -115,8 +117,10 @@ const _REDUCE_SIZE := Vector2i(64, 36)   # must match RW/RH in the adapt shader
 		apply_params()
 
 var _reduce_vp: SubViewport = null
+var _hist_vp: SubViewport = null
 var _adapt_vp: Array[SubViewport] = []
 var _reduce_mat: ShaderMaterial = null   # persists across toggles, like _mat
+var _hist_mat: ShaderMaterial = null
 var _adapt_mat: Array[ShaderMaterial] = []
 var _flip := false
 
@@ -142,9 +146,10 @@ func _apply_extra_params(_mat_out: ShaderMaterial) -> void:
 		mat.set_shader_parameter("light_adapt_time", light_adapt_time)
 		mat.set_shader_parameter("dark_adapt_time", dark_adapt_time)
 		mat.set_shader_parameter("acclimate_time", acclimate_time)
-		mat.set_shader_parameter("center_weight", center_weight)
 		mat.set_shader_parameter("histogram_low", histogram_low)
 		mat.set_shader_parameter("histogram_high", histogram_high)
+	if _hist_mat != null:
+		_hist_mat.set_shader_parameter("center_weight", center_weight)
 
 
 func _refresh() -> void:
@@ -170,32 +175,39 @@ func _sync_meter() -> void:
 			_reduce_mat.set_shader_parameter("source_tex", get_viewport().get_texture())
 		return
 	if not active:
-		for vp in [_reduce_vp] + _adapt_vp:
+		for vp in [_reduce_vp, _hist_vp] + _adapt_vp:
 			remove_child(vp)
 			vp.free()
 		_reduce_vp = null
+		_hist_vp = null
 		_adapt_vp.clear()
 		# unbind freed viewports; black defaults read as neutral
 		_reduce_mat.set_shader_parameter("source_tex", null)
+		_hist_mat.set_shader_parameter("reduce_tex", null)
 		for mat in _adapt_mat:
-			mat.set_shader_parameter("reduce_tex", null)
+			mat.set_shader_parameter("hist_tex", null)
 			mat.set_shader_parameter("prev_tex", null)
 		_mat.set_shader_parameter("exposure_tex", null)
 		return
 	if _reduce_mat == null:
 		_reduce_mat = ShaderMaterial.new()
 		_reduce_mat.shader = REDUCE_SHADER
+		_hist_mat = ShaderMaterial.new()
+		_hist_mat.shader = HIST_SHADER
 		for i in 2:
 			var mat := ShaderMaterial.new()
 			mat.shader = ADAPT_SHADER
 			_adapt_mat.append(mat)
 	_reduce_vp = _make_meter_viewport(_REDUCE_SIZE, _reduce_mat)
 	_reduce_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_hist_vp = _make_meter_viewport(_HIST_SIZE, _hist_mat)
+	_hist_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	for i in 2:
 		_adapt_vp.append(_make_meter_viewport(Vector2i(2, 1), _adapt_mat[i]))
 	_reduce_mat.set_shader_parameter("source_tex", get_viewport().get_texture())
+	_hist_mat.set_shader_parameter("reduce_tex", _reduce_vp.get_texture())
 	for i in 2:
-		_adapt_mat[i].set_shader_parameter("reduce_tex", _reduce_vp.get_texture())
+		_adapt_mat[i].set_shader_parameter("hist_tex", _hist_vp.get_texture())
 		_adapt_mat[i].set_shader_parameter("prev_tex", _adapt_vp[1 - i].get_texture())
 	apply_params()
 
