@@ -76,10 +76,10 @@ That's it — everything updates live in the editor as you build.
 - **Negative lights.** Flip a light to *subtract* to carve pools of extra darkness.
 - **Works on any 2D node.** Sprites, tilemaps, polygons — if it draws, it can be lit.
 - **Live in the editor.** See your lighting while you build, no need to hit play.
-- **20+ post-processing effects** on a single node: bloom, color grade, LUT presets,
-  vignette, CRT, VHS, film grain, chromatic aberration, posterize, pixelate, halftone,
-  dither, outline, halation, letterbox, lens distortion, light leaks, glitch, and a
-  focus/blur-to-sharpen dial.
+- **20+ post-processing effects** on a single node: auto exposure (eye adaptation),
+  bloom, color grade, LUT presets, vignette, CRT, VHS, film grain, chromatic
+  aberration, posterize, pixelate, halftone, dither, outline, halation, letterbox,
+  lens distortion, light leaks, glitch, and a focus/blur-to-sharpen dial.
 
 ---
 

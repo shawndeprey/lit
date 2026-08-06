@@ -13,6 +13,9 @@ extends EditorInspectorPlugin
 ## the chain.
 
 const CATEGORIES := [
+	["Exposure", [
+		["Auto Exposure", "res://addons/lit/nodes/post/lit_post_auto_exposure.gd"],
+	]],
 	["Glow", [
 		["Threshold", "res://addons/lit/nodes/post/lit_post_threshold.gd"],
 		["Bloom", "res://addons/lit/nodes/post/lit_post_bloom.gd"],

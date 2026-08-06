@@ -32,6 +32,7 @@ const LIGHT_COUNT := 128
 #   shadows=off   kinds=point|spot|dir|cookie|mix   lights=N   warmup=N   measure=N
 #   shadow_algo=raymarch|cone|stochastic   sdf=25|50|100 (SDF scale probe)
 #   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
+#   post=Name,Name  add fresh default-state post effects (e.g. post=Bloom,AutoExposure)
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
 # 3 (stochastic); switching restarts the warmup/measure cycle so the reported numbers
 # always describe a single algorithm. Receiver shaders follow via the registry's
@@ -56,6 +57,7 @@ var _opt_maskcull := "on"
 var _opt_rxmask := 0
 # rxnode=NAME: shadow_ignore_mask 1 on the named LitSprite2D (small-receiver probe).
 var _opt_rxnode := ""
+var _opt_post := ""
 
 # Clock value used for the deterministic capture frame.
 const CAPTURE_CLOCK := 60.0
@@ -127,6 +129,8 @@ func _ready() -> void:
 				_opt_rxmask = int(kv[1])
 			"rxnode":
 				_opt_rxnode = kv[1]
+			"post":
+				_opt_post = kv[1]
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -170,6 +174,10 @@ func _setup() -> void:
 		for c in post.get_children():
 			if c is LitPostEffect:
 				c.visible = false
+
+	if _opt_post != "" and not _add_post_chain():
+		get_tree().quit(1)
+		return
 
 	for occ in _find_all(scene, LightOccluder2D):
 		occ.sdf_collision = false
@@ -218,6 +226,33 @@ func _setup() -> void:
 
 	_state = "warmup"
 	_state_time = 0.0
+
+
+## post=CSV: fresh LitPostProcess with the named effects at default state, resolved
+## against every LitPostEffect subclass ("Bloom" or "LitPostBloom", case-insensitive).
+func _add_post_chain() -> bool:
+	var classes := ProjectSettings.get_global_class_list()
+	var by_name := {}
+	for c in classes:
+		by_name[String(c["class"])] = c
+	var effects := {}
+	for c in classes:
+		var base := String(c["base"])
+		while by_name.has(base) and base != "LitPostEffect":
+			base = String(by_name[base]["base"])
+		if base == "LitPostEffect":
+			effects[String(c["class"]).to_lower().trim_prefix("litpost")] = String(c["path"])
+	var post := LitPostProcess.new()
+	for raw in _opt_post.split(","):
+		var key := raw.strip_edges().to_lower().trim_prefix("litpost")
+		if not effects.has(key):
+			var valid := effects.keys()
+			valid.sort()
+			print("LITBENCH error unknown post effect '%s' (valid: %s)" % [raw.strip_edges(), ", ".join(valid)])
+			return false
+		post.add_effect((load(effects[key]) as Script).new())
+	add_child(post)
+	return true
 
 
 func _compute_area() -> void:
@@ -493,6 +528,7 @@ func _report() -> void:
 			% [stall, hitch, smooth, worst * 1000.0, smooth_time / total])
 
 	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
+	print("LITBENCH post=%s" % (_opt_post if _opt_post != "" else "off"))
 	print("LITBENCH frames=%d" % n)
 	print("LITBENCH avg_fps=%.2f" % fps)
 	print("LITBENCH avg_frame_ms=%.3f" % avg_ms)
