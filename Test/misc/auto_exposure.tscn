@@ -116,3 +116,11 @@ metadata/_custom_type_script = "uid://djrtgftop1i8a"
 [node name="AutoExposure" type="Node2D" parent="LitPostProcess" unique_id=38003394]
 script = ExtResource("7")
 metadata/_custom_type_script = "uid://behhf75ah8gi3"
+
+[node name="UI" type="CanvasLayer" parent="."]
+layer = 128
+
+[node name="FlashButton" type="Button" parent="UI"]
+offset_left = 16.0
+offset_top = 16.0
+text = "Flash Cascade"

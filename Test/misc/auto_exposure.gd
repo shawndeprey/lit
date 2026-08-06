@@ -15,7 +15,13 @@ var _lights: Array = []   # [light, base energy, base range, flash start time]
 func _ready() -> void:
 	for light in $Lights.get_children():
 		light.color = Color.from_hsv(randf(), randf_range(0.6, 1.0), 1.0)
-		_lights.append([light, light.energy, light.range, start_delay + randf() * cascade_window])
+		_lights.append([light, light.energy, light.range, 0.0])
+	$UI/FlashButton.pressed.connect(_start_cascade)
+	_start_cascade()
+
+func _start_cascade() -> void:
+	for entry in _lights:
+		entry[3] = _t + start_delay + randf() * cascade_window
 
 func _process(delta: float) -> void:
 	_t += delta
