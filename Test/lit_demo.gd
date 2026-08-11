@@ -891,7 +891,9 @@ func _update_daynight(p: float) -> void:
 	# from straight above (shadows below), 0 = from the west.
 	n.rotation = lerpf(PI, 0.0, u)
 	n.shadow_length = 0.008 + 0.992 * pow(1.0 - elev, 1.6)
-	n.source_angle = lerpf(8.0, 5.0, elev)
+	# The source widens toward overhead: the short midday contact shadows feather out
+	# instead of stamping solid black, while the long horizon shadows keep their shape.
+	n.source_angle = lerpf(8.0, 18.0, elev)
 	n.height = lerpf(20.0, 110.0, elev)
 	# Energy reaches exactly 0 at the horizons: the twilight ambient (shadowless)
 	# carries dusk and dawn, so the direction flip between the setting sun and the
