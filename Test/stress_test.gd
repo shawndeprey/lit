@@ -19,6 +19,9 @@ const SHADOW_ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 ## Shadow algorithm every spawned light starts on; keys 1/2/3 still switch live
 ## (switching restarts the warmup/measure cycle).
 @export var shadow_algorithm: LitPointLight2D.ShadowAlgorithm = LitPointLight2D.ShadowAlgorithm.RAYMARCHED
+## Give every spawned light a random (seeded) shadow_length fraction, exercising the
+## march cap + tip closure. Off by default so standing benchmarks stay comparable.
+@export var randomize_shadow_length: bool = false
 
 # Deterministic shadow-source parameters for the cone/stochastic runs. The angle is a
 # full angular diameter (source_angle convention), so this marches the same cone as
@@ -31,6 +34,7 @@ const LIGHT_COUNT := 128
 # Overrides for cost attribution, passed after "--" on the CLI:
 #   shadows=off   kinds=point|spot|dir|cookie|mix   lights=N   warmup=N   measure=N
 #   shadow_algo=raymarch|cone|stochastic   sdf=25|50|100 (SDF scale probe)
+#   shadowlen=on   random (seeded) shadow_length fraction per light
 #   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
 #   post=Name,Name  add fresh default-state post effects (e.g. post=Bloom,AutoExposure)
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
@@ -58,6 +62,7 @@ var _opt_rxmask := 0
 # rxnode=NAME: shadow_ignore_mask 1 on the named LitSprite2D (small-receiver probe).
 var _opt_rxnode := ""
 var _opt_post := ""
+var _opt_shadowlen := false
 
 # Clock value used for the deterministic capture frame.
 const CAPTURE_CLOCK := 60.0
@@ -89,6 +94,7 @@ var _hud: Label
 
 func _ready() -> void:
 	_opt_shadow_algo = SHADOW_ALGO_NAMES[shadow_algorithm]
+	_opt_shadowlen = randomize_shadow_length
 	for arg in OS.get_cmdline_user_args():
 		var kv := arg.split("=")
 		if kv.size() != 2:
@@ -131,6 +137,8 @@ func _ready() -> void:
 				_opt_rxnode = kv[1]
 			"post":
 				_opt_post = kv[1]
+			"shadowlen":
+				_opt_shadowlen = kv[1] == "on"
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -223,6 +231,13 @@ func _setup() -> void:
 		_spawn_light(kind, Color.from_hsv(_rng.randf(), 0.85, 1.0))
 	if _opt_masks == "split" and not _lights.is_empty():
 		_lights[0].node.shadow_mask = 3
+	# Own RNG stream: the main _rng draws stay identical to shadowlen=off runs, so the
+	# fractions are the ONLY difference between the two configs.
+	if _opt_shadowlen:
+		var slrng := RandomNumberGenerator.new()
+		slrng.seed = RNG_SEED + 1
+		for d in _lights:
+			d.node.shadow_length = slrng.randf_range(0.1, 0.9)
 
 	_state = "warmup"
 	_state_time = 0.0
@@ -288,7 +303,9 @@ func _find_all(node: Node, type, acc := []) -> Array:
 	return acc
 
 
-# --- props: identical construction to lit_demo.gd -----------------------------------
+# --- props: mirrors lit_demo.gd's layout. The demo's circle props moved to LitSprite2D
+# (native self-exclusion); the bench deliberately keeps plain sprites + the fast shader
+# so standing benchmark numbers stay comparable across runs. ------------------------
 
 func _spawn_props() -> void:
 	for i in PROP_COUNT:
@@ -528,6 +545,7 @@ func _report() -> void:
 			% [stall, hitch, smooth, worst * 1000.0, smooth_time / total])
 
 	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
+	print("LITBENCH shadowlen=%s" % ("on" if _opt_shadowlen else "off"))
 	print("LITBENCH post=%s" % (_opt_post if _opt_post != "" else "off"))
 	print("LITBENCH frames=%d" % n)
 	print("LITBENCH avg_fps=%.2f" % fps)
