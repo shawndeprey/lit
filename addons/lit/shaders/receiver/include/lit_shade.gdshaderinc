@@ -180,14 +180,18 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		// The light's shadow mask (t7.w), for the effective-layer rx ignore test.
 		int rx_smask = int(round(texelFetch(lit_light_data, ivec2(7, i), 0).w));
 #endif
+		// SDF units per screen pixel, to convert world-px shadow fields.
+		float px_to_sdf = sdf_diag / length(lit_viewport_size);
+
 		vec2 march_dir;
 		float march_len;
 		if (is_directional) {
 			// March a fixed direction across the SDF. screen_uv_to_sdf is affine, so
 			// the SDF-space direction comes from offsetting the fragment UV along the
-			// toward-light dir; the distance scales with the screen.
+			// toward-light dir. t1.z is the light's shadow_reach in world px, so the
+			// march length is zoom-invariant - never a screen-derived distance.
 			march_dir = normalize(screen_uv_to_sdf(frag_uv + shadow_dir_uv) - frag_sdf);
-			march_len = sdf_diag * directional_shadow_reach;
+			march_len = t1.z * lit_canvas_scale * px_to_sdf;
 		} else {
 			// Point and spot both march toward the light's screen position.
 			vec2 delta = screen_uv_to_sdf(light_uv) - frag_sdf;
@@ -195,26 +199,20 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			march_dir = delta / max(march_len, 0.0001);
 		}
 
-		// SDF units per screen pixel, to convert world-px shadow fields.
-		float px_to_sdf = sdf_diag / length(lit_viewport_size);
-
-		// shadow_length: t_cap < march_len caps the march, and the marchers close the
-		// umbra there over a tip band one cone-width wide (lit_tip_weight). Directional
-		// packs a world-px length in t1.z (0 = unlimited); point/spot pack a fraction of
-		// the fragment-to-light distance, quantized to 12 bits in flags bits 6-17
-		// (0 = full march), so the cap rides in texels already fetched.
+		// shadow_length (flags bits 6-17, quantized 12 bits): fraction of the march the
+		// shadow may cover; the marchers close every umbra at t_cap over a tip band one
+		// cone-width wide (lit_tip_weight). Directional: fraction of shadow_reach, whose
+		// end is a real world boundary, so the closure always applies. Point/spot:
+		// fraction of the fragment-to-light distance; 0 = full march, uncapped.
+		int cap_q = (flags >> 6) & 4095;
 		float t_cap = march_len;
+		bool capped = is_directional;
 		if (is_directional) {
-			if (t1.z > 0.0) {
-				t_cap = min(march_len, t1.z * lit_canvas_scale * px_to_sdf);
-			}
-		} else {
-			int cap_q = (flags >> 6) & 4095;
-			if (cap_q != 0) {
-				t_cap = march_len * float(cap_q) * (1.0 / 4095.0);
-			}
+			t_cap = march_len * float(cap_q) * (1.0 / 4095.0);
+		} else if (cap_q != 0) {
+			t_cap = march_len * float(cap_q) * (1.0 / 4095.0);
+			capped = true;
 		}
-		bool capped = t_cap < march_len;
 
 		// Adaptive step budget: shorter marches need fewer steps to stay well-sampled.
 		// Scale by the march length as a fraction of the screen diagonal; keep a floor

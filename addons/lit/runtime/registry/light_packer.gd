@@ -6,7 +6,7 @@ extends RefCounted
 ##  2 spot:        texel 1 is a position (as a point); texel 4 adds the cone
 ##                 (aim direction plus the cosines of the inner and outer angles).
 ## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range (directional:
-## shadow_length, world px; 0 = unlimited) | energy, t2 = color.rgb | height,
+## shadow_reach, world px) | energy, t2 = color.rgb | height,
 ## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
 ## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
 ## when flags bit 2 is set), t7 = shadow source size | samples | jitter | shadow_mask
@@ -15,7 +15,8 @@ extends RefCounted
 ## is set). type/flags/mask sit in texel 0 so the shader can mask-reject after a single
 ## fetch. flags: bit 0 shadow_enabled, bit 1 subtractive, bit 2 textured, bits 3-4
 ## shadow algorithm (ShadowAlgorithm order on the light nodes), bit 5 shadow exclusions,
-## bits 6-17 point/spot shadow_length fraction quantized to 12 bits (0 = full march).
+## bits 6-17 shadow_length fraction quantized to 12 bits (point/spot: 0 = full march,
+## uncapped; directional: plain fraction of shadow_reach, 4095 = full reach).
 
 const LitCookieAtlasScript := preload("res://addons/lit/runtime/lit_cookie_atlas.gd")
 const FrameContext := preload("res://addons/lit/runtime/registry/frame_context.gd")
@@ -201,7 +202,8 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	var o := row * _tpl * 4
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
 			+ 8.0 * float(light.shadow_algorithm) \
-			+ (_pack_excl(o, light) if _excl_active else 0.0)
+			+ (_pack_excl(o, light) if _excl_active else 0.0) \
+			+ 64.0 * roundf(clampf(light.shadow_length, 0.0, 1.0) * 4095.0)
 	const TYPE_DIRECTIONAL := 1.0
 
 	# Texel 0: type | flags | light_mask | (falloff unused)
@@ -210,10 +212,10 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	_pack_buf[o + 2] = float(light.light_mask)
 	_pack_buf[o + 3] = 1.0
 
-	# Texel 1: dir.x | dir.y | shadow_length (world px; 0 = unlimited) | energy
+	# Texel 1: dir.x | dir.y | shadow_reach (world px) | energy
 	_pack_buf[o + 4] = dir_px.x
 	_pack_buf[o + 5] = dir_px.y
-	_pack_buf[o + 6] = maxf(light.shadow_length, 0.0)
+	_pack_buf[o + 6] = maxf(light.shadow_reach, 0.0)
 	_pack_buf[o + 7] = light.energy
 
 	# Texel 2: color.rgb | height

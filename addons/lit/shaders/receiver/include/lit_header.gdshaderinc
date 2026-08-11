@@ -187,11 +187,6 @@ uniform float footprint_shadow = 16.0;
 // so the direction reads clearly. Larger is more grazing.
 uniform float directional_horizontal_scale = 32.0;
 
-// How far a directional shadow marches across the SDF before it counts as open sky,
-// in screen diagonals. Scaling to screen size keeps the fixed step budget
-// well-sampled; a fixed huge distance would under-sample the penumbra.
-uniform float directional_shadow_reach = 1.0;
-
 // Screen-pixel march basis, needed by the tile lookups of y-sort and per-receiver
 // exclusion; the macros erase it from variants with neither.
 #if defined(LIT_YSORT) || defined(LIT_OCC_RX)
