@@ -5,15 +5,17 @@ extends RefCounted
 ##  1 directional: texel 1 is a screen-space direction toward the light.
 ##  2 spot:        texel 1 is a position (as a point); texel 4 adds the cone
 ##                 (aim direction plus the cosines of the inner and outer angles).
-## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range | energy,
-## t2 = color.rgb | height, t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
+## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range (directional:
+## shadow_length, world px; 0 = unlimited) | energy, t2 = color.rgb | height,
+## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
 ## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
 ## when flags bit 2 is set), t7 = shadow source size | samples | jitter | shadow_mask
 ## (mask packed only while rx receivers exist), t8.x = exempt rect count, t9 = exempt union bounds,
 ## t10-13 = the light's exempt-occluder canvas rects (t8-t13 read only when flags bit 5
 ## is set). type/flags/mask sit in texel 0 so the shader can mask-reject after a single
 ## fetch. flags: bit 0 shadow_enabled, bit 1 subtractive, bit 2 textured, bits 3-4
-## shadow algorithm (ShadowAlgorithm order on the light nodes), bit 5 shadow exclusions.
+## shadow algorithm (ShadowAlgorithm order on the light nodes), bit 5 shadow exclusions,
+## bits 6-17 point/spot shadow_length fraction quantized to 12 bits (0 = full march).
 
 const LitCookieAtlasScript := preload("res://addons/lit/runtime/lit_cookie_atlas.gd")
 const FrameContext := preload("res://addons/lit/runtime/registry/frame_context.gd")
@@ -128,6 +130,13 @@ func _pack_excl(o: int, light: Node2D) -> float:
 		_pack_buf[b + 3] = v.w
 	return 32.0
 
+## Point/spot shadow_length fraction, quantized to 12 bits and pre-shifted into flags
+## bits 6-17. A full-length fraction packs 0, keeping default rows bit-identical.
+func _pack_shadow_length(frac: float) -> float:
+	if frac >= 1.0:
+		return 0.0
+	return 64.0 * roundf(clampf(frac, 0.01, 1.0) * 4095.0)
+
 ## Pack one point light into the row starting at `row` in _pack_buf.
 func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
 	# Position to normalized screen UV, the one canonical space.
@@ -142,7 +151,8 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	var textured := _pack_cookie(o, light, canvas_xform)
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured) \
 			+ 8.0 * float(light.shadow_algorithm) \
-			+ (_pack_excl(o, light) if _excl_active else 0.0)
+			+ (_pack_excl(o, light) if _excl_active else 0.0) \
+			+ _pack_shadow_length(light.shadow_length)
 	const TYPE_POINT := 0.0
 
 	# Texel 0: type | flags | light_mask | falloff
@@ -200,10 +210,10 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	_pack_buf[o + 2] = float(light.light_mask)
 	_pack_buf[o + 3] = 1.0
 
-	# Texel 1: dir.x | dir.y | (range unused) | energy
+	# Texel 1: dir.x | dir.y | shadow_length (world px; 0 = unlimited) | energy
 	_pack_buf[o + 4] = dir_px.x
 	_pack_buf[o + 5] = dir_px.y
-	_pack_buf[o + 6] = 0.0
+	_pack_buf[o + 6] = maxf(light.shadow_length, 0.0)
 	_pack_buf[o + 7] = light.energy
 
 	# Texel 2: color.rgb | height
@@ -253,7 +263,8 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	var textured := _pack_cookie(o, light, canvas_xform)
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured) \
 			+ 8.0 * float(light.shadow_algorithm) \
-			+ (_pack_excl(o, light) if _excl_active else 0.0)
+			+ (_pack_excl(o, light) if _excl_active else 0.0) \
+			+ _pack_shadow_length(light.shadow_length)
 	const TYPE_SPOT := 2.0
 
 	# Texel 0: type | flags | light_mask | falloff

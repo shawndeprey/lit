@@ -31,12 +31,17 @@ const int LIT_MAX_SHADOW_SAMPLES = 32;
 // within the wedge, which contains all sample rays. Between the endpoints the n-march
 // estimate runs unchanged, so multi-occluder accumulation (which the single-blocker
 // cone minimum underestimates) is preserved exactly where it matters.
-float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float src,
+// t_cap caps every march short of the source (shadow_length); t_cap == maxd is
+// uncapped. The tip band spans the FULL source's penumbra width at the cap and is
+// shared by the gate and all strata, so the aggregate closes as one shadow.
+float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float t_cap, float src,
 		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
+	bool capped = t_cap < maxd;
 	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
-	float gate = lit_shadow_cone(frag_sdf, dir, maxd, w_gate, max_steps, frag_d,
-			!is_dir, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+	float band = capped ? w_gate * t_cap : 0.0;
+	float gate = lit_shadow_cone(frag_sdf, dir, t_cap, maxd, band, w_gate, max_steps, frag_d,
+			!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 	if (gate <= 0.0) {
 		return 0.0;
 	}
@@ -51,6 +56,9 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 	// Half-extent of one stratum: each sub-cone's angular half-width (directional) or
 	// half-width at the source (point/spot), so the n sub-cones tile the source exactly.
 	float half_stratum = src / float(n);
+	// Per-stratum cap as a fraction so point/spot strata (whose lengths differ per
+	// stratum) all close on the same tip isoline.
+	float cap_frac = capped ? t_cap / max(maxd, 1e-4) : 1.0;
 	float sum = 0.0;
 	for (int i = 0; i < n; i++) {
 		float rnd = fract(ign + float(i) * 0.61803398875);
@@ -67,8 +75,9 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 			sdir = delta / max(smaxd, 1e-4);
 			w_sub = half_stratum / max(smaxd, 1e-4);
 		}
-		sum += lit_shadow_cone(frag_sdf, sdir, smaxd, max(w_sub, 1e-4), max_steps, frag_d,
-				!is_dir, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+		sum += lit_shadow_cone(frag_sdf, sdir, smaxd * cap_frac, smaxd, band, max(w_sub, 1e-4),
+				max_steps, frag_d,
+				!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 	}
 	return sum / float(n);
 }

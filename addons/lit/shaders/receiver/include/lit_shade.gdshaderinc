@@ -195,12 +195,33 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			march_dir = delta / max(march_len, 0.0001);
 		}
 
+		// SDF units per screen pixel, to convert world-px shadow fields.
+		float px_to_sdf = sdf_diag / length(lit_viewport_size);
+
+		// shadow_length: t_cap < march_len caps the march, and the marchers close the
+		// umbra there over a tip band one cone-width wide (lit_tip_weight). Directional
+		// packs a world-px length in t1.z (0 = unlimited); point/spot pack a fraction of
+		// the fragment-to-light distance, quantized to 12 bits in flags bits 6-17
+		// (0 = full march), so the cap rides in texels already fetched.
+		float t_cap = march_len;
+		if (is_directional) {
+			if (t1.z > 0.0) {
+				t_cap = min(march_len, t1.z * lit_canvas_scale * px_to_sdf);
+			}
+		} else {
+			int cap_q = (flags >> 6) & 4095;
+			if (cap_q != 0) {
+				t_cap = march_len * float(cap_q) * (1.0 / 4095.0);
+			}
+		}
+		bool capped = t_cap < march_len;
+
 		// Adaptive step budget: shorter marches need fewer steps to stay well-sampled.
 		// Scale by the march length as a fraction of the screen diagonal; keep a floor
 		// so very short marches still resolve a penumbra. Off by default (fixed budget).
 		int steps = shadow_steps;
 		if (lit_shadow_step_scaling) {
-			float frac = clamp(march_len / max(sdf_diag, 0.0001), 0.0, 1.0);
+			float frac = clamp(t_cap / max(sdf_diag, 0.0001), 0.0, 1.0);
 			steps = int(ceil(frac * float(lit_shadow_steps_max)));
 			steps = clamp(steps, 16, lit_shadow_steps_max);
 		}
@@ -216,7 +237,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			s = 1.0;
 		} else
 #endif
-		if (march_len < 0.0001) {
+		if (t_cap < 0.0001) {
 			s = 1.0;
 		} else {
 #if defined(LIT_SHADOW_CONE) || defined(LIT_SHADOW_STOCH)
@@ -225,8 +246,6 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			// variants compile the raymarched call alone, so scenes that never use the
 			// physical algorithms pay nothing for them.
 			int algo = (flags >> 3) & 3;
-			// SDF units per screen pixel, to convert the packed source size.
-			float px_to_sdf = sdf_diag / length(lit_viewport_size);
 #ifdef LIT_SHADOW_STOCH
 			if (algo == 2) {
 				vec4 t7 = texelFetch(lit_light_data, ivec2(7, i), 0); // source | samples | jitter
@@ -234,7 +253,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 				// t7.x is tan(source half-angle), used as an angular extent directly.
 				float src = is_directional ? t7.x : t7.x * lit_canvas_scale * px_to_sdf;
 				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
-						march_len, src, is_directional, int(round(t7.y)), t7.z,
+						march_len, t_cap, src, is_directional, int(round(t7.y)), t7.z,
 						frag_uv * lit_viewport_size, steps, frag_d,
 						self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 				s = lit_shadow_contrast(s, t3.w);
@@ -245,22 +264,25 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 				vec4 t7 = texelFetch(lit_light_data, ivec2(7, i), 0); // source | samples | jitter
 				// Cone half-angle tangent: source size over source distance (directional
 				// packs the tangent directly).
-				float w = is_directional ? t7.x
-						: t7.x * lit_canvas_scale * px_to_sdf / max(march_len, 1e-4);
-				s = lit_shadow_cone(frag_sdf, march_dir, march_len, max(w, 1e-4), steps,
-						frag_d, !is_directional, self_ex, self_canvas, sdf_to_canvas,
+				float w = max(is_directional ? t7.x
+						: t7.x * lit_canvas_scale * px_to_sdf / max(march_len, 1e-4), 1e-4);
+				s = lit_shadow_cone(frag_sdf, march_dir, t_cap, march_len,
+						capped ? w * t_cap : 0.0, w, steps,
+						frag_d, !is_directional && !capped, self_ex, self_canvas, sdf_to_canvas,
 						self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 				s = lit_shadow_contrast(s, t3.w);
 			} else
 #endif
 			{
-				s = lit_shadow(frag_sdf, march_dir, march_len, mix(8.0, 256.0, t3.w),
-						steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+				float k = mix(8.0, 256.0, t3.w);
+				s = lit_shadow(frag_sdf, march_dir, t_cap, march_len, capped ? t_cap / k : 0.0,
+						k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 			}
 #else
 			// Low hardness is soft, high is crisp.
-			s = lit_shadow(frag_sdf, march_dir, march_len, mix(8.0, 256.0, t3.w),
-					steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+			float k = mix(8.0, 256.0, t3.w);
+			s = lit_shadow(frag_sdf, march_dir, t_cap, march_len, capped ? t_cap / k : 0.0,
+					k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 #endif
 		}
 		contribution *= mix(t3.rgb, vec3(1.0), s);

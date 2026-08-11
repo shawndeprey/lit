@@ -84,6 +84,11 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
+## Caps each shadow at this fraction of the fragment's distance to the light; the
+## shadow closes there through a natural penumbral tip. Shadows stretch with an
+## occluder's distance from the light, reading like a light hung above the ground.
+## 1 = shadows reach all the way to the light (the default).
+@export_range(0.01, 1.0, 0.001) var shadow_length: float = 1.0
 ## Radius of the physical emitting disc in world pixels (CONE_TRACED / STOCHASTIC).
 ## Bigger sources cast softer shadows: wider penumbras and shorter umbras — an
 ## occluder's dark core tapers closed after roughly (occluder width / source_radius) x
