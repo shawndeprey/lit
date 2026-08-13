@@ -89,7 +89,10 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	if ((flags & 4) != 0) {
 		vec4 t6 = texelFetch(lit_light_data, ivec2(6, i), 0); // px-to-UV matrix columns
 		vec2 off_px = (frag_uv - light_uv) * lit_viewport_size;
-		vec2 cookie_uv = vec2(0.5) + vec2(dot(t6.xz, off_px), dot(t6.yw, off_px));
+		// texture_offset (flags bit 18): t8.xy replaces the node-centered 0.5.
+		vec2 center = (flags & 262144) != 0
+				? texelFetch(lit_light_data, ivec2(8, i), 0).xy : vec2(0.5);
+		vec2 cookie_uv = center + vec2(dot(t6.xz, off_px), dot(t6.yw, off_px));
 		vec2 cl = clamp(cookie_uv, vec2(0.0), vec2(1.0));
 		float inside = all(equal(cl, cookie_uv)) ? 1.0 : 0.0;
 		vec4 t5 = texelFetch(lit_light_data, ivec2(5, i), 0); // atlas UV rect: min.xy | size.xy
@@ -171,10 +174,10 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	if (shadow_enabled) {
 		vec4 t3 = texelFetch(lit_light_data, ivec2(3, i), 0); // shadow_color.rgb | shadow_hardness
 #ifdef LIT_OCC_MASKS
-		// Per-light exclusions (flags bit 5): t9 = union bounds of the exempt rects.
+		// Per-light exclusions (flags bit 5): t10 = union bounds of the exempt rects.
 		bool mk_on = (flags & 32) != 0;
 		int mk_row = i;
-		vec4 mk_rect = mk_on ? texelFetch(lit_light_data, ivec2(9, i), 0) : vec4(0.0);
+		vec4 mk_rect = mk_on ? texelFetch(lit_light_data, ivec2(10, i), 0) : vec4(0.0);
 #endif
 #ifdef LIT_OCC_RX
 		// The light's shadow mask (t7.w), for the effective-layer rx ignore test.
