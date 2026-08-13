@@ -40,7 +40,10 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## NATIVE: the cookie spans the texture's pixel size and follows node scale.
 ## FIT_RANGE: it spans the `range` footprint and ignores node scale.
 @export var texture_size_mode: TextureSizeMode = TextureSizeMode.NATIVE
-## Currently unused; not wired up yet.
+## Slides the cookie off the node's center, in the texture's local pixels: it rotates
+## with the node (and in NATIVE mode scales with it). Falloff, shadows, and shading
+## stay centered on the node, so animating this reads as the light fixture swinging.
+## The cookie still clips at `range`.
 @export var texture_offset: Vector2 = Vector2.ZERO
 
 @export_group("Shading")

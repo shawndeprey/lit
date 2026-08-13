@@ -57,10 +57,10 @@ const COOKIE_FILES := [
 # normal slot, while roughness (derived 1 - specular) and AO (the old _o occlusion map) feed
 # the receiver's PBR uniforms. Bone is a dielectric, so metallic stays 0 via the scalar.
 # NOTE: import roughness/AO/normal as linear (sRGB unchecked); diffuse stays sRGB.
-const SKULL_DIFFUSE_PATH := "res://addons/lit/demo/cinderskull_preview.png"
-const SKULL_NORMAL_PATH := "res://addons/lit/demo/cinderskull_preview_n.png"
-const SKULL_ROUGHNESS_PATH := "res://addons/lit/demo/cinderskull_preview_r.png"
-const SKULL_AO_PATH := "res://addons/lit/demo/cinderskull_preview_o.png"
+const SKULL_DIFFUSE_PATH := "res://Test/cinderskull_preview.png"
+const SKULL_NORMAL_PATH := "res://Test/cinderskull_preview_n.png"
+const SKULL_ROUGHNESS_PATH := "res://Test/cinderskull_preview_r.png"
+const SKULL_AO_PATH := "res://Test/cinderskull_preview_o.png"
 
 # --- runtime state ---
 var _running := false
@@ -617,6 +617,9 @@ func _update_lights() -> void:
 			continue
 		if d.kind == "daynight":
 			continue                       # driven by _update_daynight per stage time
+		if d.kind == "swing":
+			n.texture_offset = Vector2(sin(_clock * 2.0) * 120.0, 0.0)
+			continue
 		if d.kind == "dir":
 			n.rotation = d.phase + _clock * d.dir_speed
 		else:
@@ -759,8 +762,15 @@ func _enter_stage(idx: int) -> void:
 			_clear_lights()
 			_ensure_count(8, ["point", "spot", "point", "dir"], true)
 		"cookies":
-			# Textured lights, ramping to COOKIE_MAX_LIGHTS in _update_stage.
+			# Textured lights, ramping to COOKIE_MAX_LIGHTS in _update_stage. The first
+			# light stays fixed above a center skull and sways its cookie via
+			# texture_offset, reading as a swinging lamp.
 			_clear_lights()
+			if _ensure_cookie_textures():
+				if _ensure_skull_textures():
+					_make_skull_prop(_area_center, 3.0)
+					_props_are_skulls = true
+				_spawn_swing_light()
 			_ensure_count(8, _cookie_kinds(), true)
 		"pbr":
 			# Swap the plain white occluder blocks for skull props that carry real
@@ -849,6 +859,32 @@ func _set_shadow_algorithm(algo: int) -> void:
 # Spawn kind for the cookie stage: cookies when the textures load, plain points otherwise.
 func _cookie_kinds() -> Array:
 	return ["cookie"] if _ensure_cookie_textures() else ["point"]
+
+
+# The cookie stage's swinging lamp: a fixed warm window-cookie light over the center
+# skull whose pool _update_lights sways through texture_offset. falloff 0 leaves the
+# shape to the texture; scale + sway stay inside the range circle so it never clips.
+func _spawn_swing_light() -> void:
+	var tex: Texture2D = _cookie_textures[0]
+	for t in _cookie_textures:
+		if String(t.resource_path).contains("window"):
+			tex = t
+			break
+	var n := LitPointLight2D.new()
+	n.position = _area_center + Vector2(0, -120)
+	n.range = 380.0
+	n.height = 60.0
+	n.falloff = 0.0
+	n.texture = tex
+	n.texture_size_mode = LitPointLight2D.TextureSizeMode.FIT_RANGE
+	n.texture_scale = 0.5
+	n.color = Color(1.0, 0.85, 0.6)
+	n.energy = 2.0
+	n.shadow_enabled = true
+	n.shadow_algorithm = LitPointLight2D.ShadowAlgorithm.CONE_TRACED
+	n.shadow_hardness = 0.5
+	add_child(n)
+	_lights.append({"node": n, "kind": "swing"})
 
 
 func _update_stage(t: float) -> void:

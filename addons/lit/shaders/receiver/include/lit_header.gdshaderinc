@@ -47,7 +47,8 @@ global uniform float     lit_ambient_energy;
 global uniform int       lit_lighting_model;
 
 // Atlas of the lights' cookie textures. A textured light (flags bit 2) carries its
-// atlas UV rect in texel 5 and its screen-px-to-cookie-UV matrix in texel 6. Linear
+// atlas UV rect in texel 5 and its screen-px-to-cookie-UV matrix in texel 6; a
+// texture_offset (flags bit 18) shifts the cookie-UV center via texel 8. Linear
 // filtered, no mipmaps, sampled with textureLod so the read is legal in divergent
 // control flow.
 global uniform sampler2D lit_cookie_atlas;
@@ -225,7 +226,7 @@ uniform float directional_horizontal_scale = 32.0;
 #endif
 
 // Per-light shadow exclusion context (the _mask variants): the light's exempt-occluder
-// rects live in its own data row (texels 8-13), so the march carries only a row index
+// rects live in its own data row (texels 9-14), so the march carries only a row index
 // and the coarse union rect.
 #ifdef LIT_OCC_MASKS
 #define LIT_MK_PARAMS , bool mk_on, int mk_row, vec4 mk_rect

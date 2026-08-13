@@ -35,6 +35,7 @@ const LIGHT_COUNT := 128
 #   shadows=off   kinds=point|spot|dir|cookie|mix   lights=N   warmup=N   measure=N
 #   shadow_algo=raymarch|cone|stochastic   sdf=25|50|100 (SDF scale probe)
 #   shadowlen=on   random (seeded) shadow_length fraction per light
+#   texoffset=on   random (seeded) texture_offset on every cookie light
 #   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
 #   post=Name,Name  add fresh default-state post effects (e.g. post=Bloom,AutoExposure)
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
@@ -63,6 +64,7 @@ var _opt_rxmask := 0
 var _opt_rxnode := ""
 var _opt_post := ""
 var _opt_shadowlen := false
+var _opt_texoffset := false
 
 # Clock value used for the deterministic capture frame.
 const CAPTURE_CLOCK := 60.0
@@ -139,6 +141,8 @@ func _ready() -> void:
 				_opt_post = kv[1]
 			"shadowlen":
 				_opt_shadowlen = kv[1] == "on"
+			"texoffset":
+				_opt_texoffset = kv[1] == "on"
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -238,6 +242,14 @@ func _setup() -> void:
 		slrng.seed = RNG_SEED + 1
 		for d in _lights:
 			d.node.shadow_length = slrng.randf_range(0.1, 0.9)
+	# Own RNG stream, same reasoning as shadowlen above.
+	if _opt_texoffset:
+		var torng := RandomNumberGenerator.new()
+		torng.seed = RNG_SEED + 2
+		for d in _lights:
+			if d.kind == "cookie":
+				d.node.texture_offset = Vector2(
+						torng.randf_range(-0.35, 0.35), torng.randf_range(-0.35, 0.35)) * d.node.range
 
 	_state = "warmup"
 	_state_time = 0.0

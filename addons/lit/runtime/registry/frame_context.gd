@@ -20,7 +20,7 @@ var dir_count := 0
 # One writer each: facade widens texels_per_light (sticky) and derives excl_active;
 # rx_registry computes rx_union; occluder_tiles fills the occ_* frame outputs.
 var excl_active := false
-var texels_per_light := 8
+var texels_per_light := 9
 var rx_union := 0
 var occ_rects: Array[Rect2] = []
 var occ_masks := PackedInt32Array()
