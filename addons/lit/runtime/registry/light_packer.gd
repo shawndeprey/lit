@@ -5,15 +5,20 @@ extends RefCounted
 ##  1 directional: texel 1 is a screen-space direction toward the light.
 ##  2 spot:        texel 1 is a position (as a point); texel 4 adds the cone
 ##                 (aim direction plus the cosines of the inner and outer angles).
-## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range | energy,
-## t2 = color.rgb | height, t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
+## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range (directional:
+## shadow_reach, world px) | energy, t2 = color.rgb | height,
+## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
 ## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
 ## when flags bit 2 is set), t7 = shadow source size | samples | jitter | shadow_mask
-## (mask packed only while rx receivers exist), t8.x = exempt rect count, t9 = exempt union bounds,
-## t10-13 = the light's exempt-occluder canvas rects (t8-t13 read only when flags bit 5
-## is set). type/flags/mask sit in texel 0 so the shader can mask-reject after a single
-## fetch. flags: bit 0 shadow_enabled, bit 1 subtractive, bit 2 textured, bits 3-4
-## shadow algorithm (ShadowAlgorithm order on the light nodes), bit 5 shadow exclusions.
+## (mask packed only while rx receivers exist), t8.xy = cookie UV center (0.5 shifted by
+## texture_offset; read only when flags bit 18 is set), t9.x = exempt rect count,
+## t10 = exempt union bounds, t11-14 = the light's exempt-occluder canvas rects
+## (t9-t14 read only when flags bit 5 is set). type/flags/mask sit in texel 0 so the
+## shader can mask-reject after a single fetch. flags: bit 0 shadow_enabled, bit 1
+## subtractive, bit 2 textured, bits 3-4 shadow algorithm (ShadowAlgorithm order on the
+## light nodes), bit 5 shadow exclusions, bits 6-17 shadow_length fraction quantized to
+## 12 bits (point/spot: 0 = full march, uncapped; directional: plain fraction of
+## shadow_reach, 4095 = full reach), bit 18 cookie offset.
 
 const LitCookieAtlasScript := preload("res://addons/lit/runtime/lit_cookie_atlas.gd")
 const FrameContext := preload("res://addons/lit/runtime/registry/frame_context.gd")
@@ -35,7 +40,7 @@ var _pack_buf: PackedFloat32Array = PackedFloat32Array()
 var _pack_img: Image
 var _pack_img_count: int = -1
 # Per-frame mirrors of facade-owned frame state, assigned at pack_and_publish entry.
-var _tpl := 8
+var _tpl := 9
 var _excl_active := false
 var _excl_info := {}
 var _excl_lists := {}
@@ -104,7 +109,7 @@ func publish_empty(vp_size: Vector2) -> void:
 	_publish_cookie_atlas()
 
 
-## Pack texels 8-13 (exempt rect count, union bounds, up to 4 exempt rects) for a light
+## Pack texels 9-14 (exempt rect count, union bounds, up to 4 exempt rects) for a light
 ## with exclusions; returns the flags bit. Lights without exclusions pay one has() here.
 func _pack_excl(o: int, light: Node2D) -> float:
 	if not _excl_info.has(light):
@@ -112,21 +117,28 @@ func _pack_excl(o: int, light: Node2D) -> float:
 	var entry = _excl_lists.get("%d_%d" % [light.shadow_mask, _excl_info[light]])
 	if entry == null:
 		return 0.0
-	_pack_buf[o + 32] = float(entry[0])
+	_pack_buf[o + 36] = float(entry[0])
 	var union: Rect2 = entry[1]
-	_pack_buf[o + 36] = union.position.x
-	_pack_buf[o + 37] = union.position.y
-	_pack_buf[o + 38] = union.end.x
-	_pack_buf[o + 39] = union.end.y
+	_pack_buf[o + 40] = union.position.x
+	_pack_buf[o + 41] = union.position.y
+	_pack_buf[o + 42] = union.end.x
+	_pack_buf[o + 43] = union.end.y
 	var rects: PackedVector4Array = entry[2]
 	for j in 4:
 		var v := rects[j]
-		var b := o + 40 + j * 4
+		var b := o + 44 + j * 4
 		_pack_buf[b] = v.x
 		_pack_buf[b + 1] = v.y
 		_pack_buf[b + 2] = v.z
 		_pack_buf[b + 3] = v.w
 	return 32.0
+
+## Point/spot shadow_length fraction, quantized to 12 bits and pre-shifted into flags
+## bits 6-17. A full-length fraction packs 0, keeping default rows bit-identical.
+func _pack_shadow_length(frac: float) -> float:
+	if frac >= 1.0:
+		return 0.0
+	return 64.0 * roundf(clampf(frac, 0.01, 1.0) * 4095.0)
 
 ## Pack one point light into the row starting at `row` in _pack_buf.
 func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
@@ -139,10 +151,11 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 
 	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
 	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
-	var textured := _pack_cookie(o, light, canvas_xform)
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured) \
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
+			+ _pack_cookie(o, light, canvas_xform) \
 			+ 8.0 * float(light.shadow_algorithm) \
-			+ (_pack_excl(o, light) if _excl_active else 0.0)
+			+ (_pack_excl(o, light) if _excl_active else 0.0) \
+			+ _pack_shadow_length(light.shadow_length)
 	const TYPE_POINT := 0.0
 
 	# Texel 0: type | flags | light_mask | falloff
@@ -191,7 +204,8 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	var o := row * _tpl * 4
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
 			+ 8.0 * float(light.shadow_algorithm) \
-			+ (_pack_excl(o, light) if _excl_active else 0.0)
+			+ (_pack_excl(o, light) if _excl_active else 0.0) \
+			+ 64.0 * roundf(clampf(light.shadow_length, 0.0, 1.0) * 4095.0)
 	const TYPE_DIRECTIONAL := 1.0
 
 	# Texel 0: type | flags | light_mask | (falloff unused)
@@ -200,10 +214,10 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	_pack_buf[o + 2] = float(light.light_mask)
 	_pack_buf[o + 3] = 1.0
 
-	# Texel 1: dir.x | dir.y | (range unused) | energy
+	# Texel 1: dir.x | dir.y | shadow_reach (world px) | energy
 	_pack_buf[o + 4] = dir_px.x
 	_pack_buf[o + 5] = dir_px.y
-	_pack_buf[o + 6] = 0.0
+	_pack_buf[o + 6] = maxf(light.shadow_reach, 0.0)
 	_pack_buf[o + 7] = light.energy
 
 	# Texel 2: color.rgb | height
@@ -250,10 +264,11 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	var o := row * _tpl * 4
 
 	var subtractive := 1.0 if light.blend_mode == LitSpotLight2D.BlendMode.SUBTRACT else 0.0
-	var textured := _pack_cookie(o, light, canvas_xform)
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive + 4.0 * float(textured) \
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
+			+ _pack_cookie(o, light, canvas_xform) \
 			+ 8.0 * float(light.shadow_algorithm) \
-			+ (_pack_excl(o, light) if _excl_active else 0.0)
+			+ (_pack_excl(o, light) if _excl_active else 0.0) \
+			+ _pack_shadow_length(light.shadow_length)
 	const TYPE_SPOT := 2.0
 
 	# Texel 0: type | flags | light_mask | falloff
@@ -293,18 +308,19 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	if _rx_union_frame != 0:
 		_pack_buf[o + 31] = float(light.shadow_mask)
 
-## Pack the cookie fields (texels 5-6) for the point/spot light whose row starts at
-## float offset `o`. Returns true when the light has a packed cookie; the caller sets
-## flags bit 2. Texel 5 is the atlas UV rect. Texel 6 is the 2x2 matrix taking a
-## screen-pixel offset from the light's center to a cookie-UV offset around 0.5.
-## `light` is accessed dynamically: the cookie properties live on both LitPointLight2D
-## and LitSpotLight2D.
-func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> bool:
+## Pack the cookie fields (texels 5-6, plus t8.xy under a nonzero texture_offset) for
+## the point/spot light whose row starts at float offset `o`. Returns the flags
+## contribution: 0 untextured, bit 2 for a packed cookie, plus bit 18 when t8.xy
+## carries an offset cookie-UV center. Texel 5 is the atlas UV rect. Texel 6 is the
+## 2x2 matrix taking a screen-pixel offset from the light's center to a cookie-UV
+## offset around that center. `light` is accessed dynamically: the cookie properties
+## live on both LitPointLight2D and LitSpotLight2D.
+func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> float:
 	if not _cookies_active:
-		return false
+		return 0.0
 	var tex: Texture2D = light.get("texture")
 	if tex == null or not _cookie_atlas.has(tex):
-		return false
+		return 0.0
 
 	# Footprint half-extents in world units plus the basis it rotates with. NATIVE (0):
 	# the texture's pixel size under the node's full transform. FIT_RANGE (1): spans
@@ -321,7 +337,7 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> bool:
 		basis = canvas_xform * light.get_global_transform()
 	basis = Transform2D(basis.x, basis.y, Vector2.ZERO)  # offsets only; drop translation
 	if half.x <= 0.0 or half.y <= 0.0 or absf(basis.determinant()) < 1e-8:
-		return false  # degenerate footprint
+		return 0.0  # degenerate footprint
 
 	# cookie_uv_offset = diag(1 / (2 * half)) * basis^-1 * screen_px_offset
 	var inv := basis.affine_inverse()
@@ -340,7 +356,15 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> bool:
 	_pack_buf[o + 25] = inv.x.y * sy
 	_pack_buf[o + 26] = inv.y.x * sx
 	_pack_buf[o + 27] = inv.y.y * sy
-	return true
+
+	# Texel 8: texture_offset, in the same local units as `half`, baked into the
+	# cookie-UV center the shader would otherwise fix at 0.5.
+	var offset: Vector2 = light.get("texture_offset")
+	if offset == Vector2.ZERO:
+		return 4.0
+	_pack_buf[o + 32] = 0.5 - offset.x * sx
+	_pack_buf[o + 33] = 0.5 - offset.y * sy
+	return 4.0 + 262144.0
 
 ## Publish the cookie atlas global only when the atlas texture object changed.
 func _publish_cookie_atlas() -> void:

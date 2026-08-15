@@ -37,6 +37,14 @@ const ALGO_STAGE_LIGHTS := 12
 const LIT_MODEL_PHONG := 0
 const LIT_MODEL_PBR := 1
 
+# Demo-wide ambient while the reel runs (near-black for max light contrast). The
+# daynight stage tweens the ambient through these instead: a shared twilight at the
+# horizons so sunset hands off to moonrise seamlessly, a lifted warm day, a deep night.
+const DEMO_AMBIENT := Color(0.02, 0.02, 0.03)
+const DN_TWILIGHT_AMBIENT := Color(0.33, 0.22, 0.20)
+const DN_DAY_AMBIENT := Color(0.30, 0.28, 0.24)
+const DN_NIGHT_AMBIENT := Color(0.022, 0.028, 0.055)
+
 # Cookie textures for the Light Textures stage; loaded lazily, and the stage falls
 # back to plain point lights if none import.
 const COOKIE_DIR := "res://Test/textures/cookies/"
@@ -49,10 +57,10 @@ const COOKIE_FILES := [
 # normal slot, while roughness (derived 1 - specular) and AO (the old _o occlusion map) feed
 # the receiver's PBR uniforms. Bone is a dielectric, so metallic stays 0 via the scalar.
 # NOTE: import roughness/AO/normal as linear (sRGB unchecked); diffuse stays sRGB.
-const SKULL_DIFFUSE_PATH := "res://addons/lit/demo/cinderskull_preview.png"
-const SKULL_NORMAL_PATH := "res://addons/lit/demo/cinderskull_preview_n.png"
-const SKULL_ROUGHNESS_PATH := "res://addons/lit/demo/cinderskull_preview_r.png"
-const SKULL_AO_PATH := "res://addons/lit/demo/cinderskull_preview_o.png"
+const SKULL_DIFFUSE_PATH := "res://Test/cinderskull_preview.png"
+const SKULL_NORMAL_PATH := "res://Test/cinderskull_preview_n.png"
+const SKULL_ROUGHNESS_PATH := "res://Test/cinderskull_preview_r.png"
+const SKULL_AO_PATH := "res://Test/cinderskull_preview_o.png"
 
 # --- runtime state ---
 var _running := false
@@ -118,6 +126,7 @@ var _stages := [
 	{"id": "intro",     "name": "Lit",                       "desc": "Lighting & Performance Demo",          "dur": 3.5,  "auto": true},
 	{"id": "point",     "name": "Point Light",               "desc": "One light • full soft shadows",        "dur": 5.0,  "auto": true},
 	{"id": "dir",       "name": "Directional Light",         "desc": "A sun - parallel light, sweeping shadows", "dur": 5.0, "auto": true},
+	{"id": "daynight",  "name": "Day / Night Cycle",         "desc": "One sun, one moon - shadow_length stretches with the hour", "dur": 10.0, "auto": true},
 	{"id": "spot",      "name": "Spot Light",                "desc": "An aimable cone",                      "dur": 5.0,  "auto": true},
 	{"id": "algo_ray",   "name": "Shadows · Raymarched",     "desc": "The classic fast march - stylized penumbra", "dur": 5.0, "auto": true},
 	{"id": "algo_cone",  "name": "Shadows · Cone Traced",    "desc": "The default - physical penumbras that widen, umbras that taper closed", "dur": 5.0, "auto": true},
@@ -350,7 +359,7 @@ func _capture_scene_state() -> void:
 	_modulate = _find_first(scene, LitCanvasModulate)
 	if _modulate:
 		_orig_modulate_color = _modulate.color
-		_modulate.color = Color(0.02, 0.02, 0.03)   # near-black for max contrast
+		_modulate.color = DEMO_AMBIENT   # near-black for max contrast
 
 	_post = _find_first(scene, LitPostProcess)
 	if _post:
@@ -410,20 +419,18 @@ func _spawn_props() -> void:
 
 
 # A sphere prop: white disc sprite plus a matching circle occluder polygon. Round
-# silhouettes show the algorithms' curved penumbras better than boxes do.
+# silhouettes show the algorithms' curved penumbras better than boxes do. LitSprite2D
+# claims the sibling occluder as its own, so the disc's shadow casts behind the disc,
+# never onto it (self_shadow off, the node default).
 func _make_prop(pos: Vector2, radius: float) -> void:
 	var root := Node2D.new()
 	root.position = pos
 	add_child(root)
 
-	var spr := Sprite2D.new()
+	var spr := LitSprite2D.new()
 	spr.texture = _circle_tex
 	spr.scale = Vector2.ONE * (radius / CIRCLE_TEX_RADIUS)
 	spr.modulate = Color(0.82, 0.84, 0.92)
-	var mat := ShaderMaterial.new()
-	mat.shader = RECEIVER_SHADER
-	mat.set_shader_parameter("self_shadow", true)
-	spr.material = mat
 	root.add_child(spr)
 
 	var occ := LightOccluder2D.new()       # sdf_collision defaults true, so it feeds the SDF
@@ -432,7 +439,7 @@ func _make_prop(pos: Vector2, radius: float) -> void:
 	occ.occluder = poly
 	root.add_child(occ)
 
-	_props.append({"root": root, "mat": mat})
+	_props.append({"root": root, "spr": spr})
 
 
 static func _circle_polygon(radius: float, segments := 20) -> PackedVector2Array:
@@ -608,6 +615,11 @@ func _update_lights() -> void:
 		var n = d.node
 		if not is_instance_valid(n):
 			continue
+		if d.kind == "daynight":
+			continue                       # driven by _update_daynight per stage time
+		if d.kind == "swing":
+			n.texture_offset = Vector2(sin(_clock * 2.0) * 120.0, 0.0)
+			continue
 		if d.kind == "dir":
 			n.rotation = d.phase + _clock * d.dir_speed
 		else:
@@ -669,6 +681,11 @@ func _enter_stage(idx: int) -> void:
 	if not String(s.id).begins_with("fx_") and s.id != "finale":
 		_post_all_off()
 
+	# The daynight stage drives the ambient per frame; every other stage runs the
+	# demo's flat contrast base.
+	if s.id != "daynight" and is_instance_valid(_modulate):
+		_modulate.color = DEMO_AMBIENT
+
 	# Lighting model is Phong for the whole reel except the dedicated PBR stage, which
 	# flips the global on entry. Setting it on every stage (not just on the two
 	# transitions) keeps it correct when the user skips in or out of the PBR stage.
@@ -692,6 +709,13 @@ func _enter_stage(idx: int) -> void:
 		"dir":
 			_clear_lights()
 			_spawn_light("dir", Color(1.0, 0.95, 0.85))
+		"daynight":
+			_clear_lights()
+			var dn := _spawn_light("dir", Color(1.0, 0.6, 0.35))
+			dn.kind = "daynight"           # stage-driven; _update_lights leaves it alone
+			dn.pulse_speed = 0.0
+			dn.hue = -1.0
+			_update_daynight(0.0)
 		"spot":
 			_clear_lights()
 			_spawn_light("spot", Color(0.6, 0.8, 1.0))
@@ -726,7 +750,7 @@ func _enter_stage(idx: int) -> void:
 		"masks":
 			_clear_lights()
 			for i in _props.size():
-				_props[i].mat.set_shader_parameter("receiver_mask", 1 if i % 2 == 0 else 2)
+				_props[i].spr.receiver_mask = 1 if i % 2 == 0 else 2
 			for i in 6:
 				var is_red := i % 2 == 0
 				var md := _spawn_light("point", Color(1.0, 0.3, 0.3) if is_red else Color(0.4, 0.55, 1.0))
@@ -734,12 +758,19 @@ func _enter_stage(idx: int) -> void:
 				md.hue = -1.0
 		"stress":
 			for p in _props:
-				p.mat.set_shader_parameter("receiver_mask", 1)   # undo the mask split
+				p.spr.receiver_mask = 1   # undo the mask split
 			_clear_lights()
 			_ensure_count(8, ["point", "spot", "point", "dir"], true)
 		"cookies":
-			# Textured lights, ramping to COOKIE_MAX_LIGHTS in _update_stage.
+			# Textured lights, ramping to COOKIE_MAX_LIGHTS in _update_stage. The first
+			# light stays fixed above a center skull and sways its cookie via
+			# texture_offset, reading as a swinging lamp.
 			_clear_lights()
+			if _ensure_cookie_textures():
+				if _ensure_skull_textures():
+					_make_skull_prop(_area_center, 3.0)
+					_props_are_skulls = true
+				_spawn_swing_light()
 			_ensure_count(8, _cookie_kinds(), true)
 		"pbr":
 			# Swap the plain white occluder blocks for skull props that carry real
@@ -830,6 +861,32 @@ func _cookie_kinds() -> Array:
 	return ["cookie"] if _ensure_cookie_textures() else ["point"]
 
 
+# The cookie stage's swinging lamp: a fixed warm window-cookie light over the center
+# skull whose pool _update_lights sways through texture_offset. falloff 0 leaves the
+# shape to the texture; scale + sway stay inside the range circle so it never clips.
+func _spawn_swing_light() -> void:
+	var tex: Texture2D = _cookie_textures[0]
+	for t in _cookie_textures:
+		if String(t.resource_path).contains("window"):
+			tex = t
+			break
+	var n := LitPointLight2D.new()
+	n.position = _area_center + Vector2(0, -120)
+	n.range = 380.0
+	n.height = 60.0
+	n.falloff = 0.0
+	n.texture = tex
+	n.texture_size_mode = LitPointLight2D.TextureSizeMode.FIT_RANGE
+	n.texture_scale = 0.5
+	n.color = Color(1.0, 0.85, 0.6)
+	n.energy = 2.0
+	n.shadow_enabled = true
+	n.shadow_algorithm = LitPointLight2D.ShadowAlgorithm.CONE_TRACED
+	n.shadow_hardness = 0.5
+	add_child(n)
+	_lights.append({"node": n, "kind": "swing"})
+
+
 func _update_stage(t: float) -> void:
 	# Ramping stages grow the light count over the first 75% of their duration.
 	var s = _stages[_stage_index]
@@ -846,6 +903,48 @@ func _update_stage(t: float) -> void:
 		var target := int(lerp(8.0, float(ramp_max), frac))
 		if target != _lights.size():
 			_ensure_count(target, ramp_kinds, true)
+	if s.id == "daynight":
+		_update_daynight(clampf(t / s.dur, 0.0, 1.0))
+
+
+## Drive the day/night stage's single directional light: the sun for the first half,
+## the moon for the second, each rising in the east and setting in the west. The
+## azimuth sweeps continuously through "below" like a sundial, so shadows point west
+## at rise, tuck under the props at midday, and point east at set - never jumping
+## sides. sin(u*PI) is the body's elevation: shadow_length collapses to a contact
+## shadow overhead on a cotangent-like curve and stretches hard at the horizons, while
+## color, energy and the scene ambient follow. Both halves meet the horizons at the
+## same dim twilight ambient with the body's energy faded down, so the sun-moon
+## handoff reads as dusk, not a cut.
+func _update_daynight(p: float) -> void:
+	if _lights.is_empty() or not is_instance_valid(_lights[0].node):
+		return
+	var n = _lights[0].node
+	var is_day := p < 0.5
+	var u := fposmod(p * 2.0, 1.0)         # sweep 0..1 within the day or the night
+	var elev := sin(u * PI)                # 0 at the horizons, 1 overhead
+	# The node's +X is the direction the light travels: PI = from the east, PI/2 =
+	# from straight above (shadows below), 0 = from the west.
+	n.rotation = lerpf(PI, 0.0, u)
+	n.shadow_length = 0.008 + 0.992 * pow(1.0 - elev, 1.6)
+	# The source widens toward overhead: the short midday contact shadows feather out
+	# instead of stamping solid black, while the long horizon shadows keep their shape.
+	n.source_angle = lerpf(8.0, 18.0, elev)
+	n.height = lerpf(20.0, 110.0, elev)
+	# Energy reaches exactly 0 at the horizons: the twilight ambient (shadowless)
+	# carries dusk and dawn, so the direction flip between the setting sun and the
+	# rising moon has nothing to show and the handoff is seamless. Shadows then grow
+	# in with the climbing body.
+	var lift := smoothstep(0.0, 0.35, elev)
+	if is_day:
+		n.color = Color(1.0, 0.5, 0.25).lerp(Color(1.0, 0.93, 0.82), lift)
+		n.energy = lift
+	else:
+		n.color = Color(0.45, 0.52, 0.85).lerp(Color(0.6, 0.68, 0.95), lift)
+		n.energy = 0.45 * lift
+	if is_instance_valid(_modulate):
+		var peak := DN_DAY_AMBIENT if is_day else DN_NIGHT_AMBIENT
+		_modulate.color = DN_TWILIGHT_AMBIENT.lerp(peak, smoothstep(0.0, 0.5, elev))
 
 
 func _next_stage() -> void:

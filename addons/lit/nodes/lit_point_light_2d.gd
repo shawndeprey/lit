@@ -40,7 +40,10 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## NATIVE: the cookie spans the texture's pixel size and follows node scale.
 ## FIT_RANGE: it spans the `range` footprint and ignores node scale.
 @export var texture_size_mode: TextureSizeMode = TextureSizeMode.NATIVE
-## Currently unused; not wired up yet.
+## Slides the cookie off the node's center, in the texture's local pixels: it rotates
+## with the node (and in NATIVE mode scales with it). Falloff, shadows, and shading
+## stay centered on the node, so animating this reads as the light fixture swinging.
+## The cookie still clips at `range`.
 @export var texture_offset: Vector2 = Vector2.ZERO
 
 @export_group("Shading")
@@ -78,6 +81,11 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
+## Caps each shadow at this fraction of the fragment's distance to the light; the
+## shadow closes there through a natural penumbral tip. Shadows stretch with an
+## occluder's distance from the light, reading like a light hung above the ground.
+## 1 = shadows reach all the way to the light (the default).
+@export_range(0.01, 1.0, 0.001) var shadow_length: float = 1.0
 ## Radius of the physical emitting disc in world pixels (CONE_TRACED / STOCHASTIC).
 ## Bigger sources cast softer shadows: wider penumbras and shorter umbras — an
 ## occluder's dark core tapers closed after roughly (occluder width / source_radius) x

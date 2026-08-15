@@ -9,7 +9,7 @@ class_name LitLightRegistry
 ## Each instance owns its own light-data texture, so the editor and a running game
 ## (separate processes and RenderingServer state) never collide.
 
-const TEXELS_PER_LIGHT := 14
+const TEXELS_PER_LIGHT := 15
 
 # Which shadow algorithms the shaders must support this frame, from the last refresh()
 # in this process (bit 0 = Cone Traced, bit 1 = Stochastic, among enabled shadow-casting

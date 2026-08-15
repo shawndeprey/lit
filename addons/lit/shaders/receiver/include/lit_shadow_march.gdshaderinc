@@ -1,4 +1,12 @@
-// Unit: raymarched shadow (base axis): lit_shadow(), lit_shadow_contrast().
+// Unit: raymarched shadow (base axis): lit_shadow(), lit_shadow_contrast(), lit_tip_weight().
+
+// Tip closure for length-limited shadows (shadow_length): weight for a darkening sample
+// at march distance t. 1 below the tip band, easing to 0 at t_tip, so every occluder's
+// umbra closes exactly at the cap through a penumbra-width tip instead of a hard cut.
+// band <= 0 means the march is uncapped and every sample keeps full weight.
+float lit_tip_weight(float t, float t_tip, float band) {
+	return band > 0.0 ? clamp((t_tip - t) / band, 0.0, 1.0) : 1.0;
+}
 
 // Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| -
 // the distance field of occluder outlines - so a shape casts from its light-facing
@@ -6,14 +14,19 @@
 // shape takes that shape's shadow via the footprint_shadow ramp instead of a hard hit.
 // Returns 1 fully lit, 0 occluded. The caller passes the unit march direction and
 // length (dir, maxd, SDF space) and frag_d, its own texture_sdf sample, shared by
-// every light's march. k shapes the penumbra estimate k*d/t: the Raymarched algorithm
+// every light's march. maxd may be capped short of the light (shadow_length); norm_d
+// is the true fragment-to-light distance normalizing the footprint_shadow ramp, and
+// tip_band is the tip-closure band width (0 = uncapped; see lit_tip_weight).
+// k shapes the penumbra estimate k*d/t: the Raymarched algorithm
 // derives it from shadow_hardness, the Cone Traced algorithm from the source's angular
 // size (k = 1/tan(half-angle)) - same march, different cone width. When self_ex is
 // true, samples whose nearest outline may belong to the receiver's own occluders are
 // stepped through instead of occluding; self_canvas and sdf_to_canvas map SDF-space
 // march offsets into canvas space, and self_scale is the canvas length of one SDF unit.
-float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, float frag_d,
+float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float tip_band, float k,
+		int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
+	float t_tip = maxd;                      // tip anchor: the cap, before coverage clamps it
 	maxd = min(maxd, lit_sdf_cov_exit(frag_sdf, dir));
 	float t = shadow_min_step;
 	float res = 1.0;
@@ -61,7 +74,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0) * yw;
+					float own_block = clamp(footprint_shadow * t / norm_d, 0.0, 1.0) * yw
+							* lit_tip_weight(t, t_tip, tip_band);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
 						return 0.0;
@@ -96,18 +110,19 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
+					float cw = yw * lit_tip_weight(t, t_tip, tip_band);
 					if (hit) {
-						if (yw >= 1.0) {
+						if (cw >= 1.0) {
 							return 0.0;
 						}
-						res = min(res, 1.0 - yw);
+						res = min(res, 1.0 - cw);
 						if (res <= 0.0) {
 							return 0.0;
 						}
 						t += max(-d, shadow_min_step);
 						continue;
 					}
-					res = min(res, mix(1.0, cand, yw));
+					res = min(res, mix(1.0, cand, cw));
 				}
 			}
 			t += max(ad, shadow_min_step);
@@ -160,7 +175,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0) * yw;
+					float own_block = clamp(footprint_shadow * t / norm_d, 0.0, 1.0) * yw
+							* lit_tip_weight(t, t_tip, tip_band);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
 						return 0.0;              // fully occluded
@@ -201,19 +217,20 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
+					float cw = yw * lit_tip_weight(t, t_tip, tip_band);
 					if (hit) {
-						if (yw >= 1.0) {
+						if (cw >= 1.0) {
 							return 0.0;          // fully occluded
 						}
 						// Faded caster: darken by its weight, then step through it.
-						res = min(res, 1.0 - yw);
+						res = min(res, 1.0 - cw);
 						if (res <= 0.0) {
 							return 0.0;
 						}
 						t += max(-d, shadow_min_step);
 						continue;
 					}
-					res = min(res, mix(1.0, cand, yw));  // penumbra accumulation
+					res = min(res, mix(1.0, cand, cw));  // penumbra accumulation
 				}
 			}
 			t += max(ad, shadow_min_step);
@@ -225,7 +242,10 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 	// the per-step phase bookkeeping. Past the grace exit every sample is non-negative,
 	// so the full hit test (|d| < 0.001 || sign flip) collapses to d < 0.001 and
 	// prev_d/abs() drop out. Also the self-excluding tail: no self tests needed here.
+	// Length-limited marches stop the hard-hit loops at the tip band; a weighted sweep
+	// finishes the band so the umbra closes at t_tip instead of cutting.
 	{
+		float t_fast_end = tip_band > 0.0 ? min(maxd, max(t_tip - tip_band, 0.0)) : maxd;
 		if (grace) {
 			// Grace: march out of the containing shape without treating its outline as
 			// hits; apply its footprint shadow once, at the exit sample.
@@ -237,7 +257,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
 					continue;
 				}
-				float own_block = clamp(footprint_shadow * t / maxd, 0.0, 1.0);
+				float own_block = clamp(footprint_shadow * t / norm_d, 0.0, 1.0)
+						* lit_tip_weight(t, t_tip, tip_band);
 				res = min(res, 1.0 - own_block);
 				if (res <= 0.0) {
 					return 0.0;                            // fully occluded
@@ -251,7 +272,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 			// Receding: mute penumbra accumulation until the ray stops receding from
 			// the exited edge; the breaking sample follows the steady-state rules.
 			if (receding) {
-				for (; s < max_steps && t < maxd; s++) {
+				for (; s < max_steps && t < t_fast_end; s++) {
 					float d = lit_sdf_sample(frag_sdf + dir * t);
 					if (d >= 0.001 && d >= prev_ad) {
 						prev_ad = d;
@@ -272,7 +293,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 		// cross-multiplied compare and divide once after the loop.
 		float best_d = 1e20;
 		float best_t = 1.0;
-		for (; s < max_steps && t < maxd; s++) {
+		for (; s < max_steps && t < t_fast_end; s++) {
 			float d = lit_sdf_sample(frag_sdf + dir * t);
 			if (d < 0.001) {
 				return 0.0;                  // fully occluded: inside, on, or across an outline
@@ -290,9 +311,9 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 		// that remain. It runs the plain tests, so it starts past the exclusion phases'
 		// reach, where an exempt caster can no longer be mistaken for a real one.
 		t = max(t, t_ex_end);
-		if (t < maxd) {
+		if (t < t_fast_end) {
 			int tail = max(max_steps >> 2, 4);
-			for (int e = 0; e < tail && t < maxd; e++) {
+			for (int e = 0; e < tail && t < t_fast_end; e++) {
 				float d = lit_sdf_sample(frag_sdf + dir * t);
 				if (d < 0.001) {
 					return 0.0;
@@ -301,7 +322,27 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float k, int max_steps, fl
 					best_d = d;
 					best_t = t;
 				}
-				t += max(d, (maxd - t) / float(tail - e));
+				t += max(d, (t_fast_end - t) / float(tail - e));
+			}
+		}
+		// Tip band: every hit and penumbra sample fades by the tip weight, so the
+		// shadow closes at t_tip. Same forced-floor sweep as the tail, since sphere
+		// tracing has no step bound here either.
+		if (tip_band > 0.0 && t < maxd) {
+			t = max(t, t_ex_end);
+			int bsteps = max(max_steps >> 2, 4);
+			for (int e = 0; e < bsteps && t < maxd; e++) {
+				float d = lit_sdf_sample(frag_sdf + dir * t);
+				float tw = lit_tip_weight(t, t_tip, tip_band);
+				if (d < 0.001) {
+					res = min(res, 1.0 - tw);
+					if (res <= 0.0) {
+						return 0.0;
+					}
+				} else {
+					res = min(res, mix(1.0, k * d / t, tw));
+				}
+				t += max(abs(d), (maxd - t) / float(bsteps - e));
 			}
 		}
 		return clamp(min(res, k * best_d / best_t), 0.0, 1.0);

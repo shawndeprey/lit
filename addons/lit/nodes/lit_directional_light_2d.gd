@@ -60,6 +60,15 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
+## Length of cast shadows as a fraction of `shadow_reach`: every occluder's shadow
+## closes exactly at that distance through a natural penumbral tip, so a low sun reads
+## as long evening shadows and a high sun as short noon ones (0 = none at all). Animate
+## it alongside the node's rotation for day/night cycles.
+@export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0
+## Maximum distance shadows can extend, in world pixels; `shadow_length` scales within
+## it. A world length, so shadows stay identical at any camera zoom. The world-SDF
+## window grows to cover it, so very large values coarsen shadow-casting resolution.
+@export_range(256.0, 16384.0, 1.0, "or_greater") var shadow_reach: float = 4096.0
 ## Angular size (full diameter) of the source in degrees (CONE_TRACED / STOCHASTIC):
 ## how wide the light appears in the sky, the same convention as Unreal's Source Angle
 ## (0.5357), Unity HDRP's Angular Diameter (0.5) and Blender's Sun Angle (0.526) - the

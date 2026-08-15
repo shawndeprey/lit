@@ -102,7 +102,12 @@ func update(host: Node, viewport: Viewport, visible: Array,
 		if not light.shadow_enabled:
 			continue
 		if light is LitDirectionalLight2D:
-			var toward := -Vector2.from_angle(light.global_rotation) * diag
+			# Extend by the light's effective world-px shadow cap, so the window always
+			# contains its marches at any zoom (a view-derived extension would shrink
+			# the world coverage when zoomed in, truncating shadows on screen).
+			var reach: float = maxf(light.shadow_reach, 0.0) \
+					* clampf(light.shadow_length, 0.0, 1.0)
+			var toward := -Vector2.from_angle(light.global_rotation) * reach
 			rect = rect.expand(world_rect.position + toward).expand(world_rect.end + toward)
 		else:
 			rect = rect.expand(light.global_position)

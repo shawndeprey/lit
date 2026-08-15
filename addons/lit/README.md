@@ -57,6 +57,8 @@ That's it — everything updates live in the editor as you build.
 - **Three light types.** Point, Directional (a sun), and Spot (a cone).
 - **Light textures (cookies).** Drop a texture on a point or spot light to shape it —
   window panes, canopy dapple, blinds — just like the engine's `PointLight2D` texture.
+  **Texture Offset** slides the cookie off the node while shadows and shading stay
+  put — cycle it and a hanging lamp swings.
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
 - **Three shadow algorithms, per light.** **Cone Traced** (the default: a single
   signed-coverage cone march driven by a physical **Source Radius** — penumbras widen

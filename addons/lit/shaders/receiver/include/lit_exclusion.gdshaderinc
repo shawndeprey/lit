@@ -102,15 +102,15 @@ float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 
 #ifdef LIT_OCC_MASKS
 // True when the sample's nearest outline can belong to one of the light's exempt
-// occluders (texels 10-13 of its row; texel 8.x is the count).
+// occluders (texels 11-14 of its row; texel 9.x is the count).
 bool lit_mk_exempt(int row, vec2 p_canvas, float reach) {
-	int cnt = int(round(texelFetch(lit_light_data, ivec2(8, row), 0).x));
+	int cnt = int(round(texelFetch(lit_light_data, ivec2(9, row), 0).x));
 	float r2 = reach * reach;
 	for (int j = 0; j < 4; j++) {
 		if (j >= cnt) {
 			break;
 		}
-		vec4 rect = texelFetch(lit_light_data, ivec2(10 + j, row), 0);
+		vec4 rect = texelFetch(lit_light_data, ivec2(11 + j, row), 0);
 		vec2 dv = max(max(rect.xy - p_canvas, vec2(0.0)), p_canvas - rect.zw);
 		if (dot(dv, dv) <= r2) {
 			return true;
