@@ -54,3 +54,6 @@ docs/plans/
 # OS-specific
 .DS_Store
 Thumbs.db
+
+# Lit Specific
+lit_precompile.cfg

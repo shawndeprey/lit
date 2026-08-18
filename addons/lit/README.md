@@ -177,7 +177,9 @@ if LitManager.precompile_shaders():          # false if one is already running
 	await LitManager.precompile_finished
 ```
 
-The `lit/startup/*` settings: `precompile_shaders` (the launch-time build on/off),
-`precompile_async` (worker-backed background mode), `precompile_title` (custom screen
-title), `precompile_verbose` (show the shader being compiled), and
-`precompile_async_position` (where the floating progress box sits).
+**Precompile only what you use.** **Project → Tools → Generate Lit Precompile
+Config** scans your scenes for actual Lit usage and writes the exact shader list to
+`res://lit_precompile.cfg`. While that file exists, only what it names is built;
+delete it to build everything again. Exports pack the file automatically. Regenerate
+when your Lit usage changes - usage created purely from code is invisible to the
+scan, and debug builds warn when a shader compiles outside the list.

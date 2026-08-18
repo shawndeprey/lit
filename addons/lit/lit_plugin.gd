@@ -19,9 +19,12 @@ const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 
 const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
+const TOOL_MENU_PRECOMPILE := "Generate Lit Precompile Config"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
+const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
+const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
 
 # Editor-live refresh cadence. Polling a few times a second relights the viewport when
 # a light moves, a property changes, or the 2D editor camera pans or zooms, without
@@ -34,6 +37,7 @@ var _registry: LitLightRegistry
 var _refresh_accum := 0.0
 var _warm_pending: Array[int] = []
 var _post_inspector: EditorInspectorPlugin
+var _export_plugin: EditorExportPlugin
 
 
 # --- Lifecycle ---------------------------------------------------------------
@@ -54,10 +58,14 @@ func _enter_tree() -> void:
 	_persist_project_settings() # guarded: same, for the lit/* settings
 	_ensure_autoload()          # guarded: adds only if not already registered
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
+	add_tool_menu_item(TOOL_MENU_PRECOMPILE, _generate_precompile_config)
 	# The "Add Effect" button on the LitPostProcess inspector.
 	_post_inspector = LitPostInspectorScript.new()
 	_post_inspector.undo_redo = get_undo_redo()
 	add_inspector_plugin(_post_inspector)
+	# Packs lit_precompile.cfg into exports (see editor/lit_export_plugin.gd).
+	_export_plugin = LitExportPluginScript.new()
+	add_export_plugin(_export_plugin)
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
 	_registry = LitLightRegistryScript.new()
 	# Silent background warm so first-session editor tier swaps never pay a compile.
@@ -70,8 +78,11 @@ func _exit_tree() -> void:
 	_registry = null
 	LitLightRegistryScript.editor_release_live()
 	remove_tool_menu_item(TOOL_MENU_ITEM)
+	remove_tool_menu_item(TOOL_MENU_PRECOMPILE)
 	remove_inspector_plugin(_post_inspector)
 	_post_inspector = null
+	remove_export_plugin(_export_plugin)
+	_export_plugin = null
 	_remove_live_globals()
 
 func _disable_plugin() -> void:
@@ -183,6 +194,40 @@ func _make_selected_nodes_lit() -> void:
 func _start_converted_sprite(node: Node) -> void:
 	if node.has_method("_lit_ready"):
 		node.call("_lit_ready")
+
+# --- Precompile config tool ---------------------------------------------------
+#
+# "Generate Lit Precompile Config" scans the project's saved scenes for actual Lit
+# usage and writes res://lit_precompile.cfg; while that file exists, the startup
+# precompiler builds exactly that list instead of the full variant matrix. Deleting
+# the file restores the full build. The scan itself lives in
+# editor/lit_precompile_config.gd.
+
+func _generate_precompile_config() -> void:
+	var result: Dictionary = LitPrecompileConfigScript.generate()
+	if not result.saved:
+		_popup_tool_dialog("Lit Precompile Config", "Could not write res://lit_precompile.cfg; see the Output log.")
+		return
+	var variants: PackedStringArray = result.variants
+	var shaders: Array = result.shaders
+	var text: String
+	if variants.is_empty() and shaders.is_empty():
+		text = "Scanned %d scenes and found no Lit usage.\nWrote an empty res://lit_precompile.cfg, so the precompiler will build nothing.\nDelete the file to restore full builds." \
+				% result.scenes
+	else:
+		text = "Scanned %d scenes.\nPrecompile list: %d of %d receiver variants, plus %d shader files.\n\nWrote res://lit_precompile.cfg (packed into exports automatically); delete it to return to full builds.\nRegenerate after adding lights, masks, or post effects." \
+				% [result.scenes, variants.size(), result.full, shaders.size()]
+	_popup_tool_dialog("Lit Precompile Config", text)
+
+func _popup_tool_dialog(title: String, text: String) -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = title
+	dlg.dialog_text = text
+	EditorInterface.get_base_control().add_child(dlg)
+	dlg.visibility_changed.connect(func() -> void:
+		if not dlg.visible:
+			dlg.queue_free())
+	dlg.popup_centered()
 
 # --- Global shader parameter registration -------------------------------------
 #

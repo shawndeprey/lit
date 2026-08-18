@@ -8,6 +8,7 @@ signal progress(done: int, total: int, label: String)
 signal finished
 
 const MARKER_PATH := "user://lit_shaders.cfg"
+const CONFIG_PATH := "res://lit_precompile.cfg"
 const WORKER_DIR := "user://lit_worker"
 const WorldSdfScript := preload("res://addons/lit/runtime/registry/world_sdf.gd")
 const BUILD_BUDGET_MS := 8.0
@@ -49,10 +50,39 @@ func _init() -> void:
 ## generated variants), so skipping them here would leave unwarmed PSOs for the first
 ## frames of async/API runs.
 static func work_list() -> Array:
+	var configured: Variant = config_work_list()
+	if configured != null:
+		return configured
 	var out: Array = []
 	out.append_array(static_shaders())
 	out.append_array(used_post_shaders())
 	out.append_array(LitShaderLibrary.all_variant_flags())
+	return out
+
+
+## A generated res://lit_precompile.cfg (Project > Tools > Generate Lit Precompile
+## Config) replaces the full work list verbatim: exactly what it names, nothing more.
+## Returns null when the file is absent or unreadable, which means the full build
+## above; delete the file to get back there.
+static func config_work_list() -> Variant:
+	if not FileAccess.file_exists(CONFIG_PATH):
+		return null
+	var cfg := ConfigFile.new()
+	if cfg.load(CONFIG_PATH) != OK:
+		push_warning("Lit: precompile config '%s' failed to parse; running the full precompile" % CONFIG_PATH)
+		return null
+	var out: Array = []
+	for path in cfg.get_value("lit", "shaders", PackedStringArray()):
+		if ResourceLoader.exists(path):
+			out.append(String(path))
+		else:
+			push_warning("Lit: precompile config names a missing shader '%s'; regenerate the config" % path)
+	for name in cfg.get_value("lit", "variants", PackedStringArray()):
+		var flags := LitShaderLibrary.flags_from_variant_name(String(name))
+		if flags >= 0:
+			out.append(flags)
+		else:
+			push_warning("Lit: precompile config names an unknown variant '%s'; regenerate the config" % name)
 	return out
 
 
