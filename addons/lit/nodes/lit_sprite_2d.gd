@@ -49,6 +49,18 @@ class_name LitSprite2D
 		_set_param("self_shadow", value)
 
 
+## How much Lit light reaches this sprite's origin right now: 0.0 = pitch black,
+## 1.0 = fully lit (see LitManager.sample_luminance for the full contract). Uses this
+## sprite's receiver_mask and shadow_ignore_mask, so it sees exactly the lights and
+## shadows the sprite renders with. Runtime only; returns 0.0 in the editor.
+func get_luminance() -> float:
+	var manager = get_node_or_null(^"/root/LitManager")
+	if manager == null:
+		return 0.0
+	return manager.sample_luminance(global_position, receiver_mask, shadow_ignore_mask,
+			null if self_shadow else self)
+
+
 # The CanvasTexture currently watched for specular-slot changes, so we can re-evaluate
 # has_specular_map live when the user assigns or clears a specular map in the inspector.
 var _watched_texture: CanvasTexture = null

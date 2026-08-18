@@ -91,6 +91,22 @@ var _rx_registry := RxRegistryScript.new()
 static func rx_set(node: CanvasItem, mask: int) -> void:
 	RxRegistryScript.rx_set(node, mask)
 
+# --- Luminance sampling --------------------------------------------------------------
+# CPU mirror of the shader's per-light compositing: registry/luminance.gd.
+const LuminanceScript := preload("res://addons/lit/runtime/registry/luminance.gd")
+var _luminance := LuminanceScript.new()
+
+## Luminance at `world_pos` (see LitManager.sample_luminance for the user contract).
+func sample_luminance(tree: SceneTree, root: Node, world_pos: Vector2,
+		receiver_mask: int = 1, shadow_ignore_mask: int = 0,
+		exclude_occluders_of: Node = null) -> float:
+	var lights := _light_cache.cull_visible(tree,
+			Rect2(world_pos - Vector2.ONE, Vector2(2.0, 2.0)))
+	_occluder_tiles.ensure_fresh(root, _light_cache.all(), false)
+	return _luminance.sample(tree, lights, _occluder_tiles.occ_nodes(),
+			_occluder_tiles.occ_layers(), world_pos, receiver_mask, shadow_ignore_mask,
+			exclude_occluders_of)
+
 # --- Editor live materials -----------------------------------------------------------
 # Node- and plugin-facing static API; the clone and authored-uniform maps live in
 # registry/editor_live.gd (statics shared by both editor registry instances).
