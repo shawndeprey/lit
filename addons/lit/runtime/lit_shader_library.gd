@@ -138,13 +138,20 @@ static func flags_from_path(path: String) -> int:
 	if not path.begins_with("res://addons/lit/shaders/"):
 		return -1
 	var fname := path.get_file()
-	if not fname.begins_with("lit_receiver") or not fname.ends_with(".gdshader"):
+	if not fname.ends_with(".gdshader"):
+		return -1
+	return flags_from_variant_name(fname.get_basename())
+
+
+## Inverse of variant_name; -1 for anything that isn't a canonical variant name.
+static func flags_from_variant_name(name: String) -> int:
+	if not name.begins_with("lit_receiver"):
 		return -1
 	var flags := 0
 	for axis in AXES:
 		if axis.get("absent_token", "") != "":
 			flags |= axis.flag
-	for token in fname.substr(12, fname.length() - 21).split("_", false):
+	for token in name.substr(12).split("_", false):
 		var matched := false
 		for axis in AXES:
 			if token == axis.token:
