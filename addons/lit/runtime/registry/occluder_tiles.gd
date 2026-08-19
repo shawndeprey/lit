@@ -87,6 +87,14 @@ func scope_occ_masks() -> Dictionary:
 	return _scope_occ_masks
 
 
+func occ_nodes() -> Array:
+	return _occ_nodes
+
+
+func occ_layers() -> Array:
+	return _occ_layers
+
+
 ## Whether the last build published any globally exempt rects.
 func gx_this_frame() -> bool:
 	return _gx_frame

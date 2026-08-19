@@ -165,6 +165,30 @@ func _boot_self_check() -> void:
 	if not ResourceLoader.exists(LitShaderLibrary.COMMON_INCLUDE_PATH):
 		push_error("Lit: %s failed to resolve; no receiver variant can compile. If this is an exported build, add '*.gdshaderinc' to the export's resource filters." % LitShaderLibrary.COMMON_INCLUDE_PATH)
 
+## Public API: how much Lit light reaches `world_pos`, as one scalar.
+##
+## 0.0 = pitch black. 1.0 = fully lit: the center of a plain white energy-1 light, or
+## standing in full white ambient. Brighter or overlapping lights push it above 1.0,
+## so clamp (or divide by your scene's maximum) for a 0-1 stealth meter.
+##
+## The value tracks what's rendered: distance falloff, spot cones, cookie textures,
+## light/receiver masks, ambient darkness (LitCanvasModulate), subtractive lights and
+## shadow occlusion all apply. Occlusion is a geometric umbra test against the same
+## occluders that cast shadows, so penumbra softness is not reflected - a point is
+## either in shadow or not.
+##
+## `receiver_mask` filters lights exactly like a receiver's Receiver Mask;
+## `shadow_ignore_mask` mirrors a receiver's Shadow Ignore Mask.
+## `exclude_occluders_of` mirrors a receiver's self-shadow exemption: occluders in
+## that node's subtree or among its direct siblings don't shadow the sample (a
+## sprite's own footprint occluder shadows the world behind it, never itself).
+## LitSprite2D.get_luminance() calls this with the sprite's own values.
+func sample_luminance(world_pos: Vector2, receiver_mask: int = 1,
+		shadow_ignore_mask: int = 0, exclude_occluders_of: Node = null) -> float:
+	return _registry.sample_luminance(get_tree(), get_tree().root, world_pos,
+			receiver_mask, shadow_ignore_mask, exclude_occluders_of)
+
+
 func _process(_delta: float) -> void:
 	_registry.refresh(get_tree(), get_viewport(), get_tree().root, self)
 
