@@ -26,7 +26,6 @@ shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
 shader_parameter/footprint_shadow = 16.0
 shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_abh3i"]
 shader = ExtResource("5_w0epc")
@@ -44,7 +43,6 @@ shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
 shader_parameter/footprint_shadow = 16.0
 shader_parameter/directional_horizontal_scale = 32.0
-shader_parameter/directional_shadow_reach = 1.0
 
 [node name="TilesetTest1" type="Node2D" unique_id=978396673]
 

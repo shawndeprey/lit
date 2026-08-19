@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://cyisrttes0m3k"]
 
-[ext_resource type="Script" path="res://Test/ysort_test.gd" id="1"]
+[ext_resource type="Script" uid="uid://ccdoofd8rqv7r" path="res://Test/ysort_test.gd" id="1"]
 
-[node name="YSortTest" type="Node2D"]
+[node name="YSortTest" type="Node2D" unique_id=1553958640]
 script = ExtResource("1")
