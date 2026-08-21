@@ -3,7 +3,7 @@ All releases must update the version in `addons/lit/plugin.cfg`
 
 A release must be tagged prior to uploading to the Asset Library.
 ```
-git tag -a v1.1.1 -m "Release v1.1.1"
+git tag -a v1.1.2 -m "Release v1.1.2"
 git push origin --tags
 ```
 
