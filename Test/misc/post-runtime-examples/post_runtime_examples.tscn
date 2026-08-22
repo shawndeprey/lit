@@ -15,6 +15,7 @@
 [ext_resource type="Shader" uid="uid://dwfot7tpxpyv7" path="res://Test/misc/post-runtime-examples/group_pixelate.gdshader" id="13_b7emr"]
 [ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="14_qfr5t"]
 [ext_resource type="Script" uid="uid://tpvnd3mn7bn" path="res://Test/misc/post-runtime-examples/example_sepia_post_effect.gd" id="15_8cf81"]
+[ext_resource type="Texture2D" uid="uid://b1dbwlqb4g4l4" path="res://Test/misc/post-runtime-examples/cinderskull_eyes_e.png" id="16_m3k8e"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_eplcw"]
 shader = ExtResource("3_qo1wo")
@@ -197,7 +198,8 @@ specular_texture = ExtResource("6_m5f3w")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_b4dnh"]
 shader = ExtResource("3_qo1wo")
-shader_parameter/emissive_strength = 0.0
+shader_parameter/emissive_strength = 1.0
+shader_parameter/emissive_mask = ExtResource("16_m3k8e")
 shader_parameter/receiver_mask = 1
 shader_parameter/self_shadow = false
 shader_parameter/self_rect_count = 0
@@ -476,56 +478,34 @@ modulate multiplies the albedo before lighting: a free pre-light tint"
 horizontal_alignment = 1
 autowrap_mode = 3
 
-[node name="DeadSubViewport" type="Node2D" parent="." unique_id=382469911]
+[node name="Emissive" type="Node2D" parent="." unique_id=382469911]
 position = Vector2(1680, 740)
 
-[node name="Container" type="SubViewportContainer" parent="DeadSubViewport" unique_id=1624199138]
-offset_left = -120.0
-offset_top = -120.0
-offset_right = 120.0
-offset_bottom = 120.0
-
-[node name="SubViewport" type="SubViewport" parent="DeadSubViewport/Container" unique_id=190904986]
-disable_3d = true
-transparent_bg = true
-handle_input_locally = false
-size = Vector2i(240, 240)
-render_target_update_mode = 4
-
-[node name="Skull" type="Sprite2D" parent="DeadSubViewport/Container/SubViewport" unique_id=112654273]
+[node name="Skull" type="Sprite2D" parent="Emissive" unique_id=112654273]
 material = SubResource("ShaderMaterial_b4dnh")
-position = Vector2(120, 120)
 scale = Vector2(5, 5)
 texture = SubResource("CanvasTexture_q8v22")
 script = ExtResource("7_8vv5d")
+emissive_strength = 1.0
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="Light" type="Node2D" parent="DeadSubViewport/Container/SubViewport" unique_id=310936452]
-position = Vector2(50, 30)
+[node name="Light" type="Node2D" parent="Emissive" unique_id=310936452]
+position = Vector2(-70, -90)
 script = ExtResource("8_wrro7")
-color = Color(0.2, 1, 0.2, 1)
-energy = 3.0
+energy = 0.35
 range = 280.0
 falloff = 0.8
 height = 120.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
-[node name="GreenLightMarker" type="ColorRect" parent="DeadSubViewport/Container/SubViewport" unique_id=1170773626]
-offset_left = 44.0
-offset_top = 24.0
-offset_right = 56.0
-offset_bottom = 36.0
-mouse_filter = 2
-color = Color(0.2, 1, 0.2, 1)
-
-[node name="Label" type="Label" parent="DeadSubViewport" unique_id=1091720241]
+[node name="Label" type="Label" parent="Emissive" unique_id=1091720241]
 offset_left = -230.0
 offset_top = 120.0
 offset_right = 230.0
 offset_bottom = 230.0
 theme_override_font_sizes/font_size = 22
-text = "Does not work: SubViewport wrapper
-Lights resolve by main-screen position: the skull ignores its own green light (marked) and borrows whatever sits there"
+text = "Emissive mask (glowing eyes)
+No custom shader: emissive_strength 1.0 and a mask texture pass the eyes' own color through, dim light or none"
 horizontal_alignment = 1
 autowrap_mode = 3
 
