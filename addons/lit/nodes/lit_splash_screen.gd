@@ -5,6 +5,10 @@ class_name LitSplashScreen
 
 signal finished
 
+# Plugin version this node's saved data was authored under. The script is not @tool,
+# so only the update tool stamps it.
+@export_storage var lit_version := ""
+
 const DEFAULT_LOGO := preload("res://addons/lit/branding/Lit-Logo-Text.png")
 const DEFAULT_SFX := preload("res://addons/lit/branding/glitch.mp3")
 const GLITCH_SHADER := preload("res://addons/lit/shaders/post/lit_post_glitch.gdshader")

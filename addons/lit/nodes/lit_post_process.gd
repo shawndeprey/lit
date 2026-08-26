@@ -6,7 +6,14 @@ class_name LitPostProcess
 ## Post-processing chain host. LitPostEffect children run in child order, each pass
 ## reading the result of the ones above it. Hiding this node disables the chain.
 
+# Plugin version this node's saved data was authored under; see LitVersionStamp.
+@export_storage var lit_version := ""
+
 var _built_layer: int = 0
+
+
+func _enter_tree() -> void:
+	LitVersionStamp.stamp(self)
 
 
 func _ready() -> void:

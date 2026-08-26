@@ -25,6 +25,8 @@ const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_regi
 const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
+const LitUpdateToolScript := preload("res://addons/lit/editor/lit_update_tool.gd")
+const LitMigrationsScript := preload("res://addons/lit/editor/lit_migrations.gd")
 
 # Editor-live refresh cadence. Polling a few times a second relights the viewport when
 # a light moves, a property changes, or the 2D editor camera pans or zooms, without
@@ -38,6 +40,8 @@ var _refresh_accum := 0.0
 var _warm_pending: Array[int] = []
 var _post_inspector: EditorInspectorPlugin
 var _export_plugin: EditorExportPlugin
+# Carries the version, so registration and removal must use the same stored string.
+var _update_menu_label := ""
 
 
 # --- Lifecycle ---------------------------------------------------------------
@@ -59,6 +63,8 @@ func _enter_tree() -> void:
 	_ensure_autoload()          # guarded: adds only if not already registered
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	add_tool_menu_item(TOOL_MENU_PRECOMPILE, _generate_precompile_config)
+	_update_menu_label = "Update Project to Lit %s..." % LitMigrationsScript.current_version()
+	add_tool_menu_item(_update_menu_label, _update_project)
 	# The "Add Effect" button on the LitPostProcess inspector.
 	_post_inspector = LitPostInspectorScript.new()
 	_post_inspector.undo_redo = get_undo_redo()
@@ -79,6 +85,7 @@ func _exit_tree() -> void:
 	LitLightRegistryScript.editor_release_live()
 	remove_tool_menu_item(TOOL_MENU_ITEM)
 	remove_tool_menu_item(TOOL_MENU_PRECOMPILE)
+	remove_tool_menu_item(_update_menu_label)
 	remove_inspector_plugin(_post_inspector)
 	_post_inspector = null
 	remove_export_plugin(_export_plugin)
@@ -218,6 +225,187 @@ func _generate_precompile_config() -> void:
 		text = "Scanned %d scenes.\nPrecompile list: %d of %d receiver variants, plus %d shader files.\n\nWrote res://lit_precompile.cfg (packed into exports automatically); delete it to return to full builds.\nRegenerate after adding lights, masks, or post effects." \
 				% [result.scenes, variants.size(), result.full, shaders.size()]
 	_popup_tool_dialog("Lit Precompile Config", text)
+
+# --- Update Project tool -------------------------------------------------------
+#
+# "Update Project to Lit X.Y.Z" converts core nodes project-wide, rebases user
+# scripts extending Sprite2D/TileMapLayer onto the Lit classes, and brings every Lit
+# node to the current version. The engine lives in editor/lit_update_tool.gd; this
+# is the dialog flow around it. Open scenes are saved first so the SceneState scan
+# reads current data, and changed open scenes reload afterwards.
+
+func _update_project() -> void:
+	EditorInterface.save_all_scenes()
+	var title: String = _update_menu_label.trim_suffix("...")
+	_progress_open(title, "Scanning scripts...")
+	await get_tree().process_frame
+	var acc: Dictionary = LitUpdateToolScript.scan_begin()
+	var scene_paths: Array = acc["scene_paths"]
+	for i in scene_paths.size():
+		LitUpdateToolScript.scan_scene(acc, scene_paths[i])
+		if (i + 1) % 4 == 0 or i + 1 == scene_paths.size():
+			_progress_set("Scanning scenes... %d / %d" % [i + 1, scene_paths.size()],
+					float(i + 1) / maxf(scene_paths.size(), 1.0))
+			await get_tree().process_frame
+	var scan: Dictionary = LitUpdateToolScript.scan_finish(acc)
+	_progress_close()
+	var c: Dictionary = scan["counts"]
+	if c["scenes_to_process"] == 0 and c["rebase_roots"] == 0 and c["rebase_skipped"] == 0 \
+			and c["retype_scripts"] == 0 and c["tool_add"] == 0:
+		_popup_tool_dialog(title, "Scanned %d scenes: everything is already on Lit %s."
+				% [c["scenes"], scan["current"]])
+		return
+
+	var dlg := ConfirmationDialog.new()
+	dlg.title = title
+	dlg.ok_button_text = "Update"
+	var vb := VBoxContainer.new()
+	var head := Label.new()
+	head.text = "Scanned %d scenes; %d need changes. Converting:" \
+			% [c["scenes"], c["scenes_to_process"]]
+	vb.add_child(head)
+	var boxes := {}
+	for entry in [
+			["lights", "%d lights (point + directional)" % (c["point_lights"] + c["directional_lights"]),
+					c["point_lights"] + c["directional_lights"]],
+			["modulates", "%d CanvasModulate" % c["modulates"], c["modulates"]],
+			["sprites", "%d Sprite2D" % c["sprites"], c["sprites"]],
+			["tilemaps", "%d TileMapLayer" % c["tilemaps"], c["tilemaps"]],
+			["scripts", "%d script rebases, %d reference updates, %d @tool additions"
+					% [c["rebase_roots"], c["retype_scripts"], c["tool_add"]],
+					c["rebase_roots"] + c["retype_scripts"] + c["tool_add"]],
+			["wrap", "%d custom-material nodes wrapped in CanvasGroups" % c["custom_mats"],
+					c["custom_mats"]]]:
+		var cb := CheckBox.new()
+		cb.text = entry[1]
+		cb.button_pressed = entry[2] > 0
+		cb.disabled = entry[2] == 0
+		boxes[entry[0]] = cb
+		vb.add_child(cb)
+	var info := Label.new()
+	var info_lines := PackedStringArray()
+	if c["lit_stamp"] > 0:
+		info_lines.append("%d Lit nodes will be stamped or migrated to %s."
+				% [c["lit_stamp"], scan["current"]])
+	if c["skipped_scripted"] > 0:
+		info_lines.append("%d core nodes have custom scripts and will be skipped." % c["skipped_scripted"])
+	if c["rebase_skipped"] > 0:
+		info_lines.append("%d script chains collide with Lit members and will be skipped." % c["rebase_skipped"])
+	if c["retype_scripts"] > 0:
+		info_lines.append("%d scripts reference converted core types; annotations, casts, and .new() calls will be retyped." % c["retype_scripts"])
+	if c["tool_add"] > 0:
+		info_lines.append("%d scripts get @tool added (their Lit base needs it in the editor)." % c["tool_add"])
+	if c["unlit_mats"] > 0:
+		info_lines.append("%d nodes keep deliberately-unlit materials (compose over lighting)." % c["unlit_mats"])
+	if c["custom_mats"] > 0:
+		info_lines.append("Unchecked, custom-material nodes stay unlit; the report groups them by shader.")
+	info_lines.append("")
+	info_lines.append("Scene files and scripts are rewritten in place. Commit or back up first.")
+	info_lines.append("@tool scripts in affected scenes run during processing.")
+	info.text = "\n".join(info_lines)
+	vb.add_child(info)
+	dlg.add_child(vb)
+	EditorInterface.get_base_control().add_child(dlg)
+	dlg.confirmed.connect(func() -> void:
+		var kinds := {}
+		for key in boxes:
+			kinds[key] = (boxes[key] as CheckBox).button_pressed
+		_run_update(scan, kinds))
+	dlg.visibility_changed.connect(func() -> void:
+		if not dlg.visible:
+			dlg.queue_free())
+	dlg.popup_centered()
+
+func _run_update(scan: Dictionary, kinds: Dictionary) -> void:
+	# Off-tree LitCanvasModulate setters push the live ambient globals; snapshot and
+	# restore so the editor preview keeps the currently open scene's ambient.
+	var ambient_color: Variant = RenderingServer.global_shader_parameter_get("lit_ambient_color")
+	var ambient_energy: Variant = RenderingServer.global_shader_parameter_get("lit_ambient_energy")
+	_progress_open(_update_menu_label.trim_suffix("..."), "Updating scripts...")
+	await get_tree().process_frame
+	var rctx: Dictionary = LitUpdateToolScript.run_begin(scan, kinds)
+	var scenes: Array = rctx["scenes"]
+	for i in scenes.size():
+		_progress_set("Updating scenes... %d / %d" % [i + 1, scenes.size()],
+				float(i) / maxf(scenes.size(), 1.0))
+		await get_tree().process_frame
+		LitUpdateToolScript.run_scene(rctx, scenes[i])
+	var result: Dictionary = LitUpdateToolScript.run_finish(rctx)
+	_progress_close()
+	if ambient_color != null:
+		RenderingServer.global_shader_parameter_set("lit_ambient_color", ambient_color)
+	if ambient_energy != null:
+		RenderingServer.global_shader_parameter_set("lit_ambient_energy", ambient_energy)
+	EditorInterface.get_resource_filesystem().scan()
+	EditorInterface.get_script_editor().reload_open_files()
+	var changed: Array = result["changed_scenes"]
+	for open_path in EditorInterface.get_open_scenes():
+		if changed.has(open_path):
+			EditorInterface.reload_scene_from_path(open_path)
+	var flagged := 0
+	for line in result["report"]:
+		if String(line).begins_with("SKIPPED") or String(line).begins_with("MANUAL") \
+				or String(line).begins_with("ERROR"):
+			flagged += 1
+	var text := "Rewrote %d scenes and rebased %d scripts onto Lit bases." \
+			% [changed.size(), result["rebased_scripts"].size()]
+	if result["retyped_scripts"].size() > 0:
+		text += "\nUpdated core-type references in %d scripts." % result["retyped_scripts"].size()
+	if result["tooled_scripts"].size() > 0:
+		text += "\nAdded @tool to %d scripts (their Lit base requires it)." % result["tooled_scripts"].size()
+	if flagged > 0:
+		text += "\n%d items need manual attention." % flagged
+	text += "\n\nFull details: res://lit_update_report.txt\nRun the tool again any time; it only rewrites what changed."
+	_popup_tool_dialog(_update_menu_label.trim_suffix("..."), text)
+
+# --- Progress dialog -----------------------------------------------------------
+#
+# The scan and run passes are driven a scene at a time with a process_frame await
+# between chunks, so the editor keeps painting and this window can show progress
+# instead of the whole editor freezing.
+
+var _progress_win: Window
+var _progress_label: Label
+var _progress_bar: ProgressBar
+
+func _progress_open(title: String, text: String) -> void:
+	_progress_close()
+	_progress_win = Window.new()
+	_progress_win.title = title
+	_progress_win.exclusive = true
+	_progress_win.unresizable = true
+	_progress_win.transient = true
+	var margin := MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in ["margin_left", "margin_top", "margin_right", "margin_bottom"]:
+		margin.add_theme_constant_override(side, 12)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	_progress_label = Label.new()
+	_progress_label.text = text
+	_progress_bar = ProgressBar.new()
+	_progress_bar.max_value = 1.0
+	_progress_bar.custom_minimum_size = Vector2(340, 0)
+	vb.add_child(_progress_label)
+	vb.add_child(_progress_bar)
+	margin.add_child(vb)
+	_progress_win.add_child(margin)
+	EditorInterface.get_base_control().add_child(_progress_win)
+	_progress_win.popup_centered(Vector2i(400, 96))
+
+func _progress_set(text: String, ratio: float) -> void:
+	if _progress_win == null:
+		return
+	_progress_label.text = text
+	_progress_bar.value = ratio
+
+func _progress_close() -> void:
+	if _progress_win == null:
+		return
+	_progress_win.queue_free()
+	_progress_win = null
+	_progress_label = null
+	_progress_bar = null
 
 func _popup_tool_dialog(title: String, text: String) -> void:
 	var dlg := AcceptDialog.new()
@@ -391,7 +579,7 @@ func _project_setting_defs() -> Array:
 				"name": "lit/render/lighting_model",
 				"type": TYPE_INT,
 				"hint": PROPERTY_HINT_ENUM,
-				"hint_string": "Blinn–Phong (BP) — faster · uses only the CanvasTexture · stylized highlights,Physically Based Rendering (PBR) — realistic surfaces · adds metallic/roughness/AO · slight perf cost",
+				"hint_string": "Blinn–Phong (BP) - faster · uses only the CanvasTexture · stylized highlights,Physically Based Rendering (PBR) - realistic surfaces · adds metallic/roughness/AO · slight perf cost",
 			},
 		},
 		{

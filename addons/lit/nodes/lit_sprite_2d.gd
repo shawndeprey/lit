@@ -19,6 +19,9 @@ class_name LitSprite2D
 # load, not preload: class_name parse at editor startup precedes the plugin registering
 # the lit_* globals, and a preload would compile the shader before they exist.
 
+# Plugin version this node's saved data was authored under; see LitVersionStamp.
+@export_storage var lit_version := ""
+
 ## Emissive strength: these pixels ignore the dark. Proxies to the material's
 ## `emissive_strength` uniform.
 @export var emissive_strength: float = 0.0:
@@ -51,7 +54,7 @@ class_name LitSprite2D
 		_update_process_state()
 
 ## Self-shadowing: when off (the default), this sprite's own occluders can't cast onto
-## it — their shadows render behind it. "Own" means LightOccluder2D nodes that are
+## it - their shadows render behind it. "Own" means LightOccluder2D nodes that are
 ## descendants of this sprite or its direct siblings. All other occluders still shadow
 ## this sprite normally. Proxies to `self_shadow`.
 @export var self_shadow: bool = false:
@@ -164,6 +167,10 @@ func _init() -> void:
 	# Signal, not _ready: a subclass overriding _ready without super() must not
 	# silently disable the node.
 	ready.connect(_lit_ready)
+
+
+func _enter_tree() -> void:
+	LitVersionStamp.stamp(self)
 
 
 func _lit_ready() -> void:

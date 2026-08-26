@@ -7,6 +7,8 @@ class_name LitTileMapLayer
 ## counterpart for tilemaps. Own occluders are the tileset occlusion polygons of the
 ## painted cells plus any LightOccluder2D descendants.
 
+# Plugin version this node's saved data was authored under; see LitVersionStamp.
+@export_storage var lit_version := ""
 
 @export var emissive_strength: float = 0.0:
 	set(value):
@@ -31,7 +33,7 @@ class_name LitTileMapLayer
 		LitLightRegistry.rx_set(self, value)
 
 ## Self-shadowing: when off (the default), this layer's own occluders can't cast onto
-## it — their shadows render behind it.
+## it - their shadows render behind it.
 @export var self_shadow: bool = false:
 	set(value):
 		self_shadow = value
@@ -119,6 +121,10 @@ func _init() -> void:
 	# Signal, not _ready: a subclass overriding _ready without super() must not
 	# silently disable the node.
 	ready.connect(_lit_ready)
+
+
+func _enter_tree() -> void:
+	LitVersionStamp.stamp(self)
 
 
 func _lit_ready() -> void:

@@ -18,6 +18,9 @@ class_name LitCanvasModulate
 
 const GROUP := "lit_canvas_modulate"
 
+# Plugin version this node's saved data was authored under; see LitVersionStamp.
+@export_storage var lit_version := ""
+
 @export var color: Color = Color("#1a1a1a"):
 	set(value):
 		color = value
@@ -31,6 +34,7 @@ const GROUP := "lit_canvas_modulate"
 
 func _enter_tree() -> void:
 	add_to_group(GROUP)
+	LitVersionStamp.stamp(self)
 	_apply()
 	_warn_if_conflicting()
 	update_configuration_warnings()

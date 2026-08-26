@@ -39,10 +39,17 @@ class_name LitPostEffect
 ## Effect" menu under Custom). The "New Custom Effect..." item in that menu generates
 ## a working starter script + shader to build from.
 
+# Plugin version this node's saved data was authored under; see LitVersionStamp.
+@export_storage var lit_version := ""
+
 var _host: LitPostProcess = null
 var _mat: ShaderMaterial = null       # created on first activation, kept across toggles
 var _pass_layer: CanvasLayer = null   # exists only while the pass is active
 var _pass_index: int = 0              # chain position, assigned by the host
+
+
+func _enter_tree() -> void:
+	LitVersionStamp.stamp(self)
 
 
 func _ready() -> void:
