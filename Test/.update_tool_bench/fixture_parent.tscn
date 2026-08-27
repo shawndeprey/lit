@@ -1,8 +1,9 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_child.tscn" id="1_child"]
 [ext_resource type="Texture2D" path="res://Test/base.png" id="2_tex"]
 [ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_env.tscn" id="3_env"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_menu.tscn" id="4_menu"]
 
 [sub_resource type="TileSetAtlasSource" id="atlas"]
 texture = ExtResource("2_tex")
@@ -32,6 +33,11 @@ light_mask = 4
 tile_set = SubResource("tset")
 
 [node name="Env" parent="." instance=ExtResource("3_env")]
+
+[node name="MenuBox" parent="." instance=ExtResource("4_menu")]
+
+[node name="HudArt" type="Sprite2D" parent="MenuBox"]
+texture = ExtResource("2_tex")
 
 [node name="Ghost" parent="." instance_placeholder="res://Test/.update_tool_bench/fixture_child.tscn"]
 light_mask = 2

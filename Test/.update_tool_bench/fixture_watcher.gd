@@ -1,6 +1,9 @@
 extends Node
 
 @onready var torch_light: PointLight2D = null
+@onready var named_child: PointLight2D = $PointLight2D
+@onready var nested_light: PointLight2D = $Props/PointLight2D
+@onready var unique_light: PointLight2D = %PointLight2D
 
 var vis_changes := 0
 # A PointLight2D mention in a comment stays untouched.

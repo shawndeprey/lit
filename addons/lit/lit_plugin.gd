@@ -267,18 +267,18 @@ func _update_project() -> void:
 	var boxes := {}
 	for entry in [
 			["lights", "%d lights (point + directional)" % (c["point_lights"] + c["directional_lights"]),
-					c["point_lights"] + c["directional_lights"]],
-			["modulates", "%d CanvasModulate" % c["modulates"], c["modulates"]],
-			["sprites", "%d Sprite2D" % c["sprites"], c["sprites"]],
-			["tilemaps", "%d TileMapLayer" % c["tilemaps"], c["tilemaps"]],
+					c["point_lights"] + c["directional_lights"], true],
+			["modulates", "%d CanvasModulate" % c["modulates"], c["modulates"], true],
+			["sprites", "%d Sprite2D" % c["sprites"], c["sprites"], true],
+			["tilemaps", "%d TileMapLayer" % c["tilemaps"], c["tilemaps"], true],
 			["scripts", "%d script rebases, %d reference updates, %d @tool additions"
 					% [c["rebase_roots"], c["retype_scripts"], c["tool_add"]],
-					c["rebase_roots"] + c["retype_scripts"] + c["tool_add"]],
-			["wrap", "%d custom-material nodes wrapped in CanvasGroups" % c["custom_mats"],
-					c["custom_mats"]]]:
+					c["rebase_roots"] + c["retype_scripts"] + c["tool_add"], true],
+			["menus", "%d menu/UI nodes (under Control or CanvasLayer; usually best left unlit)"
+					% c["menu_nodes"], c["menu_nodes"], false]]:
 		var cb := CheckBox.new()
 		cb.text = entry[1]
-		cb.button_pressed = entry[2] > 0
+		cb.button_pressed = entry[2] > 0 and entry[3]
 		cb.disabled = entry[2] == 0
 		boxes[entry[0]] = cb
 		vb.add_child(cb)
@@ -298,10 +298,11 @@ func _update_project() -> void:
 	if c["unlit_mats"] > 0:
 		info_lines.append("%d nodes keep deliberately-unlit materials (compose over lighting)." % c["unlit_mats"])
 	if c["custom_mats"] > 0:
-		info_lines.append("Unchecked, custom-material nodes stay unlit; the report groups them by shader.")
+		info_lines.append("%d custom-material nodes are not auto-migratable; the report's attention section groups them by shader." % c["custom_mats"])
 	info_lines.append("")
 	info_lines.append("Scene files and scripts are rewritten in place. Commit or back up first.")
 	info_lines.append("@tool scripts in affected scenes run during processing.")
+	info_lines.append("The editor reloads the project when the update finishes.")
 	info.text = "\n".join(info_lines)
 	vb.add_child(info)
 	dlg.add_child(vb)
@@ -336,17 +337,14 @@ func _run_update(scan: Dictionary, kinds: Dictionary) -> void:
 		RenderingServer.global_shader_parameter_set("lit_ambient_color", ambient_color)
 	if ambient_energy != null:
 		RenderingServer.global_shader_parameter_set("lit_ambient_energy", ambient_energy)
-	EditorInterface.get_resource_filesystem().scan()
-	EditorInterface.get_script_editor().reload_open_files()
 	var changed: Array = result["changed_scenes"]
-	for open_path in EditorInterface.get_open_scenes():
-		if changed.has(open_path):
-			EditorInterface.reload_scene_from_path(open_path)
 	var flagged := 0
 	for line in result["report"]:
 		if String(line).begins_with("SKIPPED") or String(line).begins_with("MANUAL") \
 				or String(line).begins_with("ERROR"):
 			flagged += 1
+	var did_work: bool = changed.size() > 0 or result["rebased_scripts"].size() > 0 \
+			or result["tooled_scripts"].size() > 0 or result["retyped_scripts"].size() > 0
 	var text := "Rewrote %d scenes and rebased %d scripts onto Lit bases." \
 			% [changed.size(), result["rebased_scripts"].size()]
 	if result["retyped_scripts"].size() > 0:
@@ -354,9 +352,24 @@ func _run_update(scan: Dictionary, kinds: Dictionary) -> void:
 	if result["tooled_scripts"].size() > 0:
 		text += "\nAdded @tool to %d scripts (their Lit base requires it)." % result["tooled_scripts"].size()
 	if flagged > 0:
-		text += "\n%d items need manual attention." % flagged
+		text += "\n%d items were not auto-migratable - see the attention section at the top of the report." % flagged
 	text += "\n\nFull details: res://lit_update_report.txt\nRun the tool again any time; it only rewrites what changed."
-	_popup_tool_dialog(_update_menu_label.trim_suffix("..."), text)
+	if not did_work:
+		_popup_tool_dialog(_update_menu_label.trim_suffix("..."), text)
+		return
+	# Rewritten scripts and scenes only fully take after a project reload (in-editor
+	# script reloads leave stale compiled state and class caches). Disk is authoritative
+	# here - everything was saved before the run - so restart without re-saving.
+	text += "\n\nClosing this dialog reloads the project so every change takes effect."
+	var dlg := AcceptDialog.new()
+	dlg.title = _update_menu_label.trim_suffix("...")
+	dlg.dialog_text = text
+	EditorInterface.get_base_control().add_child(dlg)
+	dlg.visibility_changed.connect(func() -> void:
+		if not dlg.visible:
+			dlg.queue_free()
+			EditorInterface.restart_editor(false))
+	dlg.popup_centered()
 
 # --- Progress dialog -----------------------------------------------------------
 #

@@ -4,8 +4,9 @@ extends SceneTree
 ## fixtures to a scratch dir, runs the full update rooted there, and asserts every
 ## conversion contract: property mapping, script rebasing + collision skip, override
 ## remap with delta preservation, connection/unique-name/occluder survival, animation
-## track renames, material classification + CanvasGroup wrapping, and byte-identical
-## idempotency on a second run.
+## track renames, material classification (custom materials are never auto-migrated;
+## they land in the report's attention section), and byte-identical idempotency on a
+## second run.
 ## Run: godot --headless --path . --script res://Test/gate_update_tool.gd
 
 const Tool := preload("res://addons/lit/editor/lit_update_tool.gd")
@@ -22,12 +23,13 @@ const SRC := "res://Test/.update_tool_bench"
 const OUT := "res://Test/.update_tool_bench/.out"
 const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
 	"fixture_fx_root.tscn", "fixture_inherited.tscn", "fixture_anim_lib.tres",
+	"fixture_menu.tscn",
 	"fixture_rebase_sprite.gd", "fixture_collide_sprite.gd", "fixture_light_script.gd",
 	"fixture_watcher.gd", "fixture_oneline_tile.gd", "fixture_lit_light.gd"]
 # Built by _prepare from fixture_env; locks binary-scene support and .scn preservation.
 const BIN_SCENE := "env_bin.scn"
 const ALL_KINDS := {"lights": true, "modulates": true, "sprites": true,
-	"tilemaps": true, "scripts": true, "wrap": true}
+	"tilemaps": true, "scripts": true}
 
 var _fails := 0
 
@@ -44,7 +46,7 @@ func _initialize() -> void:
 	_gate_scripts()
 	_gate_run_result(scan1, run1)
 	_gate_idempotency()
-	_gate_wrap_off()
+	_gate_menus_on()
 	print("GATE RESULT: " + ("PASS" if _fails == 0 else "FAIL (%d failures)" % _fails))
 	if _fails == 0:
 		_cleanup()
@@ -188,39 +190,25 @@ func _gate_child() -> void:
 			"existing CanvasTexture not double-wrapped")
 
 	var fx_rebased := root.get_node("RebasedFxSprite")
-	_check(fx_rebased is CanvasGroup and (fx_rebased as CanvasGroup).material is ShaderMaterial,
-			"rebased custom-material node wrapped in a CanvasGroup")
-	var fx_rebased_inner := root.get_node_or_null("RebasedFxSprite/RebasedFxSprite")
-	if _check(fx_rebased_inner != null, "wrapped rebased node keeps its name one level down"):
-		_check(_script_path(fx_rebased_inner).ends_with("fixture_rebase_sprite.gd"),
-				"wrapped rebased node keeps its user script")
-		_check((fx_rebased_inner as Sprite2D).material is ShaderMaterial \
-				and LitShaderLibrary.flags_of(((fx_rebased_inner as Sprite2D).material \
-				as ShaderMaterial).shader) >= 0,
-				"wrapped rebased node got the receiver material")
-		_check(int(fx_rebased_inner.get("receiver_mask")) == 16,
-				"wrapped rebased node receiver_mask from light_mask")
+	_check(fx_rebased.get_class() == "Sprite2D" \
+			and _script_path(fx_rebased).ends_with("fixture_rebase_sprite.gd"),
+			"rebased custom-material node keeps its node and script")
+	_check((fx_rebased as Sprite2D).material is ShaderMaterial \
+			and LitShaderLibrary.flags_of(((fx_rebased as Sprite2D).material \
+			as ShaderMaterial).shader) < 0,
+			"rebased custom-material node keeps its custom material")
+	_check(str(fx_rebased.get("lit_version")) == Migrations.current_version(),
+			"rebased custom-material node stamped")
 
 	var unshaded_vfx := root.get_node("UnshadedVfxSprite") as Sprite2D
 	_check(unshaded_vfx.get_script() == null and unshaded_vfx.material is ShaderMaterial,
 			"unshaded-shader sprite left unlit")
 
-	var fx_group := root.get_node("CustomFxSprite")
-	_check(fx_group is CanvasGroup, "custom-shader sprite wrapped in a CanvasGroup")
-	_check((fx_group as CanvasGroup).material is ShaderMaterial,
-			"wrap group carries the custom material")
-	_check((fx_group as Node2D).position == Vector2(50, 60), "wrap group takes the transform")
-	var fx_sprite := root.get_node_or_null("CustomFxSprite/CustomFxSprite") as Sprite2D
-	if _check(fx_sprite != null, "wrapped sprite keeps its name one level down"):
-		_check(_script_path(fx_sprite) == String(Maps.SWAPS[&"Sprite2D"]),
-				"wrapped sprite became a LitSprite2D")
-		_check(fx_sprite.material is ShaderMaterial \
-				and LitShaderLibrary.flags_of((fx_sprite.material as ShaderMaterial).shader) >= 0,
-				"wrapped sprite carries the receiver material")
-		_check(fx_sprite.position == Vector2.ZERO, "wrapped sprite transform moved to the group")
-		_check(fx_sprite.texture is CanvasTexture, "wrapped sprite texture wrapped")
-		_check(str(fx_sprite.get("lit_version")) == Migrations.current_version(),
-				"wrapped sprite stamped")
+	var fx_sprite := root.get_node("CustomFxSprite") as Sprite2D
+	_check(fx_sprite.get_class() == "Sprite2D" and fx_sprite.get_script() == null \
+			and fx_sprite.material is ShaderMaterial,
+			"custom-material sprite kept as-is (attention section, not auto-migrated)")
+	_check(fx_sprite.position == Vector2(50, 60), "custom-material sprite untouched")
 
 	var rebased := root.get_node("RebasedSprite")
 	_check(_script_path(rebased).ends_with("fixture_rebase_sprite.gd"), "rebased sprite keeps its script")
@@ -249,6 +237,16 @@ func _gate_child() -> void:
 	_check((light as Node2D).visibility_changed.is_connected(Callable(watcher, "_on_light_vis")),
 			"outgoing connection rewired")
 
+	var named := root.get_node_or_null("Watcher/PointLight2D")
+	if _check(named != null, "class-default-named light keeps its name through conversion"):
+		_check(_script_path(named) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]),
+				"class-default-named light converted")
+		_check(named.unique_name_in_owner, "class-default-named light keeps %-unique flag")
+	var nested := root.get_node_or_null("Watcher/Props/PointLight2D")
+	_check(nested != null and _script_path(nested) == String(
+			Maps.REPLACEMENTS[&"PointLight2D"]["script"]),
+			"nested class-default-named light converted under its preserved path")
+
 	var oneline := root.get_node("OnelineTile")
 	_check(_script_path(oneline).ends_with("fixture_oneline_tile.gd"),
 			"one-line class_name script kept on its node")
@@ -265,6 +263,13 @@ func _gate_child() -> void:
 	_check(_row_has_prop(child_state, "BareSprite", "material"),
 			"bare-swapped sprite's receiver material is stored in the file")
 
+	var menu_sprite := root.get_node("Menu/MenuSprite")
+	_check(menu_sprite.get_class() == "Sprite2D" and menu_sprite.get_script() == null,
+			"menu sprite under a Control left alone by default")
+	var menu_light := root.get_node("Menu/MenuLight")
+	_check(menu_light.get_class() == "PointLight2D" and menu_light.get_script() == null,
+			"menu light under a Control left alone by default")
+
 	var existing := root.get_node("ExistingLit")
 	_check(str(existing.get("lit_version")) == Migrations.current_version(),
 			"pre-existing Lit node stamped")
@@ -273,8 +278,8 @@ func _gate_child() -> void:
 	var anim := (root.get_node("Anim") as AnimationPlayer).get_animation("swing")
 	_check(anim != null and anim.track_get_path(0) == NodePath("Light:texture_offset"),
 			"animation track renamed to texture_offset")
-	_check(anim != null and anim.track_get_path(1) == NodePath("CustomFxSprite/CustomFxSprite:offset"),
-			"animation track repathed into the wrap group")
+	_check(anim != null and anim.track_get_path(1) == NodePath("CustomFxSprite:offset"),
+			"track on the kept custom-material sprite untouched")
 	_check(anim != null and anim.track_get_path(2) == NodePath("Light:height"),
 			"height track left for the manual note")
 	root.free()
@@ -305,7 +310,7 @@ func _gate_env() -> void:
 
 
 func _gate_fx_root() -> void:
-	print("[gate 1c] custom-material scene root (cannot wrap; pattern menu)")
+	print("[gate 1c] custom-material scene root (kept; pattern menu)")
 	var root := _fresh(OUT + "/fixture_fx_root.tscn")
 	if not _check(root != null, "fx-root scene loads"):
 		return
@@ -346,7 +351,7 @@ func _gate_parent() -> void:
 	if not _check(packed != null, "parent scene loads"):
 		return
 	var state := packed.get_state()
-	_check(state.get_node_count() == 8, "parent stores 8 rows (deltas only), got %d"
+	_check(state.get_node_count() == 10, "parent stores 10 rows (deltas only), got %d"
 			% state.get_node_count())
 	_check(_row_is_instance(state, "Env"), "env stays an instance in the parent")
 	_check("instance_placeholder=" in text, "instance placeholder preserved")
@@ -370,6 +375,10 @@ func _gate_parent() -> void:
 	_check(_script_path(tiles) == String(Maps.SWAPS[&"TileMapLayer"]), "tilemap swapped")
 	_check(int(tiles.get("receiver_mask")) == 4, "tilemap light_mask -> receiver_mask")
 	_check((tiles as TileMapLayer).tile_set != null, "tile_set survives")
+
+	var hud := root.get_node("MenuBox/HudArt")
+	_check(hud.get_class() == "Sprite2D" and hud.get_script() == null,
+			"sprite added under an instanced menu scene left alone by default")
 	root.free()
 
 
@@ -395,6 +404,14 @@ func _gate_scripts() -> void:
 	_check("as LitDirectionalLight2D" in watcher, "cast retyped")
 	_check("\"PointLight2D\"" in watcher, "string literal left untouched")
 	_check("# A PointLight2D mention in a comment" in watcher, "comment left untouched")
+	# Node-path tokens: default node names equal the class name and conversion keeps
+	# names, so $/%%/path tokens must never be retyped - only the annotations beside them.
+	_check("named_child: LitPointLight2D = $PointLight2D" in watcher,
+			"$-path token untouched, its annotation retyped")
+	_check("nested_light: LitPointLight2D = $Props/PointLight2D" in watcher,
+			"path-segment token untouched")
+	_check("unique_light: LitPointLight2D = %PointLight2D" in watcher,
+			"percent-unique token untouched")
 	var light_script := FileAccess.get_file_as_string(OUT + "/fixture_light_script.gd")
 	_check(light_script.begins_with("extends PointLight2D"), "scripted-light extends stays core")
 
@@ -404,13 +421,15 @@ func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 	_check(run1["changed_scenes"].size() == 5, "five scenes rewritten, got %d"
 			% run1["changed_scenes"].size())
 	var c: Dictionary = scan1["counts"]
-	_check(c["point_lights"] == 2 and c["directional_lights"] == 1 and c["modulates"] == 3,
+	_check(c["point_lights"] == 4 and c["directional_lights"] == 1 and c["modulates"] == 3,
 			"scan counts lights + modulates")
 	_check(c["sprites"] == 4 and c["tilemaps"] == 1, "scan counts convertible receivers")
 	_check(c["skipped_scripted"] == 1, "scan counts the scripted light")
 	_check(c["rebase_roots"] == 2, "scan counts both rebase roots (plain + one-line form)")
 	_check(c["unlit_mats"] == 2, "scan counts deliberately-unlit materials")
 	_check(c["custom_mats"] == 2, "scan counts custom shader materials")
+	_check(c["menu_nodes"] == 4, "scan counts menu/UI candidates, got %d" % c["menu_nodes"])
+	_check(c["menu_core"] == 1, "scan counts menu core lights/modulates")
 	_check(c["retype_scripts"] == 1, "scan counts the retypable script")
 	_check(c["tool_add"] == 3, "scan counts @tool additions (2 rebases + 1 Lit-based)")
 	_check(run1["retyped_scripts"].size() == 1, "one script retyped")
@@ -418,11 +437,19 @@ func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 	var joined := "\n".join(run1["report"])
 	for marker in ["SKIPPED-COLLISION", "CLAMPED", "REMAPPED-TRACK", "REMAPPED-OVERRIDE",
 			"custom script", "REBASED", "STAMPED", "UNLIT", "MatSprite", "UnshadedVfxSprite",
-			"WRAPPED", "CustomFxSprite", "premultiplied", "rendered nothing",
-			"Pick a pattern per shader", "fixture_fx_root", "external animation",
+			"MANUAL custom material", "CustomFxSprite", "Custom Shaders docs page",
+			"rendered nothing", "fixture_fx_root", "external animation",
 			"inner class", "instance placeholder", "units differ", "RETYPED", "TOOLED",
-			"CAUTION", "string literals name core classes"]:
+			"CAUTION", "string literals name core classes", "menu/UI core lights"]:
 		_check(marker in joined, "report mentions %s" % marker)
+
+	var report_text := FileAccess.get_file_as_string(OUT + "/report.txt")
+	_check("NEEDS YOUR ATTENTION" in report_text, "report leads with the attention section")
+	_check("=".repeat(72) in report_text, "attention section fenced for copy/paste")
+	_check("custom script; convert manually  (%s/fixture_child.tscn)" % OUT in report_text,
+			"flagged lines carry their scene so the section is self-contained")
+	_check(report_text.find("NEEDS YOUR ATTENTION") < report_text.find("--- "),
+			"attention section sits above the per-scene log")
 
 
 func _gate_idempotency() -> void:
@@ -445,20 +472,30 @@ func _gate_idempotency() -> void:
 		_check(FileAccess.get_md5(OUT + "/" + f) == hashes[f], "%s byte-identical" % f)
 
 
-func _gate_wrap_off() -> void:
-	print("[gate 6] wrap checkbox off: custom materials kept + pattern menu")
+func _gate_menus_on() -> void:
+	print("[gate 6] menus checkbox on: UI candidates convert")
 	_prepare()
 	var kinds := ALL_KINDS.duplicate()
-	kinds["wrap"] = false
-	var scan3: Dictionary = Tool.scan([OUT])
-	var run3: Dictionary = Tool.run(scan3, kinds, OUT + "/report3.txt")
+	kinds["menus"] = true
+	var scan4: Dictionary = Tool.scan([OUT])
+	var run4: Dictionary = Tool.run(scan4, kinds, OUT + "/report4.txt")
 	var root := _fresh(OUT + "/fixture_child.tscn")
-	if _check(root != null, "child loads after wrap-off run"):
-		var fx := root.get_node("CustomFxSprite")
-		_check(fx.get_class() == "Sprite2D" and (fx as Sprite2D).material is ShaderMaterial,
-				"custom-material sprite kept unwrapped when unchecked")
+	if _check(root != null, "child loads after menus-on run"):
+		_check(_script_path(root.get_node("Menu/MenuSprite")) == String(Maps.SWAPS[&"Sprite2D"]),
+				"menu sprite converted when menus checked")
+		_check(_script_path(root.get_node("Menu/MenuLight"))
+				== String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]),
+				"menu light converted when menus checked")
 		root.free()
-	var joined := "\n".join(run3["report"])
-	_check(not ("WRAPPED" in joined), "no wrapping when unchecked")
-	_check("custom shader materials" in joined and "Pick a pattern per shader" in joined,
-			"grouped pattern menu emitted when unchecked")
+	var menu_root := _fresh(OUT + "/fixture_menu.tscn")
+	if _check(menu_root != null, "menu scene loads after menus-on run"):
+		_check(_script_path(menu_root.get_node("MenuArt")) == String(Maps.SWAPS[&"Sprite2D"]),
+				"Control-rooted menu scene's art converted when menus checked")
+		menu_root.free()
+	var parent_root := _fresh(OUT + "/fixture_parent.tscn")
+	if _check(parent_root != null, "parent loads after menus-on run"):
+		_check(_script_path(parent_root.get_node("MenuBox/HudArt")) == String(Maps.SWAPS[&"Sprite2D"]),
+				"sprite under an instanced menu converted when menus checked")
+		parent_root.free()
+	_check(run4["changed_scenes"].has(OUT + "/fixture_menu.tscn"),
+			"menu scene rewritten when menus checked")

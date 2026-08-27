@@ -1,4 +1,4 @@
-@tool
+﻿@tool
 extends RefCounted
 
 ## Engine behind "Update Project to Lit" (Project > Tools). Idempotent, two jobs in
@@ -57,7 +57,7 @@ static func scan_begin(roots: Array[String] = ["res://"]) -> Dictionary:
 		"counts": {"scenes": scene_paths.size(), "point_lights": 0, "directional_lights": 0,
 			"modulates": 0, "sprites": 0, "tilemaps": 0, "skipped_scripted": 0,
 			"lit_stamp": 0, "remap_rows": 0, "scenes_to_process": 0, "unlit_mats": 0,
-			"custom_mats": 0},
+			"custom_mats": 0, "menu_nodes": 0, "menu_core": 0},
 	}
 
 
@@ -66,7 +66,6 @@ static func scan_scene(acc: Dictionary, scene_path: String) -> void:
 	var scripts: Dictionary = acc["scripts"]
 	var lit_by_script: Dictionary = acc["lit_by_script"]
 	var core_names: Dictionary = acc["core_names"]
-	var custom_groups: Dictionary = acc["custom_groups"]
 	var current: String = acc["current"]
 	var packed := load(scene_path) as PackedScene
 	if packed == null:
@@ -101,32 +100,6 @@ static func scan_scene(acc: Dictionary, scene_path: String) -> void:
 		if not instance_path.is_empty():
 			deps[instance_path] = true
 
-		if not String(row["type"]).is_empty():
-			if Maps.REPLACEMENTS.has(row["type"]) and script_path.is_empty():
-				needs = true
-				match String(row["type"]):
-					"PointLight2D": counts["point_lights"] += 1
-					"DirectionalLight2D": counts["directional_lights"] += 1
-					"CanvasModulate": counts["modulates"] += 1
-			elif Maps.REPLACEMENTS.has(row["type"]):
-				counts["skipped_scripted"] += 1
-				needs = true
-			elif Maps.SWAPS.has(row["type"]) and script_path.is_empty():
-				var where := "%s %s" % [scene_path, row["path"]]
-				var cls := _classify_material(props.get("material"))
-				match cls["kind"]:
-					"unlit":
-						counts["unlit_mats"] += 1
-						acc["unlit_nodes"].append(where)
-					"custom":
-						counts["custom_mats"] += 1
-						needs = true
-						if not custom_groups.has(cls["shader"]):
-							custom_groups[cls["shader"]] = []
-						custom_groups[cls["shader"]].append(where)
-					_:
-						needs = true
-						counts["sprites" if String(row["type"]) == "Sprite2D" else "tilemaps"] += 1
 		if scripts["rebase_all"].has(script_path) or scripts["lit_based"].has(script_path):
 			needs = true
 		if lit_by_script.has(script_path) \
@@ -145,13 +118,64 @@ static func scan_scene(acc: Dictionary, scene_path: String) -> void:
 					needs = true
 	acc["model"][scene_path] = {"rows": rows, "deps": deps.keys(), "needs": needs,
 		"inherited": not rows.is_empty() and not String(rows[0]["instance"]).is_empty()}
-	if needs:
-		counts["scenes_to_process"] += 1
 
 
 static func scan_finish(acc: Dictionary) -> Dictionary:
 	var counts: Dictionary = acc["counts"]
 	var scripts: Dictionary = acc["scripts"]
+	# Candidate classification runs here, after every scene is modeled, so UI ancestry
+	# can resolve through instanced menu scenes.
+	for scene_path in acc["model"]:
+		var m: Dictionary = acc["model"][scene_path]
+		var by_path := {}
+		for row in m["rows"]:
+			by_path[String(row["path"])] = row
+		var needs: bool = m["needs"]
+		for row in m["rows"]:
+			var row_type := String(row["type"])
+			if row_type.is_empty():
+				continue
+			var script_path := String(row["script"])
+			if Maps.REPLACEMENTS.has(row_type):
+				if _is_ui_row(acc, by_path, String(row["path"])):
+					row["ui"] = true
+					if script_path.is_empty():
+						counts["menu_nodes"] += 1
+						counts["menu_core"] += 1
+						needs = true
+				elif script_path.is_empty():
+					needs = true
+					match row_type:
+						"PointLight2D": counts["point_lights"] += 1
+						"DirectionalLight2D": counts["directional_lights"] += 1
+						"CanvasModulate": counts["modulates"] += 1
+				else:
+					counts["skipped_scripted"] += 1
+					needs = true
+			elif Maps.SWAPS.has(row_type) and script_path.is_empty():
+				if _is_ui_row(acc, by_path, String(row["path"])):
+					row["ui"] = true
+					counts["menu_nodes"] += 1
+					needs = true
+				else:
+					var where := "%s %s" % [scene_path, row["path"]]
+					var cls := _classify_material(row["props"].get("material"))
+					match cls["kind"]:
+						"unlit":
+							counts["unlit_mats"] += 1
+							acc["unlit_nodes"].append(where)
+						"custom":
+							counts["custom_mats"] += 1
+							needs = true
+							if not acc["custom_groups"].has(cls["shader"]):
+								acc["custom_groups"][cls["shader"]] = []
+							acc["custom_groups"][cls["shader"]].append(where)
+						_:
+							needs = true
+							counts["sprites" if row_type == "Sprite2D" else "tilemaps"] += 1
+		m["needs"] = needs
+		if needs:
+			counts["scenes_to_process"] += 1
 	counts["rebase_roots"] = scripts["roots"].size()
 	counts["rebase_scripts"] = scripts["rebase_all"].size()
 	counts["rebase_skipped"] = scripts["skipped"].size()
@@ -186,10 +210,7 @@ static func _scan_scripts(roots: Array[String]) -> Dictionary:
 	for entry in ProjectSettings.get_global_class_list():
 		by_class[String(entry["class"])] = String(entry["path"])
 
-	var core_ref_rx := RegEx.new()
-	var core_alt := "|".join(Maps.REPLACEMENTS.keys().map(func(k: StringName) -> String:
-		return String(k)))
-	core_ref_rx.compile("\\b(%s)\\b" % core_alt)
+	var core_ref_rx := _core_class_rx()
 
 	var info := {}
 	for path in paths:
@@ -358,6 +379,17 @@ static func _line_pieces(line: String) -> Array:
 	return pieces
 
 
+# Matches a replaced core class used AS a class. The lookbehind rejects node-path and
+# member tokens ($PointLight2D, %PointLight2D, Props/PointLight2D, x.PointLight2D):
+# node NAMES often default to the class name, and conversion preserves names, so a
+# path token must never be retyped.
+static func _core_class_rx() -> RegEx:
+	var rx := RegEx.new()
+	rx.compile("(?<![$%%/.])\\b(%s)\\b" % "|".join(Maps.REPLACEMENTS.keys().map(
+			func(k: StringName) -> String: return String(k))))
+	return rx
+
+
 # Lit global classes that are @tool scripts (all node classes; not LitSplashScreen).
 static func _lit_tool_classes() -> Dictionary:
 	var out := {}
@@ -417,6 +449,48 @@ static func _core_mapped_names() -> Dictionary:
 	return out
 
 
+# UI ancestry: any ancestor typed as (or instancing a scene rooted in) Control or
+# CanvasLayer marks a candidate as a menu/HUD node. Menu art must not join the world
+# lighting uninvited, so these convert only when the menus checkbox opts in.
+static func _is_ui_row(acc: Dictionary, by_path: Dictionary, path: String) -> bool:
+	var cur := path
+	var guard := 0
+	while cur != "." and guard < 64:
+		guard += 1
+		cur = cur.get_base_dir()
+		if cur.is_empty():
+			break
+		var row = by_path.get(cur)
+		if row == null:
+			continue
+		var t := String(row["type"])
+		if not t.is_empty():
+			if _type_is_ui(t):
+				return true
+		elif not String(row["instance"]).is_empty() \
+				and _scene_root_is_ui(acc, String(row["instance"])):
+			return true
+	return false
+
+
+static func _type_is_ui(t: String) -> bool:
+	return ClassDB.is_parent_class(t, "Control") or ClassDB.is_parent_class(t, "CanvasLayer")
+
+
+static func _scene_root_is_ui(acc: Dictionary, scene_path: String, depth: int = 0) -> bool:
+	if depth > 8 or not acc["model"].has(scene_path):
+		return false
+	var rows: Array = acc["model"][scene_path]["rows"]
+	if rows.is_empty():
+		return false
+	var t := String(rows[0]["type"])
+	if not t.is_empty():
+		return _type_is_ui(t)
+	if not String(rows[0]["instance"]).is_empty():
+		return _scene_root_is_ui(acc, String(rows[0]["instance"]), depth + 1)
+	return false
+
+
 ## Leaves-first over the instance graph, so child scenes convert before the parents
 ## that store overrides on them.
 static func _topo_order(scene_paths: Array[String], model: Dictionary) -> Array[String]:
@@ -470,6 +544,12 @@ static func run_begin(scan_result: Dictionary, kinds: Dictionary,
 			report.append("CAUTION: %d core nodes keep custom scripts and stay core types; "
 					% scan_result["counts"]["skipped_scripted"]
 					+ "references to those specific nodes should keep their core annotations")
+		if not retyped.is_empty() and not kinds.get("menus", false) \
+				and int(scan_result["counts"].get("menu_core", 0)) > 0:
+			report.append("CAUTION: %d menu/UI core lights or modulates stay native "
+					% scan_result["counts"]["menu_core"]
+					+ "(menus unchecked); references to those specific nodes should keep "
+					+ "their core annotations")
 		var touched := {}
 		for p in rebased:
 			touched[p] = true
@@ -482,9 +562,7 @@ static func run_begin(scan_result: Dictionary, kinds: Dictionary,
 	# Scripts already rooted in a Lit class get the same node fixups every run, so a
 	# later run converges anything a previous one missed (or that was added since).
 	rebased.merge(scripts["lit_based"])
-	var ctx := {"custom": {}, "scene": "", "wrapped": [], "groups": []}
-	if not kinds.get("wrap", true):
-		ctx["custom"] = scan_result["custom_groups"].duplicate(true)
+	var ctx := {"custom": scan_result["custom_groups"].duplicate(true), "scene": ""}
 	var scenes: Array[String] = []
 	for scene_path in scan_result["order"]:
 		var m: Dictionary = scan_result["model"][scene_path]
@@ -536,30 +614,16 @@ static func _report_material_notes(scan_result: Dictionary, ctx: Dictionary,
 			report.append("    " + unlit[i])
 		if unlit.size() > 8:
 			report.append("    ... and %d more" % (unlit.size() - 8))
-	var wrapped: Array = ctx["wrapped"]
-	if not wrapped.is_empty():
-		report.append("--- custom materials wrapped in CanvasGroups")
-		report.append("WRAPPED %d nodes: the group carries the node's name, transform, and "
-				% wrapped.size() + "stacking; the effect now post-processes the LIT node.")
-		for w in wrapped:
-			report.append("    " + w)
-		report.append("Verify each visually. Caveats: a group shader reads premultiplied "
-				+ "alpha (soft edges may need the un-premultiply line - see the Custom "
-				+ "Shaders docs); code that set the node's material, or read its position, "
-				+ "must now target the group; each CanvasGroup costs a backbuffer copy.")
 	if not ctx["custom"].is_empty():
-		report.append("--- custom shader materials (kept; these nodes stay unlit)")
 		var shader_paths: Array = ctx["custom"].keys()
 		shader_paths.sort()
 		for sp in shader_paths:
 			var nodes: Array = ctx["custom"][sp]
-			report.append("MANUAL %s: %d nodes" % [sp, nodes.size()])
-			for i in mini(nodes.size(), 8):
-				report.append("    " + nodes[i])
-			if nodes.size() > 8:
-				report.append("    ... and %d more" % (nodes.size() - 8))
-		report.append("Pick a pattern per shader - post-light CanvasGroup wrap, albedo pre-pass,"
-				+ " unlit overlay child, or receiver emissive - see the Custom Shaders docs page.")
+			report.append("MANUAL custom material %s: %d nodes kept as-is; pick a pattern "
+					% [sp, nodes.size()] + "from the Custom Shaders docs page (post-light "
+					+ "CanvasGroup, albedo pre-pass, unlit overlay child, or receiver emissive)")
+			for node_where in nodes:
+				report.append("    " + node_where)
 
 
 ## Rewrite the extends line of each collision-free chain root, then force-reload the
@@ -641,9 +705,7 @@ static func _retype_references(scripts: Dictionary, report: Array) -> Array:
 		targets[path] = true
 	for path in scripts["string_refs"]:
 		targets[path] = true
-	var rx := RegEx.new()
-	rx.compile("\\b(%s)\\b" % "|".join(Maps.REPLACEMENTS.keys().map(
-			func(k: StringName) -> String: return String(k))))
+	var rx := _core_class_rx()
 	var paths: Array = targets.keys()
 	paths.sort()
 	var changed: Array = []
@@ -682,6 +744,7 @@ static func _retype_references(scripts: Dictionary, report: Array) -> Array:
 		if not string_lines.is_empty():
 			report.append("MANUAL %s: string literals name core classes (line %s); "
 					% [path, ", ".join(string_lines)]
+					+ "node-name paths (get_node) still resolve since names are preserved, but "
 					+ "class-name lookups (find_children/is_class) no longer match converted nodes")
 	return changed
 
@@ -715,7 +778,6 @@ static func _process_scene(scene_path: String, m: Dictionary, scan_result: Dicti
 	var current: String = scan_result["current"]
 	var converted_paths: Array[NodePath] = []
 	var stamped := 0
-	ctx["groups"] = []
 
 	for row in m["rows"]:
 		if row["placeholder"]:
@@ -733,6 +795,8 @@ static func _process_scene(scene_path: String, m: Dictionary, scan_result: Dicti
 		var row_type := String(row["type"])
 		var row_script := String(row["script"])
 
+		if row.get("ui", false) and not kinds.get("menus", false):
+			continue
 		if not row_type.is_empty() and Maps.REPLACEMENTS.has(row_type):
 			if not row_script.is_empty():
 				report.append("SKIPPED %s: %s has a custom script; convert manually"
@@ -751,12 +815,11 @@ static func _process_scene(scene_path: String, m: Dictionary, scan_result: Dicti
 							root = new_node
 		elif not row_type.is_empty() and Maps.SWAPS.has(row_type) and row_script.is_empty() \
 				and _kind_on(kinds, row_type):
-			if _convert_receiver(root, node, Maps.SWAPS[row_type], row, current,
-					kinds.get("wrap", true), report, ctx):
+			if _convert_receiver(node, Maps.SWAPS[row_type], row, current, report):
 				converted_paths.append(row["path"])
 				changed = true
 		elif rebased.has(row_script):
-			if _receiver_fixups(root, node, row, current, kinds.get("wrap", true), report, ctx):
+			if _receiver_fixups(node, row, current, report, ctx):
 				changed = true
 			converted_paths.append(row["path"])
 		elif lit_by_script.has(row_script):
@@ -776,7 +839,7 @@ static func _process_scene(scene_path: String, m: Dictionary, scan_result: Dicti
 		if _remap_overrides(node, row, report):
 			changed = true
 
-	if _remap_animation_tracks(root, ctx, report):
+	if _remap_animation_tracks(root, report):
 		changed = true
 
 	if stamped > 0:
@@ -854,6 +917,9 @@ static func _convert_replacing(root: Node, old: Node, row: Dictionary, current: 
 	var parent := old.get_parent()
 	var index := old.get_index()
 	var unique := old.unique_name_in_owner
+	# Release the owner's unique-name slot while old is still owned, or the
+	# replacement's acquisition conflicts with the detached node's registration.
+	old.unique_name_in_owner = false
 	var incoming := _persisted_incoming(old)
 	var outgoing := _persisted_outgoing(old)
 	var children := old.get_children()
@@ -997,7 +1063,8 @@ static func _map_shadow_color(sc: Color) -> Color:
 static func _report_dropped(core_class: String, spec: Dictionary, stored: Dictionary,
 		path: NodePath, report: Array) -> void:
 	for stored_name in stored:
-		if stored_name == "script" or String(stored_name).begins_with("metadata/"):
+		if stored_name == "script" or stored_name == "unique_name_in_owner" \
+				or String(stored_name).begins_with("metadata/"):
 			continue
 		if spec["copy"].has(stored_name) or spec["special"].has(StringName(stored_name)):
 			continue
@@ -1049,16 +1116,10 @@ static func _classify_material(mat: Material) -> Dictionary:
 
 
 ## Sprite2D/TileMapLayer conversion candidate. Returns true when the node changed.
-static func _convert_receiver(root: Node, node: Node, script_path: String, row: Dictionary,
-		current: String, wrap: bool, report: Array, ctx: Dictionary) -> bool:
+static func _convert_receiver(node: Node, script_path: String, row: Dictionary,
+		current: String, report: Array) -> bool:
 	var core_class := node.get_class()
 	var cls := _classify_material((node as CanvasItem).material)
-	if cls["kind"] == "custom" and wrap:
-		if node == root:
-			_note_custom(ctx, cls["shader"], row["path"])
-			return false
-		_wrap_in_canvas_group(root, node, row, ctx)
-		cls = {"kind": "none"}
 	match cls["kind"]:
 		"unlit", "custom":
 			return false  # collected scan-side for the grouped material notes
@@ -1097,73 +1158,18 @@ static func _note_custom(ctx: Dictionary, shader_path: String, path: NodePath) -
 	ctx["custom"][shader_path].append("%s %s" % [ctx["scene"], path])
 
 
-## Wrap a custom-material node in a CanvasGroup so its effect post-processes the lit
-## result. The group takes the node's NAME, transform, and stacking properties, and
-## the node becomes its identically-named child: path-based references (animations,
-## instance overrides on transform/visibility) land on the group and keep their
-## meaning, while %-unique names stay on the node itself.
-static func _wrap_in_canvas_group(root: Node, node: Node, row: Dictionary,
-		ctx: Dictionary) -> void:
-	var ci := node as CanvasItem
-	var parent := node.get_parent()
-	var index := node.get_index()
-	var desc_owner := {}
-	for d in node.find_children("*", "", true, false):
-		desc_owner[d] = d.owner
-	var unique := node.unique_name_in_owner
-
-	var group := CanvasGroup.new()
-	group.material = ci.material
-	ci.material = null
-	group.transform = (node as Node2D).transform if node is Node2D else Transform2D.IDENTITY
-	group.visible = ci.visible
-	group.z_index = ci.z_index
-	group.z_as_relative = ci.z_as_relative
-	group.show_behind_parent = ci.show_behind_parent
-	group.top_level = ci.top_level
-
-	parent.remove_child(node)
-	node.owner = null
-	group.name = row["path"].get_name(row["path"].get_name_count() - 1)
-	parent.add_child(group)
-	parent.move_child(group, index)
-	group.owner = root
-	group.add_child(node)
-	node.name = group.name
-	node.owner = root
-	node.unique_name_in_owner = unique
-	if node is Node2D:
-		(node as Node2D).transform = Transform2D.IDENTITY
-	ci.visible = true
-	ci.z_index = 0
-	ci.z_as_relative = true
-	ci.show_behind_parent = false
-	ci.top_level = false
-	for d in desc_owner:
-		if desc_owner[d] != null:
-			d.owner = desc_owner[d]
-
-	ctx["groups"].append(group)
-	ctx["wrapped"].append("%s %s" % [ctx["scene"], row["path"]])
-
-
 ## Node whose user script chain roots in a Lit base (rebased this run, or already
 ## Lit-based from an earlier one). Never relies on the Lit _init having run: in the
 ## editor, non-@tool user scripts get placeholder script instances whose lifecycle
 ## callbacks never fire, so the receiver material must land explicitly.
-static func _receiver_fixups(root: Node, node: Node, row: Dictionary, current: String,
-		wrap: bool, report: Array, ctx: Dictionary) -> bool:
+static func _receiver_fixups(node: Node, row: Dictionary, current: String,
+		report: Array, ctx: Dictionary) -> bool:
 	if node.get(&"receiver_mask") == null:
 		report.append("ERROR %s: rebased script not yet compiled against the Lit base; "
 				% row["path"] + "restart the editor and run the update again")
 		return false
 	var changed := false
 	var cls := _classify_material(row["props"].get("material"))
-	if cls["kind"] == "custom" and wrap and node != root:
-		_wrap_in_canvas_group(root, node, row, ctx)
-		node.set("material", _fresh_receiver_material(node))
-		cls = {"kind": "wrapped"}
-		changed = true
 	match cls["kind"]:
 		"unlit":
 			report.append("UNLIT %s: rebased-script node keeps its material (%s) and "
@@ -1293,9 +1299,14 @@ static func _is_receiver_script(script_path: String) -> bool:
 ## Rename embedded animation tracks that drive renamed properties on converted nodes
 ## (e.g. "Light:offset" -> "Light:texture_offset"). External animation resources are
 ## reported for manual fixing, never rewritten.
-static func _remap_animation_tracks(root: Node, ctx: Dictionary, report: Array) -> bool:
+static func _remap_animation_tracks(root: Node, report: Array) -> bool:
 	var changed := false
-	var players: Array[Node] = root.find_children("*", "AnimationPlayer", true, false)
+	var players: Array[Node] = []
+	for p in root.find_children("*", "AnimationPlayer", true, false):
+		# Instance-provided players are handled in their own scene; walking them here
+		# would duplicate their notes on every parent.
+		if p.owner == root:
+			players.append(p)
 	if root is AnimationPlayer:
 		players.append(root)
 	for player in players:
@@ -1318,25 +1329,6 @@ static func _remap_animation_tracks(root: Node, ctx: Dictionary, report: Array) 
 							NodePath(track_path.get_concatenated_names()))
 					if target == null:
 						continue
-					# A track landing on a wrap-group but driving a property only the
-					# wrapped child has follows the node down one level.
-					var track_prop := String(track_path.get_subname(0))
-					if target is CanvasGroup and ctx["groups"].has(target) \
-							and not (track_prop in target):
-						var inner := target.get_node_or_null(NodePath(String(target.name)))
-						if inner != null and (track_prop in inner):
-							if anim_external:
-								report.append("MANUAL %s/%s: external animation drives `%s` "
-										% [player.name, anim_name, track_prop]
-										+ "on a wrapped node; repath the track by hand")
-								continue
-							anim.track_set_path(t, NodePath("%s/%s:%s"
-									% [track_path.get_concatenated_names(), target.name,
-									track_path.get_concatenated_subnames()]))
-							changed = true
-							report.append("REMAPPED-TRACK %s/%s: %s repathed into its wrap group"
-									% [player.name, anim_name, track_prop])
-							continue
 					if target.get_script() == null:
 						continue
 					var core_class := _replacement_core_for(
@@ -1372,16 +1364,61 @@ static func _remap_animation_tracks(root: Node, ctx: Dictionary, report: Array) 
 
 # --- Report ---------------------------------------------------------------------
 
+## The report leads with everything that was NOT auto-migratable, fenced and padded
+## so it can be copy/pasted straight into a task list; the chronological per-scene
+## log follows. Flagged lines pulled out of a scene block get the scene appended so
+## they stay self-contained.
 static func _write_report(report: Array, scan_result: Dictionary,
 		changed_scenes: Array, report_path: String) -> bool:
 	var f := FileAccess.open(report_path, FileAccess.WRITE)
 	if f == null:
 		push_warning("Lit: could not write '%s'" % report_path)
 		return false
+	var attention: Array[String] = []
+	var log: Array[String] = []
+	var scene := ""
+	var i := 0
+	while i < report.size():
+		var line := String(report[i])
+		if line.begins_with("--- "):
+			var head := line.trim_prefix("--- ")
+			scene = head if head.ends_with(".tscn") or head.ends_with(".scn") else ""
+		if _is_flagged(line):
+			attention.append(line if scene.is_empty() else "%s  (%s)" % [line, scene])
+			var j := i + 1
+			while j < report.size() and String(report[j]).begins_with("    "):
+				attention.append(report[j])
+				j += 1
+			i = j
+			continue
+		log.append(line)
+		i += 1
 	var c: Dictionary = scan_result["counts"]
 	f.store_line("Update Project to Lit %s - %d scenes scanned, %d rewritten"
 			% [scan_result["current"], c["scenes"], changed_scenes.size()])
 	f.store_line("")
-	for line in report:
+	if not attention.is_empty():
+		var items := 0
+		for line in attention:
+			if not line.begins_with("    "):
+				items += 1
+		f.store_line("")
+		f.store_line("=".repeat(72))
+		f.store_line("NEEDS YOUR ATTENTION - %d items were not auto-migratable" % items)
+		f.store_line("=".repeat(72))
+		f.store_line("")
+		for line in attention:
+			f.store_line(line)
+		f.store_line("")
+		f.store_line("=".repeat(72))
+		f.store_line("")
+		f.store_line("")
+	for line in log:
 		f.store_line(line)
 	return true
+
+
+static func _is_flagged(line: String) -> bool:
+	return line.begins_with("MANUAL") or line.begins_with("SKIPPED") \
+			or line.begins_with("CAUTION") or line.begins_with("ERROR") \
+			or line.begins_with("DROPPED-CONNECTION")

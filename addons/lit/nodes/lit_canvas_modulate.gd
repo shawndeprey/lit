@@ -36,7 +36,11 @@ func _enter_tree() -> void:
 	add_to_group(GROUP)
 	LitVersionStamp.stamp(self)
 	_apply()
-	_warn_if_conflicting()
+	# Checked a frame later: level streaming legitimately overlaps the outgoing and
+	# incoming modulates within a swap frame, and only true coexistence should warn.
+	if not Engine.is_editor_hint() \
+			and not get_tree().process_frame.is_connected(_warn_if_conflicting):
+		get_tree().process_frame.connect(_warn_if_conflicting, CONNECT_ONE_SHOT)
 	update_configuration_warnings()
 
 
@@ -51,13 +55,15 @@ func _apply() -> void:
 	RenderingServer.global_shader_parameter_set("lit_ambient_energy", ambient_energy)
 
 
+# Runtime warns only for a native CanvasModulate (always a real double-darken bug).
+# Multiple Lit modulates are the normal level-streaming pattern - each level carries
+# its ambient and the last to enter wins - so only the editor configuration warning
+# mentions them, where a genuine authoring mistake is diagnosable.
 func _warn_if_conflicting() -> void:
-	if Engine.is_editor_hint():
+	if not is_inside_tree():
 		return
 	if _find_native_canvas_modulate():
 		push_warning("LitCanvasModulate: a native CanvasModulate is present and will double-darken Lit output. Remove it.")
-	if get_tree().get_nodes_in_group(GROUP).size() > 1:
-		push_warning("LitCanvasModulate: multiple instances found; the last one in the tree wins.")
 
 
 func _get_configuration_warnings() -> PackedStringArray:
