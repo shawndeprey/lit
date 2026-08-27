@@ -415,6 +415,8 @@ func _progress_set(text: String, ratio: float) -> void:
 func _progress_close() -> void:
 	if _progress_win == null:
 		return
+	_progress_win.exclusive = false
+	_progress_win.hide()
 	_progress_win.queue_free()
 	_progress_win = null
 	_progress_label = null
