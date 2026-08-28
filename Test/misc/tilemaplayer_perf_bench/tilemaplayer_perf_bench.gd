@@ -720,12 +720,16 @@ func _report() -> void:
 			"on" if _opt_solid else "off", _gen_ms])
 	print("LITBENCH potmode=%s dummies=%d" % [_opt_potmode, _opt_dummies])
 	var census := {}
-	_census(get_tree().root, census)
+	var mats := {}
+	_census(get_tree().root, census, mats)
 	var parts: Array = []
 	for k in census:
 		parts.append("%s=%d" % [k, census[k]])
 	parts.sort()
 	print("LITBENCH processing " + " ".join(parts))
+	var pool: Dictionary = LitLightRegistry.pool_stats() if "pool_stats" in LitLightRegistry else {}
+	print("LITBENCH receiver_materials unique=%d pool_entries=%s pool_refs=%s" \
+			% [mats.size(), pool.get("entries", "n/a"), pool.get("refs", "n/a")])
 	print("LITBENCH packed_lights avg=%.1f max=%d of=%d" \
 			% [float(packed_sum) / maxi(n, 1), packed_max, _lights_enabled])
 	print("LITBENCH camera=%s zoom=%.2f speed=%.0f route_px=%.0f" \
@@ -743,14 +747,20 @@ func _report() -> void:
 	print("LITBENCH viewport=%s screen=%s" % [get_viewport_rect().size, DisplayServer.screen_get_size()])
 
 
-## Count processing nodes per script/class, for attributing main_process_ms.
-func _census(node: Node, acc: Dictionary) -> void:
+## Count processing nodes per script/class (attributing main_process_ms) and collect
+## the distinct Lit receiver materials in the tree (proving pooling).
+func _census(node: Node, acc: Dictionary, mats: Dictionary) -> void:
 	if node.is_processing():
 		var s := node.get_script() as Script
 		var key := s.resource_path.get_file() if s != null else node.get_class()
 		acc[key] = acc.get(key, 0) + 1
+	var ci := node as CanvasItem
+	if ci != null:
+		var mat := ci.material as ShaderMaterial
+		if mat != null and mat.shader != null and LitShaderLibrary.flags_of(mat.shader) >= 0:
+			mats[mat] = true
 	for c in node.get_children():
-		_census(c, acc)
+		_census(c, acc, mats)
 
 
 func _mean(a: PackedFloat64Array) -> float:

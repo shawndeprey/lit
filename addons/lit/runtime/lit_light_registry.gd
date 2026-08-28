@@ -85,6 +85,30 @@ static var gx_active: bool = false
 # the light setters, scene loads included); gates the per-light mask reads in refresh.
 static var light_masks_seen: bool = false
 
+# --- Receiver material pool ----------------------------------------------------------
+# Runtime content-keyed sharing of receiver materials: registry/material_pool.gd.
+# Node-facing static API; the nodes acquire at ready, re-key on proxied param edits,
+# and detach (to_unique) when per-node uniforms are needed.
+const MaterialPoolScript := preload("res://addons/lit/runtime/registry/material_pool.gd")
+
+static func pool_acquire(mat: ShaderMaterial) -> ShaderMaterial:
+	return MaterialPoolScript.acquire(mat)
+
+static func pool_rekey(mat: ShaderMaterial, param: String, value) -> ShaderMaterial:
+	return MaterialPoolScript.rekey(mat, param, value)
+
+static func pool_to_unique(mat: ShaderMaterial) -> ShaderMaterial:
+	return MaterialPoolScript.to_unique(mat)
+
+static func pool_release(mat: ShaderMaterial) -> void:
+	MaterialPoolScript.release(mat)
+
+static func pool_is_pooled(mat) -> bool:
+	return MaterialPoolScript.is_pooled(mat)
+
+static func pool_stats() -> Dictionary:
+	return MaterialPoolScript.stats()
+
 # --- Per-receiver shadow exclusion (shadow_ignore_mask) ------------------------------
 # Node-facing static API; the node set and rx bounds driving live in
 # registry/rx_registry.gd (its statics are shared by both editor registry instances
