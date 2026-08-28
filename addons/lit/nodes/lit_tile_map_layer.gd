@@ -33,6 +33,7 @@ class_name LitTileMapLayer
 	set(value):
 		self_shadow = value
 		_set_param("self_shadow", value)
+		_drive_state.dirty = true
 
 var _self_occluders: Array = []
 var _tile_rects: Array[Rect2] = []
@@ -100,9 +101,11 @@ func _on_children_changed(_child: Node) -> void:
 
 
 func _refresh_occluder_cache() -> void:
-	_self_occluders.clear()
+	# Fresh array: the drive fast path detects cache rebuilds by identity.
+	var occluders: Array = []
 	for child in find_children("*", "LightOccluder2D", true, false):
-		_self_occluders.append(child)
+		occluders.append(child)
+	_self_occluders = occluders
 
 
 # Rects, variant tier, and live params all land through the shared helper; tilemaps
@@ -113,9 +116,8 @@ func _update_self_rect() -> void:
 	if _tile_rect_dirty:
 		_tile_rect_dirty = false
 		_tile_rects = LitLightRegistry.tile_occluder_rects(self)
-	LitReceiverHelper.drive(self, _live_mat(), _self_occluders, _tile_rects, false,
-			_lit_node_flags(), _drive_state)
-	if shadow_ignore_mask != 0:
+	if LitReceiverHelper.drive(self, _live_mat(), _self_occluders, _tile_rects, false,
+			_lit_node_flags(), _drive_state) and shadow_ignore_mask != 0:
 		_set_live_param("rx_mask", shadow_ignore_mask)
 
 

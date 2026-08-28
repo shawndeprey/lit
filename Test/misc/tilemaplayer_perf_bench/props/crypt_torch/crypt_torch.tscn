@@ -1,0 +1,141 @@
+[gd_scene format=4]
+
+[ext_resource type="Texture2D" path="res://Test/misc/tilemaplayer_perf_bench/props/crypt_torch/torch_stick.png" id="1_m2v28"]
+[ext_resource type="Script" path="res://Test/misc/tilemaplayer_perf_bench/props/crypt_torch/crypt_torch.gd" id="1_y430v"]
+[ext_resource type="Shader" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="2_ej6le"]
+[ext_resource type="Texture2D" path="res://Test/misc/tilemaplayer_perf_bench/props/crypt_torch/torch_stick_n.png" id="2_y430v"]
+[ext_resource type="Texture2D" path="res://Test/misc/tilemaplayer_perf_bench/props/crypt_torch/crypt_torch_flame.png" id="3_4ri0g"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="5_6mrrc"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="7_j22n5"]
+[ext_resource type="Texture2D" path="res://Test/misc/tilemaplayer_perf_bench/props/crypt_torch/fog-particle.png" id="8_smoke"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_bcj0y"]
+shader = ExtResource("2_ej6le")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/footprint_shadow = 16.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_58cyp"]
+diffuse_texture = ExtResource("1_m2v28")
+normal_texture = ExtResource("2_y430v")
+
+[sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_y430v"]
+light_mode = 1
+
+[sub_resource type="Animation" id="Animation_6mrrc"]
+length = 0.001
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Flame:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 1,
+"values": [0]
+}
+
+[sub_resource type="Animation" id="Animation_ej6le"]
+resource_name = "flame_flicker"
+length = 0.8
+loop_mode = 1
+step = 0.01
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Flame:frame")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1, 1, 1, 1),
+"update": 1,
+"values": [0, 1, 2, 3, 4, 5, 6, 7]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_j22n5"]
+_data = {
+&"RESET": SubResource("Animation_6mrrc"),
+&"flame_flicker": SubResource("Animation_ej6le")
+}
+
+[sub_resource type="Gradient" id="Gradient_m2v28"]
+colors = PackedColorArray(1, 0.61960787, 0.22745098, 1, 1, 0.6196782, 0.22658296, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_y430v"]
+gradient = SubResource("Gradient_m2v28")
+width = 420
+height = 420
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 0.5)
+
+[sub_resource type="Gradient" id="Gradient_4ri0g"]
+offsets = PackedFloat32Array(0, 0.30637637, 0.64696735, 1)
+colors = PackedColorArray(0.36862746, 0.36862746, 0.36862746, 0, 0.36862746, 0.36862746, 0.36862746, 0.54901963, 0.65882355, 0.65882355, 0.65882355, 0.39215687, 0.66, 0.66, 0.66, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_58cyp"]
+gradient = SubResource("Gradient_4ri0g")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_6mrrc"]
+particle_flag_disable_z = true
+angle_min = -720.0
+angle_max = 720.0
+direction = Vector3(0, 1, 0)
+tangential_accel_min = -2.0000021
+tangential_accel_max = 1.9999977
+scale_min = 0.049999997
+scale_max = 0.39999998
+color_ramp = SubResource("GradientTexture1D_58cyp")
+turbulence_enabled = true
+turbulence_influence_min = 0.010000001
+turbulence_influence_max = 0.052
+
+[node name="CryptTorch" type="Node2D"]
+y_sort_enabled = true
+script = ExtResource("1_y430v")
+
+[node name="Stick" type="Sprite2D" parent="."]
+material = SubResource("ShaderMaterial_bcj0y")
+position = Vector2(0, 3)
+texture = SubResource("CanvasTexture_58cyp")
+offset = Vector2(0, -3)
+script = ExtResource("5_6mrrc")
+
+[node name="Flame" type="Sprite2D" parent="."]
+material = SubResource("CanvasItemMaterial_y430v")
+position = Vector2(0, 3)
+texture = ExtResource("3_4ri0g")
+offset = Vector2(0, -3)
+hframes = 8
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+libraries/ = SubResource("AnimationLibrary_j22n5")
+autoplay = &"flame_flicker"
+
+[node name="PointLight2D" type="Node2D" parent="."]
+script = ExtResource("7_j22n5")
+range = 210.0
+falloff = 0.0
+texture = SubResource("GradientTexture2D_y430v")
+
+[node name="SmokeParticles" type="GPUParticles2D" parent="."]
+z_index = 1
+position = Vector2(0, -3)
+amount = 50
+texture = ExtResource("8_smoke")
+lifetime = 5.0
+process_material = SubResource("ParticleProcessMaterial_6mrrc")

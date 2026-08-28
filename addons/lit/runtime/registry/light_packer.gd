@@ -32,6 +32,10 @@ var _dummy: ImageTexture
 var _cookie_atlas: LitCookieAtlas = LitCookieAtlasScript.new()
 var _cookies_active := false
 var _published_cookie_tex: Texture2D = null
+# Same gate for the light-data texture: re-setting a texture global dirties every
+# material declaring it (a per-material main-thread walk in the RenderingServer), so
+# publish only when the texture OBJECT changes; contents flow through update().
+var _published_light_tex: Texture2D = null
 
 # Reused scratch for packing: write floats straight into _pack_buf and upload once,
 # instead of per-texel Image.set_pixel calls. _pack_img is kept across frames and only
@@ -95,7 +99,9 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 	RenderingServer.global_shader_parameter_set("lit_light_count", count)
 	RenderingServer.global_shader_parameter_set("lit_directional_count", dir_count)
 	RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
-	RenderingServer.global_shader_parameter_set("lit_light_data", _texture)
+	if _texture != _published_light_tex:
+		_published_light_tex = _texture
+		RenderingServer.global_shader_parameter_set("lit_light_data", _texture)
 
 
 ## Zero-light publish: count 0 plus a 1x1 dummy (never a 4x0 image), no cookies.
@@ -103,7 +109,10 @@ func publish_empty(vp_size: Vector2) -> void:
 	RenderingServer.global_shader_parameter_set("lit_light_count", 0)
 	RenderingServer.global_shader_parameter_set("lit_directional_count", 0)
 	RenderingServer.global_shader_parameter_set("lit_viewport_size", vp_size)
-	RenderingServer.global_shader_parameter_set("lit_light_data", _get_dummy())
+	var dummy := _get_dummy()
+	if dummy != _published_light_tex:
+		_published_light_tex = dummy
+		RenderingServer.global_shader_parameter_set("lit_light_data", dummy)
 	_cookie_atlas.refresh([])
 	_cookies_active = false
 	_publish_cookie_atlas()

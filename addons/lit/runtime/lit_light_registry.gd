@@ -26,6 +26,10 @@ static var active_algos: int = 0
 # on the next refresh.
 static var activity_flags: int = 0
 
+# Bumped whenever activity_flags or ysort_enabled changes; the receiver-drive fast
+# path re-resolves variants only when this moves, instead of reading flags per frame.
+static var activity_version: int = 0
+
 # False again after the editor's save-time script reload wipes statics; any registry
 # refreshing then re-walks so RS-clone previews (wiped with the statics) rebuild.
 static var _statics_alive := false
@@ -139,6 +143,7 @@ func set_ysort(enabled: bool) -> void:
 	if ysort_enabled == enabled:
 		return
 	ysort_enabled = enabled
+	activity_version += 1
 	_receiver_driver.mark_bare_dirty()
 	_occluder_tiles.mark_dirty()
 	_occluder_tiles.reset_pack_memo()
@@ -226,10 +231,13 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 
 	# The one activity publish point: everything the working state decided this
 	# refresh lands in the node-facing flags together.
-	activity_flags = (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
+	var new_flags := (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
 			| (LitShaderLibrary.F_STOCH if active_algos & 2 != 0 else 0) \
 			| (LitShaderLibrary.F_MASKS if masks_active else 0) \
 			| (LitShaderLibrary.F_GX if gx_active else 0)
+	if new_flags != activity_flags:
+		activity_flags = new_flags
+		activity_version += 1
 	_receiver_driver.apply(receiver_root, activity_flags, RxRegistryScript.nodes(),
 			editor_live_material)
 	_receiver_driver.drive_bare(receiver_root, editor_live_material)

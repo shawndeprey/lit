@@ -38,6 +38,11 @@ class_name LitSprite2D
 		shadow_ignore_mask = value
 		_set_live_param("rx_mask", value)
 		LitLightRegistry.rx_set(self, value)
+		# Re-tier once now (a cleared mask must leave the rx variant before this
+		# node stops per-frame driving), then re-gate processing.
+		_drive_state.dirty = true
+		_update_self_rect()
+		_update_process_state()
 
 ## Self-shadowing: when off (the default), this sprite's own occluders can't cast onto
 ## it — their shadows render behind it. "Own" means LightOccluder2D nodes that are
@@ -47,6 +52,7 @@ class_name LitSprite2D
 	set(value):
 		self_shadow = value
 		_set_param("self_shadow", value)
+		_drive_state.dirty = true
 
 
 ## How much Lit light reaches this sprite's origin right now: 0.0 = pitch black,
@@ -129,10 +135,15 @@ func _lit_ready() -> void:
 		if not parent.child_exiting_tree.is_connected(_on_children_changed):
 			parent.child_exiting_tree.connect(_on_children_changed)
 	_refresh_occluder_cache()
-	_update_self_rect()
 
-	# Refresh the bounds every frame so moving occluders stay claimed.
-	set_process(true)
+
+# Per-frame driving only while something per-frame can change the drive inputs:
+# owned occluders move (bounds must stay claimed) or an rx variant may re-tier.
+# Sprites without either have empty rects whatever their transform, and the
+# registry's variant walk re-points their material on activity changes.
+func _update_process_state() -> void:
+	set_process(Engine.is_editor_hint() or not _self_occluders.is_empty()
+			or shadow_ignore_mask != 0)
 
 
 # Re-point the specular-slot subscription at the current CanvasTexture, then refresh the flag.
@@ -161,23 +172,28 @@ func _on_children_changed(_child: Node) -> void:
 
 
 func _refresh_occluder_cache() -> void:
-	_self_occluders.clear()
+	# Fresh array: the drive fast path detects cache rebuilds by identity.
+	var occluders: Array = []
 	for child in find_children("*", "LightOccluder2D", true, false):
-		_self_occluders.append(child)
+		occluders.append(child)
 	var parent := get_parent()
 	if parent != null:
 		for sibling in parent.get_children():
 			if sibling is LightOccluder2D:
-				_self_occluders.append(sibling)
+				occluders.append(sibling)
+	_self_occluders = occluders
+	if is_inside_tree():
+		_update_self_rect()
+		_update_process_state()
 
 
 # Rects, variant tier, and y-sort params all land through the shared helper.
 func _update_self_rect() -> void:
 	if not is_inside_tree():
 		return
-	LitReceiverHelper.drive(self, _live_mat(), _self_occluders,
-			LitReceiverHelper.NO_TILE_RECTS, true, _lit_node_flags(), _drive_state)
-	if shadow_ignore_mask != 0:
+	if LitReceiverHelper.drive(self, _live_mat(), _self_occluders,
+			LitReceiverHelper.NO_TILE_RECTS, true, _lit_node_flags(), _drive_state) \
+			and shadow_ignore_mask != 0:
 		_set_live_param("rx_mask", shadow_ignore_mask)
 
 
