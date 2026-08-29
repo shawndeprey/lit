@@ -87,6 +87,8 @@ static func scan_scene(acc: Dictionary, scene_path: String) -> void:
 		var inst := state.get_node_instance(i)
 		if inst != null:
 			instance_path = inst.resource_path
+		elif state.is_node_instance_placeholder(i):
+			instance_path = state.get_node_instance_placeholder(i)
 		var row := {
 			"path": state.get_node_path(i),
 			"type": String(state.get_node_type(i)),
@@ -125,11 +127,28 @@ static func scan_finish(acc: Dictionary) -> Dictionary:
 	var scripts: Dictionary = acc["scripts"]
 	# Candidate classification runs here, after every scene is modeled, so UI ancestry
 	# can resolve through instanced menu scenes.
+	var by_path_all := {}
+	for scene_path in acc["model"]:
+		var by_path := {}
+		for row in acc["model"][scene_path]["rows"]:
+			by_path[String(row["path"])] = row
+		by_path_all[scene_path] = by_path
+	var sites := _instance_sites(acc, by_path_all)
+	# A scene loaded from code runs in unknown context (players and mobs spawn from code
+	# yet preview inside menus), so a code-referenced scene never classifies as menu-only.
+	var code_used := {}
+	var scene_strings: Dictionary = scripts.get("scene_strings", {})
+	for scene_path in acc["model"]:
+		var fname := String(scene_path).get_file()
+		for lit in scene_strings:
+			if fname in String(lit):
+				code_used[scene_path] = true
+				break
+	var ui_used := _ui_only_scenes(sites, code_used)
 	for scene_path in acc["model"]:
 		var m: Dictionary = acc["model"][scene_path]
-		var by_path := {}
-		for row in m["rows"]:
-			by_path[String(row["path"])] = row
+		var by_path: Dictionary = by_path_all[scene_path]
+		var scene_ui := ui_used.has(scene_path)
 		var needs: bool = m["needs"]
 		for row in m["rows"]:
 			var row_type := String(row["type"])
@@ -137,7 +156,7 @@ static func scan_finish(acc: Dictionary) -> Dictionary:
 				continue
 			var script_path := String(row["script"])
 			if Maps.REPLACEMENTS.has(row_type):
-				if _is_ui_row(acc, by_path, String(row["path"])):
+				if scene_ui or _is_ui_row(acc, by_path, String(row["path"])):
 					row["ui"] = true
 					if script_path.is_empty():
 						counts["menu_nodes"] += 1
@@ -145,6 +164,7 @@ static func scan_finish(acc: Dictionary) -> Dictionary:
 						needs = true
 				elif script_path.is_empty():
 					needs = true
+					row["converts"] = true
 					match row_type:
 						"PointLight2D": counts["point_lights"] += 1
 						"DirectionalLight2D": counts["directional_lights"] += 1
@@ -152,12 +172,12 @@ static func scan_finish(acc: Dictionary) -> Dictionary:
 				else:
 					counts["skipped_scripted"] += 1
 					needs = true
-			elif Maps.SWAPS.has(row_type) and script_path.is_empty():
-				if _is_ui_row(acc, by_path, String(row["path"])):
+			elif Maps.SWAPS.has(row_type):
+				if scene_ui or _is_ui_row(acc, by_path, String(row["path"])):
 					row["ui"] = true
 					counts["menu_nodes"] += 1
 					needs = true
-				else:
+				elif script_path.is_empty():
 					var where := "%s %s" % [scene_path, row["path"]]
 					var cls := _classify_material(row["props"].get("material"))
 					match cls["kind"]:
@@ -172,26 +192,107 @@ static func scan_finish(acc: Dictionary) -> Dictionary:
 							acc["custom_groups"][cls["shader"]].append(where)
 						_:
 							needs = true
+							row["converts"] = true
 							counts["sprites" if row_type == "Sprite2D" else "tilemaps"] += 1
 		m["needs"] = needs
 		if needs:
 			counts["scenes_to_process"] += 1
-	counts["rebase_roots"] = scripts["roots"].size()
-	counts["rebase_scripts"] = scripts["rebase_all"].size()
+	# Scripts attached only to menu/UI nodes stay out of the script passes by default:
+	# rebasing a shared icon-style script would light every menu instance, and retyping
+	# any UI-only script's self-references would break against nodes that stayed native.
+	var member_root := {}
+	for root_path in scripts["roots"]:
+		for p in scripts["chains"][root_path]["scripts"]:
+			member_root[p] = root_path
+	var user_scripts := {}
+	for p in scripts["all_paths"]:
+		user_scripts[p] = true
+	var script_sites := {}
+	for scene_path in acc["model"]:
+		for row in acc["model"][scene_path]["rows"]:
+			var sp := String(row["script"])
+			if sp.is_empty() or not user_scripts.has(sp):
+				continue
+			if not script_sites.has(sp):
+				script_sites[sp] = {"ui": [], "world": []}
+			var is_ui: bool = row.get("ui", false) or ui_used.has(scene_path) \
+					or _is_ui_row(acc, by_path_all[scene_path], String(row["path"]))
+			script_sites[sp]["ui" if is_ui else "world"].append(
+					"%s %s" % [scene_path, row["path"]])
+	scripts["ui_roots"] = {}
+	scripts["ui_scripts"] = {}
+	var mixed_scripts := {}
+	for root_path in scripts["roots"]:
+		var ui_atts := []
+		var world_atts := []
+		for p in scripts["chains"][root_path]["scripts"]:
+			if script_sites.has(p):
+				ui_atts += script_sites[p]["ui"]
+				world_atts += script_sites[p]["world"]
+		if ui_atts.is_empty():
+			continue
+		if world_atts.is_empty():
+			scripts["ui_roots"][root_path] = true
+			for p in scripts["chains"][root_path]["scripts"]:
+				scripts["ui_scripts"][p] = true
+		else:
+			mixed_scripts[root_path] = ui_atts
+	for sp in script_sites:
+		if member_root.has(sp):
+			continue
+		if script_sites[sp]["world"].is_empty() and not script_sites[sp]["ui"].is_empty():
+			scripts["ui_scripts"][sp] = true
+	var mixed_scenes := {}
+	for inst in sites:
+		if ui_used.has(inst) or not acc["model"].has(inst):
+			continue
+		var ui_sites := []
+		for site in sites[inst]:
+			if site["ui"] or ui_used.has(site["scene"]):
+				ui_sites.append("%s %s" % [site["scene"], site["path"]])
+		if ui_sites.is_empty():
+			continue
+		for row in acc["model"][inst]["rows"]:
+			var sp := String(row["script"])
+			if row.get("converts", false) \
+					or (member_root.has(sp) and not scripts["ui_scripts"].has(sp)):
+				mixed_scenes[inst] = ui_sites
+				break
+	var ui_chain_members := 0
+	for rp in scripts["ui_roots"]:
+		ui_chain_members += scripts["chains"][rp]["scripts"].size()
+	counts["rebase_roots"] = scripts["roots"].size() - scripts["ui_roots"].size()
+	counts["rebase_scripts"] = scripts["rebase_all"].size() - ui_chain_members
 	counts["rebase_skipped"] = scripts["skipped"].size()
-	counts["retype_scripts"] = scripts["core_refs"].size()
+	counts["menu_scripts"] = scripts["ui_scripts"].size()
+	var retype_count := 0
+	for p in scripts["core_refs"]:
+		if not scripts["ui_scripts"].has(p):
+			retype_count += 1
+	counts["retype_scripts"] = retype_count
 	var tool_add := {}
 	for p in scripts["rebase_all"]:
-		if scripts["no_tool"].has(p):
+		if scripts["no_tool"].has(p) and not scripts["ui_scripts"].has(p):
 			tool_add[p] = true
 	for p in scripts["lit_tool_rooted"]:
 		if scripts["no_tool"].has(p):
 			tool_add[p] = true
 	counts["tool_add"] = tool_add.size()
+	var ui_scenes: Array = []
+	for scene_path in acc["model"]:
+		if not ui_used.has(scene_path):
+			continue
+		for row in acc["model"][scene_path]["rows"]:
+			if row.get("ui", false):
+				ui_scenes.append(scene_path)
+				break
+	ui_scenes.sort()
 	var scene_paths: Array[String] = acc["scene_paths"]
 	return {"order": _topo_order(scene_paths, acc["model"]), "model": acc["model"],
 		"scripts": scripts, "counts": counts, "current": acc["current"],
-		"custom_groups": acc["custom_groups"], "unlit_nodes": acc["unlit_nodes"]}
+		"custom_groups": acc["custom_groups"], "unlit_nodes": acc["unlit_nodes"],
+		"mixed_ui_scenes": mixed_scenes, "mixed_ui_scripts": mixed_scripts,
+		"ui_scenes": ui_scenes}
 
 
 ## User .gd files whose inheritance chain roots in a rebasable core class. Chain roots
@@ -213,6 +314,7 @@ static func _scan_scripts(roots: Array[String]) -> Dictionary:
 	var core_ref_rx := _core_class_rx()
 
 	var info := {}
+	var scene_strings := {}
 	for path in paths:
 		var f := FileAccess.open(path, FileAccess.READ)
 		if f == null:
@@ -243,15 +345,20 @@ static func _scan_scripts(roots: Array[String]) -> Dictionary:
 				for prefix in ["func ", "static func "]:
 					if line.begins_with(prefix):
 						members[line.trim_prefix(prefix).get_slice("(", 0).strip_edges()] = "func"
-				if not _is_extends_decl(stripped):
-					for piece in _line_pieces(line):
-						var m := core_ref_rx.search(piece["text"])
-						if m == null:
-							continue
-						if piece["kind"] == "code":
-							refs[m.get_string(1)] = true
-						elif piece["kind"] == "string":
-							string_ref = true
+				var scan_refs := not _is_extends_decl(stripped)
+				for piece in _line_pieces(line):
+					var text: String = piece["text"]
+					if piece["kind"] == "string" and (".tscn" in text or ".scn" in text):
+						scene_strings[text] = true
+					if not scan_refs:
+						continue
+					var m := core_ref_rx.search(text)
+					if m == null:
+						continue
+					if piece["kind"] == "code":
+						refs[m.get_string(1)] = true
+					elif piece["kind"] == "string":
+						string_ref = true
 		info[path] = {"extends": extends_token, "members": members, "inner": inner_extends,
 			"refs": refs.keys(), "has_tool": has_tool, "string_ref": string_ref}
 
@@ -267,7 +374,7 @@ static func _scan_scripts(roots: Array[String]) -> Dictionary:
 	var tool_lit := _lit_tool_classes()
 	var out := {"roots": [], "rebase_all": {}, "skipped": [], "inner": [], "chains": {},
 		"core_refs": {}, "string_refs": {}, "lit_based": {}, "lit_tool_rooted": {},
-		"no_tool": {}, "all_paths": paths}
+		"no_tool": {}, "all_paths": paths, "scene_strings": scene_strings}
 	for path in info:
 		if not info[path]["refs"].is_empty():
 			out["core_refs"][path] = info[path]["refs"]
@@ -491,6 +598,45 @@ static func _scene_root_is_ui(acc: Dictionary, scene_path: String, depth: int = 
 	return false
 
 
+# Every place each scene is instanced (or inherited), with whether that site sits
+# under UI ancestry in the instancing scene.
+static func _instance_sites(acc: Dictionary, by_path_all: Dictionary) -> Dictionary:
+	var sites := {}
+	for scene_path in acc["model"]:
+		for row in acc["model"][scene_path]["rows"]:
+			var inst := String(row["instance"])
+			if inst.is_empty():
+				continue
+			if not sites.has(inst):
+				sites[inst] = []
+			sites[inst].append({"scene": scene_path, "path": String(row["path"]),
+				"ui": _is_ui_row(acc, by_path_all[scene_path], String(row["path"]))})
+	return sites
+
+
+# Shared scenes (icons, widgets) carry no Control ancestry of their own, so a scene
+# whose every instance site is UI classifies as UI too. The fixed point resolves
+# chains like icon-inside-wrapper-inside-menu. Scenes referenced from code are
+# exempt: their runtime context is unknowable, so world usage is assumed.
+static func _ui_only_scenes(sites: Dictionary, code_used: Dictionary) -> Dictionary:
+	var out := {}
+	var grew := true
+	while grew:
+		grew = false
+		for inst in sites:
+			if out.has(inst) or code_used.has(inst):
+				continue
+			var all_ui := true
+			for site in sites[inst]:
+				if not (site["ui"] or out.has(site["scene"])):
+					all_ui = false
+					break
+			if all_ui:
+				out[inst] = true
+				grew = true
+	return out
+
+
 ## Leaves-first over the instance graph, so child scenes convert before the parents
 ## that store overrides on them.
 static func _topo_order(scene_paths: Array[String], model: Dictionary) -> Array[String]:
@@ -536,10 +682,35 @@ static func run_begin(scan_result: Dictionary, kinds: Dictionary,
 	var rebased := {}
 	var tooled: Array = []
 	var retyped: Array = []
+	# Menus unchecked leaves UI-only chains byte-identical: no rebase, no @tool, no retype.
+	var ui_roots: Dictionary = {}
+	var ui_scripts: Dictionary = {}
+	if not kinds.get("menus", false):
+		ui_roots = scripts.get("ui_roots", {})
+		ui_scripts = scripts.get("ui_scripts", {})
+		for sp in scan_result.get("ui_scenes", []):
+			report.append("MENU-SCENE %s: every instance sits under menus/UI; left native "
+					% sp + "(check the menus option to convert)")
+		var mixed_scenes: Dictionary = scan_result.get("mixed_ui_scenes", {})
+		var mkeys: Array = mixed_scenes.keys()
+		mkeys.sort()
+		for sp in mkeys:
+			report.append("CAUTION %s converts for world use but is also instanced under "
+					% sp + "menus/UI; those instances will receive world lighting:")
+			for site in mixed_scenes[sp]:
+				report.append("    " + site)
+		var mixed_scripts: Dictionary = scan_result.get("mixed_ui_scripts", {})
+		mkeys = mixed_scripts.keys()
+		mkeys.sort()
+		for sp in mkeys:
+			report.append("CAUTION script %s rebases for world use but is also attached to "
+					% sp + "menu/UI nodes; those nodes become lit receivers:")
+			for site in mixed_scripts[sp]:
+				report.append("    " + site)
 	if kinds.get("scripts", true):
-		rebased = _rebase_user_scripts(scripts, report)
-		tooled = _add_tool_annotations(scripts, report)
-		retyped = _retype_references(scripts, report)
+		rebased = _rebase_user_scripts(scripts, ui_roots, report)
+		tooled = _add_tool_annotations(scripts, ui_scripts, report)
+		retyped = _retype_references(scripts, ui_scripts, report)
 		if not retyped.is_empty() and int(scan_result["counts"]["skipped_scripted"]) > 0:
 			report.append("CAUTION: %d core nodes keep custom scripts and stay core types; "
 					% scan_result["counts"]["skipped_scripted"]
@@ -629,7 +800,8 @@ static func _report_material_notes(scan_result: Dictionary, ctx: Dictionary,
 ## Rewrite the extends line of each collision-free chain root, then force-reload the
 ## whole chain so the scene pass compiles against the Lit base. Returns every script
 ## path whose chain now roots in a Lit class.
-static func _rebase_user_scripts(scripts: Dictionary, report: Array) -> Dictionary:
+static func _rebase_user_scripts(scripts: Dictionary, ui_roots: Dictionary,
+		report: Array) -> Dictionary:
 	for skipped in scripts["skipped"]:
 		report.append("SKIPPED-COLLISION %s: member names collide with the Lit class; "
 				% skipped["root"] + "rebase manually (rename the members, and have "
@@ -640,6 +812,10 @@ static func _rebase_user_scripts(scripts: Dictionary, report: Array) -> Dictiona
 		report.append("MANUAL %s: an inner class extends a rebasable core class; "
 				% path + "inner classes are left untouched")
 	for root_path in scripts["roots"]:
+		if ui_roots.has(root_path):
+			report.append("MENU-SCRIPT %s: attached only to menu/UI nodes; left native "
+					% root_path + "(check the menus option to convert menu art)")
+			continue
 		var core: String = scripts["chains"][root_path]["core"]
 		var f := FileAccess.open(root_path, FileAccess.READ)
 		if f == null:
@@ -662,6 +838,8 @@ static func _rebase_user_scripts(scripts: Dictionary, report: Array) -> Dictiona
 				% [root_path, core, Maps.REBASES[core]["lit_class"]])
 	var out := {}
 	for root_path in scripts["roots"]:
+		if ui_roots.has(root_path):
+			continue
 		for p in scripts["chains"][root_path]["scripts"]:
 			out[p] = true
 	return out
@@ -670,10 +848,12 @@ static func _rebase_user_scripts(scripts: Dictionary, report: Array) -> Dictiona
 ## Prepend @tool to every script whose chain roots in a @tool Lit class: without it the
 ## editor gives instances a placeholder script whose lifecycle never runs, and every
 ## load warns MISSING_TOOL.
-static func _add_tool_annotations(scripts: Dictionary, report: Array) -> Array:
+static func _add_tool_annotations(scripts: Dictionary, ui_scripts: Dictionary,
+		report: Array) -> Array:
 	var targets := {}
 	for p in scripts["rebase_all"]:
-		targets[p] = true
+		if not ui_scripts.has(p):
+			targets[p] = true
 	for p in scripts["lit_tool_rooted"]:
 		targets[p] = true
 	var paths: Array = targets.keys()
@@ -699,12 +879,15 @@ static func _add_tool_annotations(scripts: Dictionary, report: Array) -> Array:
 ## calls) to the Lit classes. Extends declarations stay core (a script deliberately
 ## extending a core light was skipped node-side), and string literals are only reported:
 ## class-name lookups against converted nodes stop matching either way.
-static func _retype_references(scripts: Dictionary, report: Array) -> Array:
+static func _retype_references(scripts: Dictionary, ui_scripts: Dictionary,
+		report: Array) -> Array:
 	var targets := {}
 	for path in scripts["core_refs"]:
-		targets[path] = true
+		if not ui_scripts.has(path):
+			targets[path] = true
 	for path in scripts["string_refs"]:
-		targets[path] = true
+		if not ui_scripts.has(path):
+			targets[path] = true
 	var rx := _core_class_rx()
 	var paths: Array = targets.keys()
 	paths.sort()

@@ -274,8 +274,11 @@ func _update_project() -> void:
 			["scripts", "%d script rebases, %d reference updates, %d @tool additions"
 					% [c["rebase_roots"], c["retype_scripts"], c["tool_add"]],
 					c["rebase_roots"] + c["retype_scripts"] + c["tool_add"], true],
-			["menus", "%d menu/UI nodes (under Control or CanvasLayer; usually best left unlit)"
-					% c["menu_nodes"], c["menu_nodes"], false]]:
+			["menus", ("%d menu/UI nodes and %d menu-only scripts (usually best left unlit)"
+						% [c["menu_nodes"], c["menu_scripts"]]) if c["menu_scripts"] > 0
+					else "%d menu/UI nodes (under Control or CanvasLayer; usually best left unlit)"
+						% c["menu_nodes"],
+					c["menu_nodes"] + c["menu_scripts"], false]]:
 		var cb := CheckBox.new()
 		cb.text = entry[1]
 		cb.button_pressed = entry[2] > 0 and entry[3]

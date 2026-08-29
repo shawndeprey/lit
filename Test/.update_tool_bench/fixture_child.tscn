@@ -1,6 +1,7 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=22 format=3]
 
 [ext_resource type="Texture2D" path="res://Test/base.png" id="1_tex"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_mixed.tscn" id="10_mx"]
 [ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_light_script.gd" id="2_ls"]
 [ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_rebase_sprite.gd" id="3_rs"]
 [ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_collide_sprite.gd" id="4_cs"]
@@ -202,6 +203,8 @@ libraries = {
 &"": SubResource("lib"),
 &"ext": ExtResource("9_al")
 }
+
+[node name="MixedProp" parent="." instance=ExtResource("10_mx")]
 
 [connection signal="timeout" from="Blocker" to="Light" method="hide"]
 [connection signal="visibility_changed" from="Light" to="Watcher" method="_on_light_vis"]

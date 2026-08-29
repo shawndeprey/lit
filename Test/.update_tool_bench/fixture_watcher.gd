@@ -8,6 +8,7 @@ extends Node
 var vis_changes := 0
 # A PointLight2D mention in a comment stays untouched.
 var query_type := "PointLight2D"
+var preview_scene := "res://Test/.update_tool_bench/fixture_preview.tscn"
 
 
 func _on_light_vis() -> void:

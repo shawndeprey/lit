@@ -23,9 +23,11 @@ const SRC := "res://Test/.update_tool_bench"
 const OUT := "res://Test/.update_tool_bench/.out"
 const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
 	"fixture_fx_root.tscn", "fixture_inherited.tscn", "fixture_anim_lib.tres",
-	"fixture_menu.tscn",
+	"fixture_menu.tscn", "fixture_icon.tscn", "fixture_hud_bit.tscn", "fixture_mixed.tscn",
+	"fixture_preview.tscn",
 	"fixture_rebase_sprite.gd", "fixture_collide_sprite.gd", "fixture_light_script.gd",
-	"fixture_watcher.gd", "fixture_oneline_tile.gd", "fixture_lit_light.gd"]
+	"fixture_watcher.gd", "fixture_oneline_tile.gd", "fixture_lit_light.gd",
+	"fixture_icon_sprite.gd"]
 # Built by _prepare from fixture_env; locks binary-scene support and .scn preservation.
 const BIN_SCENE := "env_bin.scn"
 const ALL_KINDS := {"lights": true, "modulates": true, "sprites": true,
@@ -43,6 +45,7 @@ func _initialize() -> void:
 	_gate_fx_root()
 	_gate_inherited()
 	_gate_parent()
+	_gate_ui_shared()
 	_gate_scripts()
 	_gate_run_result(scan1, run1)
 	_gate_idempotency()
@@ -382,6 +385,33 @@ func _gate_parent() -> void:
 	root.free()
 
 
+# A scene (or script) with no Control ancestry of its own but whose every instance
+# site (or node attachment) is UI must classify as UI: shared icon scenes lit by the
+# world was the rpghub regression this pins.
+func _gate_ui_shared() -> void:
+	print("[gate 2b] shared scenes/scripts used only by menus stay native")
+	var untouched := ["fixture_icon.tscn", "fixture_hud_bit.tscn", "fixture_icon_sprite.gd"]
+	for f in untouched:
+		var want := FileAccess.get_file_as_string(SRC + "/" + f).replace(SRC + "/", OUT + "/")
+		_check(FileAccess.get_file_as_string(OUT + "/" + f) == want,
+				"%s byte-identical (UI-only usage, menus off)" % f)
+	var mixed := _fresh(OUT + "/fixture_mixed.tscn")
+	if _check(mixed != null, "mixed-usage scene loads"):
+		_check(_script_path(mixed) == String(Maps.SWAPS[&"Sprite2D"]),
+				"mixed-usage scene still converts (world use wins)")
+		mixed.free()
+	# The rpghub player pattern: a world entity whose only scene-data instance is a menu
+	# preview, but which code spawns into the world. Code reference = world usage.
+	var preview := _fresh(OUT + "/fixture_preview.tscn")
+	if _check(preview != null, "code-referenced preview scene loads"):
+		_check(_script_path(preview.get_node("GlowLight"))
+				== String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]),
+				"code-referenced scene's light converts despite menu-only instancing")
+		_check(_script_path(preview.get_node("PreviewArt")) == String(Maps.SWAPS[&"Sprite2D"]),
+				"code-referenced scene's sprite converts despite menu-only instancing")
+		preview.free()
+
+
 func _gate_scripts() -> void:
 	print("[gate 3] script rebase + @tool + reference retype")
 	var rebased := FileAccess.get_file_as_string(OUT + "/fixture_rebase_sprite.gd")
@@ -418,18 +448,21 @@ func _gate_scripts() -> void:
 
 func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 	print("[gate 4] run summary + report markers")
-	_check(run1["changed_scenes"].size() == 5, "five scenes rewritten, got %d"
+	_check(run1["changed_scenes"].size() == 7, "seven scenes rewritten, got %d"
 			% run1["changed_scenes"].size())
 	var c: Dictionary = scan1["counts"]
-	_check(c["point_lights"] == 4 and c["directional_lights"] == 1 and c["modulates"] == 3,
+	_check(c["point_lights"] == 5 and c["directional_lights"] == 1 and c["modulates"] == 3,
 			"scan counts lights + modulates")
-	_check(c["sprites"] == 4 and c["tilemaps"] == 1, "scan counts convertible receivers")
+	_check(c["sprites"] == 6 and c["tilemaps"] == 1, "scan counts convertible receivers")
 	_check(c["skipped_scripted"] == 1, "scan counts the scripted light")
 	_check(c["rebase_roots"] == 2, "scan counts both rebase roots (plain + one-line form)")
 	_check(c["unlit_mats"] == 2, "scan counts deliberately-unlit materials")
 	_check(c["custom_mats"] == 2, "scan counts custom shader materials")
-	_check(c["menu_nodes"] == 4, "scan counts menu/UI candidates, got %d" % c["menu_nodes"])
+	_check(c["menu_nodes"] == 6, "scan counts menu/UI candidates, got %d" % c["menu_nodes"])
 	_check(c["menu_core"] == 1, "scan counts menu core lights/modulates")
+	_check(c["menu_scripts"] == 1, "scan counts the menu-only script chain")
+	_check(scan1["scripts"]["ui_roots"].has(OUT + "/fixture_icon_sprite.gd"),
+			"UI-only chain root classified via usage")
 	_check(c["retype_scripts"] == 1, "scan counts the retypable script")
 	_check(c["tool_add"] == 3, "scan counts @tool additions (2 rebases + 1 Lit-based)")
 	_check(run1["retyped_scripts"].size() == 1, "one script retyped")
@@ -440,7 +473,8 @@ func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 			"MANUAL custom material", "CustomFxSprite", "Custom Shaders docs page",
 			"rendered nothing", "fixture_fx_root", "external animation",
 			"inner class", "instance placeholder", "units differ", "RETYPED", "TOOLED",
-			"CAUTION", "string literals name core classes", "menu/UI core lights"]:
+			"CAUTION", "string literals name core classes", "menu/UI core lights",
+			"MENU-SCRIPT", "MENU-SCENE", "converts for world use"]:
 		_check(marker in joined, "report mentions %s" % marker)
 
 	var report_text := FileAccess.get_file_as_string(OUT + "/report.txt")
@@ -499,3 +533,17 @@ func _gate_menus_on() -> void:
 		parent_root.free()
 	_check(run4["changed_scenes"].has(OUT + "/fixture_menu.tscn"),
 			"menu scene rewritten when menus checked")
+	var icon_script := FileAccess.get_file_as_string(OUT + "/fixture_icon_sprite.gd")
+	_check(icon_script.begins_with("@tool") and "extends LitSprite2D" in icon_script,
+			"menu-only script rebased when menus checked")
+	_check("linked_light: LitPointLight2D" in icon_script,
+			"menu-only script references retyped when menus checked")
+	var icon_root := _fresh(OUT + "/fixture_icon.tscn")
+	if _check(icon_root != null, "icon scene loads after menus-on run"):
+		_check((icon_root as Sprite2D).material is ShaderMaterial \
+				and LitShaderLibrary.flags_of(((icon_root as Sprite2D).material \
+				as ShaderMaterial).shader) >= 0,
+				"usage-classified icon root gains the receiver material when menus checked")
+		_check(_script_path(icon_root.get_node("IconArt")) == String(Maps.SWAPS[&"Sprite2D"]),
+				"usage-classified icon child converted when menus checked")
+		icon_root.free()

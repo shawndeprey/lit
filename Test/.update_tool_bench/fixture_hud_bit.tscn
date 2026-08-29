@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_icon.tscn" id="1_ic"]
+
+[node name="HudBit" type="Node2D"]
+
+[node name="BitIcon" parent="." instance=ExtResource("1_ic")]

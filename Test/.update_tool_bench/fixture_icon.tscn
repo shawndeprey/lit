@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Texture2D" path="res://Test/base.png" id="1_tex"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_icon_sprite.gd" id="2_is"]
+
+[node name="FixtureIcon" type="Sprite2D"]
+texture = ExtResource("1_tex")
+script = ExtResource("2_is")
+
+[node name="IconArt" type="Sprite2D" parent="."]
+texture = ExtResource("1_tex")
