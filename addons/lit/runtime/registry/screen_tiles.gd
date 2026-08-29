@@ -15,6 +15,11 @@ const INDEX_TEX_WIDTH := 2048
 
 var _tile_header_tex: ImageTexture
 var _tile_index_tex: ImageTexture
+# Re-setting a texture global dirties every material declaring it (a per-material
+# main-thread walk in the RenderingServer), so publish only when the texture OBJECT
+# changes; contents flow through update().
+var _published_header_tex: Texture2D = null
+var _published_index_tex: Texture2D = null
 
 # Reused tile-build scratch, kept across frames so steady state allocates nothing.
 var _tile_counts: PackedInt32Array = PackedInt32Array()
@@ -154,8 +159,7 @@ func build_and_publish(ctx: FrameContext) -> void:
 
 	RenderingServer.global_shader_parameter_set("lit_tile_size", TILE_SIZE)
 	RenderingServer.global_shader_parameter_set("lit_tile_grid", Vector2i(tiles_x, tiles_y))
-	RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
-	RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
+	_publish_tile_textures()
 
 ## Upload the header/index buffers, reusing Images/ImageTextures until a size changes.
 func _upload_tile_textures(tiles_x: int, tiles_y: int, idx_rows: int) -> void:
@@ -193,8 +197,16 @@ func publish_empty(vp_size: Vector2) -> void:
 
 	RenderingServer.global_shader_parameter_set("lit_tile_size", TILE_SIZE)
 	RenderingServer.global_shader_parameter_set("lit_tile_grid", Vector2i(tiles_x, tiles_y))
-	RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
-	RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
+	_publish_tile_textures()
+
+
+func _publish_tile_textures() -> void:
+	if _tile_header_tex != _published_header_tex:
+		_published_header_tex = _tile_header_tex
+		RenderingServer.global_shader_parameter_set("lit_tile_headers", _tile_header_tex)
+	if _tile_index_tex != _published_index_tex:
+		_published_index_tex = _tile_index_tex
+		RenderingServer.global_shader_parameter_set("lit_tile_indices", _tile_index_tex)
 
 ## Reuse an ImageTexture when the image size is unchanged; reallocate on resize.
 ## ImageTexture.get_size() is Vector2 while Image.get_size() is Vector2i, so compare

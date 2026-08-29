@@ -26,6 +26,10 @@ static var active_algos: int = 0
 # on the next refresh.
 static var activity_flags: int = 0
 
+# Bumped whenever activity_flags or ysort_enabled changes; the receiver-drive fast
+# path re-resolves variants only when this moves, instead of reading flags per frame.
+static var activity_version: int = 0
+
 # False again after the editor's save-time script reload wipes statics; any registry
 # refreshing then re-walks so RS-clone previews (wiped with the statics) rebuild.
 static var _statics_alive := false
@@ -61,6 +65,13 @@ var _ctx := FrameContextScript.new()
 const LightCacheScript := preload("res://addons/lit/runtime/registry/light_cache.gd")
 var _light_cache := LightCacheScript.new()
 
+## Runtime packed-mirror upkeep, called by the light setters and transform/visibility
+## notifications. The editor never mirrors - it derives state per refresh instead.
+static func light_state_changed(node: Node) -> void:
+	if Engine.is_editor_hint():
+		return
+	LightCacheScript.note_changed(node)
+
 
 func _init() -> void:
 	_light_cache.set_fan_out(_on_tree_changed)
@@ -80,6 +91,30 @@ static var gx_active: bool = false
 # True once any light has shown a non-default shadow_mask or exclusion toggle (set by
 # the light setters, scene loads included); gates the per-light mask reads in refresh.
 static var light_masks_seen: bool = false
+
+# --- Receiver material pool ----------------------------------------------------------
+# Runtime content-keyed sharing of receiver materials: registry/material_pool.gd.
+# Node-facing static API; the nodes acquire at ready, re-key on proxied param edits,
+# and detach (to_unique) when per-node uniforms are needed.
+const MaterialPoolScript := preload("res://addons/lit/runtime/registry/material_pool.gd")
+
+static func pool_acquire(mat: ShaderMaterial) -> ShaderMaterial:
+	return MaterialPoolScript.acquire(mat)
+
+static func pool_rekey(mat: ShaderMaterial, param: String, value) -> ShaderMaterial:
+	return MaterialPoolScript.rekey(mat, param, value)
+
+static func pool_to_unique(mat: ShaderMaterial) -> ShaderMaterial:
+	return MaterialPoolScript.to_unique(mat)
+
+static func pool_release(mat: ShaderMaterial) -> void:
+	MaterialPoolScript.release(mat)
+
+static func pool_is_pooled(mat) -> bool:
+	return MaterialPoolScript.is_pooled(mat)
+
+static func pool_stats() -> Dictionary:
+	return MaterialPoolScript.stats()
 
 # --- Per-receiver shadow exclusion (shadow_ignore_mask) ------------------------------
 # Node-facing static API; the node set and rx bounds driving live in
@@ -139,6 +174,7 @@ func set_ysort(enabled: bool) -> void:
 	if ysort_enabled == enabled:
 		return
 	ysort_enabled = enabled
+	activity_version += 1
 	_receiver_driver.mark_bare_dirty()
 	_occluder_tiles.mark_dirty()
 	_occluder_tiles.reset_pack_memo()
@@ -171,26 +207,16 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# shader). Computed over every enabled light in the tree, not just the view-culled
 	# set, so camera movement past a light's AABB never thrashes receiver shaders. Only
 	# shadow-casting lights count: an algorithm on a shadowless light is never marched.
-	var algos := 0
 	var mask_potential: bool = _occluder_tiles.masks_seen()
-	var smask_union := 0
 	# The per-light reads only matter once a light or occluder has ever shown mask
 	# potential; the editor always reads so live inspector edits are never missed.
 	var read_masks: bool = light_masks_seen or _occluder_tiles.masks_seen() \
 			or Engine.is_editor_hint()
-	for entry in lights:
-		# Untyped: enabled/shadow_enabled/shadow_algorithm live on each light class,
-		# not on a shared base.
-		var node = entry[0]
-		if not is_instance_valid(node) or not node.enabled or not node.shadow_enabled:
-			continue
-		if node.shadow_algorithm != 0:
-			algos |= 1 << (node.shadow_algorithm - 1)
-		if read_masks:
-			var smask: int = node.shadow_mask
-			smask_union |= smask
-			if smask != 1 or node.exclude_scene_occluders:
-				mask_potential = true
+	var scan: Array = _light_cache.shadow_scan(tree, read_masks)
+	var algos: int = scan[0]
+	var smask_union: int = scan[1]
+	if scan[2]:
+		mask_potential = true
 	active_algos = algos
 	# Skippable only while no light or occluder has ever shown mask potential, when
 	# both calls are provably no-ops (their state is empty by construction).
@@ -226,10 +252,13 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 
 	# The one activity publish point: everything the working state decided this
 	# refresh lands in the node-facing flags together.
-	activity_flags = (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
+	var new_flags := (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
 			| (LitShaderLibrary.F_STOCH if active_algos & 2 != 0 else 0) \
 			| (LitShaderLibrary.F_MASKS if masks_active else 0) \
 			| (LitShaderLibrary.F_GX if gx_active else 0)
+	if new_flags != activity_flags:
+		activity_flags = new_flags
+		activity_version += 1
 	_receiver_driver.apply(receiver_root, activity_flags, RxRegistryScript.nodes(),
 			editor_live_material)
 	_receiver_driver.drive_bare(receiver_root, editor_live_material)

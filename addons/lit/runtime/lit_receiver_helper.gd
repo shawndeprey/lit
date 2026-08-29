@@ -8,7 +8,9 @@ class_name LitReceiverHelper
 ##
 ## `mat` is the live target (an RS clone in the editor, the node's own de-shared
 ## material at runtime); callers resolve it first, and a material change resets the
-## memo here so every param re-lands on the new material.
+## memo here so every param re-lands on the new material. Returns whether a full
+## drive ran (false from the unchanged-inputs fast path), so callers can skip their
+## own per-drive param re-lands.
 
 # Callers without tilemap cell rects pass this instead of allocating an empty array
 # per frame.
@@ -23,12 +25,23 @@ class DriveState:
 	var ys_y := 0.0
 	var live_mat: ShaderMaterial = null
 	var stale := false  # an owned occluder was freed; the caller's cache should rebuild
+	# Fast-path memo: the drive inputs as of the last full drive. Callers set `dirty`
+	# when an input the snapshot can't see changes (self_shadow proxy writes).
+	var dirty := true
+	var version := -1
+	var node_flags := -1
+	var node_xf := Transform2D()
+	var occluders_ref = null
+	var tile_rects_ref = null
+	var occ_inside: Array = []
+	var occ_xfs: Array = []
+	var occ_polys: Array = []
 
 
 static func drive(node: Node2D, mat: ShaderMaterial, occluders: Array,
-		tile_rects: Array, allow_ysort: bool, node_flags: int, state: DriveState) -> void:
+		tile_rects: Array, allow_ysort: bool, node_flags: int, state: DriveState) -> bool:
 	if mat == null or mat.shader == null:
-		return
+		return false
 	if mat != state.live_mat:
 		# Fresh material (first frame, runtime de-share, or a recreated editor clone
 		# after the save-time script reload): drop the memos so every param re-lands.
@@ -37,6 +50,17 @@ static func drive(node: Node2D, mat: ShaderMaterial, occluders: Array,
 		state.count = -1
 		state.ys_on = false
 		state.ys_y = 0.0
+		state.dirty = true
+
+	# Runtime fast path: same activity version, same flags, and every input transform
+	# unchanged means the packed rects, tier, and params are already landed. Occluder
+	# lists and tile rects are compared by identity; callers build a fresh array on
+	# every cache rebuild. The editor always drives, keeping live previews exact.
+	if not state.dirty and not Engine.is_editor_hint() \
+			and state.version == LitLightRegistry.activity_version \
+			and state.node_flags == node_flags \
+			and _inputs_unchanged(node, occluders, tile_rects, state):
+		return false
 
 	# One canvas-space box (min.xy | max.xy) per owned occluder / tile cell rect. The
 	# shader takes up to 4 boxes; extras are unioned into the last. Count 0 turns the
@@ -101,3 +125,43 @@ static func drive(node: Node2D, mat: ShaderMaterial, occluders: Array,
 		state.ys_y = ys_y
 		mat.set_shader_parameter("ysort_on", ys_on)
 		mat.set_shader_parameter("ysort_y", ys_y)
+
+	_snapshot(node, occluders, tile_rects, node_flags, state)
+	return true
+
+
+static func _inputs_unchanged(node: Node2D, occluders: Array, tile_rects: Array,
+		state: DriveState) -> bool:
+	if not is_same(occluders, state.occluders_ref) or not is_same(tile_rects, state.tile_rects_ref):
+		return false
+	if node.global_transform != state.node_xf:
+		return false
+	for i in occluders.size():
+		var o = occluders[i]
+		if not is_instance_valid(o):
+			return false
+		var inside: bool = o.is_inside_tree()
+		if inside != state.occ_inside[i]:
+			return false
+		if inside and (o.global_transform != state.occ_xfs[i] or o.occluder != state.occ_polys[i]):
+			return false
+	return true
+
+
+static func _snapshot(node: Node2D, occluders: Array, tile_rects: Array,
+		node_flags: int, state: DriveState) -> void:
+	state.dirty = false
+	state.version = LitLightRegistry.activity_version
+	state.node_flags = node_flags
+	state.node_xf = node.global_transform
+	state.occluders_ref = occluders
+	state.tile_rects_ref = tile_rects
+	state.occ_inside.resize(occluders.size())
+	state.occ_xfs.resize(occluders.size())
+	state.occ_polys.resize(occluders.size())
+	for i in occluders.size():
+		var o = occluders[i]
+		var inside: bool = is_instance_valid(o) and o.is_inside_tree()
+		state.occ_inside[i] = inside
+		state.occ_xfs[i] = o.global_transform if inside else Transform2D()
+		state.occ_polys[i] = o.occluder if inside else null

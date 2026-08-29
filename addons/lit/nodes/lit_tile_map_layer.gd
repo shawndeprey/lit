@@ -24,6 +24,9 @@ class_name LitTileMapLayer
 @export_flags_2d_render var shadow_ignore_mask: int = 0:
 	set(value):
 		shadow_ignore_mask = value
+		# Rx bounds are per-node uniforms: leave the pool before the mask lands.
+		if value != 0:
+			_ensure_unique_material()
 		_set_live_param("rx_mask", value)
 		LitLightRegistry.rx_set(self, value)
 
@@ -33,6 +36,59 @@ class_name LitTileMapLayer
 	set(value):
 		self_shadow = value
 		_set_param("self_shadow", value)
+		_drive_state.dirty = true
+
+@export_group("Surface", "")
+## Specular highlight intensity. Proxies to `specular_strength`.
+@export var specular_strength: float = 0.5:
+	set(value):
+		specular_strength = value
+		_set_param("specular_strength", value)
+
+## Specular exponent (highlight tightness). Proxies to `specular_k`.
+@export var specular_k: float = 32.0:
+	set(value):
+		specular_k = value
+		_set_param("specular_k", value)
+
+## Metallic response when no metallic map is set. Proxies to `metallic_value`.
+@export_range(0.0, 1.0) var metallic_value: float = 0.0:
+	set(value):
+		metallic_value = value
+		_set_param("metallic_value", value)
+
+## Roughness when no roughness map is set. Proxies to `roughness_value`.
+@export_range(0.0, 1.0) var roughness_value: float = 1.0:
+	set(value):
+		roughness_value = value
+		_set_param("roughness_value", value)
+
+@export_group("Shadow March", "")
+## Maximum shadow march steps for this receiver. Proxies to `shadow_steps`.
+@export var shadow_steps: int = 64:
+	set(value):
+		shadow_steps = value
+		_set_param("shadow_steps", value)
+
+## Minimum shadow march step, in pixels. Proxies to `shadow_min_step`.
+@export var shadow_min_step: float = 0.2:
+	set(value):
+		shadow_min_step = value
+		_set_param("shadow_min_step", value)
+
+## Contact-shadow footprint size, in pixels. Proxies to `footprint_shadow`.
+@export var footprint_shadow: float = 16.0:
+	set(value):
+		footprint_shadow = value
+		_set_param("footprint_shadow", value)
+
+## Horizontal stretch of directional-light shadows. Proxies to
+## `directional_horizontal_scale`.
+@export var directional_horizontal_scale: float = 32.0:
+	set(value):
+		directional_horizontal_scale = value
+		_set_param("directional_horizontal_scale", value)
+@export_group("")
 
 var _self_occluders: Array = []
 var _tile_rects: Array[Rect2] = []
@@ -52,19 +108,32 @@ func _init() -> void:
 		_set_param("emissive_strength", emissive_strength)
 		_set_param("receiver_mask", receiver_mask)
 		_set_param("self_shadow", self_shadow)
+		_set_param("specular_strength", specular_strength)
+		_set_param("specular_k", specular_k)
+		_set_param("metallic_value", metallic_value)
+		_set_param("roughness_value", roughness_value)
+		_set_param("shadow_steps", shadow_steps)
+		_set_param("shadow_min_step", shadow_min_step)
+		_set_param("footprint_shadow", footprint_shadow)
+		_set_param("directional_horizontal_scale", directional_horizontal_scale)
 	# Signal, not _ready: a subclass overriding _ready without super() must not
 	# silently disable the node.
 	ready.connect(_lit_ready)
 
 
 func _lit_ready() -> void:
-	# Instanced scenes share subresource materials, but per-node self rects need one
-	# material per node; de-share at runtime.
+	# Pool by content at runtime: identical receiver configurations share one material
+	# (authored resources are never mutated - entries are duplicates). Rx layers need
+	# per-node bounds, so they detach immediately; layers with occlusion tiles detach
+	# in _update_self_rect once their tile rects are known. resource_local_to_scene
+	# opts out.
 	if not Engine.is_editor_hint():
 		var mat := material as ShaderMaterial
 		if mat != null and mat.shader != null and not mat.resource_local_to_scene \
 				and LitShaderLibrary.flags_of(mat.shader) >= 0:
-			material = mat.duplicate()
+			material = LitLightRegistry.pool_acquire(mat)
+			if shadow_ignore_mask != 0:
+				_ensure_unique_material()
 	# Heal a stale rx_mask a scene save may have baked into the material.
 	if shadow_ignore_mask == 0 and material is ShaderMaterial:
 		var stale = (material as ShaderMaterial).get_shader_parameter("rx_mask")
@@ -100,9 +169,11 @@ func _on_children_changed(_child: Node) -> void:
 
 
 func _refresh_occluder_cache() -> void:
-	_self_occluders.clear()
+	# Fresh array: the drive fast path detects cache rebuilds by identity.
+	var occluders: Array = []
 	for child in find_children("*", "LightOccluder2D", true, false):
-		_self_occluders.append(child)
+		occluders.append(child)
+	_self_occluders = occluders
 
 
 # Rects, variant tier, and live params all land through the shared helper; tilemaps
@@ -113,9 +184,12 @@ func _update_self_rect() -> void:
 	if _tile_rect_dirty:
 		_tile_rect_dirty = false
 		_tile_rects = LitLightRegistry.tile_occluder_rects(self)
-	LitReceiverHelper.drive(self, _live_mat(), _self_occluders, _tile_rects, false,
-			_lit_node_flags(), _drive_state)
-	if shadow_ignore_mask != 0:
+	# Occlusion tiles or owned occluders mean per-node self rects: leave the pool
+	# before they land.
+	if not _tile_rects.is_empty() or not _self_occluders.is_empty():
+		_ensure_unique_material()
+	if LitReceiverHelper.drive(self, _live_mat(), _self_occluders, _tile_rects, false,
+			_lit_node_flags(), _drive_state) and shadow_ignore_mask != 0:
 		_set_live_param("rx_mask", shadow_ignore_mask)
 
 
@@ -123,9 +197,39 @@ func _lit_node_flags() -> int:
 	return LitShaderLibrary.F_RX if shadow_ignore_mask != 0 else 0
 
 
+## Detach this layer's runtime material from the shared pool and return it, so raw
+## set_shader_parameter writes affect only this layer. Already-unique materials come
+## back unchanged. Runtime only; in the editor the authored material is returned.
+func make_material_unique() -> ShaderMaterial:
+	_ensure_unique_material()
+	return material as ShaderMaterial
+
+
+func _ensure_unique_material() -> void:
+	var mat := material as ShaderMaterial
+	if mat != null and LitLightRegistry.pool_is_pooled(mat):
+		material = LitLightRegistry.pool_to_unique(mat)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		var mat := material as ShaderMaterial
+		if mat != null:
+			LitLightRegistry.pool_release(mat)
+
+
 func _set_param(param: String, value: Variant) -> void:
-	if material is ShaderMaterial:
-		(material as ShaderMaterial).set_shader_parameter(param, value)
+	var mat := material as ShaderMaterial
+	if mat == null:
+		return
+	# Pooled materials are shared: a per-node value re-keys this node to the pool
+	# entry matching its new content instead of bleeding to poolmates.
+	if not Engine.is_editor_hint() and LitLightRegistry.pool_is_pooled(mat):
+		if mat.get_shader_parameter(param) == value:
+			return
+		material = LitLightRegistry.pool_rekey(mat, param, value)
+		return
+	mat.set_shader_parameter(param, value)
 
 
 # The material carrying live-driven state: in the editor a per-node RenderingServer
@@ -148,6 +252,11 @@ func _live_mat() -> ShaderMaterial:
 
 
 func _set_live_param(param: String, value: Variant) -> void:
+	# At runtime the live material is the node's own; route through the pool-aware
+	# setter so shared entries re-key instead of mutating.
+	if not Engine.is_editor_hint():
+		_set_param(param, value)
+		return
 	var mat := _live_mat()
 	if mat != null:
 		mat.set_shader_parameter(param, value)
