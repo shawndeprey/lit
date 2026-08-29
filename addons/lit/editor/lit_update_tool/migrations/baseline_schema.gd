@@ -1,31 +1,10 @@
 @tool
 extends RefCounted
 
-## Version framework for "Update Project to Lit".
-##
-## BASELINE_SCHEMA locks the stored (serialized) property surface of every Lit node
-## class as of BASELINE_VERSION. It is never edited in place: it only advances through
-## MIGRATIONS, and Test/gate_migration_schema.gd fails whenever a class's live schema
-## drifts from the baseline advanced through the migration list. A PR that renames,
-## removes, retypes, re-defaults, or adds a stored property on a Lit node (or adds a
-## new Lit node class) must append the matching MIGRATIONS entry (or schema entry) to
-## go green.
-##
-## The update tool chains a node's migrations oldest-to-newest from its stamped
-## `lit_version` (unstamped nodes are assumed BASELINE_VERSION). Because Godot drops
-## stored values for renamed/removed script properties at load, migrations read old
-## values from `stored` (the tool's SceneState capture of the node's saved properties),
-## never off the live node. `apply` functions must be idempotent: guard on the old
-## stored name or on the node's stamped version.
-##
-## MIGRATIONS entry shape (sorted ascending by "to", one entry per breaking change):
-##   { "to": "1.2.0", "class": &"LitPointLight2D",
-##     "renames": {&"old": &"new"},                  # also drives instance-override remap
-##     "adds": {&"prop": {"type": TYPE_FLOAT, "default": 1.0}},
-##     "removes": [&"gone"],
-##     "retypes": {&"prop": {"type": TYPE_INT}},
-##     "redefaults": {&"prop": 2.0},
-##     "apply": &"_m_1_2_0_example" }                # optional static func below
+## Locked stored-property surface of every Lit node class as of BASELINE_VERSION.
+## Never edited in place: it advances only through the migration files in this
+## folder (see migration.gd), and Test/gate_migration_schema.gd fails on any drift
+## without one. New classes and pre-release additive changes update it directly.
 
 const BASELINE_VERSION := "1.1.3"
 
@@ -400,95 +379,3 @@ const BASELINE_SCHEMA := {
 		},
 	},
 }
-
-const MIGRATIONS: Array[Dictionary] = []
-
-
-static func current_version() -> String:
-	return LitShaderLibrary._get_version()
-
-
-## -1, 0, or 1; missing components count as 0 ("1.2" == "1.2.0").
-static func semver_cmp(a: String, b: String) -> int:
-	var pa := a.split(".")
-	var pb := b.split(".")
-	for i in maxi(pa.size(), pb.size()):
-		var na := int(pa[i]) if i < pa.size() else 0
-		var nb := int(pb[i]) if i < pb.size() else 0
-		if na != nb:
-			return -1 if na < nb else 1
-	return 0
-
-
-## The version a node's saved data is shaped as: its stamp, a legacy meta stamp, or
-## the baseline for unstamped nodes.
-static func node_version(node: Node) -> String:
-	var v: Variant = node.get(&"lit_version")
-	if v is String and not (v as String).is_empty():
-		return v
-	if node.has_meta(&"lit_version"):
-		return str(node.get_meta(&"lit_version"))
-	return BASELINE_VERSION
-
-
-## Migrations that still apply to a node of `klass` whose data is at `from_version`,
-## oldest first.
-static func chain_for(klass: StringName, from_version: String) -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	for m in MIGRATIONS:
-		if m["class"] == klass and semver_cmp(from_version, m["to"]) < 0:
-			out.append(m)
-	return out
-
-
-## Merged old -> new property renames across a node's remaining chain; drives both the
-## live-node migration and the instance-override remap in parent scenes.
-static func rename_map_for(klass: StringName, from_version: String) -> Dictionary:
-	var out := {}
-	for m in chain_for(klass, from_version):
-		out.merge(m.get("renames", {}), true)
-	return out
-
-
-## Run a node's remaining chain against its live self plus its as-saved property
-## capture. Returns true when anything changed.
-static func apply_chain(node: Node, klass: StringName, stored: Dictionary, report: Array) -> bool:
-	var from := node_version(node)
-	var changed := false
-	var script := load("res://addons/lit/editor/lit_migrations.gd")
-	for m in chain_for(klass, from):
-		for old_name in m.get("renames", {}):
-			if stored.has(old_name):
-				node.set(m["renames"][old_name], stored[old_name])
-				changed = true
-				report.append("MIGRATED %s: %s -> %s (to v%s)"
-						% [klass, old_name, m["renames"][old_name], m["to"]])
-		if m.has("apply"):
-			if script.call(m["apply"], node, stored, report):
-				changed = true
-	return changed
-
-
-## BASELINE_SCHEMA advanced through MIGRATIONS: what the live classes must look like.
-static func expected_schema() -> Dictionary:
-	var schema := {}
-	for klass in BASELINE_SCHEMA:
-		schema[klass] = {
-			"script": BASELINE_SCHEMA[klass]["script"],
-			"props": BASELINE_SCHEMA[klass]["props"].duplicate(true),
-		}
-	for m in MIGRATIONS:
-		var props: Dictionary = schema[m["class"]]["props"]
-		var renames: Dictionary = m.get("renames", {})
-		for old_name in renames:
-			props[renames[old_name]] = props[old_name]
-			props.erase(old_name)
-		for gone in m.get("removes", []):
-			props.erase(gone)
-		for added in m.get("adds", {}):
-			props[added] = m["adds"][added]
-		for retyped in m.get("retypes", {}):
-			props[retyped]["type"] = m["retypes"][retyped]["type"]
-		for redefaulted in m.get("redefaults", {}):
-			props[redefaulted]["default"] = m["redefaults"][redefaulted]
-	return schema

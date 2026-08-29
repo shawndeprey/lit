@@ -2,9 +2,9 @@
 extends RefCounted
 
 ## Conversion tables for "Update Project to Lit": which core Godot classes convert to
-## which Lit scripts and how their properties map across. Pure data; transforms that
-## need logic (blend clamp, shadow_color premultiply, range heuristic) live in
-## lit_update_tool.gd, keyed by the `special` lists here.
+## which Lit scripts and how their properties map across. Pure data plus derived
+## views; transforms that need logic (blend clamp, shadow_color premultiply, range
+## heuristic) live in scene_converter.gd, keyed by the `special` lists here.
 
 const LIT_NODES := "res://addons/lit/nodes/"
 
@@ -75,3 +75,18 @@ const REBASES := {
 	"Sprite2D": {"lit_class": "LitSprite2D", "script": LIT_NODES + "lit_sprite_2d.gd"},
 	"TileMapLayer": {"lit_class": "LitTileMapLayer", "script": LIT_NODES + "lit_tile_map_layer.gd"},
 }
+
+
+## Stored names on instance-provided nodes that would need remapping after the node's
+## class converted: renamed sources and semantics-changed specials, not same-name
+## direct copies (those keep applying natively).
+static func core_mapped_names() -> Dictionary:
+	var out := {"light_mask": true}
+	for core_class in REPLACEMENTS:
+		var copy: Dictionary = REPLACEMENTS[core_class]["copy"]
+		for src in copy:
+			if src != copy[src]:
+				out[String(src)] = true
+		for src in REPLACEMENTS[core_class]["special"]:
+			out[String(src)] = true
+	return out

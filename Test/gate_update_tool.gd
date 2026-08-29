@@ -10,8 +10,8 @@ extends SceneTree
 ## Run: godot --headless --path . --script res://Test/gate_update_tool.gd
 
 const Tool := preload("res://addons/lit/editor/lit_update_tool.gd")
-const Maps := preload("res://addons/lit/editor/lit_conversion_maps.gd")
-const Migrations := preload("res://addons/lit/editor/lit_migrations.gd")
+const Maps := preload("res://addons/lit/editor/lit_update_tool/conversion_maps.gd")
+const Migrations := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
 
 # The bench folder carries a .gdignore: the editor never imports the fixtures (their
 # class_names must not register globally) and the update tool's own project scan

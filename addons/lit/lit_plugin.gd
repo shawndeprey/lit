@@ -26,7 +26,7 @@ const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspec
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
 const LitUpdateToolScript := preload("res://addons/lit/editor/lit_update_tool.gd")
-const LitMigrationsScript := preload("res://addons/lit/editor/lit_migrations.gd")
+const LitMigrationsScript := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
 
 # Editor-live refresh cadence. Polling a few times a second relights the viewport when
 # a light moves, a property changes, or the 2D editor camera pans or zooms, without

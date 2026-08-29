@@ -1,13 +1,15 @@
 extends SceneTree
 
 ## Schema-lock gate: the stored property surface of every Lit node class must equal
-## BASELINE_SCHEMA (lit_migrations.gd) advanced through MIGRATIONS. Any drift without
-## a matching migration entry fails, printing the paste-ready block. Also validates
-## the MIGRATIONS list itself and that every scene node class carries `lit_version`.
+## BASELINE_SCHEMA (lit_update_tool/migrations/baseline_schema.gd) advanced through
+## the registered migration files. Any drift without a matching migration fails,
+## printing the paste-ready block. Also validates the migration files themselves
+## (naming, ordering, field targets) and that every scene node class carries
+## `lit_version`.
 ## Run:  godot --headless --path . --script res://Test/gate_migration_schema.gd
 ## Dump: godot --headless --path . --script res://Test/gate_migration_schema.gd -- --dump
 
-const Migrations := preload("res://addons/lit/editor/lit_migrations.gd")
+const Migrations := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
 
 const NODES_DIR := "res://addons/lit/nodes/"
 # Code-built only, never saved in scenes; exempt from the lit_version requirement.
@@ -91,11 +93,8 @@ func _defaults_equal(a: Variant, b: Variant) -> bool:
 
 
 func _gate_migrations_list() -> void:
-	print("[gate 1] MIGRATIONS list integrity (%d entries)" % Migrations.MIGRATIONS.size())
-	var method_names := {}
-	var migrations_script: Script = Migrations
-	for m in migrations_script.get_script_method_list():
-		method_names[m.name] = true
+	var migs: Array = Migrations.migrations()
+	print("[gate 1] migration files integrity (%d)" % migs.size())
 	var seen := {}
 	var last_to := ""
 	# Replays the schema advance so every rename/remove/retype target is validated
@@ -103,36 +102,37 @@ func _gate_migrations_list() -> void:
 	var props_by_class := {}
 	for klass in Migrations.BASELINE_SCHEMA:
 		props_by_class[klass] = Migrations.BASELINE_SCHEMA[klass]["props"].duplicate(true)
-	for m in Migrations.MIGRATIONS:
-		var tag := "%s@%s" % [m.get("class"), m.get("to")]
-		_check(m.has("to") and m.has("class"), "entry %s has to+class" % tag)
-		_check(Migrations.semver_cmp(Migrations.BASELINE_VERSION, m["to"]) < 0,
+	for m in migs:
+		var tag := "%s@%s" % [m.target_class, m.to_version]
+		_check(not String(m.to_version).is_empty() and m.target_class != &"",
+				"entry %s has to_version+target_class" % tag)
+		var want_file: String = m.to_version.replace(".", "_") + "_migration.gd"
+		_check((m.get_script() as Script).resource_path.get_file() == want_file,
+				"%s lives in migrations/%s" % [tag, want_file])
+		_check(Migrations.semver_cmp(Migrations.BASELINE_VERSION, m.to_version) < 0,
 				"%s is past the baseline" % tag)
-		_check(last_to.is_empty() or Migrations.semver_cmp(last_to, m["to"]) <= 0,
+		_check(last_to.is_empty() or Migrations.semver_cmp(last_to, m.to_version) <= 0,
 				"%s in ascending version order" % tag)
-		last_to = m["to"]
+		last_to = m.to_version
 		_check(not seen.has(tag), "%s unique" % tag)
 		seen[tag] = true
-		if not _check(props_by_class.has(m["class"]), "%s targets a known class" % tag):
+		if not _check(props_by_class.has(m.target_class), "%s targets a known class" % tag):
 			continue
-		var props: Dictionary = props_by_class[m["class"]]
-		var renames: Dictionary = m.get("renames", {})
-		for old_name in renames:
+		var props: Dictionary = props_by_class[m.target_class]
+		for old_name in m.renames:
 			if _check(props.has(old_name), "%s renames existing prop %s" % [tag, old_name]):
-				props[renames[old_name]] = props[old_name]
+				props[m.renames[old_name]] = props[old_name]
 				props.erase(old_name)
-		for gone in m.get("removes", []):
+		for gone in m.removes:
 			if _check(props.has(gone), "%s removes existing prop %s" % [tag, gone]):
 				props.erase(gone)
-		for added in m.get("adds", {}):
+		for added in m.adds:
 			_check(not props.has(added), "%s adds new prop %s" % [tag, added])
-			props[added] = m["adds"][added]
-		for retyped in m.get("retypes", {}):
+			props[added] = m.adds[added]
+		for retyped in m.retypes:
 			_check(props.has(retyped), "%s retypes existing prop %s" % [tag, retyped])
-		for redefaulted in m.get("redefaults", {}):
+		for redefaulted in m.redefaults:
 			_check(props.has(redefaulted), "%s redefaults existing prop %s" % [tag, redefaulted])
-		if m.has("apply"):
-			_check(method_names.has(String(m["apply"])), "%s apply func exists" % tag)
 
 
 func _gate_stamp_wiring(live: Dictionary) -> void:
