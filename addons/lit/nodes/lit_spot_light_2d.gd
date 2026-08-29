@@ -20,13 +20,19 @@ const BlendMode = LitShaderLibrary.BlendMode
 const TextureSizeMode = LitShaderLibrary.TextureSizeMode
 const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 
-@export var enabled: bool = true
+@export var enabled: bool = true:
+	set(value):
+		enabled = value
+		LitLightRegistry.light_state_changed(self)
 @export var color: Color = Color.WHITE
 @export var energy: float = 1.0
 
 @export_group("Falloff")
 ## Radius of influence in pixels; drives attenuation and AABB culling.
-@export var range: float = 256.0
+@export var range: float = 256.0:
+	set(value):
+		range = value
+		LitLightRegistry.light_state_changed(self)
 ## Attenuation curve exponent.
 @export var falloff: float = 1.0
 
@@ -57,7 +63,10 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 @export var height: float = 16.0
 
 @export_group("Shadow")
-@export var shadow_enabled: bool = false
+@export var shadow_enabled: bool = false:
+	set(value):
+		shadow_enabled = value
+		LitLightRegistry.light_state_changed(self)
 ## Occluders cast this light's shadows only if their Occluder Light Mask (tileset
 ## occlusion layers: Light Mask) shares a bit with this mask.
 @export_flags_2d_render var shadow_mask: int = 1:
@@ -65,12 +74,14 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 		shadow_mask = value
 		if value != 1:
 			LitLightRegistry.light_masks_seen = true
+		LitLightRegistry.light_state_changed(self)
 ## Occluders in this light's own scene (its owner's subtree) never cast its shadows.
 @export var exclude_scene_occluders: bool = false:
 	set(value):
 		exclude_scene_occluders = value
 		if value:
 			LitLightRegistry.light_masks_seen = true
+		LitLightRegistry.light_state_changed(self)
 ## CONE_TRACED (the default): a single signed-coverage cone march - penumbras widen
 ## with distance, umbras taper closed, and an antumbra re-brightens, all driven
 ## physically by `source_radius`. RAYMARCHED: the classic estimated-penumbra march -
@@ -83,6 +94,7 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 	set(value):
 		shadow_algorithm = value
 		notify_property_list_changed()
+		LitLightRegistry.light_state_changed(self)
 @export var shadow_color: Color = Color.BLACK
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
@@ -122,3 +134,8 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	remove_from_group("lit_lights")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED:
+		LitLightRegistry.light_state_changed(self)

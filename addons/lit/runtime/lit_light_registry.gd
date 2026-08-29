@@ -65,6 +65,13 @@ var _ctx := FrameContextScript.new()
 const LightCacheScript := preload("res://addons/lit/runtime/registry/light_cache.gd")
 var _light_cache := LightCacheScript.new()
 
+## Runtime packed-mirror upkeep, called by the light setters and transform/visibility
+## notifications. The editor never mirrors - it derives state per refresh instead.
+static func light_state_changed(node: Node) -> void:
+	if Engine.is_editor_hint():
+		return
+	LightCacheScript.note_changed(node)
+
 
 func _init() -> void:
 	_light_cache.set_fan_out(_on_tree_changed)
@@ -200,26 +207,16 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# shader). Computed over every enabled light in the tree, not just the view-culled
 	# set, so camera movement past a light's AABB never thrashes receiver shaders. Only
 	# shadow-casting lights count: an algorithm on a shadowless light is never marched.
-	var algos := 0
 	var mask_potential: bool = _occluder_tiles.masks_seen()
-	var smask_union := 0
 	# The per-light reads only matter once a light or occluder has ever shown mask
 	# potential; the editor always reads so live inspector edits are never missed.
 	var read_masks: bool = light_masks_seen or _occluder_tiles.masks_seen() \
 			or Engine.is_editor_hint()
-	for entry in lights:
-		# Untyped: enabled/shadow_enabled/shadow_algorithm live on each light class,
-		# not on a shared base.
-		var node = entry[0]
-		if not is_instance_valid(node) or not node.enabled or not node.shadow_enabled:
-			continue
-		if node.shadow_algorithm != 0:
-			algos |= 1 << (node.shadow_algorithm - 1)
-		if read_masks:
-			var smask: int = node.shadow_mask
-			smask_union |= smask
-			if smask != 1 or node.exclude_scene_occluders:
-				mask_potential = true
+	var scan: Array = _light_cache.shadow_scan(tree, read_masks)
+	var algos: int = scan[0]
+	var smask_union: int = scan[1]
+	if scan[2]:
+		mask_potential = true
 	active_algos = algos
 	# Skippable only while no light or occluder has ever shown mask potential, when
 	# both calls are provably no-ops (their state is empty by construction).
