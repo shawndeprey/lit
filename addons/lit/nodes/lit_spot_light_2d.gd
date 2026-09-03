@@ -20,6 +20,9 @@ const BlendMode = LitShaderLibrary.BlendMode
 const TextureSizeMode = LitShaderLibrary.TextureSizeMode
 const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 
+# Plugin version this node's saved data was authored under; see LitVersionStamp.
+@export_storage var lit_version := ""
+
 @export var enabled: bool = true:
 	set(value):
 		enabled = value
@@ -105,7 +108,7 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## 1 = shadows reach all the way to the light (the default).
 @export_range(0.01, 1.0, 0.001) var shadow_length: float = 1.0
 ## Radius of the physical emitting disc in world pixels (CONE_TRACED / STOCHASTIC).
-## Bigger sources cast softer shadows: wider penumbras and shorter umbras — an
+## Bigger sources cast softer shadows: wider penumbras and shorter umbras - an
 ## occluder's dark core tapers closed after roughly (occluder width / source_radius) x
 ## its distance to the light, so radii comparable to your occluders give clearly
 ## visible soft-light behavior. Distinct from `range`, which is how far the light
@@ -130,6 +133,7 @@ func _validate_property(property: Dictionary) -> void:
 
 func _enter_tree() -> void:
 	add_to_group("lit_lights")
+	LitVersionStamp.stamp(self)
 
 
 func _exit_tree() -> void:

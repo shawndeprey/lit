@@ -21,6 +21,9 @@ class_name LitDirectionalLight2D
 const BlendMode = LitShaderLibrary.BlendMode
 const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 
+# Plugin version this node's saved data was authored under; see LitVersionStamp.
+@export_storage var lit_version := ""
+
 @export var enabled: bool = true:
 	set(value):
 		enabled = value
@@ -104,6 +107,7 @@ func _validate_property(property: Dictionary) -> void:
 
 func _enter_tree() -> void:
 	add_to_group("lit_lights")
+	LitVersionStamp.stamp(self)
 
 
 func _exit_tree() -> void:

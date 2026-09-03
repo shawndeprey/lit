@@ -1,0 +1,20 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Texture2D" path="res://Test/base.png" id="1_tex"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_icon.tscn" id="2_ic"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_hud_bit.tscn" id="3_hb"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_mixed.tscn" id="4_mx"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_preview.tscn" id="5_pv"]
+
+[node name="FixtureMenu" type="Control"]
+
+[node name="MenuArt" type="Sprite2D" parent="."]
+texture = ExtResource("1_tex")
+
+[node name="SlotIcon" parent="." instance=ExtResource("2_ic")]
+
+[node name="BitWrap" parent="." instance=ExtResource("3_hb")]
+
+[node name="MenuMixed" parent="." instance=ExtResource("4_mx")]
+
+[node name="CharPreview" parent="." instance=ExtResource("5_pv")]

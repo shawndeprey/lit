@@ -2,14 +2,19 @@
   <img src="branding/Lit-Logo-Text.png" alt="Lit" width="220">
 </p>
 
-<p align="center"><b>Drop-in 2D lighting for Godot 4 — with no light limit.</b></p>
+<p align="center"><b>Drop-in 2D lighting for Godot 4 - with no light limit.</b></p>
 
 <p align="center">
   <img alt="Godot 4.4+" src="https://img.shields.io/badge/Godot-4.4%2B-478CBF?logo=godotengine&logoColor=white">
   <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-ffca60">
   <a href="https://fadinglantern.com/docs/lit"><img alt="Docs" src="https://img.shields.io/badge/Docs-read-d9a441"></a>
-  <a href="https://discord.gg/nfqeRGnM7P"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white"></a>
   <a href="https://www.youtube.com/@FadingLanternGames"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-subscribe-FF0000?logo=youtube&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/nfqeRGnM7P">
+    <img src="branding/Lit-Discord-CTA.svg" alt="The lantern's lit - come sit by the fire. Join the Fading Lantern Discord." width="830">
+  </a>
 </p>
 
 ---
@@ -17,7 +22,7 @@
 Lit is an alongside replacement for Godot's built-in 2D lights. It keeps the parts you
 like (add a node, set some values, done) and fixes the part you don't: the hard cap of
 ~15 lights per object. Light a whole scene with as many lights as you want, get real soft
-shadows, and stack on a pile of post-processing — all without leaving the node workflow.
+shadows, and stack on a pile of post-processing - all without leaving the node workflow.
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=mWrhQRTlI8w"><em>▶ Watch the tech demo</em></a>
@@ -66,13 +71,13 @@ show off what you built? Come hang out in our Discord:
 5. **Want shadows?** On the light, tick **Shadow Enabled**. Then give the world something to
    block the light: add a `LightOccluder2D` to a sprite, or for tiles enable **SDF
    Collision** on your TileSet's occlusion layer. A sprite carrying the receiver
-   material — `LitSprite2D`, tool-converted, or hand-assigned — never shadows itself:
+   material - `LitSprite2D`, tool-converted, or hand-assigned - never shadows itself:
    its occluder's shadow falls behind it (flip **Self Shadow** on the sprite if you
    want plain SDF shadowing back).
 6. **Want a look?** Add a **`LitPostProcess`** node and switch on bloom, color grade, CRT,
    or any of the other effects.
 
-That's it — everything updates live in the editor as you build.
+That's it - everything updates live in the editor as you build.
 
 ---
 
@@ -80,28 +85,28 @@ That's it — everything updates live in the editor as you build.
 
 - **Uncapped lights & shadows.** No 15-light limit. Use as many as your scene needs.
 - **Three light types.** Point, Directional (a sun), and Spot (a cone).
-- **Light textures (cookies).** Drop a texture on a point or spot light to shape it —
-  window panes, canopy dapple, blinds — just like the engine's `PointLight2D` texture.
+- **Light textures (cookies).** Drop a texture on a point or spot light to shape it -
+  window panes, canopy dapple, blinds - just like the engine's `PointLight2D` texture.
   **Texture Offset** slides the cookie off the node while shadows and shading stay
-  put — cycle it and a hanging lamp swings.
+  put - cycle it and a hanging lamp swings.
 - **Soft or hard shadows.** One slider per light, from razor-sharp to feathery.
 - **Three shadow algorithms, per light.** **Cone Traced** (the default: a single
-  signed-coverage cone march driven by a physical **Source Radius** — penumbras widen
+  signed-coverage cone march driven by a physical **Source Radius** - penumbras widen
   with distance, the umbra tapers closed behind small occluders, and an antumbra
   re-brightens, beyond Unreal's penumbra-only SDF shadows at a modest cost),
-  **Raymarched** (the fastest, stylized option — penumbra shaped by the hardness
-  slider alone), and **Stochastic** (splits the source into sampled sub-cones —
+  **Raymarched** (the fastest, stylized option - penumbra shaped by the hardness
+  slider alone), and **Stochastic** (splits the source into sampled sub-cones -
   ground truth, correct even where several occluders share one penumbra, with
   samples/jitter dials; a cone penumbra gate keeps its cost down outside true
   penumbra). Pick per light with the **Shadow Algorithm** dropdown.
-- **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` — no wiring.
+- **Normal maps & specular, free.** Reads them straight from your `CanvasTexture` - no wiring.
 - **Blinn–Phong or PBR.** Pick the lighting model in Project Settings → Lit. PBR adds
   optional metallic / roughness / AO inputs on the receiver material; switch back to
   Blinn–Phong any time and the extra maps are simply ignored.
 - **Darkness & ambient.** One `LitCanvasModulate` node sets the mood for the whole scene.
 - **Light masks.** Make a light affect only the things you want it to.
 - **Negative lights.** Flip a light to *subtract* to carve pools of extra darkness.
-- **Works on any 2D node.** Sprites, tilemaps, polygons — if it draws, it can be lit.
+- **Works on any 2D node.** Sprites, tilemaps, polygons - if it draws, it can be lit.
 - **Live in the editor.** See your lighting while you build, no need to hit play.
 - **20+ post-processing effects** on a single node: bloom, color grade, LUT presets,
   vignette, CRT, VHS, film grain, chromatic aberration, posterize, pixelate, halftone,
@@ -115,7 +120,7 @@ That's it — everything updates live in the editor as you build.
 | Node | What it does |
 |---|---|
 | `LitPointLight2D` | A light that shines in all directions from a point. |
-| `LitDirectionalLight2D` | A sun — parallel light across the whole scene. |
+| `LitDirectionalLight2D` | A sun - parallel light across the whole scene. |
 | `LitSpotLight2D` | A cone of light you can aim. |
 | `LitCanvasModulate` | Sets the scene's darkness/ambient color. |
 | `LitSprite2D` | A `Sprite2D` that's already set up to receive light. |
@@ -146,5 +151,5 @@ quickest way to reach us.
 
 ## License
 
-Lit is free and open-source under the **MIT License** — use it in anything, commercial or
+Lit is free and open-source under the **MIT License** - use it in anything, commercial or
 not, no credit required. See the [`LICENSE`](LICENSE) file for the details.

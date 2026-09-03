@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 830 150" width="830" height="150" role="img">
+  <title>The lantern's lit - come sit by the fire. Join the Fading Lantern Discord.</title>
+  <style>
+    .mono { font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace; }
+    .c1 { fill: #ffe9b3; } .c2 { fill: #f4c972; } .c3 { fill: #d9a441; } .c4 { fill: #b5522e; }
+    .fA { animation: swapA 0.8s steps(1, end) infinite; }
+    .fB { opacity: 0; animation: swapB 0.8s steps(1, end) infinite; }
+    @keyframes swapA { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    @keyframes swapB { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+    .ember { opacity: 0; }
+    .e1 { animation: rise 3.6s linear infinite 0.2s; }
+    .e2 { animation: rise 4.4s linear infinite 1.6s; }
+    .e3 { animation: rise 3.2s linear infinite 2.5s; }
+    .e4 { animation: rise 5.0s linear infinite 0.9s; }
+    .e5 { animation: rise 4.0s linear infinite 3.1s; }
+    .e6 { animation: rise 5.6s linear infinite 2.0s; }
+    @keyframes rise {
+      0% { transform: translateY(0); opacity: 0; }
+      10% { opacity: 0.9; }
+      70% { opacity: 0.45; }
+      100% { transform: translateY(-78px); opacity: 0; }
+    }
+    .breathe { animation: breathe 6s ease-in-out infinite; }
+    @keyframes breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.95; } }
+    .beacon { animation: beacon 2.6s ease-out infinite; }
+    @keyframes beacon { 0% { opacity: 0.55; } 60% { opacity: 0; } 100% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .fA, .fB, .ember, .breathe, .beacon { animation: none; }
+      .beacon { opacity: 0; }
+      .breathe { opacity: 0.7; }
+    }
+  </style>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101a21"/>
+      <stop offset="1" stop-color="#0b141a"/>
+    </linearGradient>
+    <linearGradient id="wash" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9a441" stop-opacity="0"/>
+      <stop offset="1" stop-color="#d9a441" stop-opacity="0.1"/>
+    </linearGradient>
+    <radialGradient id="fireGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#d9a441" stop-opacity="0.32"/>
+      <stop offset="0.65" stop-color="#d9a441" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#d9a441" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="btnGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#d9a441" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#d9a441" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="panel"><rect x="1" y="1" width="828" height="148" rx="10"/></clipPath>
+  </defs>
+
+  <!-- Panel -->
+  <rect x="1" y="1" width="828" height="148" rx="10" fill="url(#bg)" stroke="#d9a441" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  <g clip-path="url(#panel)">
+    <rect x="1" y="60" width="828" height="90" fill="url(#wash)"/>
+    <ellipse class="breathe" cx="76" cy="112" rx="150" ry="70" fill="url(#fireGlow)"/>
+    <ellipse class="breathe" cx="702" cy="63" rx="130" ry="55" fill="url(#btnGlow)"/>
+
+    <!-- Pixel campfire (two-frame flame) -->
+    <g transform="translate(52 51)" shape-rendering="crispEdges">
+      <g class="fA">
+        <rect x="18" y="0" width="6" height="6" class="c1"/>
+        <rect x="12" y="6" width="6" height="6" class="c2"/><rect x="18" y="6" width="6" height="6" class="c2"/>
+        <rect x="12" y="12" width="6" height="6" class="c2"/><rect x="18" y="12" width="6" height="6" class="c3"/><rect x="24" y="12" width="6" height="6" class="c2"/>
+        <rect x="6" y="18" width="6" height="6" class="c3"/><rect x="12" y="18" width="6" height="6" class="c3"/><rect x="18" y="18" width="6" height="6" class="c3"/><rect x="24" y="18" width="6" height="6" class="c3"/>
+        <rect x="6" y="24" width="6" height="6" class="c4"/><rect x="12" y="24" width="6" height="6" class="c3"/><rect x="18" y="24" width="6" height="6" class="c4"/><rect x="24" y="24" width="6" height="6" class="c3"/><rect x="30" y="24" width="6" height="6" class="c4"/>
+        <rect x="12" y="30" width="6" height="6" class="c4"/><rect x="18" y="30" width="6" height="6" class="c4"/><rect x="24" y="30" width="6" height="6" class="c4"/>
+      </g>
+      <g class="fB">
+        <rect x="12" y="0" width="6" height="6" class="c1"/>
+        <rect x="12" y="6" width="6" height="6" class="c2"/><rect x="18" y="6" width="6" height="6" class="c2"/>
+        <rect x="6" y="12" width="6" height="6" class="c2"/><rect x="12" y="12" width="6" height="6" class="c3"/><rect x="18" y="12" width="6" height="6" class="c2"/>
+        <rect x="6" y="18" width="6" height="6" class="c3"/><rect x="12" y="18" width="6" height="6" class="c3"/><rect x="18" y="18" width="6" height="6" class="c3"/><rect x="24" y="18" width="6" height="6" class="c2"/>
+        <rect x="6" y="24" width="6" height="6" class="c4"/><rect x="12" y="24" width="6" height="6" class="c3"/><rect x="18" y="24" width="6" height="6" class="c4"/><rect x="24" y="24" width="6" height="6" class="c3"/><rect x="30" y="24" width="6" height="6" class="c4"/>
+        <rect x="12" y="30" width="6" height="6" class="c4"/><rect x="18" y="30" width="6" height="6" class="c4"/><rect x="24" y="30" width="6" height="6" class="c4"/>
+      </g>
+      <!-- Logs -->
+      <rect x="-4" y="36" width="46" height="6" fill="#6b4a2f"/>
+      <rect x="2" y="42" width="40" height="6" fill="#4a3320"/>
+    </g>
+
+    <!-- Embers -->
+    <rect class="ember e1" x="62" y="66" width="4" height="4" fill="#f4c972"/>
+    <rect class="ember e2" x="78" y="72" width="3" height="3" fill="#d9a441"/>
+    <rect class="ember e3" x="92" y="64" width="4" height="4" fill="#f4c972"/>
+    <rect class="ember e4" x="70" y="78" width="3" height="3" fill="#b5522e"/>
+    <rect class="ember e5" x="104" y="74" width="3" height="3" fill="#d9a441"/>
+    <rect class="ember e6" x="330" y="120" width="3" height="3" fill="#d9a441"/>
+  </g>
+
+  <!-- Copy -->
+  <text class="mono" x="130" y="50" font-size="11" font-weight="bold" letter-spacing="3" fill="#d9a441">THE LANTERN'S LIT</text>
+  <text class="mono" x="130" y="83" font-size="26" font-weight="bold" fill="#dbb27f">Come sit by the fire</text>
+  <text class="mono" x="130" y="108" font-size="13" fill="#9aa6a9">Talk shop with the Lit devs, show us what you're building</text>
+
+  <!-- Button -->
+  <rect class="beacon" x="606" y="37" width="193" height="52" rx="11" fill="none" stroke="#f4c972" stroke-width="2"/>
+  <rect x="610" y="41" width="185" height="44" rx="8" fill="#d9a441"/>
+  <g transform="translate(620 51)" fill="#1a1206">
+    <path d="M19.27 5.33A16.6 16.6 0 0 0 15.1 4l-.2.41a15.3 15.3 0 0 1 3.7 1.2c-3.5-1.6-7.7-1.6-11.2 0a15.3 15.3 0 0 1 3.7-1.2L10.9 4a16.6 16.6 0 0 0-4.17 1.33C3.6 9.9 2.76 14.34 3.18 18.7a16.7 16.7 0 0 0 5.06 2.55l.4-.66a10.9 10.9 0 0 1-1.7-.82l.42-.32a11.9 11.9 0 0 0 10.08 0l.42.32c-.54.32-1.11.6-1.7.82l.4.66a16.7 16.7 0 0 0 5.06-2.55c.5-5.06-.86-9.46-2.51-13.37ZM9.55 16.13c-.99 0-1.8-.92-1.8-2.05 0-1.13.79-2.05 1.8-2.05s1.82.93 1.8 2.05c0 1.13-.8 2.05-1.8 2.05Zm4.9 0c-.99 0-1.8-.92-1.8-2.05 0-1.13.79-2.05 1.8-2.05s1.82.93 1.8 2.05c0 1.13-.79 2.05-1.8 2.05Z"/>
+  </g>
+  <text class="mono" x="652" y="69" font-size="14" font-weight="bold" fill="#1a1206">JOIN THE DISCORD</text>
+
+  <!-- Presence -->
+  <circle class="breathe" cx="635" cy="106" r="7" fill="#3ba55d" opacity="0.25"/>
+  <circle cx="635" cy="106" r="4" fill="#3ba55d"/>
+  <text class="mono" x="647" y="110" font-size="11" fill="#9aa6a9">Join Fading Lantern</text>
+</svg>

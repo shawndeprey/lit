@@ -1,0 +1,210 @@
+[gd_scene load_steps=22 format=3]
+
+[ext_resource type="Texture2D" path="res://Test/base.png" id="1_tex"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_mixed.tscn" id="10_mx"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_light_script.gd" id="2_ls"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_rebase_sprite.gd" id="3_rs"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_collide_sprite.gd" id="4_cs"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_watcher.gd" id="5_ws"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="6_lp"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_oneline_tile.gd" id="7_ot"]
+[ext_resource type="Shader" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="8_rs"]
+[ext_resource type="AnimationLibrary" path="res://Test/.update_tool_bench/fixture_anim_lib.tres" id="9_al"]
+
+[sub_resource type="OccluderPolygon2D" id="occ"]
+polygon = PackedVector2Array(0, 0, 32, 0, 32, 32, 0, 32)
+
+[sub_resource type="CanvasItemMaterial" id="mat"]
+blend_mode = 1
+
+[sub_resource type="CanvasItemMaterial" id="mat_def"]
+
+[sub_resource type="Shader" id="sh_unsh"]
+code = "shader_type canvas_item;
+render_mode unshaded;
+
+void fragment() {
+	COLOR = texture(TEXTURE, UV) * COLOR;
+}"
+
+[sub_resource type="ShaderMaterial" id="mat_unsh"]
+shader = SubResource("sh_unsh")
+
+[sub_resource type="Shader" id="sh_tint"]
+code = "shader_type canvas_item;
+
+void fragment() {
+	COLOR = texture(TEXTURE, UV) * vec4(1.0, 0.5, 0.5, 1.0);
+}"
+
+[sub_resource type="ShaderMaterial" id="mat_tint"]
+shader = SubResource("sh_tint")
+
+[sub_resource type="ShaderMaterial" id="mat_recv"]
+shader = ExtResource("8_rs")
+shader_parameter/receiver_mask = 4
+
+[sub_resource type="CanvasTexture" id="ct_recv"]
+diffuse_texture = ExtResource("1_tex")
+
+[sub_resource type="Animation" id="anim"]
+resource_name = "swing"
+length = 1.0
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Light:offset")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Vector2(0, 0), Vector2(8, 0)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("CustomFxSprite:offset")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Vector2(0, 0), Vector2(0, 4)]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Light:height")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.5]
+}
+
+[sub_resource type="AnimationLibrary" id="lib"]
+_data = {
+&"swing": SubResource("anim")
+}
+
+[node name="FixtureChild" type="Node2D"]
+
+[node name="Light" type="PointLight2D" parent="." groups=["torches"]]
+position = Vector2(100, 50)
+z_index = 3
+metadata/_edit_lock_ = true
+color = Color(1, 0.8, 0.6, 1)
+energy = 1.5
+range_item_cull_mask = 3
+shadow_enabled = true
+shadow_color = Color(0.5, 0, 0, 0.5)
+shadow_filter = 2
+shadow_item_cull_mask = 5
+texture = ExtResource("1_tex")
+offset = Vector2(4, -6)
+texture_scale = 2.0
+height = 0.7
+blend_mode = 2
+
+[node name="BareSprite" type="Sprite2D" parent="."]
+unique_name_in_owner = true
+light_mask = 2
+position = Vector2(-20, 30)
+texture = ExtResource("1_tex")
+offset = Vector2(10, 5)
+
+[node name="ScriptedLight" type="PointLight2D" parent="."]
+script = ExtResource("2_ls")
+
+[node name="MatSprite" type="Sprite2D" parent="."]
+material = SubResource("mat")
+texture = ExtResource("1_tex")
+
+[node name="RebasedSprite" type="Sprite2D" parent="."]
+light_mask = 4
+texture = ExtResource("1_tex")
+script = ExtResource("3_rs")
+speed = 3.5
+
+[node name="CollideSprite" type="Sprite2D" parent="."]
+texture = ExtResource("1_tex")
+script = ExtResource("4_cs")
+
+[node name="DefaultMatSprite" type="Sprite2D" parent="."]
+material = SubResource("mat_def")
+texture = ExtResource("1_tex")
+
+[node name="NakedLight" type="PointLight2D" parent="."]
+energy = 0.7
+
+[node name="ReceiverSprite" type="Sprite2D" parent="."]
+material = SubResource("mat_recv")
+texture = SubResource("ct_recv")
+
+[node name="RebasedFxSprite" type="Sprite2D" parent="."]
+light_mask = 16
+material = SubResource("mat_tint")
+texture = ExtResource("1_tex")
+script = ExtResource("3_rs")
+
+[node name="UnshadedVfxSprite" type="Sprite2D" parent="."]
+material = SubResource("mat_unsh")
+texture = ExtResource("1_tex")
+
+[node name="CustomFxSprite" type="Sprite2D" parent="."]
+position = Vector2(50, 60)
+material = SubResource("mat_tint")
+texture = ExtResource("1_tex")
+
+[node name="Modulate" type="CanvasModulate" parent="."]
+color = Color(0.2, 0.2, 0.3, 1)
+
+[node name="Occluder" type="LightOccluder2D" parent="."]
+occluder = SubResource("occ")
+occluder_light_mask = 5
+
+[node name="Blocker" type="Timer" parent="."]
+
+[node name="Watcher" type="Node" parent="."]
+script = ExtResource("5_ws")
+
+[node name="PointLight2D" type="PointLight2D" parent="Watcher"]
+unique_name_in_owner = true
+energy = 0.9
+
+[node name="Props" type="Node2D" parent="Watcher"]
+
+[node name="PointLight2D" type="PointLight2D" parent="Watcher/Props"]
+energy = 0.8
+
+[node name="ExistingLit" type="Node2D" parent="."]
+script = ExtResource("6_lp")
+energy = 0.5
+
+[node name="OnelineTile" type="TileMapLayer" parent="."]
+light_mask = 8
+script = ExtResource("7_ot")
+
+[node name="Menu" type="Control" parent="."]
+
+[node name="MenuSprite" type="Sprite2D" parent="Menu"]
+texture = ExtResource("1_tex")
+
+[node name="MenuLight" type="PointLight2D" parent="Menu"]
+energy = 0.4
+
+[node name="Anim" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("lib"),
+&"ext": ExtResource("9_al")
+}
+
+[node name="MixedProp" parent="." instance=ExtResource("10_mx")]
+
+[connection signal="timeout" from="Blocker" to="Light" method="hide"]
+[connection signal="visibility_changed" from="Light" to="Watcher" method="_on_light_vis"]

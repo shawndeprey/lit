@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[node name="FixtureEnv" type="CanvasModulate"]
+color = Color(0.15, 0.12, 0.24, 1)
+
+[node name="Marker" type="Node2D" parent="."]
+position = Vector2(5, 5)

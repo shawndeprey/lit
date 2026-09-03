@@ -1,0 +1,17 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Texture2D" path="res://Test/base.png" id="1_tex"]
+
+[sub_resource type="Shader" id="sh"]
+code = "shader_type canvas_item;
+
+void fragment() {
+	COLOR = texture(TEXTURE, UV) * vec4(0.5, 1.0, 0.5, 1.0);
+}"
+
+[sub_resource type="ShaderMaterial" id="m"]
+shader = SubResource("sh")
+
+[node name="FixtureFxRoot" type="Sprite2D"]
+material = SubResource("m")
+texture = ExtResource("1_tex")

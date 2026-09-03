@@ -1,0 +1,45 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_child.tscn" id="1_child"]
+[ext_resource type="Texture2D" path="res://Test/base.png" id="2_tex"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_env.tscn" id="3_env"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_menu.tscn" id="4_menu"]
+
+[sub_resource type="TileSetAtlasSource" id="atlas"]
+texture = ExtResource("2_tex")
+
+[sub_resource type="TileSet" id="tset"]
+sources/0 = SubResource("atlas")
+
+[node name="FixtureParent" type="Node2D"]
+
+[node name="Child" parent="." instance=ExtResource("1_child")]
+
+[node name="Light" parent="Child"]
+offset = Vector2(30, 30)
+color = Color(0, 0, 1, 1)
+
+[node name="Extra" type="Node2D" parent="Child"]
+
+[node name="Sun" type="DirectionalLight2D" parent="."]
+rotation = 0.5
+energy = 0.8
+height = 0.3
+shadow_enabled = true
+max_distance = 8000.0
+
+[node name="Tiles" type="TileMapLayer" parent="."]
+light_mask = 4
+tile_set = SubResource("tset")
+
+[node name="Env" parent="." instance=ExtResource("3_env")]
+
+[node name="MenuBox" parent="." instance=ExtResource("4_menu")]
+
+[node name="HudArt" type="Sprite2D" parent="MenuBox"]
+texture = ExtResource("2_tex")
+
+[node name="Ghost" parent="." instance_placeholder="res://Test/.update_tool_bench/fixture_child.tscn"]
+light_mask = 2
+
+[editable path="Child"]
