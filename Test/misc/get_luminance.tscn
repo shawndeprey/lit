@@ -66,3 +66,9 @@ theme_override_constants/shadow_offset_x = 2
 theme_override_constants/shadow_offset_y = 2
 theme_override_font_sizes/font_size = 28
 text = "Skull luminance: -"
+
+[node name="MaskToggle" type="CheckButton" parent="UI" unique_id=1382905517]
+offset_left = 16.0
+offset_top = 64.0
+theme_override_font_sizes/font_size = 22
+text = "Skull ignores mouse light (receiver mask)"

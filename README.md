@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="https://discord.gg/nfqeRGnM7P">
-    <img src="branding/Lit-Discord-CTA.svg" alt="The lantern's lit - come sit by the fire. Join the Fading Lantern Discord." width="830">
+	<img src="branding/Lit-Discord-CTA.svg" alt="The lantern's lit - come sit by the fire. Join the Fading Lantern Discord." width="830">
   </a>
 </p>
 
