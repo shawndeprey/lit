@@ -33,7 +33,8 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 @export var energy: float = 1.0
 
 @export_group("Falloff")
-## Radius of influence in pixels; drives attenuation and AABB culling.
+## Radius of influence in pixels, multiplied by the node's global scale (larger axis,
+## like a PointLight2D's texture footprint); drives attenuation and AABB culling.
 @export var range: float = 256.0:
 	set(value):
 		range = value
@@ -48,8 +49,8 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 @export var texture: Texture2D
 ## Multiplier on the cookie's footprint.
 @export var texture_scale: float = 1.0
-## NATIVE: the cookie spans the texture's pixel size and follows node scale.
-## FIT_RANGE: it spans the `range` footprint and ignores node scale.
+## NATIVE: the cookie spans the texture's pixel size under the node's full transform.
+## FIT_RANGE: it spans the scaled `range` footprint, uniform, rotating with the node.
 @export var texture_size_mode: TextureSizeMode = TextureSizeMode.NATIVE
 ## Slides the cookie off the node's center, in the texture's local pixels: it rotates
 ## with the node (and in NATIVE mode scales with it). Falloff, shadows, and shading
@@ -58,7 +59,8 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 @export var texture_offset: Vector2 = Vector2.ZERO
 
 @export_group("Shading")
-## Z-height above the surface; drives normal-mapped shading direction.
+## Z-height above the surface; drives normal-mapped shading direction. Not affected
+## by node scale (as in Godot).
 @export var height: float = 16.0
 
 @export_group("Shadow")
@@ -103,12 +105,12 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## occluder's distance from the light, reading like a light hung above the ground.
 ## 1 = shadows reach all the way to the light (the default).
 @export_range(0.01, 1.0, 0.001) var shadow_length: float = 1.0
-## Radius of the physical emitting disc in world pixels (CONE_TRACED / STOCHASTIC).
-## Bigger sources cast softer shadows: wider penumbras and shorter umbras - an
-## occluder's dark core tapers closed after roughly (occluder width / source_radius) x
-## its distance to the light, so radii comparable to your occluders give clearly
-## visible soft-light behavior. Distinct from `range`, which is how far the light
-## reaches.
+## Radius of the physical emitting disc in world pixels (CONE_TRACED / STOCHASTIC),
+## scaled with the node like `range`. Bigger sources cast softer shadows: wider
+## penumbras and shorter umbras - an occluder's dark core tapers closed after roughly
+## (occluder width / source_radius) x its distance to the light, so radii comparable
+## to your occluders give clearly visible soft-light behavior. Distinct from `range`,
+## which is how far the light reaches.
 @export_range(0.0, 256.0, 0.5, "or_greater") var source_radius: float = 32.0
 ## Shadow marches per fragment across the source disc (STOCHASTIC): more is smoother
 ## and slower. Clamped by lit/quality/shadow_samples_max.
