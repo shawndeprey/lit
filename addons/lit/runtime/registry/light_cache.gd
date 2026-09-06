@@ -5,8 +5,8 @@ extends RefCounted
 ##
 ## At runtime a packed mirror (ranges, per-light state flags) rides along with the
 ## node list, so the per-frame cull and shadow scan are tight typed loops instead
-## of O(all lights) node property walks. Positions are still read live during the
-## cull (transform notifications are deferred in Godot, so a mirrored position
+## of O(all lights) node property walks. Transforms are still read live during the
+## cull (transform notifications are deferred in Godot, so a mirrored transform
 ## would cull moving lights one frame late); the flags gate that read to enabled,
 ## visible lights. The mirror is kept truthful by the lights themselves: the
 ## cull/scan-relevant setters and visibility notifications (synchronous, unlike
@@ -74,8 +74,9 @@ func cull_visible(tree: SceneTree, world_rect: Rect2) -> Array:
 		if _kinds[i] == 1:
 			visible.append(node)
 			continue
-		var p := node.global_position
-		var r := _ranges[i]
+		var xf := node.global_transform
+		var p := xf.origin
+		var r := _ranges[i] * maxf(xf.x.length(), xf.y.length())
 		if p.x + r < min_x or p.x - r > max_x or p.y + r < min_y or p.y - r > max_y:
 			continue
 		visible.append(node)
@@ -124,11 +125,11 @@ func _cull_visible_walk(lights: Array, world_rect: Rect2) -> Array:
 				visible.append(directional)
 		elif kind == 0:
 			var point := node as LitPointLight2D
-			if point.enabled and point.is_visible_in_tree() and _aabb_visible(point.global_position, point.range, world_rect):
+			if point.enabled and point.is_visible_in_tree() and _aabb_visible(point.global_transform, point.range, world_rect):
 				visible.append(point)
 		else:
 			var spot := node as LitSpotLight2D
-			if spot.enabled and spot.is_visible_in_tree() and _aabb_visible(spot.global_position, spot.range, world_rect):
+			if spot.enabled and spot.is_visible_in_tree() and _aabb_visible(spot.global_transform, spot.range, world_rect):
 				visible.append(spot)
 	return visible
 
@@ -252,7 +253,8 @@ func _write_mirror(i: int, node: Node, kind: int) -> void:
 		_smasks[i] = spot.shadow_mask
 	_flags[i] = f
 
-## True if a light's `range`-expanded AABB intersects the visible world rect.
-func _aabb_visible(pos: Vector2, light_range: float, world_rect: Rect2) -> bool:
-	var aabb := Rect2(pos - Vector2(light_range, light_range), Vector2(light_range * 2.0, light_range * 2.0))
+## True if a light's node-scaled `range` AABB intersects the visible world rect.
+func _aabb_visible(xf: Transform2D, light_range: float, world_rect: Rect2) -> bool:
+	var r := light_range * maxf(xf.x.length(), xf.y.length())
+	var aabb := Rect2(xf.origin - Vector2(r, r), Vector2(r * 2.0, r * 2.0))
 	return world_rect.intersects(aabb)

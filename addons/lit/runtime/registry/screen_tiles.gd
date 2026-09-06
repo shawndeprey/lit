@@ -69,8 +69,9 @@ func build_and_publish(ctx: FrameContext) -> void:
 
 		# range lives on each positional light type; fetch it dynamically.
 		var light := visible[i] as Node2D
-		var center: Vector2 = canvas_xform * light.global_position
-		var light_range: float = float(light.get("range")) * scale + CULL_PAD
+		var xf := light.global_transform
+		var center: Vector2 = canvas_xform * xf.origin
+		var light_range: float = float(light.get("range")) * maxf(xf.x.length(), xf.y.length()) * scale + CULL_PAD
 		var range_sq := light_range * light_range
 
 		# A spot's cone (half-angle under 90 degrees) is the intersection of two

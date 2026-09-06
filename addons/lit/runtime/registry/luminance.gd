@@ -59,9 +59,13 @@ func _directional(light: LitDirectionalLight2D, pos: Vector2,
 # dynamically: the shared properties live on both LitPointLight2D and LitSpotLight2D.
 func _positional(light, pos: Vector2,
 		occ_nodes: Array, occ_layers: Array, rx_mask: int, self_source: Node) -> float:
-	var to_light: Vector2 = light.global_position - pos
+	var xf: Transform2D = light.global_transform
+	var s := maxf(xf.x.length(), xf.y.length())
+	if absf(s - 1.0) < 1e-5:
+		s = 1.0
+	var to_light: Vector2 = xf.origin - pos
 	var dist := to_light.length()
-	var range_px: float = light.range
+	var range_px: float = light.range * s
 	if range_px <= 0.0 or dist > range_px:
 		return 0.0
 	var factor: float = light.energy * pow(clampf(1.0 - dist / range_px, 0.0, 1.0), light.falloff)
@@ -77,7 +81,7 @@ func _positional(light, pos: Vector2,
 	if factor <= 0.0:
 		return 0.0
 
-	var ck := _cookie(light, -to_light)
+	var ck := _cookie(light, -to_light, xf, range_px)
 	var color := Color(light.color.r * ck.r, light.color.g * ck.g, light.color.b * ck.b) * ck.a
 	if color.get_luminance() <= 0.0:
 		return 0.0
@@ -94,18 +98,17 @@ func _positional(light, pos: Vector2,
 ## Cookie modulation at `world_offset` from the light's center: WHITE when the light
 ## has no readable cookie, TRANSPARENT outside the footprint (the cookie masks the
 ## light to zero there).
-func _cookie(light, world_offset: Vector2) -> Color:
+func _cookie(light, world_offset: Vector2, xf: Transform2D, range_px: float) -> Color:
 	var tex: Texture2D = light.texture
 	if tex == null:
 		return Color.WHITE
 	var half: Vector2
 	var local: Vector2
 	if int(light.texture_size_mode) == LitShaderLibrary.TextureSizeMode.FIT_RANGE:
-		half = Vector2(light.range, light.range) * light.texture_scale
+		half = Vector2(range_px, range_px) * light.texture_scale
 		local = world_offset.rotated(-light.global_rotation)
 	else:
 		half = Vector2(tex.get_size()) * 0.5 * light.texture_scale
-		var xf: Transform2D = light.get_global_transform()
 		var basis := Transform2D(xf.x, xf.y, Vector2.ZERO)
 		if absf(basis.determinant()) < 1e-8:
 			return Color.WHITE

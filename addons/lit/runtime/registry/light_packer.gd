@@ -19,6 +19,10 @@ extends RefCounted
 ## light nodes), bit 5 shadow exclusions, bits 6-17 shadow_length fraction quantized to
 ## 12 bits (point/spot: 0 = full march, uncapped; directional: plain fraction of
 ## shadow_reach, 4095 = full reach), bit 18 cookie offset.
+##
+## Node scale: range, source_radius and the FIT_RANGE cookie footprint pack multiplied
+## by the node's global scale (larger basis axis, snapped to 1 for unscaled nodes);
+## height does not, matching Godot's Light2D.
 
 const LitCookieAtlasScript := preload("res://addons/lit/runtime/lit_cookie_atlas.gd")
 const FrameContext := preload("res://addons/lit/runtime/registry/frame_context.gd")
@@ -152,8 +156,12 @@ func _pack_shadow_length(frac: float) -> float:
 ## Pack one point light into the row starting at `row` in _pack_buf.
 func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
 	# Position to normalized screen UV, the one canonical space.
-	var screen_px: Vector2 = canvas_xform * light.global_position
+	var xf := light.global_transform
+	var screen_px: Vector2 = canvas_xform * xf.origin
 	var uv := screen_px / vp_size
+	var s := maxf(xf.x.length(), xf.y.length())
+	if absf(s - 1.0) < 1e-5:
+		s = 1.0
 
 	# Four floats per texel; o is the float offset of this light's first texel.
 	var o := row * _tpl * 4
@@ -161,7 +169,7 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
 	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
-			+ _pack_cookie(o, light, canvas_xform) \
+			+ _pack_cookie(o, light, canvas_xform, xf, s) \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
 			+ _pack_shadow_length(light.shadow_length)
@@ -176,7 +184,7 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	# Texel 1: uv.x | uv.y | range | energy
 	_pack_buf[o + 4] = uv.x
 	_pack_buf[o + 5] = uv.y
-	_pack_buf[o + 6] = light.range
+	_pack_buf[o + 6] = light.range * s
 	_pack_buf[o + 7] = light.energy
 
 	# Texel 2: color.rgb | height
@@ -192,7 +200,7 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	_pack_buf[o + 15] = light.shadow_hardness
 
 	# Texel 7: source_radius | samples | jitter (read only by cone/stochastic shaders)
-	_pack_buf[o + 28] = light.source_radius
+	_pack_buf[o + 28] = light.source_radius * s
 	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
 	_pack_buf[o + 30] = light.shadow_jitter
 	if _rx_union_frame != 0:
@@ -254,11 +262,15 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 ## Pack one spot light: a point light (texels 0 to 3) plus a cone (texel 4). The node's
 ## local +X (its rotation) is the direction the cone aims.
 func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
-	var screen_px: Vector2 = canvas_xform * light.global_position
+	var xf := light.global_transform
+	var screen_px: Vector2 = canvas_xform * xf.origin
 	var uv := screen_px / vp_size
+	var s := maxf(xf.x.length(), xf.y.length())
+	if absf(s - 1.0) < 1e-5:
+		s = 1.0
 
 	# Aim direction in screen space (camera rotation and zoom carry through).
-	var aim_px := canvas_xform.basis_xform(Vector2.from_angle(light.global_rotation))
+	var aim_px := canvas_xform.basis_xform(Vector2.from_angle(xf.get_rotation()))
 	if aim_px.length() > 0.0:
 		aim_px = aim_px.normalized()
 
@@ -274,7 +286,7 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 
 	var subtractive := 1.0 if light.blend_mode == LitSpotLight2D.BlendMode.SUBTRACT else 0.0
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
-			+ _pack_cookie(o, light, canvas_xform) \
+			+ _pack_cookie(o, light, canvas_xform, xf, s) \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
 			+ _pack_shadow_length(light.shadow_length)
@@ -289,7 +301,7 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	# Texel 1: uv.x | uv.y | range | energy
 	_pack_buf[o + 4] = uv.x
 	_pack_buf[o + 5] = uv.y
-	_pack_buf[o + 6] = light.range
+	_pack_buf[o + 6] = light.range * s
 	_pack_buf[o + 7] = light.energy
 
 	# Texel 2: color.rgb | height
@@ -311,7 +323,7 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 19] = cos_inner
 
 	# Texel 7: source_radius | samples | jitter (read only by cone/stochastic shaders)
-	_pack_buf[o + 28] = light.source_radius
+	_pack_buf[o + 28] = light.source_radius * s
 	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
 	_pack_buf[o + 30] = light.shadow_jitter
 	if _rx_union_frame != 0:
@@ -324,7 +336,7 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 ## 2x2 matrix taking a screen-pixel offset from the light's center to a cookie-UV
 ## offset around that center. `light` is accessed dynamically: the cookie properties
 ## live on both LitPointLight2D and LitSpotLight2D.
-func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> float:
+func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transform2D, s: float) -> float:
 	if not _cookies_active:
 		return 0.0
 	var tex: Texture2D = light.get("texture")
@@ -333,17 +345,17 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D) -> float:
 
 	# Footprint half-extents in world units plus the basis it rotates with. NATIVE (0):
 	# the texture's pixel size under the node's full transform. FIT_RANGE (1): spans
-	# 2*range, rotates with the node, ignores node scale. Values match TextureSizeMode
-	# on the light nodes.
+	# 2*range (node-scaled), rotates with the node. Values match TextureSizeMode on the
+	# light nodes.
 	var half: Vector2
 	var basis: Transform2D
 	if int(light.get("texture_size_mode")) == 1:
-		var r: float = float(light.get("range"))
+		var r: float = float(light.get("range")) * s
 		half = Vector2(r, r) * float(light.get("texture_scale"))
-		basis = canvas_xform * Transform2D(light.global_rotation, Vector2.ZERO)
+		basis = canvas_xform * Transform2D(xf.get_rotation(), Vector2.ZERO)
 	else:
 		half = Vector2(tex.get_size()) * 0.5 * float(light.get("texture_scale"))
-		basis = canvas_xform * light.get_global_transform()
+		basis = canvas_xform * xf
 	basis = Transform2D(basis.x, basis.y, Vector2.ZERO)  # offsets only; drop translation
 	if half.x <= 0.0 or half.y <= 0.0 or absf(basis.determinant()) < 1e-8:
 		return 0.0  # degenerate footprint
