@@ -2,7 +2,9 @@
 
 void fragment() {
 	vec3 albedo = COLOR.rgb;
-	vec3 N = normalize(NORMAL);                  // from the CanvasTexture normal map; faces out when absent
+	vec3 N = NORMAL;                             // from the CanvasTexture normal map; faces out when absent
+	N.xy = mat2(v_tangent, v_bitangent) * N.xy;  // receiver-local to screen space
+	N = normalize(N);
 	vec3 spec_shin = SPECULAR_SHININESS.rgb;
 	float shininess = SPECULAR_SHININESS.a;
 

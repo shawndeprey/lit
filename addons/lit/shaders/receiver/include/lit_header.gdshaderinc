@@ -243,7 +243,15 @@ uniform float directional_horizontal_scale = 32.0;
 // owner's local space (a y-sorted TileMapLayer renders per-row child items).
 varying vec2 v_canvas;
 
+// The receiver's local x/y axes in screen space (rotation and mirroring; scale
+// normalized out), so the normal map can be rotated into the light vectors' space.
+varying flat vec2 v_tangent;
+varying flat vec2 v_bitangent;
+
 void vertex() {
 	v_canvas = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
+	mat4 to_screen = CANVAS_MATRIX * MODEL_MATRIX;
+	v_tangent = normalize(to_screen[0].xy);
+	v_bitangent = normalize(to_screen[1].xy);
 }
 
