@@ -1,0 +1,355 @@
+[gd_scene load_steps=10 format=4 uid="uid://dv7vobouslo8o"]
+
+[ext_resource type="Script" uid="uid://isp1sjk3n8e6" path="res://Test/misc/normal_map_rotation.gd" id="1_nmr"]
+[ext_resource type="Texture2D" uid="uid://82bocparm4uw" path="res://Test/misc/normal_map_rotation/dome.png" id="2_dome"]
+[ext_resource type="Texture2D" uid="uid://dg8fixirwd51g" path="res://Test/misc/normal_map_rotation/dome_n.png" id="3_dome_n"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="4_sprite"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="5_modulate"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="6_point"]
+[ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="7_directional"]
+[ext_resource type="PackedScene" uid="uid://cpygp0wxw1iu7" path="res://Test/nodes/skeleton.tscn" id="8_skull"]
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_dome"]
+diffuse_texture = ExtResource("2_dome")
+normal_texture = ExtResource("3_dome_n")
+
+[node name="NormalMapRotation" type="Node2D"]
+script = ExtResource("1_nmr")
+
+[node name="LitCanvasModulate" type="Node2D" parent="."]
+script = ExtResource("5_modulate")
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="Rows" type="Node2D" parent="."]
+
+[node name="Rot0" type="Sprite2D" parent="Rows"]
+position = Vector2(300, 300)
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Rot45" type="Sprite2D" parent="Rows"]
+position = Vector2(630, 300)
+rotation = 0.785398
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Rot90" type="Sprite2D" parent="Rows"]
+position = Vector2(960, 300)
+rotation = 1.570796
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Rot180" type="Sprite2D" parent="Rows"]
+position = Vector2(1290, 300)
+rotation = 3.141593
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Rot270" type="Sprite2D" parent="Rows"]
+position = Vector2(1620, 300)
+rotation = 4.712389
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="FlipH" type="Sprite2D" parent="Rows"]
+position = Vector2(300, 560)
+texture = SubResource("CanvasTexture_dome")
+flip_h = true
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="ScaleNegX" type="Sprite2D" parent="Rows"]
+position = Vector2(630, 560)
+scale = Vector2(-1, 1)
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Parent180" type="Node2D" parent="Rows"]
+position = Vector2(960, 560)
+rotation = 3.141593
+
+[node name="Dome" type="Sprite2D" parent="Rows/Parent180"]
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Spinner" type="Sprite2D" parent="Rows"]
+position = Vector2(1290, 560)
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="ParentScaleNegY" type="Node2D" parent="Rows"]
+position = Vector2(1620, 560)
+scale = Vector2(1, -1)
+
+[node name="Dome" type="Sprite2D" parent="Rows/ParentScaleNegY"]
+texture = SubResource("CanvasTexture_dome")
+script = ExtResource("4_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Lights" type="Node2D" parent="."]
+
+[node name="LitDirectionalLight2D" type="Node2D" parent="Lights"]
+position = Vector2(960, 540)
+rotation = 0.785398
+script = ExtResource("7_directional")
+metadata/_custom_type_script = "uid://7156lwdhmrod"
+
+[node name="LitPointLight2D" type="Node2D" parent="Lights"]
+position = Vector2(960, 540)
+script = ExtResource("6_point")
+enabled = false
+range = 1200.0
+height = 40.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(960, 540)
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Title" type="Label" parent="UI"]
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 1904.0
+offset_bottom = 72.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 24
+text = "One hemisphere normal map on every dome, directional light from the upper-left. Correct: every dome shades identically (lit side toward the light) and only the red notch turns."
+autowrap_mode = 3
+
+[node name="MouseLightToggle" type="CheckButton" parent="UI"]
+offset_left = 16.0
+offset_top = 84.0
+theme_override_font_sizes/font_size = 22
+text = "Point light follows the mouse (directional off)"
+
+[node name="LabelRot0" type="Label" parent="UI"]
+offset_left = 150.0
+offset_top = 400.0
+offset_right = 450.0
+offset_bottom = 430.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "rotation 0°"
+horizontal_alignment = 1
+
+[node name="LabelRot45" type="Label" parent="UI"]
+offset_left = 480.0
+offset_top = 400.0
+offset_right = 780.0
+offset_bottom = 430.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "rotation 45°"
+horizontal_alignment = 1
+
+[node name="LabelRot90" type="Label" parent="UI"]
+offset_left = 810.0
+offset_top = 400.0
+offset_right = 1110.0
+offset_bottom = 430.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "rotation 90°"
+horizontal_alignment = 1
+
+[node name="LabelRot180" type="Label" parent="UI"]
+offset_left = 1140.0
+offset_top = 400.0
+offset_right = 1440.0
+offset_bottom = 430.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "rotation 180°"
+horizontal_alignment = 1
+
+[node name="LabelRot270" type="Label" parent="UI"]
+offset_left = 1470.0
+offset_top = 400.0
+offset_right = 1770.0
+offset_bottom = 430.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "rotation 270°"
+horizontal_alignment = 1
+
+[node name="LabelFlipH" type="Label" parent="UI"]
+offset_left = 150.0
+offset_top = 660.0
+offset_right = 450.0
+offset_bottom = 690.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "flip_h (Godot pre-mirrors NORMAL: correct)"
+horizontal_alignment = 1
+
+[node name="LabelScaleNegX" type="Label" parent="UI"]
+offset_left = 480.0
+offset_top = 660.0
+offset_right = 780.0
+offset_bottom = 690.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "scale (-1, 1)"
+horizontal_alignment = 1
+
+[node name="LabelParent180" type="Label" parent="UI"]
+offset_left = 810.0
+offset_top = 660.0
+offset_right = 1110.0
+offset_bottom = 690.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "parent rotation 180°"
+horizontal_alignment = 1
+
+[node name="LabelSpinner" type="Label" parent="UI"]
+offset_left = 1140.0
+offset_top = 660.0
+offset_right = 1440.0
+offset_bottom = 690.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "spinning"
+horizontal_alignment = 1
+
+[node name="LabelParentScaleNegY" type="Label" parent="UI"]
+offset_left = 1470.0
+offset_top = 660.0
+offset_right = 1770.0
+offset_bottom = 690.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "parent scale (1, -1)"
+horizontal_alignment = 1
+
+[node name="Skulls" type="Node2D" parent="."]
+
+[node name="Static" parent="Skulls" instance=ExtResource("8_skull")]
+position = Vector2(300, 880)
+
+[node name="ScaleNegX" parent="Skulls" instance=ExtResource("8_skull")]
+position = Vector2(630, 880)
+scale = Vector2(-5, 5)
+
+[node name="Parent90" type="Node2D" parent="Skulls"]
+position = Vector2(960, 880)
+rotation = 1.570796
+
+[node name="Skull" parent="Skulls/Parent90" instance=ExtResource("8_skull")]
+
+[node name="Spinning" parent="Skulls" instance=ExtResource("8_skull")]
+position = Vector2(1290, 880)
+
+[node name="Parent45Mirror" type="Node2D" parent="Skulls"]
+position = Vector2(1620, 880)
+rotation = 0.785398
+
+[node name="Skull" parent="Skulls/Parent45Mirror" instance=ExtResource("8_skull")]
+scale = Vector2(-5, 5)
+
+[node name="LabelSkullStatic" type="Label" parent="UI"]
+offset_left = 150.0
+offset_top = 980.0
+offset_right = 450.0
+offset_bottom = 1010.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "skull (static)"
+horizontal_alignment = 1
+
+[node name="LabelSkullScaleNegX" type="Label" parent="UI"]
+offset_left = 480.0
+offset_top = 980.0
+offset_right = 780.0
+offset_bottom = 1010.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "skull scale (-1, 1)"
+horizontal_alignment = 1
+
+[node name="LabelSkullParent90" type="Label" parent="UI"]
+offset_left = 810.0
+offset_top = 980.0
+offset_right = 1110.0
+offset_bottom = 1010.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "skull parent rotation 90°"
+horizontal_alignment = 1
+
+[node name="LabelSkullSpinning" type="Label" parent="UI"]
+offset_left = 1140.0
+offset_top = 980.0
+offset_right = 1440.0
+offset_bottom = 1010.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "skull (spinning)"
+horizontal_alignment = 1
+
+[node name="LabelSkullParent45Mirror" type="Label" parent="UI"]
+offset_left = 1470.0
+offset_top = 980.0
+offset_right = 1770.0
+offset_bottom = 1010.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 20
+text = "skull parent 45° + scale (-1, 1)"
+horizontal_alignment = 1
