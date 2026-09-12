@@ -249,7 +249,10 @@ varying flat vec2 v_tangent;
 varying flat vec2 v_bitangent;
 
 void vertex() {
-	v_canvas = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
+	// VERTEX.xy, not VERTEX: identical here (VERTEX is vec2 in canvas_item), but the
+	// Shader Editor validates an include opened on its own against the spatial built-ins
+	// (VERTEX = vec3) and would flag vec4(vec3, float, float). godotengine/godot#98885.
+	v_canvas = (MODEL_MATRIX * vec4(VERTEX.xy, 0.0, 1.0)).xy;
 	mat4 to_screen = CANVAS_MATRIX * MODEL_MATRIX;
 	v_tangent = normalize(to_screen[0].xy);
 	v_bitangent = normalize(to_screen[1].xy);
