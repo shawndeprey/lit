@@ -66,13 +66,23 @@ const REPLACEMENTS := {
 # applied by the tool.
 const SWAPS := {
 	&"Sprite2D": LIT_NODES + "lit_sprite_2d.gd",
+	&"AnimatedSprite2D": LIT_NODES + "lit_animated_sprite_2d.gd",
 	&"TileMapLayer": LIT_NODES + "lit_tile_map_layer.gd",
+}
+
+# Swapped core class -> the `kinds` key / scan-count bucket that gates its conversion
+# (one checkbox per core type in the update dialog).
+const SWAP_KINDS := {
+	&"Sprite2D": "sprites",
+	&"AnimatedSprite2D": "animated_sprites",
+	&"TileMapLayer": "tilemaps",
 }
 
 # Core class -> Lit class for rebasing user scripts (`extends Sprite2D` becomes
 # `extends LitSprite2D` on the root of each user inheritance chain).
 const REBASES := {
 	"Sprite2D": {"lit_class": "LitSprite2D", "script": LIT_NODES + "lit_sprite_2d.gd"},
+	"AnimatedSprite2D": {"lit_class": "LitAnimatedSprite2D", "script": LIT_NODES + "lit_animated_sprite_2d.gd"},
 	"TileMapLayer": {"lit_class": "LitTileMapLayer", "script": LIT_NODES + "lit_tile_map_layer.gd"},
 }
 
