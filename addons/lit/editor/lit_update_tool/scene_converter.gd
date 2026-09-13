@@ -155,10 +155,8 @@ static func _kind_on(kinds: Dictionary, core_type: String) -> bool:
 			return kinds.get("lights", true)
 		"CanvasModulate":
 			return kinds.get("modulates", true)
-		"Sprite2D":
-			return kinds.get("sprites", true)
-		"TileMapLayer":
-			return kinds.get("tilemaps", true)
+	if Maps.SWAP_KINDS.has(core_type):
+		return kinds.get(Maps.SWAP_KINDS[core_type], true)
 	return false
 
 
@@ -334,7 +332,10 @@ static func _report_dropped(core_class: String, spec: Dictionary, stored: Dictio
 
 # --- In-place receiver conversion ----------------------------------------------
 
-## Sprite2D/TileMapLayer conversion candidate. Returns true when the node changed.
+## Sprite2D / AnimatedSprite2D / TileMapLayer conversion candidate. Returns true when
+## the node changed. AnimatedSprite2D frames are left as they are: the CanvasTexture
+## wrap only applies to a single `texture` slot (see LitAnimatedSprite2D for the
+## sprite-sheet shape that carries normal maps).
 static func _convert_receiver(node: Node, script_path: String, row: Dictionary,
 		current: String, report: Array) -> bool:
 	var core_class := node.get_class()

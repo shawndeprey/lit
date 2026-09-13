@@ -152,10 +152,12 @@ func _process(delta: float) -> void:
 # tilemaps are first-class world geometry, so the tool has to cover them too. Each node
 # gets its own material so the per-instance uniforms (receiver_mask, emissive_strength)
 # stay independent. For nodes that draw a single Texture2D, the texture is wrapped in a
-# CanvasTexture so the normal/specular slots appear. Lives under Project > Tools, and is
-# undoable as one action.
+# CanvasTexture so the normal/specular slots appear; unscripted Sprite2D and
+# AnimatedSprite2D nodes are upgraded to their Lit classes on top. Lives under
+# Project > Tools, and is undoable as one action.
 #
-# This is the batch path for existing art; LitSprite2D is the from-scratch path. It also
+# This is the batch path for existing art; LitSprite2D / LitAnimatedSprite2D are the
+# from-scratch path. It also
 # sidesteps the Quick Load friction, since a node's `material` slot only accepts a
 # Material, never a `.gdshader`.
 
@@ -171,6 +173,7 @@ func _make_selected_nodes_lit() -> void:
 
 	var shader := load(LitShaderLibrary.ENTRY_PATHS[0]) as Shader
 	var lit_sprite_script := load("res://addons/lit/nodes/lit_sprite_2d.gd") as Script
+	var lit_anim_script := load("res://addons/lit/nodes/lit_animated_sprite_2d.gd") as Script
 	var undo := get_undo_redo()
 	undo.create_action(TOOL_MENU_ITEM)
 	for ci in targets:
@@ -184,11 +187,15 @@ func _make_selected_nodes_lit() -> void:
 			undo.add_do_property(ci, "script", lit_sprite_script)
 			undo.add_undo_property(ci, "script", null)
 			undo.add_do_method(self, "_start_converted_sprite", ci)
+		elif ci is AnimatedSprite2D and ci.get_script() == null:
+			undo.add_do_property(ci, "script", lit_anim_script)
+			undo.add_undo_property(ci, "script", null)
+			undo.add_do_method(self, "_start_converted_sprite", ci)
 
 		# If the node draws a single Texture2D (Sprite2D, Polygon2D, MeshInstance2D, ...),
 		# wrap it in a CanvasTexture so the normal/specular slots appear. `texture` isn't
 		# on the CanvasItem base, so the dynamic get() returns null for nodes without it
-		# (TileMapLayer, AnimatedSprite2D), which then just get the material.
+		# (TileMapLayer, AnimatedSprite2D), which then keep their own textures.
 		var tex = ci.get("texture")
 		if tex is Texture2D and not (tex is CanvasTexture):
 			var ct := CanvasTexture.new()
@@ -229,7 +236,8 @@ func _generate_precompile_config() -> void:
 # --- Update Project tool -------------------------------------------------------
 #
 # "Update Project to Lit X.Y.Z" converts core nodes project-wide, rebases user
-# scripts extending Sprite2D/TileMapLayer onto the Lit classes, and brings every Lit
+# scripts extending Sprite2D / AnimatedSprite2D / TileMapLayer onto the Lit classes,
+# and brings every Lit
 # node to the current version. The engine lives in editor/lit_update_tool.gd; this
 # is the dialog flow around it. Open scenes are saved first so the SceneState scan
 # reads current data, and changed open scenes reload afterwards.
@@ -270,6 +278,8 @@ func _update_project() -> void:
 					c["point_lights"] + c["directional_lights"], true],
 			["modulates", "%d CanvasModulate" % c["modulates"], c["modulates"], true],
 			["sprites", "%d Sprite2D" % c["sprites"], c["sprites"], true],
+			["animated_sprites", "%d AnimatedSprite2D" % c["animated_sprites"],
+					c["animated_sprites"], true],
 			["tilemaps", "%d TileMapLayer" % c["tilemaps"], c["tilemaps"], true],
 			["scripts", "%d script rebases, %d reference updates, %d @tool additions"
 					% [c["rebase_roots"], c["retype_scripts"], c["tool_add"]],

@@ -19,6 +19,7 @@ const LIGHT_SCRIPTS := {
 }
 const RECEIVER_SCRIPTS := {
 	"res://addons/lit/nodes/lit_sprite_2d.gd": true,
+	"res://addons/lit/nodes/lit_animated_sprite_2d.gd": true,
 	"res://addons/lit/nodes/lit_tile_map_layer.gd": true,
 }
 

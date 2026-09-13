@@ -2,11 +2,12 @@ extends SceneTree
 
 ## Headless gate: bare-receiver driving through LitReceiverHelper - rect push, tier
 ## swap, self_shadow opt-out, shared-material skip, freed-occluder heal, and the
-## LitSprite2D self-driving path. Count-guarded: EXPECTED checks must execute.
+## LitSprite2D and LitAnimatedSprite2D self-driving paths. Count-guarded: EXPECTED
+## checks must execute.
 ## Run: godot --headless --path . --script res://Test/gate_receiver_driving.gd
 
 const RegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
-const EXPECTED := 10
+const EXPECTED := 12
 
 var _registry
 var _frame := 0
@@ -18,6 +19,7 @@ var _bare_occ: LightOccluder2D
 var _shared_a: Sprite2D
 var _shared_b: Sprite2D
 var _lit_sprite: LitSprite2D
+var _lit_anim: LitAnimatedSprite2D
 var _rect_first := PackedVector4Array()
 
 
@@ -39,6 +41,11 @@ func _initialize() -> void:
 	_lit_sprite.name = "LitSelf"
 	root.add_child.call_deferred(_lit_sprite)
 	_make_occ(_lit_sprite)
+
+	_lit_anim = LitAnimatedSprite2D.new()
+	_lit_anim.name = "LitAnimSelf"
+	root.add_child.call_deferred(_lit_anim)
+	_make_occ(_lit_anim)
 
 	process_frame.connect(_tick)
 
@@ -63,7 +70,7 @@ func _make_occ(parent: Node) -> LightOccluder2D:
 	return occ
 
 
-func _mat(s: Sprite2D) -> ShaderMaterial:
+func _mat(s: Node2D) -> ShaderMaterial:
 	return s.material as ShaderMaterial
 
 
@@ -106,6 +113,10 @@ func _tick() -> void:
 					"LitSprite2D drives its own rect")
 			_check(LitShaderLibrary.flags_of(_mat(_lit_sprite).shader) == LitShaderLibrary.F_SELF_EXCL,
 					"LitSprite2D tiered to full")
+			_check(int(_mat(_lit_anim).get_shader_parameter("self_rect_count")) == 1,
+					"LitAnimatedSprite2D drives its own rect")
+			_check(LitShaderLibrary.flags_of(_mat(_lit_anim).shader) == LitShaderLibrary.F_SELF_EXCL,
+					"LitAnimatedSprite2D tiered to full")
 			_mat(_bare).set_shader_parameter("self_shadow", false)
 			_bare_occ.free()
 		10:
