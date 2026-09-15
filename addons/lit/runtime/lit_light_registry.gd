@@ -116,6 +116,12 @@ static func pool_is_pooled(mat) -> bool:
 static func pool_stats() -> Dictionary:
 	return MaterialPoolScript.stats()
 
+static func pool_snapshot() -> Dictionary:
+	return MaterialPoolScript.snapshot()
+
+static func pool_is_key_param(name: String) -> bool:
+	return MaterialPoolScript.is_key_param(name)
+
 # --- Per-receiver shadow exclusion (shadow_ignore_mask) ------------------------------
 # Node-facing static API; the node set and rx bounds driving live in
 # registry/rx_registry.gd (its statics are shared by both editor registry instances
