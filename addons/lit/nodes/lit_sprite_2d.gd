@@ -181,7 +181,11 @@ func _lit_ready() -> void:
 		var mat := material as ShaderMaterial
 		if mat != null and mat.shader != null and not mat.resource_local_to_scene \
 				and LitShaderLibrary.flags_of(mat.shader) >= 0:
-			material = LitLightRegistry.pool_acquire(mat)
+			# Already held only when a pre-ready proxy write (a duplicate() of a live
+			# node copies properties through the setters) acquired it for us.
+			if not is_same(mat, _pool_held):
+				material = LitLightRegistry.pool_acquire(mat)
+				_pool_held = material
 			if shadow_ignore_mask != 0:
 				_ensure_unique_material()
 	# Heal a stale rx_mask a scene save may have baked into the material.
@@ -288,20 +292,39 @@ func make_material_unique() -> ShaderMaterial:
 	return material as ShaderMaterial
 
 
+# The pool entry this node holds a reference to (null while private, authored, or in
+# the editor). Tracked apart from `material` so a runtime material swap by the user
+# releases the stale reference instead of stranding the entry.
+var _pool_held: ShaderMaterial = null
+
+
+func _sync_pool_hold() -> void:
+	if _pool_held != null and not is_same(material, _pool_held):
+		LitLightRegistry.pool_release(_pool_held)
+		_pool_held = null
+
+
 func _ensure_unique_material() -> void:
+	_sync_pool_hold()
 	var mat := material as ShaderMaterial
-	if mat != null and LitLightRegistry.pool_is_pooled(mat):
-		material = LitLightRegistry.pool_to_unique(mat)
+	if mat == null or not LitLightRegistry.pool_is_pooled(mat):
+		return
+	# Our own hold moves out through the pool; a pooled material assigned by hand
+	# (another node's entry) is copied without touching that node's reference.
+	material = LitLightRegistry.pool_to_unique(mat) if is_same(mat, _pool_held) else mat.duplicate()
+	_pool_held = null
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE:
-		var mat := material as ShaderMaterial
-		if mat != null:
-			LitLightRegistry.pool_release(mat)
+	if what == NOTIFICATION_PREDELETE and _pool_held != null:
+		# Release the reference this node took, whatever `material` holds by now (a
+		# runtime material swap must not strand the entry).
+		LitLightRegistry.pool_release(_pool_held)
+		_pool_held = null
 
 
 func _set_param(param: String, value: Variant) -> void:
+	_sync_pool_hold()
 	var mat := material as ShaderMaterial
 	if mat == null:
 		return
@@ -310,7 +333,17 @@ func _set_param(param: String, value: Variant) -> void:
 	if not Engine.is_editor_hint() and LitLightRegistry.pool_is_pooled(mat):
 		if mat.get_shader_parameter(param) == value:
 			return
+		if not LitLightRegistry.pool_is_key_param(param):
+			# Driven params (rx_mask heals) converge on a shared entry, which holds
+			# them empty by construction: no re-key, no reference change.
+			mat.set_shader_parameter(param, value)
+			return
+		if not is_same(mat, _pool_held):
+			# A pooled material assigned by hand (another node's entry): take a
+			# reference of our own before moving off it, so its holders stay honest.
+			mat = LitLightRegistry.pool_acquire(mat)
 		material = LitLightRegistry.pool_rekey(mat, param, value)
+		_pool_held = material
 		return
 	mat.set_shader_parameter(param, value)
 
