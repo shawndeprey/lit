@@ -25,7 +25,7 @@ godot --headless --path . --script res://Test/gate_update_tool.gd
 
 A release must be tagged prior to uploading to the Asset Library.
 ```
-git tag -a v1.1.3 -m "Release v1.1.3"
+git tag -a v1.1.4 -m "Release v1.1.4"
 git push origin --tags
 ```
 
