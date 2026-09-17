@@ -30,3 +30,24 @@ prints `PROBE RESULT: PASS|FAIL`, plus a `note:` line reporting whether shape E 
 its atlas region (it does not; that is an engine limitation that applies to `Sprite2D`
 as well, so per-frame `CanvasTexture`s wrapping `AtlasTexture`s are not a usable
 sprite-sheet workflow - use `AtlasTexture` frames over one `CanvasTexture` sheet).
+
+## Playground scene
+
+`playground.tscn` is a hands-on scene for trying the node out and collecting feedback
+on it: a `LitAnimatedSprite2D` skeleton (the 8-frame turnaround from
+`Test/nodes/skele_spin.png`, `AtlasTexture` frames over one `CanvasTexture` sheet,
+footprint occluder) plays its spin in the middle of a lit crypt floor. A warm key
+light circles it so the normal-mapped shading sweeps around the turnaround, a cool
+fill light sits above, and a white light can be made to follow the mouse.
+
+Open it in the editor and select `Skeleton` to see the Lit exports and the
+SpriteFrames panel, or run it (F6, or from the repo root):
+
+```
+/Applications/Godot.app/Contents/MacOS/Godot --path . res://Test/misc/test_beds/lit_animated_sprite/playground.tscn
+```
+
+Keys (also listed on screen): Space play/pause, Left/Right step a frame,
+Up/Down animation speed, O key-light orbit, M mouse light, R spin the node itself,
+F flip_h, mouse wheel zoom, H hide the help. `-- capture=PATH` saves one frame and
+quits.

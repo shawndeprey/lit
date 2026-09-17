@@ -398,9 +398,11 @@ func _spawn_receivers() -> bool:
 	var rows := int(ceil(float(_opt_receiver_count) / float(cols)))
 	var cell := Vector2(_area_half.x * 2.0 / float(cols + 1), _area_half.y * 2.0 / float(rows + 1))
 	for i in _opt_receiver_count:
+		@warning_ignore("integer_division")
+		var row := i / cols
 		var root := Node2D.new()
 		root.position = _area_center - _area_half \
-				+ Vector2(cell.x * float(i % cols + 1), cell.y * float(i / cols + 1))
+				+ Vector2(cell.x * float(i % cols + 1), cell.y * float(row + 1))
 		root.scale = Vector2(3, 3)
 		add_child(root)
 		var node: Node2D

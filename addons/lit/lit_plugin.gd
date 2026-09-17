@@ -23,6 +23,7 @@ const TOOL_MENU_PRECOMPILE := "Generate Lit Precompile Config"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
+const LitReceiverInspectorScript := preload("res://addons/lit/editor/lit_receiver_inspector.gd")
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
 const LitUpdateToolScript := preload("res://addons/lit/editor/lit_update_tool.gd")
@@ -39,6 +40,9 @@ var _registry: LitLightRegistry
 var _refresh_accum := 0.0
 var _warm_pending: Array[int] = []
 var _post_inspector: EditorInspectorPlugin
+var _receiver_inspector: EditorInspectorPlugin
+# Last-seen values of the project settings that gate receiver exports; see _process.
+var _gating_key := ""
 var _export_plugin: EditorExportPlugin
 # Carries the version, so registration and removal must use the same stored string.
 var _update_menu_label := ""
@@ -69,6 +73,9 @@ func _enter_tree() -> void:
 	_post_inspector = LitPostInspectorScript.new()
 	_post_inspector.undo_redo = get_undo_redo()
 	add_inspector_plugin(_post_inspector)
+	# Notes on receiver inspectors for exports the project settings make inert.
+	_receiver_inspector = LitReceiverInspectorScript.new()
+	add_inspector_plugin(_receiver_inspector)
 	# Packs lit_precompile.cfg into exports (see editor/lit_export_plugin.gd).
 	_export_plugin = LitExportPluginScript.new()
 	add_export_plugin(_export_plugin)
@@ -88,6 +95,8 @@ func _exit_tree() -> void:
 	remove_tool_menu_item(_update_menu_label)
 	remove_inspector_plugin(_post_inspector)
 	_post_inspector = null
+	remove_inspector_plugin(_receiver_inspector)
+	_receiver_inspector = null
 	remove_export_plugin(_export_plugin)
 	_export_plugin = null
 	_remove_live_globals()
@@ -129,8 +138,19 @@ func _process(delta: float) -> void:
 	# preview reflects the lit/render/lighting_model setting. The autoload that does this
 	# at runtime doesn't run in the editor, so without this the preview would always be
 	# Phong (the global's default) regardless of the setting.
-	RenderingServer.global_shader_parameter_set("lit_lighting_model",
-		int(ProjectSettings.get_setting("lit/render/lighting_model", 0)))
+	var model := int(ProjectSettings.get_setting("lit/render/lighting_model", 0))
+	RenderingServer.global_shader_parameter_set("lit_lighting_model", model)
+	# Receiver exports gated by project settings (LitReceiverHelper.inactive_reason):
+	# when a gate flips, re-list the selected receivers' properties so the greyed
+	# fields and their inspector notes follow the setting without reselecting.
+	var gating_key := "%d|%s|%d" % [model,
+		ProjectSettings.get_setting("lit/quality/shadow_step_scaling", false),
+		int(ProjectSettings.get_setting("lit/quality/shadow_steps_max", 64))]
+	if gating_key != _gating_key:
+		_gating_key = gating_key
+		for n in EditorInterface.get_selection().get_selected_nodes():
+			if LitReceiverInspectorScript.handles(n):
+				n.notify_property_list_changed()
 	var ysort := bool(ProjectSettings.get_setting("lit/render/y_sorting", false))
 	RenderingServer.global_shader_parameter_set("lit_ysort_enabled", ysort)
 	RenderingServer.global_shader_parameter_set("lit_ysort_band",
