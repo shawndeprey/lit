@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://buv7ahi0dce5y" path="res://Test/test_suite/lights/lights_section.gd" id="1_sec"]
+
+[node name="LightsSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "lights"
+section_title = "Lights"

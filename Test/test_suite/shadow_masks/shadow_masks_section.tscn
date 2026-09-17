@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://d2l7ov3p5wff4" path="res://Test/test_suite/shadow_masks/shadow_masks_section.gd" id="1_sec"]
+
+[node name="ShadowMasksSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "shadow_masks"
+section_title = "Shadow Masks & Exclusions"

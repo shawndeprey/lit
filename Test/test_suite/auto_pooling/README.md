@@ -3,21 +3,20 @@
 Runtime bench for the receiver material pool (`addons/lit/runtime/registry/material_pool.gd`):
 which receiver configurations must get their own runtime material, which are allowed to
 share one, and whether the pool's refcounts stay honest through everything a game does at
-runtime.
-
-Run it windowed (the headless renderer never compiles shaders):
+runtime. It is the `auto_pooling` section of the Lit test suite (`Test/test_suite`), and
+also runs on its own:
 
 ```
-godot --path . res://Test/misc/auto-pooling/auto_pooling_bench.tscn
-godot --path . res://Test/misc/auto-pooling/auto_pooling_bench.tscn -- quit=on
-godot --path . res://Test/misc/auto-pooling/auto_pooling_bench.tscn -- capture=/tmp/pool.png
+godot --path . res://Test/test_suite/auto_pooling/auto_pooling_bench.tscn
+godot --path . res://Test/test_suite/auto_pooling/auto_pooling_bench.tscn -- quit=on
+godot --path . res://Test/test_suite/auto_pooling/auto_pooling_bench.tscn -- capture=/tmp/pool.png
 ```
 
-Every check prints one `POOLBENCH PASS|FAIL <case>: <what> | expected=.. actual=..` line, the
-pool's compiled entries (material label, refcount, variant, member nodes, key) are dumped
-after the static build and at the end, and `POOLBENCH SUMMARY` closes the run. The HUD on the
-right shows the same, and every exhibit carries a live tag (`M3 pooled`, `M9 private`) so the
-sharing can be watched on screen. Escape quits.
+Every check prints one `SUITE PASS|FAIL auto_pooling/<case>: <what> | expected=.. actual=..`
+line, the pool's compiled entries (material label, refcount, variant, member nodes, key)
+are dumped after the static build and at the end, and `SUITE SUMMARY` closes a standalone
+run. The HUD on the right shows the same, and every exhibit carries a live tag
+(`M3 pooled`, `M9 private`) so the sharing can be watched on screen. Escape quits.
 
 ## What it covers
 

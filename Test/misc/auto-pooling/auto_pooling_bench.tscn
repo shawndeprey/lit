@@ -1,6 +1,0 @@
-[gd_scene format=4 uid="uid://6wq5iyhd3fyn"]
-
-[ext_resource type="Script" uid="uid://c7rrtvihm8nfl" path="res://Test/misc/auto-pooling/auto_pooling_bench.gd" id="1_bench"]
-
-[node name="AutoPoolingBench" type="Node2D"]
-script = ExtResource("1_bench")

@@ -1,6 +1,14 @@
 # Release Cut
 All releases must update the version in `addons/lit/plugin.cfg`
 
+## Feature pass
+Before signing off any change (and before a release cut), run the full test suite
+windowed and read its report: every Lit feature is exercised on screen and any FAIL line
+names the feature, the expectation, and the value observed (see `Test/test_suite/README.md`).
+```
+godot --path . res://Test/test_suite/TestSuite.tscn -- quit=on
+```
+
 ## Schema lock & migrations
 The stored (exported) properties of every Lit node class are locked in
 `addons/lit/editor/lit_update_tool/migrations/baseline_schema.gd`, and

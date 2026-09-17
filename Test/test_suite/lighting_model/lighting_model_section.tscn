@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://req42vuuymkn" path="res://Test/test_suite/lighting_model/lighting_model_section.gd" id="1_sec"]
+
+[node name="LightingModelSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "lighting_model"
+section_title = "Lighting Model (Phong / PBR)"

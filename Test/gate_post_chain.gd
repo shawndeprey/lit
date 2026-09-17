@@ -35,6 +35,7 @@ func _ready() -> void:
 	for y in 180:
 		for x in 320:
 			var c := Color(float(x) / 320.0, float(y) / 180.0, 1.0 - float(x) / 320.0)
+			@warning_ignore("integer_division")
 			if (x / 20 + y / 20) % 2 == 0:
 				c = c.lightened(0.25)
 			var dx := x - 240
