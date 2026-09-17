@@ -38,6 +38,12 @@ const LIGHT_COUNT := 128
 #   texoffset=on   random (seeded) texture_offset on every cookie light
 #   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
 #   post=Name,Name  add fresh default-state post effects (e.g. post=Bloom,AutoExposure)
+#   receivers=sprite|animated receiver_count=N   a grid of N Lit receiver nodes built
+#     from the animated-skeleton sheet (Test/nodes/skele_spin*.png), each owning a
+#     footprint occluder so the per-node drive path runs. sprite = LitSprite2D showing
+#     one frame; animated = LitAnimatedSprite2D playing the 8-frame turnaround. Same
+#     textures, material content and occluders, so the two runs A/B the animated
+#     node's per-frame cost. Default 0 leaves the standing benchmark untouched.
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
 # 3 (stochastic); switching restarts the warmup/measure cycle so the reported numbers
 # always describe a single algorithm. Receiver shaders follow via the registry's
@@ -65,6 +71,8 @@ var _opt_rxnode := ""
 var _opt_post := ""
 var _opt_shadowlen := false
 var _opt_texoffset := false
+var _opt_receivers := "sprite"
+var _opt_receiver_count := 0
 
 # Clock value used for the deterministic capture frame.
 const CAPTURE_CLOCK := 60.0
@@ -143,6 +151,10 @@ func _ready() -> void:
 				_opt_shadowlen = kv[1] == "on"
 			"texoffset":
 				_opt_texoffset = kv[1] == "on"
+			"receivers":
+				_opt_receivers = kv[1]
+			"receiver_count":
+				_opt_receiver_count = int(kv[1])
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -211,6 +223,9 @@ func _setup() -> void:
 	_compute_area()
 	_rng.seed = RNG_SEED
 	_spawn_props()
+	if _opt_receiver_count > 0 and not _spawn_receivers():
+		get_tree().quit(1)
+		return
 	if _opt_masks == "one" or _opt_masks == "split":
 		_props[0].occ.occluder_light_mask = 2
 	elif _opt_masks == "all":
@@ -351,6 +366,66 @@ func _make_prop(pos: Vector2, size: Vector2) -> void:
 	root.add_child(occ)
 
 	_props.append({"root": root, "mat": mat, "occ": occ})
+
+
+# --- receivers: the LitSprite2D vs LitAnimatedSprite2D A/B grid ------------------------
+
+const RECEIVER_SHEET := "res://Test/nodes/skele_spin.png"
+const RECEIVER_SHEET_N := "res://Test/nodes/skele_spin_n.png"
+const RECEIVER_FRAMES := 8
+const RECEIVER_FRAME_PX := 24
+
+func _spawn_receivers() -> bool:
+	if not ResourceLoader.exists(RECEIVER_SHEET) or not ResourceLoader.exists(RECEIVER_SHEET_N):
+		print("LITBENCH error receiver sheets missing (%s)" % RECEIVER_SHEET)
+		return false
+	if _opt_receivers != "sprite" and _opt_receivers != "animated":
+		print("LITBENCH error receivers must be sprite or animated, got '%s'" % _opt_receivers)
+		return false
+	# One CanvasTexture sheet, one AtlasTexture per frame over it: the shape that
+	# carries normal maps through SpriteFrames (see LitAnimatedSprite2D).
+	var sheet := CanvasTexture.new()
+	sheet.diffuse_texture = load(RECEIVER_SHEET)
+	sheet.normal_texture = load(RECEIVER_SHEET_N)
+	var frames := SpriteFrames.new()
+	frames.set_animation_speed(&"default", 8.0)
+	for i in RECEIVER_FRAMES:
+		var at := AtlasTexture.new()
+		at.atlas = sheet
+		at.region = Rect2(i * RECEIVER_FRAME_PX, 0, RECEIVER_FRAME_PX, RECEIVER_FRAME_PX)
+		frames.add_frame(&"default", at)
+	var cols := int(ceil(sqrt(float(_opt_receiver_count))))
+	var rows := int(ceil(float(_opt_receiver_count) / float(cols)))
+	var cell := Vector2(_area_half.x * 2.0 / float(cols + 1), _area_half.y * 2.0 / float(rows + 1))
+	for i in _opt_receiver_count:
+		@warning_ignore("integer_division")
+		var row := i / cols
+		var root := Node2D.new()
+		root.position = _area_center - _area_half \
+				+ Vector2(cell.x * float(i % cols + 1), cell.y * float(row + 1))
+		root.scale = Vector2(3, 3)
+		add_child(root)
+		var node: Node2D
+		if _opt_receivers == "animated":
+			var a := LitAnimatedSprite2D.new()
+			a.sprite_frames = frames
+			a.play(&"default")
+			a.frame = i % RECEIVER_FRAMES
+			node = a
+		else:
+			var s := LitSprite2D.new()
+			s.texture = frames.get_frame_texture(&"default", i % RECEIVER_FRAMES)
+			node = s
+		root.add_child(node)
+		# Footprint occluder as a descendant: owned by the receiver, so the node runs
+		# the per-frame self-rect drive like a real character would.
+		var occ := LightOccluder2D.new()
+		var poly := OccluderPolygon2D.new()
+		poly.polygon = PackedVector2Array([
+			Vector2(-5, 8), Vector2(5, 8), Vector2(5, 11), Vector2(-5, 11)])
+		occ.occluder = poly
+		node.add_child(occ)
+	return true
 
 
 # --- lights: identical construction/motion to lit_demo.gd ---------------------------
@@ -559,6 +634,8 @@ func _report() -> void:
 	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
 	print("LITBENCH shadowlen=%s" % ("on" if _opt_shadowlen else "off"))
 	print("LITBENCH post=%s" % (_opt_post if _opt_post != "" else "off"))
+	if _opt_receiver_count > 0:
+		print("LITBENCH receivers=%s receiver_count=%d" % [_opt_receivers, _opt_receiver_count])
 	print("LITBENCH frames=%d" % n)
 	print("LITBENCH avg_fps=%.2f" % fps)
 	print("LITBENCH avg_frame_ms=%.3f" % avg_ms)

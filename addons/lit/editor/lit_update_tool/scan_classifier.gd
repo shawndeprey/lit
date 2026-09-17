@@ -82,7 +82,7 @@ static func finish(acc: Dictionary) -> Dictionary:
 						_:
 							needs = true
 							row["converts"] = true
-							counts["sprites" if row_type == "Sprite2D" else "tilemaps"] += 1
+							counts[Maps.SWAP_KINDS[row_type]] += 1
 		m["needs"] = needs
 		if needs:
 			counts["scenes_to_process"] += 1

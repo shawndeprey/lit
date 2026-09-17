@@ -27,11 +27,11 @@ const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
 	"fixture_preview.tscn",
 	"fixture_rebase_sprite.gd", "fixture_collide_sprite.gd", "fixture_light_script.gd",
 	"fixture_watcher.gd", "fixture_oneline_tile.gd", "fixture_lit_light.gd",
-	"fixture_icon_sprite.gd"]
+	"fixture_icon_sprite.gd", "fixture_rebase_anim.gd"]
 # Built by _prepare from fixture_env; locks binary-scene support and .scn preservation.
 const BIN_SCENE := "env_bin.scn"
 const ALL_KINDS := {"lights": true, "modulates": true, "sprites": true,
-	"tilemaps": true, "scripts": true}
+	"animated_sprites": true, "tilemaps": true, "scripts": true}
 
 var _fails := 0
 
@@ -159,6 +159,20 @@ func _gate_child() -> void:
 	_check(sprite.offset == Vector2(10, 5), "Sprite2D offset untouched")
 	_check(str(sprite.get("lit_version")) == Migrations.current_version(), "sprite stamped")
 
+	var anim_sprite := root.get_node("BareAnimSprite") as AnimatedSprite2D
+	_check(_script_path(anim_sprite) == String(Maps.SWAPS[&"AnimatedSprite2D"]),
+			"bare animated sprite swapped to LitAnimatedSprite2D")
+	_check(anim_sprite.sprite_frames != null and anim_sprite.sprite_frames.has_animation(&"default") \
+			and anim_sprite.sprite_frames.get_frame_count(&"default") == 1,
+			"animated sprite keeps its SpriteFrames")
+	_check(anim_sprite.sprite_frames != null \
+			and anim_sprite.sprite_frames.get_frame_texture(&"default", 0).resource_path == "res://Test/base.png",
+			"animated sprite frames left as authored (no CanvasTexture wrap)")
+	_check(int(anim_sprite.get("receiver_mask")) == 2, "animated light_mask -> receiver_mask")
+	_check(anim_sprite.offset == Vector2(3, 2), "AnimatedSprite2D offset untouched")
+	_check(str(anim_sprite.get("lit_version")) == Migrations.current_version(),
+			"animated sprite stamped")
+
 	var scripted := root.get_node("ScriptedLight")
 	_check(scripted.get_class() == "PointLight2D" \
 			and _script_path(scripted).ends_with("fixture_light_script.gd"),
@@ -220,6 +234,21 @@ func _gate_child() -> void:
 	_check(rebased.get("texture") is CanvasTexture, "rebased sprite texture wrapped")
 	_check(is_equal_approx(float(rebased.get("speed")), 3.5), "rebased script export preserved")
 
+	var anim_rebased := root.get_node("RebasedAnimSprite")
+	_check(anim_rebased.get_class() == "AnimatedSprite2D" \
+			and _script_path(anim_rebased).ends_with("fixture_rebase_anim.gd"),
+			"rebased animated sprite keeps its node and script")
+	_check(anim_rebased.get("receiver_mask") != null and int(anim_rebased.get("receiver_mask")) == 4,
+			"rebased animated sprite receiver_mask from light_mask")
+	_check((anim_rebased as CanvasItem).material is ShaderMaterial \
+			and LitShaderLibrary.flags_of(((anim_rebased as CanvasItem).material \
+			as ShaderMaterial).shader) >= 0,
+			"rebased animated sprite gains the receiver material")
+	_check(is_equal_approx(float(anim_rebased.get("bob")), 2.5),
+			"rebased animated script export preserved")
+	_check(str(anim_rebased.get("lit_version")) == Migrations.current_version(),
+			"rebased animated sprite stamped")
+
 	var collide := root.get_node("CollideSprite")
 	_check(collide.get("receiver_mask") == null, "colliding script not rebased")
 
@@ -265,6 +294,10 @@ func _gate_child() -> void:
 			"rebased-script node's receiver material is stored in the file")
 	_check(_row_has_prop(child_state, "BareSprite", "material"),
 			"bare-swapped sprite's receiver material is stored in the file")
+	_check(_row_has_prop(child_state, "BareAnimSprite", "material"),
+			"bare-swapped animated sprite's receiver material is stored in the file")
+	_check(_row_has_prop(child_state, "RebasedAnimSprite", "material"),
+			"rebased animated sprite's receiver material is stored in the file")
 
 	var menu_sprite := root.get_node("Menu/MenuSprite")
 	_check(menu_sprite.get_class() == "Sprite2D" and menu_sprite.get_script() == null,
@@ -417,6 +450,10 @@ func _gate_scripts() -> void:
 	var rebased := FileAccess.get_file_as_string(OUT + "/fixture_rebase_sprite.gd")
 	_check(rebased.begins_with("@tool"), "rebased root gains @tool")
 	_check("\nextends LitSprite2D" in rebased, "rebase root extends LitSprite2D")
+	var rebased_anim := FileAccess.get_file_as_string(OUT + "/fixture_rebase_anim.gd")
+	_check(rebased_anim.begins_with("@tool"), "rebased animated root gains @tool")
+	_check("\nextends LitAnimatedSprite2D" in rebased_anim,
+			"rebase root extends LitAnimatedSprite2D")
 	var oneline := FileAccess.get_file_as_string(OUT + "/fixture_oneline_tile.gd")
 	_check(oneline.begins_with("@tool"), "one-line rebased root gains @tool")
 	_check("class_name FixtureOnelineTile extends LitTileMapLayer" in oneline,
@@ -453,9 +490,11 @@ func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 	var c: Dictionary = scan1["counts"]
 	_check(c["point_lights"] == 5 and c["directional_lights"] == 1 and c["modulates"] == 3,
 			"scan counts lights + modulates")
-	_check(c["sprites"] == 6 and c["tilemaps"] == 1, "scan counts convertible receivers")
+	_check(c["sprites"] == 6 and c["animated_sprites"] == 1 and c["tilemaps"] == 1,
+			"scan counts convertible receivers")
 	_check(c["skipped_scripted"] == 1, "scan counts the scripted light")
-	_check(c["rebase_roots"] == 2, "scan counts both rebase roots (plain + one-line form)")
+	_check(c["rebase_roots"] == 3,
+			"scan counts every rebase root (plain + one-line form + animated)")
 	_check(c["unlit_mats"] == 2, "scan counts deliberately-unlit materials")
 	_check(c["custom_mats"] == 2, "scan counts custom shader materials")
 	_check(c["menu_nodes"] == 6, "scan counts menu/UI candidates, got %d" % c["menu_nodes"])
@@ -464,9 +503,9 @@ func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 	_check(scan1["scripts"]["ui_roots"].has(OUT + "/fixture_icon_sprite.gd"),
 			"UI-only chain root classified via usage")
 	_check(c["retype_scripts"] == 1, "scan counts the retypable script")
-	_check(c["tool_add"] == 3, "scan counts @tool additions (2 rebases + 1 Lit-based)")
+	_check(c["tool_add"] == 4, "scan counts @tool additions (3 rebases + 1 Lit-based)")
 	_check(run1["retyped_scripts"].size() == 1, "one script retyped")
-	_check(run1["tooled_scripts"].size() == 3, "three scripts gained @tool")
+	_check(run1["tooled_scripts"].size() == 4, "four scripts gained @tool")
 	var joined := "\n".join(run1["report"])
 	for marker in ["SKIPPED-COLLISION", "CLAMPED", "REMAPPED-TRACK", "REMAPPED-OVERRIDE",
 			"custom script", "REBASED", "STAMPED", "UNLIT", "MatSprite", "UnshadedVfxSprite",
@@ -494,7 +533,7 @@ func _gate_idempotency() -> void:
 	for f in tracked:
 		hashes[f] = FileAccess.get_md5(OUT + "/" + f)
 	var scan2: Dictionary = Tool.scan([OUT])
-	_check(scan2["scripts"]["lit_based"].size() == 2,
+	_check(scan2["scripts"]["lit_based"].size() == 3,
 			"already-rebased scripts detected for every-run fixups")
 	var run2: Dictionary = Tool.run(scan2, ALL_KINDS, OUT + "/report2.txt")
 	_check(run2["changed_scenes"].is_empty(), "no scenes rewritten on the second run: %s"

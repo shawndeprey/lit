@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://cru2sgpgrfchf" path="res://Test/test_suite/cookies/cookies_section.gd" id="1_sec"]
+
+[node name="CookiesSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "cookies"
+section_title = "Light Textures (Cookies)"

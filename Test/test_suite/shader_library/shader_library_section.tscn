@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://d7ayviwbcsko" path="res://Test/test_suite/shader_library/shader_library_section.gd" id="1_sec"]
+
+[node name="ShaderLibrarySection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "shader_library"
+section_title = "Shader Library & Precompile"

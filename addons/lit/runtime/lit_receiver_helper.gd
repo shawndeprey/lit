@@ -165,3 +165,61 @@ static func _snapshot(node: Node2D, occluders: Array, tile_rects: Array,
 		state.occ_inside[i] = inside
 		state.occ_xfs[i] = o.global_transform if inside else Transform2D()
 		state.occ_polys[i] = o.occluder if inside else null
+
+
+# --- Export gating --------------------------------------------------------------
+#
+# Some receiver exports are inert under certain project settings: the Blinn-Phong
+# specular pair does nothing under PBR (and the PBR pair nothing under Blinn-Phong),
+# and lit/quality/shadow_step_scaling replaces every receiver's shadow_steps budget.
+# The inspector greys those out and says why (editor/lit_receiver_inspector.gd); the
+# values still proxy and save normally, so nothing is lost when the setting flips back.
+# Setting names mirror LitManager's SETTING_* constants; the autoload isn't loaded in
+# the editor, so they're repeated here.
+
+const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
+const SETTING_SHADOW_STEP_SCALING := "lit/quality/shadow_step_scaling"
+const SETTING_SHADOW_STEPS_MAX := "lit/quality/shadow_steps_max"
+const MODEL_PBR := 1  # LitManager.LightingModel.PBR
+
+## The gated exports, keyed by the first property of each set: the inspector shows one
+## note above that property, covering the whole set.
+const GATED_SETS := {
+	"specular_strength": ["specular_strength", "specular_k"],
+	"metallic_value": ["metallic_value", "roughness_value"],
+	"shadow_steps": ["shadow_steps"],
+}
+
+
+## Why `param` is ignored under the current project settings, or "" when it is live.
+static func inactive_reason(param: String) -> String:
+	match param:
+		"specular_strength", "specular_k":
+			if _lighting_model() == MODEL_PBR:
+				return "Ignored: the lighting model is PBR (Project Settings > Lit > Render > " \
+						+ "Lighting Model). Specular Strength and Specular K only apply to " \
+						+ "Blinn-Phong; switch the model to use them."
+		"metallic_value", "roughness_value":
+			if _lighting_model() != MODEL_PBR:
+				return "Ignored: the lighting model is Blinn-Phong (Project Settings > Lit > " \
+						+ "Render > Lighting Model). Metallic Value and Roughness Value only " \
+						+ "apply to PBR; switch the model to use them."
+		"shadow_steps":
+			if bool(ProjectSettings.get_setting(SETTING_SHADOW_STEP_SCALING, false)):
+				return ("Overridden: Shadow Step Scaling is on (Project Settings > Lit > " \
+						+ "Quality), so every receiver's march budget is scaled per light up " \
+						+ "to Shadow Steps Max (%d) and this value is ignored. Turn it off to " \
+						+ "use per-receiver Shadow Steps.") \
+						% int(ProjectSettings.get_setting(SETTING_SHADOW_STEPS_MAX, 64))
+	return ""
+
+
+## Shared _validate_property body for the receiver nodes: an export the project
+## settings make inert renders read-only, under the inspector's note saying why.
+static func validate_receiver_property(property: Dictionary) -> void:
+	if inactive_reason(String(property.name)) != "":
+		property.usage |= PROPERTY_USAGE_READ_ONLY
+
+
+static func _lighting_model() -> int:
+	return int(ProjectSettings.get_setting(SETTING_LIGHTING_MODEL, 0))

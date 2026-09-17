@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://nu8a4p0swmtu" path="res://Test/test_suite/post_process/post_process_section.gd" id="1_sec"]
+
+[node name="PostProcessSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "post_process"
+section_title = "Post Processing"

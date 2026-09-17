@@ -23,6 +23,7 @@ const TOOL_MENU_PRECOMPILE := "Generate Lit Precompile Config"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
+const LitReceiverInspectorScript := preload("res://addons/lit/editor/lit_receiver_inspector.gd")
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
 const LitUpdateToolScript := preload("res://addons/lit/editor/lit_update_tool.gd")
@@ -39,6 +40,9 @@ var _registry: LitLightRegistry
 var _refresh_accum := 0.0
 var _warm_pending: Array[int] = []
 var _post_inspector: EditorInspectorPlugin
+var _receiver_inspector: EditorInspectorPlugin
+# Last-seen values of the project settings that gate receiver exports; see _process.
+var _gating_key := ""
 var _export_plugin: EditorExportPlugin
 # Carries the version, so registration and removal must use the same stored string.
 var _update_menu_label := ""
@@ -69,6 +73,9 @@ func _enter_tree() -> void:
 	_post_inspector = LitPostInspectorScript.new()
 	_post_inspector.undo_redo = get_undo_redo()
 	add_inspector_plugin(_post_inspector)
+	# Notes on receiver inspectors for exports the project settings make inert.
+	_receiver_inspector = LitReceiverInspectorScript.new()
+	add_inspector_plugin(_receiver_inspector)
 	# Packs lit_precompile.cfg into exports (see editor/lit_export_plugin.gd).
 	_export_plugin = LitExportPluginScript.new()
 	add_export_plugin(_export_plugin)
@@ -88,6 +95,8 @@ func _exit_tree() -> void:
 	remove_tool_menu_item(_update_menu_label)
 	remove_inspector_plugin(_post_inspector)
 	_post_inspector = null
+	remove_inspector_plugin(_receiver_inspector)
+	_receiver_inspector = null
 	remove_export_plugin(_export_plugin)
 	_export_plugin = null
 	_remove_live_globals()
@@ -129,8 +138,19 @@ func _process(delta: float) -> void:
 	# preview reflects the lit/render/lighting_model setting. The autoload that does this
 	# at runtime doesn't run in the editor, so without this the preview would always be
 	# Phong (the global's default) regardless of the setting.
-	RenderingServer.global_shader_parameter_set("lit_lighting_model",
-		int(ProjectSettings.get_setting("lit/render/lighting_model", 0)))
+	var model := int(ProjectSettings.get_setting("lit/render/lighting_model", 0))
+	RenderingServer.global_shader_parameter_set("lit_lighting_model", model)
+	# Receiver exports gated by project settings (LitReceiverHelper.inactive_reason):
+	# when a gate flips, re-list the selected receivers' properties so the greyed
+	# fields and their inspector notes follow the setting without reselecting.
+	var gating_key := "%d|%s|%d" % [model,
+		ProjectSettings.get_setting("lit/quality/shadow_step_scaling", false),
+		int(ProjectSettings.get_setting("lit/quality/shadow_steps_max", 64))]
+	if gating_key != _gating_key:
+		_gating_key = gating_key
+		for n in EditorInterface.get_selection().get_selected_nodes():
+			if LitReceiverInspectorScript.handles(n):
+				n.notify_property_list_changed()
 	var ysort := bool(ProjectSettings.get_setting("lit/render/y_sorting", false))
 	RenderingServer.global_shader_parameter_set("lit_ysort_enabled", ysort)
 	RenderingServer.global_shader_parameter_set("lit_ysort_band",
@@ -152,10 +172,12 @@ func _process(delta: float) -> void:
 # tilemaps are first-class world geometry, so the tool has to cover them too. Each node
 # gets its own material so the per-instance uniforms (receiver_mask, emissive_strength)
 # stay independent. For nodes that draw a single Texture2D, the texture is wrapped in a
-# CanvasTexture so the normal/specular slots appear. Lives under Project > Tools, and is
-# undoable as one action.
+# CanvasTexture so the normal/specular slots appear; unscripted Sprite2D and
+# AnimatedSprite2D nodes are upgraded to their Lit classes on top. Lives under
+# Project > Tools, and is undoable as one action.
 #
-# This is the batch path for existing art; LitSprite2D is the from-scratch path. It also
+# This is the batch path for existing art; LitSprite2D / LitAnimatedSprite2D are the
+# from-scratch path. It also
 # sidesteps the Quick Load friction, since a node's `material` slot only accepts a
 # Material, never a `.gdshader`.
 
@@ -171,6 +193,7 @@ func _make_selected_nodes_lit() -> void:
 
 	var shader := load(LitShaderLibrary.ENTRY_PATHS[0]) as Shader
 	var lit_sprite_script := load("res://addons/lit/nodes/lit_sprite_2d.gd") as Script
+	var lit_anim_script := load("res://addons/lit/nodes/lit_animated_sprite_2d.gd") as Script
 	var undo := get_undo_redo()
 	undo.create_action(TOOL_MENU_ITEM)
 	for ci in targets:
@@ -184,11 +207,15 @@ func _make_selected_nodes_lit() -> void:
 			undo.add_do_property(ci, "script", lit_sprite_script)
 			undo.add_undo_property(ci, "script", null)
 			undo.add_do_method(self, "_start_converted_sprite", ci)
+		elif ci is AnimatedSprite2D and ci.get_script() == null:
+			undo.add_do_property(ci, "script", lit_anim_script)
+			undo.add_undo_property(ci, "script", null)
+			undo.add_do_method(self, "_start_converted_sprite", ci)
 
 		# If the node draws a single Texture2D (Sprite2D, Polygon2D, MeshInstance2D, ...),
 		# wrap it in a CanvasTexture so the normal/specular slots appear. `texture` isn't
 		# on the CanvasItem base, so the dynamic get() returns null for nodes without it
-		# (TileMapLayer, AnimatedSprite2D), which then just get the material.
+		# (TileMapLayer, AnimatedSprite2D), which then keep their own textures.
 		var tex = ci.get("texture")
 		if tex is Texture2D and not (tex is CanvasTexture):
 			var ct := CanvasTexture.new()
@@ -229,7 +256,8 @@ func _generate_precompile_config() -> void:
 # --- Update Project tool -------------------------------------------------------
 #
 # "Update Project to Lit X.Y.Z" converts core nodes project-wide, rebases user
-# scripts extending Sprite2D/TileMapLayer onto the Lit classes, and brings every Lit
+# scripts extending Sprite2D / AnimatedSprite2D / TileMapLayer onto the Lit classes,
+# and brings every Lit
 # node to the current version. The engine lives in editor/lit_update_tool.gd; this
 # is the dialog flow around it. Open scenes are saved first so the SceneState scan
 # reads current data, and changed open scenes reload afterwards.
@@ -270,6 +298,8 @@ func _update_project() -> void:
 					c["point_lights"] + c["directional_lights"], true],
 			["modulates", "%d CanvasModulate" % c["modulates"], c["modulates"], true],
 			["sprites", "%d Sprite2D" % c["sprites"], c["sprites"], true],
+			["animated_sprites", "%d AnimatedSprite2D" % c["animated_sprites"],
+					c["animated_sprites"], true],
 			["tilemaps", "%d TileMapLayer" % c["tilemaps"], c["tilemaps"], true],
 			["scripts", "%d script rebases, %d reference updates, %d @tool additions"
 					% [c["rebase_roots"], c["retype_scripts"], c["tool_add"]],
