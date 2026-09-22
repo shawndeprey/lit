@@ -38,6 +38,10 @@ about 20 seconds warm.
 Every section scene (`<section>/<section>_section.tscn`) also runs on its own with the
 same HUD and options, which is the quick way to iterate on one feature set.
 
+The suite targets the RenderingDevice renderers (Forward+ and Mobile): the shader
+library section checks the world-SDF R16F pack pipeline, which the Compatibility
+renderer does not have.
+
 ## Output
 
 Every line starts with `SUITE`. While the run is going, the console gets one line per
@@ -104,23 +108,23 @@ config naming a missing shader or unknown variant (entries skipped).
 | folder | covers |
 |---|---|
 | `harness` | probe calibration; LitCanvasModulate ambient colour / energy / last-wins / native-modulate conflict |
-| `lights` | point, spot and directional lights against the shading formula; masks; negative lights; 70 lights at once |
+| `lights` | point, spot and directional lights against the shading formula; light masks on all three; negative lights; 70 lights at once |
 | `cookies` | light textures: alpha shaping, tint, NATIVE / FIT_RANGE, scale, offset, rotation, spot composition, atlas |
 | `receivers` | LitSprite2D pre-wiring and proxies, emissive + mask, receiver mask, normal maps (and their rotation), specular, bare Sprite2D / Polygon2D receivers, make_material_unique |
 | `animated_sprite` | LitAnimatedSprite2D: lighting per frame (CanvasTexture and AtlasTexture-over-sheet frames), playback, specular-flag tracking, owned occluders, shadow_ignore_mask |
 | `tilemap` | LitTileMapLayer: proxies, lighting, tileset occluder shadows, own-tile self-exclusion, cell edits, occlusion-layer masks |
 | `shadows` | enable/colour/length, the three algorithms and their penumbra dials, gates, footprint darkening, directional and spot shadows, quality settings |
 | `shadow_masks` | self-shadow exclusion, shadow_mask vs occluder mask tiers (per-light, global, SDF culling), shadow_ignore_mask, exclude_scene_occluders, y-sorted depth |
-| `camera` | Camera2D zoom, roll and pan: point / spot / directional shading, normal maps and shadows read the same at the same world points |
+| `camera` | Camera2D zoom, roll and pan: point / spot / directional shading, normal maps, shadows, a cookie, shadow_ignore_mask and y-sorted depth read the same at the same world points |
 | `lighting_model` | Blinn-Phong vs PBR switched live; metallic / roughness / AO inputs; inspector gating of inert exports |
 | `luminance` | LitManager.sample_luminance and LitSprite2D.get_luminance against lights, cookies, masks, shadows, and the rendered frame |
-| `post_process` | every built-in post effect on a fixed base image, chain order, rank slotting, host visibility, parameter persistence, custom effects, auto exposure |
+| `post_process` | every built-in post effect on a fixed base image (every LUT preset included), chain order, rank slotting, host visibility, parameter persistence, custom effects, auto exposure |
 | `auto_pooling` | the receiver material pool bench (moved here from Test/misc/auto-pooling; see its README) |
 | `registry` | light cache, bare-receiver driving, activity flags and the automatic variant swap, the rx registry |
 | `shader_library` | variant matrix gates, every variant compiled and rendered, entry shaders, world SDF pipeline, precompiler statics and overlay |
 | `migration` | schema lock: migration files, lit_version stamps, live stored properties vs the locked baseline |
 | `update_tool` | "Update Project to Lit" on the Test/.update_tool_bench fixtures (scratch copy): conversions, scripts, reports, idempotency |
-| `splash` | LitSplashScreen playback, skip, finished signal, auto_free |
+| `splash` | LitSplashScreen playback, natural end on its own clock, key and mouse skip, finished signal, auto_free |
 
 Every section run starts from a fresh-launch registry state (the light-mask latch is
 reset) and only once the world SDF's warm-up window has closed, so SDF staleness

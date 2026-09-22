@@ -209,10 +209,12 @@ func _spot_light() -> void:
 	check_approx(case_name, "rotated 180: the point ahead is now ambient", AMBIENT,
 			lum(img, center + Vector2(150, 0)), TOL)
 	s.rotation = 0.0
-	s.color = Color(0.2, 0.4, 1.0)
+	s.color = Color(0.0, 0.0, 1.0)
 	img = await capture()
 	var c := probe(img, center + Vector2(150, 0))
-	check_gt(case_name, "tinted spot: blue over red on the axis", c.b, c.r, 0.1)
+	check_approx(case_name, "blue spot: blue channel = the point-light diffuse on the axis",
+			_expected_point(150.0, 300.0, 0.5, 1.0, 100.0), c.b, TOL)
+	check_approx(case_name, "blue spot: red channel stays ambient", AMBIENT, c.r, TOL)
 	s.color = Color.WHITE
 	s.enabled = false
 	img = await capture()
@@ -257,6 +259,39 @@ func _light_masks() -> void:
 	img = await capture()
 	check_approx(case_name, "receiver_mask 4 vs light_mask 1: not lit", AMBIENT, lum(img, a.position), TOL)
 	a.receiver_mask = 1
+	# Spot and directional lights honour light_mask the same way. The spot sits outside
+	# the spot exhibit's cone and range; its boxes hang below the floor's edge.
+	var s2 := spot_light(Vector2(1150, 500), 0.0, 150.0, 0.5, Color.WHITE, 200.0)
+	s2.falloff = 0.0
+	s2.light_mask = 2
+	var c1 := box_receiver(Vector2(1250, 470), Vector2(60, 60))
+	var c3 := box_receiver(Vector2(1250, 530), Vector2(60, 60))
+	c1.specular_strength = 0.0
+	c3.specular_strength = 0.0
+	c3.receiver_mask = 3
+	await frames(1)
+	img = await capture()
+	var floor_lit := lum(img, Vector2(820, 400))
+	check_approx(case_name, "spot light_mask 2 vs receiver_mask 1: not lit", AMBIENT, lum(img, c1.position), TOL)
+	check_gt(case_name, "spot light_mask 2 vs receiver_mask 3: lit", lum(img, c3.position), AMBIENT, 0.25)
+	s2.light_mask = 1
+	img = await capture()
+	check_gt(case_name, "spot light_mask 1: receiver_mask 1 now lit", lum(img, c1.position), AMBIENT, 0.25)
+	s2.light_mask = 2
+	img = await capture()
+	var c1_before := lum(img, c1.position)
+	var c3_before := lum(img, c3.position)
+	var sun2 := directional_light(0.0, 0.3, Color.WHITE, 16.0)
+	sun2.light_mask = 2
+	img = await capture()
+	check_gt(case_name, "directional light_mask 2 vs receiver_mask 3: adds its share", lum(img, c3.position), c3_before, 0.08)
+	check_approx(case_name, "directional light_mask 2 vs receiver_mask 1: unchanged", c1_before, lum(img, c1.position), 0.02)
+	check_approx(case_name, "directional light_mask 2: the mask-1 floor is unchanged", floor_lit, lum(img, Vector2(820, 400)), 0.02)
+	sun2.light_mask = 1
+	img = await capture()
+	check_gt(case_name, "directional light_mask 1: receiver_mask 1 gets its share", lum(img, c1.position), c1_before, 0.08)
+	sun2.queue_free()
+	await frames(1)
 
 
 # --- Directional light --------------------------------------------------------------------------

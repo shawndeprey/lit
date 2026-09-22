@@ -163,9 +163,7 @@ func _lighting() -> void:
 	var fresh := LitTileMapLayer.new()
 	check_true(case_name, "fresh LitTileMapLayer carries the fast receiver material",
 			fresh.material is ShaderMaterial and LitShaderLibrary.flags_of((fresh.material as ShaderMaterial).shader) == 0)
-	fresh.emissive_strength = 0.3
-	check(case_name, "emissive_strength proxies to the material", 0.3,
-			float((fresh.material as ShaderMaterial).get_shader_parameter("emissive_strength")))
+	check_proxies(case_name, fresh)
 	fresh.free()
 	var img := await capture()
 	var near := lum(img, _cell_center(1, 4))
@@ -229,7 +227,8 @@ func _self_exclusion() -> void:
 	_map.self_shadow = true
 	await frames(2)
 	img = await capture()
-	check_approx(case_name, "self_shadow = true: own floor cell is shadowed", AMBIENT, lum(img, own_floor), TOL)
+	check_approx(case_name, "self_shadow = true: own floor cell is shadowed (albedo 0.8 x ambient)",
+			AMBIENT * 0.8, lum(img, own_floor), TOL)
 	check(case_name, "self_shadow = true drops to the fast tier", 0,
 			LitShaderLibrary.flags_of(_map.material.shader) & LitShaderLibrary.TIER_MASK)
 	_map.self_shadow = false

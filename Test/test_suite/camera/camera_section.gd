@@ -1,7 +1,9 @@
 extends LitSuiteSection
 
-## Camera transforms: Lit shades, shadows and aims its lights in world space, so a world
-## point must read the same under any Camera2D transform (zoom, roll, pan). Probes go
+## Camera transforms: Lit shades, shadows, aims and masks its lights in world space, so a
+## world point must read the same under any Camera2D transform (zoom, roll, pan): point,
+## spot and directional shading, normal maps, shadows, a cookie footprint, a receiver's
+## shadow_ignore_mask exemption and a y-sorted depth exemption. Probes go
 ## through to_px(), which applies the live canvas transform, so the same world points are
 ## sampled on every frame; each transform's readings are compared with the camera-less
 ## baseline (the lights and shadows sections pin the baseline values themselves).
@@ -23,6 +25,13 @@ const TILE_R := Vector2(760, 380)    # right-facing normal tile
 const SP := Vector2(300, 620)        # spot light aimed +x, 20 deg cone, hard edge
 const SP_ON := Vector2(450, 620)
 const SP_OFF := Vector2(450, 700)    # 28 deg off axis: outside the cone
+const CK := Vector2(700, 560)        # cookie light: left half opaque, 128 px footprint
+const CK_IN := Vector2(660, 560)     # inside the opaque half
+const CK_OUT := Vector2(740, 560)    # inside the transparent half
+const RXL := Vector2(520, 680)       # mask-2 light on the rx receiver (receiver_mask 2)
+const RX_P := Vector2(650, 680)      # on the rx receiver, behind a mask-2 caster
+const YL := Vector2(600, 600)        # mask-4 light on the y-sorted receiver (receiver_mask 4)
+const YS_P := Vector2(760, 600)      # on it, behind a caster above its depth line
 
 const POINTS := {
 	"point light 120 px away": LP_LIT,
@@ -32,10 +41,15 @@ const POINTS := {
 	"right-facing tile": TILE_R,
 	"spot on-axis": SP_ON,
 	"spot off-axis": SP_OFF,
+	"cookie opaque half": CK_IN,
+	"cookie transparent half": CK_OUT,
+	"rx receiver behind an ignored caster": RX_P,
+	"y-sorted receiver behind a higher caster": YS_P,
 }
 
 var _cam: Camera2D
 var _box: LightOccluder2D
+var _rx: LitSprite2D
 var _base := {}
 
 
@@ -58,6 +72,34 @@ func run() -> void:
 	var sp := spot_light(SP, 0.0, 300.0, 0.6, Color.WHITE, 120.0)
 	sp.spot_angle = 20.0
 	sp.spot_softness = 0.0
+	# Cookie: a 64 px left-half-opaque texture at scale 2, falloff 0.
+	var ck := point_light(CK, 120.0, 0.4, Color.WHITE, 300.0)
+	ck.falloff = 0.0
+	ck.texture = tex_fn(64, 64, func(x, _y): return Color(1, 1, 1, 1) if x < 32 else Color(0, 0, 0, 0))
+	ck.texture_scale = 2.0
+	# Rx: a receiver_mask-2 box lit by a mask-2 shadow light through a mask-2 caster it ignores.
+	_rx = box_receiver(RX_P, Vector2(100, 50))
+	_rx.specular_strength = 0.0
+	_rx.receiver_mask = 2
+	_rx.shadow_ignore_mask = 2
+	var rxl := point_light(RXL, 200.0, 0.8, Color.WHITE, 100.0)
+	rxl.falloff = 0.0
+	rxl.light_mask = 2
+	rxl.shadow_enabled = true
+	rxl.shadow_mask = 3
+	occluder(Vector2(580, 680), Vector2(20, 50), get_node("Props"), 2)
+	# Y-sort: a receiver_mask-4 box owning a strip (depth line at the strip's bottom, 668)
+	# lit by a mask-4 shadow light through a caster whose bottom (630) sits above the line.
+	var ys := box_receiver(Vector2(750, 620), Vector2(100, 100))
+	ys.specular_strength = 0.0
+	ys.receiver_mask = 4
+	occluder(Vector2(0, 45), Vector2(90, 6), ys)
+	var yl := point_light(YL, 220.0, 0.8, Color.WHITE, 100.0)
+	yl.falloff = 0.0
+	yl.light_mask = 4
+	yl.shadow_enabled = true
+	occluder(Vector2(680, 600), Vector2(20, 60), get_node("Props"))
+	set_setting("lit/render/y_sorting", true)
 	_cam = Camera2D.new()
 	_cam.ignore_rotation = false
 	_cam.enabled = false
@@ -82,6 +124,24 @@ func run() -> void:
 	check_gt(case_name, "no camera: the spot lights its axis", _base["spot on-axis"], AMBIENT, 0.2)
 	check_lt(case_name, "no camera: 28 deg off the spot's axis is darker than on it", _base["spot off-axis"],
 			_base["spot on-axis"], 0.2)
+	check_gt(case_name, "no camera: the cookie's opaque half is lit, its transparent half is not",
+			_base["cookie opaque half"], _base["cookie transparent half"], 0.25)
+	check_gt(case_name, "no camera: the rx receiver ignores the mask-2 caster",
+			_base["rx receiver behind an ignored caster"], AMBIENT, 0.25)
+	_rx.shadow_ignore_mask = 0
+	await frames(3)
+	check_lt(case_name, "no camera: with the mask cleared the caster shadows it", lum(await capture(), RX_P),
+			_base["rx receiver behind an ignored caster"] * 0.5)
+	_rx.shadow_ignore_mask = 2
+	await frames(3)
+	check_gt(case_name, "no camera: y-sort exempts the caster above the receiver's depth line",
+			_base["y-sorted receiver behind a higher caster"], AMBIENT, 0.25)
+	set_setting("lit/render/y_sorting", false)
+	await frames(3)
+	check_lt(case_name, "no camera: y-sort off, the same caster shadows it", lum(await capture(), YS_P),
+			_base["y-sorted receiver behind a higher caster"] * 0.5)
+	set_setting("lit/render/y_sorting", true)
+	await frames(3)
 
 	_cam.enabled = true
 	_cam.make_current()

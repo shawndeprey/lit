@@ -235,6 +235,21 @@ func _effects() -> void:
 	c = image_mean(img, AREA)
 	cb = image_mean(_base, AREA)
 	check_gt("fx_lut", "sepia LUT warms the image (r - b up)", c.r - c.b, cb.r - cb.b, 0.05)
+	# Every baked-in preset grades the image, each in its own way.
+	var graded: Array = []
+	for preset in LitPostLut.LutPreset.values():
+		if preset == LitPostLut.LutPreset.NEUTRAL:
+			continue
+		lut.preset = preset
+		await frames(2)
+		img = await capture()
+		var preset_name: String = LitPostLut.LutPreset.keys()[preset]
+		check_gt("fx_lut", "%s preset changes the image" % preset_name, image_diff(_base, img, AREA), 0.01)
+		var distinct := true
+		for other in graded:
+			distinct = distinct and image_diff(other, img, AREA) > 0.005
+		check_true("fx_lut", "%s preset differs from the presets before it" % preset_name, distinct)
+		graded.append(img)
 	lut.preset = LitPostLut.LutPreset.NEUTRAL
 	await frames(2)
 	img = await capture()

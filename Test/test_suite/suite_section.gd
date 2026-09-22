@@ -24,6 +24,13 @@ const HUD_X := 1400.0
 const CELL := Vector2(228.0, 190.0)
 const ORIGIN := Vector2(20.0, 70.0)
 const COLS := 6
+## The proxied receiver exports (the same eleven on all three receiver classes) and a
+## non-default value each; check_proxies() expects the runtime material to mirror them.
+const RECEIVER_PROXIES := {
+	"emissive_strength": 0.7, "receiver_mask": 3, "self_shadow": true, "specular_strength": 0.9,
+	"specular_k": 8.0, "metallic_value": 0.5, "roughness_value": 0.3, "shadow_steps": 32,
+	"shadow_min_step": 0.5, "footprint_shadow": 4.0, "directional_horizontal_scale": 8.0,
+}
 
 ## Set by subclasses: folder name and human title.
 @export var section_id := "section"
@@ -219,6 +226,18 @@ func check_lt(case_name: String, desc: String, a: float, b: float, margin := 0.0
 ## lo <= v <= hi.
 func check_between(case_name: String, desc: String, v: float, lo: float, hi: float) -> bool:
 	return _record(case_name, desc, "[%.3f, %.3f]" % [lo, hi], v, v >= lo and v <= hi)
+
+
+## Sets every RECEIVER_PROXIES export on a receiver node and checks its material mirrors it.
+func check_proxies(case_name: String, node: CanvasItem) -> void:
+	for p in RECEIVER_PROXIES:
+		node.set(p, RECEIVER_PROXIES[p])
+		var got: Variant = (node.material as ShaderMaterial).get_shader_parameter(p)
+		if RECEIVER_PROXIES[p] is float and (got is float or got is int):
+			got = float(got)
+		elif got is float or got is int:
+			got = int(got)
+		check(case_name, "%s proxies to the material" % p, RECEIVER_PROXIES[p], got)
 
 
 ## Failures, not counting known-gap checks.

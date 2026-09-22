@@ -11,13 +11,6 @@ const AMBIENT := 0.05
 const TOL := 0.03
 const SubclassedSprite := preload("res://Test/test_suite/receivers/subclassed_sprite.gd")
 
-# Proxied exports and a non-default value each; the material must mirror them.
-const PROXIES := {
-	"emissive_strength": 0.7, "receiver_mask": 3, "self_shadow": true, "specular_strength": 0.9,
-	"specular_k": 8.0, "metallic_value": 0.5, "roughness_value": 0.3, "shadow_steps": 32,
-	"shadow_min_step": 0.5, "footprint_shadow": 4.0, "directional_horizontal_scale": 8.0,
-}
-
 
 func run() -> void:
 	env(Color(AMBIENT, AMBIENT, AMBIENT))
@@ -40,14 +33,7 @@ func _prewiring() -> void:
 			int((fresh.material as ShaderMaterial).get_shader_parameter("receiver_mask")))
 	check(case_name, "specular_k seeded on the material", 32.0,
 			float((fresh.material as ShaderMaterial).get_shader_parameter("specular_k")))
-	for p in PROXIES:
-		fresh.set(p, PROXIES[p])
-		var got: Variant = (fresh.material as ShaderMaterial).get_shader_parameter(p)
-		if PROXIES[p] is float and (got is float or got is int):
-			got = float(got)
-		elif got is float or got is int:
-			got = int(got)
-		check(case_name, "%s proxies to the material" % p, PROXIES[p], got)
+	check_proxies(case_name, fresh)
 	fresh.free()
 	# A subclass that overrides _ready without super() must still get wired.
 	var sub := SubclassedSprite.new()

@@ -3,7 +3,8 @@ extends LitSuiteSection
 ## LitSplashScreen: builds its logo, background and glitch pass on layer 100, plays on
 ## autoplay (logo fades in over the black background), skip() ends it early, the
 ## finished signal fires, and auto_free removes the node. autoplay = false keeps it
-## hidden until play().
+## hidden until play(). An unskipped splash ends on its own clock; a key or a mouse
+## click skips it while skippable.
 
 var _finished_fired := false
 
@@ -109,6 +110,57 @@ func run() -> void:
 	check_true(case_name, "skippable = true: a key press skips and finishes the splash", styled_done[0])
 	await frames(2)
 	check_true(case_name, "auto_free after the skip frees the node", not is_instance_valid(styled))
+	await _natural_end()
+	await _mouse_skip()
+
+
+## The tween chain running out by itself: finished fires at fade_in + (glitch window -
+## fade_in) + hold + fade_out + 0.25 s on the splash's own clock, then auto_free frees it.
+func _natural_end() -> void:
+	var case_name := "splash_natural_end"
+	var splash := LitSplashScreen.new()
+	splash.sfx = null            # glitch window 1.0 s without audio
+	splash.fade_in_time = 0.05
+	splash.hold_time = 0.4
+	splash.fade_out_time = 0.1
+	var ended := [-1.0]
+	splash.finished.connect(func() -> void: ended[0] = splash._elapsed)
+	add_child(splash)
+	var waited := 0.0
+	while ended[0] < 0.0 and waited < 4.0:
+		await get_tree().create_timer(0.05).timeout
+		waited += 0.05
+	check_true(case_name, "an unskipped splash finishes on its own", ended[0] >= 0.0)
+	check_approx(case_name, "finished at glitch window 1.0 + hold 0.4 + fade_out 0.1 + 0.25 s on the splash's clock",
+			1.75, ended[0], 0.15)
+	await frames(2)
+	check_true(case_name, "auto_free frees the node after the natural end", not is_instance_valid(splash))
+
+
+## A mouse click on the splash skips it (the root Control's gui_input), like a key.
+func _mouse_skip() -> void:
+	var case_name := "splash_screen"
+	var splash := LitSplashScreen.new()
+	splash.sfx = null
+	splash.hold_time = 5.0
+	var done := [false]
+	splash.finished.connect(func() -> void: done[0] = true)
+	add_child(splash)
+	await frames(3)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = Vector2(300, 500)
+	click.global_position = click.position
+	Input.parse_input_event(click)
+	var waited := 0.0
+	while not done[0] and waited < 2.0:
+		await get_tree().create_timer(0.05).timeout
+		waited += 0.05
+	check_true(case_name, "a mouse click skips the splash and finishes it", done[0])
+	click.pressed = false
+	Input.parse_input_event(click)
+	await frames(2)
 
 
 ## Waits for the glitch pass to hide (its window is _glitch_len); 3 s cap.

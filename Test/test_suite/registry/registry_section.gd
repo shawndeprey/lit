@@ -186,6 +186,7 @@ func _activity_flags() -> void:
 
 func _rx_registry() -> void:
 	var case_name := "rx_registry"
+	var registered_before: int = RxRegistryScript.nodes().size()
 	var s := box_receiver(Vector2(1100, 600), Vector2(80, 80))
 	await frames(1)
 	check_true(case_name, "a receiver with mask 0 is not registered", not RxRegistryScript.nodes().has(s))
@@ -199,10 +200,7 @@ func _rx_registry() -> void:
 	await frames(2)
 	check_true(case_name, "cleared node leaves the _rx variant", F.flags_of(s.material.shader) & F.F_RX == 0)
 	s.shadow_ignore_mask = 2
+	check(case_name, "re-registered before the free", registered_before + 1, RxRegistryScript.nodes().size())
 	s.queue_free()
 	await frames(2)
-	var live := 0
-	for n in RxRegistryScript.nodes():
-		if is_instance_valid(n) and n.is_inside_tree():
-			live += 1
-	check(case_name, "freed rx nodes are pruned", 0, live)
+	check(case_name, "freed rx nodes are pruned from the registry", registered_before, RxRegistryScript.nodes().size())

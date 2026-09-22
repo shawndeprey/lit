@@ -31,9 +31,7 @@ func _prewiring() -> void:
 			fresh.sprite_frames != null)
 	check(case_name, "receiver_mask seeded on the material", 1,
 			int((fresh.material as ShaderMaterial).get_shader_parameter("receiver_mask")))
-	fresh.emissive_strength = 0.4
-	check(case_name, "emissive_strength proxies to the material", 0.4,
-			float((fresh.material as ShaderMaterial).get_shader_parameter("emissive_strength")))
+	check_proxies(case_name, fresh)
 	fresh.free()
 
 
