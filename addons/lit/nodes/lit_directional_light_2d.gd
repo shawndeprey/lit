@@ -6,10 +6,10 @@ class_name LitDirectionalLight2D
 ## A directional light for the Lit system.
 ##
 ## Like LitPointLight2D but with no positional attenuation: the node's rotation defines
-## the light direction (its local +X aims toward the source), so every receiver is lit
-## from the same angle. `height` still tilts the shading vector out of the plane; lower
-## is more grazing, higher more head-on. There is no `range`, `falloff` or cookie, and
-## directional lights are never positionally culled.
+## the direction the light travels (its local +X: at rotation 0 the light comes from the
+## left), so every receiver is lit from the same angle. `height` still tilts the shading
+## vector out of the plane; lower is more grazing, higher more head-on. There is no
+## `range`, `falloff` or cookie, and directional lights are never positionally culled.
 ##
 ## Shares the receiver and shadow code path with point lights via the type flag in the
 ## light-data texture. As with point lights, `light_mask` reuses the inherited CanvasItem
