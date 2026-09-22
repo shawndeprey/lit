@@ -1,4 +1,4 @@
-[gd_scene load_steps=22 format=3]
+[gd_scene load_steps=24 format=3]
 
 [ext_resource type="Texture2D" path="res://Test/base.png" id="1_tex"]
 [ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_mixed.tscn" id="10_mx"]
@@ -10,6 +10,7 @@
 [ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_oneline_tile.gd" id="7_ot"]
 [ext_resource type="Shader" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="8_rs"]
 [ext_resource type="AnimationLibrary" path="res://Test/.update_tool_bench/fixture_anim_lib.tres" id="9_al"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_rebase_anim.gd" id="11_ra"]
 
 [sub_resource type="OccluderPolygon2D" id="occ"]
 polygon = PackedVector2Array(0, 0, 32, 0, 32, 32, 0, 32)
@@ -46,6 +47,17 @@ shader_parameter/receiver_mask = 4
 
 [sub_resource type="CanvasTexture" id="ct_recv"]
 diffuse_texture = ExtResource("1_tex")
+
+[sub_resource type="SpriteFrames" id="frames"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_tex")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
 
 [sub_resource type="Animation" id="anim"]
 resource_name = "swing"
@@ -117,6 +129,18 @@ light_mask = 2
 position = Vector2(-20, 30)
 texture = ExtResource("1_tex")
 offset = Vector2(10, 5)
+
+[node name="BareAnimSprite" type="AnimatedSprite2D" parent="."]
+light_mask = 2
+position = Vector2(40, 30)
+sprite_frames = SubResource("frames")
+offset = Vector2(3, 2)
+
+[node name="RebasedAnimSprite" type="AnimatedSprite2D" parent="."]
+light_mask = 4
+sprite_frames = SubResource("frames")
+script = ExtResource("11_ra")
+bob = 2.5
 
 [node name="ScriptedLight" type="PointLight2D" parent="."]
 script = ExtResource("2_ls")

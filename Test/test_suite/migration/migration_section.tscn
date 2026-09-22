@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://2vvssoo63inf" path="res://Test/test_suite/migration/migration_section.gd" id="1_sec"]
+
+[node name="MigrationSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "migration"
+section_title = "Schema Lock & Migrations"

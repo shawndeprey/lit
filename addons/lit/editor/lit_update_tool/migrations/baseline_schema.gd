@@ -11,6 +11,24 @@ const BASELINE_VERSION := "1.1.3"
 # Regenerate a class's block with:
 #   godot --headless --path . --script res://Test/gate_migration_schema.gd -- --dump
 const BASELINE_SCHEMA := {
+	&"LitAnimatedSprite2D": {
+		"script": "res://addons/lit/nodes/lit_animated_sprite_2d.gd",
+		"props": {
+			&"directional_horizontal_scale": {"type": TYPE_FLOAT, "default": 32.0},
+			&"emissive_strength": {"type": TYPE_FLOAT, "default": 0.0},
+			&"footprint_shadow": {"type": TYPE_FLOAT, "default": 16.0},
+			&"lit_version": {"type": TYPE_STRING, "default": ""},
+			&"metallic_value": {"type": TYPE_FLOAT, "default": 0.0},
+			&"receiver_mask": {"type": TYPE_INT, "default": 1},
+			&"roughness_value": {"type": TYPE_FLOAT, "default": 1.0},
+			&"self_shadow": {"type": TYPE_BOOL, "default": false},
+			&"shadow_ignore_mask": {"type": TYPE_INT, "default": 0},
+			&"shadow_min_step": {"type": TYPE_FLOAT, "default": 0.2},
+			&"shadow_steps": {"type": TYPE_INT, "default": 64},
+			&"specular_k": {"type": TYPE_FLOAT, "default": 32.0},
+			&"specular_strength": {"type": TYPE_FLOAT, "default": 0.5},
+		},
+	},
 	&"LitCanvasModulate": {
 		"script": "res://addons/lit/nodes/lit_canvas_modulate.gd",
 		"props": {

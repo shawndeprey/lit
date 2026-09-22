@@ -62,6 +62,18 @@ const SKULL_NORMAL_PATH := "res://Test/cinderskull_preview_n.png"
 const SKULL_ROUGHNESS_PATH := "res://Test/cinderskull_preview_r.png"
 const SKULL_AO_PATH := "res://Test/cinderskull_preview_o.png"
 
+# The Animated Sprites stage's prop: a LitAnimatedSprite2D skeleton turning in place,
+# its 8 frames AtlasTextures over one CanvasTexture sheet that carries the diffuse and
+# normal maps (Test/nodes). Instanced, never built here, so the scene doubles as the
+# reference example for the node.
+const SKELETON_SCENE_PATH := "res://Test/nodes/skeleton_animated.tscn"
+const SKELETON_ROW := 5
+# The row sits this far below the play-area center, clear of the saved scene's skull.
+const SKELETON_ROW_DROP := 150.0
+# One end-to-end pass of the stage's key light along the row; the 8 s stage walks it
+# there and back.
+const SWEEP_SECONDS := 4.0
+
 # --- runtime state ---
 var _running := false
 var _stage_index := -1
@@ -107,6 +119,8 @@ var _skull_ao: Texture2D = null
 # True while the PBR stage's skull props stand in for the standard white blocks, so the
 # next stage knows to restore the blocks.
 var _props_are_skulls := false
+# Same for the Animated Sprites stage's skeleton row.
+var _props_are_skeletons := false
 
 # --- UI ---
 var _ui: CanvasLayer
@@ -138,6 +152,7 @@ var _stages := [
 	{"id": "stress",    "name": "Stress Test",               "desc": "Ramping up to 128 lights…",            "dur": 14.0, "auto": true},
 	{"id": "cookies",   "name": "Light Textures",            "desc": "Cookie-shaped lights • ramping to 64, full soft shadows", "dur": 14.0, "auto": true},
 	{"id": "pbr",       "name": "PBR Materials",             "desc": "Metallic-roughness · normal, roughness & AO maps", "dur": 9.0, "auto": true},
+	{"id": "animated",  "name": "Animated Sprites",          "desc": "LitAnimatedSprite2D · normal-mapped SpriteFrames, lit on every frame", "dur": 8.0, "auto": true},
 	{"id": "fx_bloom",     "name": "Post FX - Bloom",           "desc": "Glow on the brights",                 "dur": 4.0,  "auto": true},
 	{"id": "fx_halation",  "name": "Post FX - Bloom + Halation","desc": "Warm highlight bleed, pure fire",    "dur": 4.5,  "auto": true},
 	{"id": "fx_grade",     "name": "Post FX - Color Grade + LUT","desc": "Cinematic color",                     "dur": 4.0,  "auto": true},
@@ -340,6 +355,7 @@ func _teardown() -> void:
 	# Put the lighting model back the way the scene had it.
 	RenderingServer.global_shader_parameter_set("lit_lighting_model", _orig_lighting_model)
 	_props_are_skulls = false
+	_props_are_skeletons = false
 
 
 func _capture_scene_state() -> void:
@@ -538,6 +554,30 @@ func _make_skull_prop(pos: Vector2, tex_scale: float) -> void:
 	_props.append({"root": root, "mat": mat})
 
 
+# A row of animated skeletons centered in the play area, instanced from the example
+# scene. Each starts on a different frame so the turnarounds are staggered. False if
+# the scene is missing, so the stage can fall back to the standard blocks.
+func _spawn_skeleton_row() -> bool:
+	if not ResourceLoader.exists(SKELETON_SCENE_PATH):
+		return false
+	var packed := load(SKELETON_SCENE_PATH) as PackedScene
+	if packed == null:
+		return false
+	var spacing: float = min(_area_half.x * 2.0 / float(SKELETON_ROW + 1), 220.0)
+	for i in SKELETON_ROW:
+		var x := _area_center.x + (float(i) - float(SKELETON_ROW - 1) * 0.5) * spacing
+		var root := packed.instantiate() as Node2D
+		root.position = Vector2(x, _area_center.y + SKELETON_ROW_DROP)
+		add_child(root)
+		var spr := _find_first(root, LitAnimatedSprite2D) as LitAnimatedSprite2D
+		if spr != null and spr.sprite_frames != null \
+				and spr.sprite_frames.has_animation(spr.animation):
+			spr.play()
+			spr.frame = i % maxi(spr.sprite_frames.get_frame_count(spr.animation), 1)
+		_props.append({"root": root, "spr": spr})
+	return true
+
+
 # =====================================================================================
 # Lights
 # =====================================================================================
@@ -617,6 +657,8 @@ func _update_lights() -> void:
 			continue
 		if d.kind == "daynight":
 			continue                       # driven by _update_daynight per stage time
+		if d.kind == "stage":
+			continue                       # placed by its stage (fixed, or _update_sweep)
 		if d.kind == "swing":
 			n.texture_offset = Vector2(sin(_clock * 2.0) * 120.0, 0.0)
 			continue
@@ -698,6 +740,10 @@ func _enter_stage(idx: int) -> void:
 		_clear_props()
 		_spawn_props()
 		_props_are_skulls = false
+	if s.id != "animated" and _props_are_skeletons:
+		_clear_props()
+		_spawn_props()
+		_props_are_skeletons = false
 
 	match s.id:
 		"intro":
@@ -795,6 +841,44 @@ func _enter_stage(idx: int) -> void:
 			pbr_b.pulse_speed = 0.0
 			pbr_b.hue = -1.0
 			pbr_b.phase = PI            # orbit opposite the warm light so detail is raked from both sides
+		"animated":
+			# A row of LitAnimatedSprite2D skeletons turning in place. Every frame is an
+			# AtlasTexture over one CanvasTexture sheet (diffuse + normal), so the shading
+			# follows the pose as the turnaround plays; the footprint occluder under each
+			# is owned by the sprite, so its shadow falls behind it. The reel's usual
+			# ground-level lights barely graze 24 px art, so this stage lights itself: a
+			# warm key light walks the row at head height (see _update_sweep), raking each
+			# skeleton from the left and then the right as it turns, over a fixed cool fill
+			# from above that keeps the whole row readable.
+			_clear_props()
+			_clear_lights()
+			if _spawn_skeleton_row():
+				_props_are_skeletons = true
+			else:
+				_spawn_props()   # scene not imported yet: keep the reel running
+			var row_y := _area_center.y + SKELETON_ROW_DROP
+			var half_span: float = float(SKELETON_ROW - 1) * 0.5 \
+					* minf(_area_half.x * 2.0 / float(SKELETON_ROW + 1), 220.0)
+			var key := _spawn_light("point", Color(1.0, 0.88, 0.7))
+			key.kind = "stage"                 # positioned by _update_sweep
+			key.node.range = 620.0
+			key.node.energy = 2.2
+			key.node.height = 90.0
+			key.base_energy = 2.2
+			key.pulse_speed = 0.0
+			key.hue = -1.0
+			key["sweep_from"] = Vector2(_area_center.x - half_span - 160.0, row_y - 40.0)
+			key["sweep_to"] = Vector2(_area_center.x + half_span + 160.0, row_y - 40.0)
+			key.node.position = key["sweep_from"]
+			var fill := _spawn_light("point", Color(0.55, 0.66, 1.0))
+			fill.kind = "stage"                # fixed
+			fill.node.position = Vector2(_area_center.x, row_y - 260.0)
+			fill.node.range = 760.0
+			fill.node.energy = 0.9
+			fill.node.height = 160.0
+			fill.base_energy = 0.9
+			fill.pulse_speed = 0.0
+			fill.hue = -1.0
 		"fx_bloom":
 			_ensure_count(8, ["point", "spot", "point", "dir"], true)   # thin out so the FX aren't blown out
 			if _post:
@@ -905,6 +989,17 @@ func _update_stage(t: float) -> void:
 			_ensure_count(target, ramp_kinds, true)
 	if s.id == "daynight":
 		_update_daynight(clampf(t / s.dur, 0.0, 1.0))
+	elif s.id == "animated":
+		_update_sweep(t)
+
+
+## Walk the Animated Sprites stage's key light along the skeleton row and back, eased
+## at the ends so it lingers on the outer skeletons as long as the inner ones.
+func _update_sweep(t: float) -> void:
+	var u := smoothstep(0.0, 1.0, pingpong(t / SWEEP_SECONDS, 1.0))
+	for d in _lights:
+		if d.kind == "stage" and d.has("sweep_from") and is_instance_valid(d.node):
+			d.node.position = (d["sweep_from"] as Vector2).lerp(d["sweep_to"], u)
 
 
 ## Drive the day/night stage's single directional light: the sun for the first half,

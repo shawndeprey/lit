@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://bhd5xs1gdqrvf" path="res://Test/test_suite/splash/splash_section.gd" id="1_sec"]
+
+[node name="SplashSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "splash"
+section_title = "Splash Screen"

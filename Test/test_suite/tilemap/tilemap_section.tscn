@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://ckgggwrijsuxc" path="res://Test/test_suite/tilemap/tilemap_section.gd" id="1_sec"]
+
+[node name="TilemapSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "tilemap"
+section_title = "LitTileMapLayer"

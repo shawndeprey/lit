@@ -64,50 +64,67 @@ class_name LitSprite2D
 		_drive_state.dirty = true
 
 @export_group("Surface", "")
-## Specular highlight intensity. Proxies to `specular_strength`.
+## Specular highlight intensity (Blinn-Phong lighting model only; ignored under PBR,
+## where the inspector greys it out). Proxies to `specular_strength`.
 @export var specular_strength: float = 0.5:
 	set(value):
 		specular_strength = value
 		_set_param("specular_strength", value)
 
-## Specular exponent (highlight tightness). Proxies to `specular_k`.
+## Specular exponent: scales the CanvasTexture's shininess into how tight the
+## highlight is (Blinn-Phong only). Proxies to `specular_k`.
 @export var specular_k: float = 32.0:
 	set(value):
 		specular_k = value
 		_set_param("specular_k", value)
 
-## Metallic response when no metallic map is set. Proxies to `metallic_value`.
+## Metallic response (PBR lighting model only; ignored under Blinn-Phong). Multiplies
+## the material's metallic map when one is set, and stands alone when not. Proxies to
+## `metallic_value`.
 @export_range(0.0, 1.0) var metallic_value: float = 0.0:
 	set(value):
 		metallic_value = value
 		_set_param("metallic_value", value)
 
-## Roughness when no roughness map is set. Proxies to `roughness_value`.
+## Roughness (PBR lighting model only; ignored under Blinn-Phong). Multiplies the
+## material's roughness map when one is set, and stands alone when not; 1 is fully
+## matte. Proxies to `roughness_value`.
 @export_range(0.0, 1.0) var roughness_value: float = 1.0:
 	set(value):
 		roughness_value = value
 		_set_param("roughness_value", value)
 
 @export_group("Shadow March", "")
-## Maximum shadow march steps for this receiver. Proxies to `shadow_steps`.
+## Cap on shadow march steps per light on this receiver. A march stops as soon as it
+## hits an occluder or reaches its end, usually well under this cap, so raising it
+## rarely changes anything; lowering it trades reach on long marches (directional
+## lights, large ranges) for speed. Ignored while Project Settings > Lit > Quality >
+## Shadow Step Scaling is on, which scales the budget per light instead. Proxies to
+## `shadow_steps`.
 @export var shadow_steps: int = 64:
 	set(value):
 		shadow_steps = value
 		_set_param("shadow_steps", value)
 
-## Minimum shadow march step, in pixels. Proxies to `shadow_min_step`.
+## Minimum advance per shadow march step, in SDF units (the world SDF's texel space,
+## not canvas pixels). Larger is faster and coarser. Proxies to `shadow_min_step`.
 @export var shadow_min_step: float = 0.2:
 	set(value):
 		shadow_min_step = value
 		_set_param("shadow_min_step", value)
 
-## Contact-shadow footprint size, in pixels. Proxies to `footprint_shadow`.
+## How strongly an occluder's own shadow darkens the receiver pixels inside that
+## occluder's shape (the contact shadow at its footprint): block = footprint_shadow x
+## depth crossed / light distance, clamped to 1. Dimensionless, so zoom doesn't change
+## the look; higher darkens footprints sooner. Proxies to `footprint_shadow`.
 @export var footprint_shadow: float = 16.0:
 	set(value):
 		footprint_shadow = value
 		_set_param("footprint_shadow", value)
 
-## Horizontal stretch of directional-light shadows. Proxies to
+## Directional lights only: horizontal reach of the shading vector relative to the
+## light's `height`, so its elevation is atan(height / scale); larger is more grazing.
+## Shading only - shadow direction is unaffected. Proxies to
 ## `directional_horizontal_scale`.
 @export var directional_horizontal_scale: float = 32.0:
 	set(value):
@@ -181,7 +198,11 @@ func _lit_ready() -> void:
 		var mat := material as ShaderMaterial
 		if mat != null and mat.shader != null and not mat.resource_local_to_scene \
 				and LitShaderLibrary.flags_of(mat.shader) >= 0:
-			material = LitLightRegistry.pool_acquire(mat)
+			# Already held only when a pre-ready proxy write (a duplicate() of a live
+			# node copies properties through the setters) acquired it for us.
+			if not is_same(mat, _pool_held):
+				material = LitLightRegistry.pool_acquire(mat)
+				_pool_held = material
 			if shadow_ignore_mask != 0:
 				_ensure_unique_material()
 	# Heal a stale rx_mask a scene save may have baked into the material.
@@ -288,20 +309,43 @@ func make_material_unique() -> ShaderMaterial:
 	return material as ShaderMaterial
 
 
+# The pool entry this node holds a reference to (null while private, authored, or in
+# the editor). Tracked apart from `material` so a runtime material swap by the user
+# releases the stale reference instead of stranding the entry.
+var _pool_held: ShaderMaterial = null
+
+
+func _sync_pool_hold() -> void:
+	if _pool_held != null and not is_same(material, _pool_held):
+		LitLightRegistry.pool_release(_pool_held)
+		_pool_held = null
+
+
 func _ensure_unique_material() -> void:
+	_sync_pool_hold()
 	var mat := material as ShaderMaterial
-	if mat != null and LitLightRegistry.pool_is_pooled(mat):
-		material = LitLightRegistry.pool_to_unique(mat)
+	if mat == null or not LitLightRegistry.pool_is_pooled(mat):
+		return
+	# Our own hold moves out through the pool; a pooled material assigned by hand
+	# (another node's entry) is copied without touching that node's reference.
+	material = LitLightRegistry.pool_to_unique(mat) if is_same(mat, _pool_held) else mat.duplicate()
+	_pool_held = null
+
+
+func _validate_property(property: Dictionary) -> void:
+	LitReceiverHelper.validate_receiver_property(property)
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE:
-		var mat := material as ShaderMaterial
-		if mat != null:
-			LitLightRegistry.pool_release(mat)
+	if what == NOTIFICATION_PREDELETE and _pool_held != null:
+		# Release the reference this node took, whatever `material` holds by now (a
+		# runtime material swap must not strand the entry).
+		LitLightRegistry.pool_release(_pool_held)
+		_pool_held = null
 
 
 func _set_param(param: String, value: Variant) -> void:
+	_sync_pool_hold()
 	var mat := material as ShaderMaterial
 	if mat == null:
 		return
@@ -310,7 +354,17 @@ func _set_param(param: String, value: Variant) -> void:
 	if not Engine.is_editor_hint() and LitLightRegistry.pool_is_pooled(mat):
 		if mat.get_shader_parameter(param) == value:
 			return
+		if not LitLightRegistry.pool_is_key_param(param):
+			# Driven params (rx_mask heals) converge on a shared entry, which holds
+			# them empty by construction: no re-key, no reference change.
+			mat.set_shader_parameter(param, value)
+			return
+		if not is_same(mat, _pool_held):
+			# A pooled material assigned by hand (another node's entry): take a
+			# reference of our own before moving off it, so its holders stay honest.
+			mat = LitLightRegistry.pool_acquire(mat)
 		material = LitLightRegistry.pool_rekey(mat, param, value)
+		_pool_held = material
 		return
 	mat.set_shader_parameter(param, value)
 

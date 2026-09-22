@@ -33,8 +33,9 @@ Prefer videos? Subscribe on YouTube:
 2. **Make it dark.** Add a **`LitCanvasModulate`** node to your scene and set its color to
    something dark. Your world is now in shadow, waiting to be lit. *(Use this instead of
    Godot's `CanvasModulate`, not alongside it.)*
-3. **Let your art catch light.** Either drop in a **`LitSprite2D`** (comes ready to go), or
-   select existing `Sprite2D` / `TileMapLayer` / other 2D nodes and run
+3. **Let your art catch light.** Either drop in a **`LitSprite2D`** or a
+   **`LitAnimatedSprite2D`** (both come ready to go), or select existing `Sprite2D` /
+   `AnimatedSprite2D` / `TileMapLayer` / other 2D nodes and run
    **Project → Tools → Make Selected Nodes Lit**.
 4. **Add a light.** Drop a **`LitPointLight2D`** over your art and watch it light up. Tweak
    color, energy, and range to taste.
@@ -94,6 +95,7 @@ That's it - everything updates live in the editor as you build.
 | `LitSpotLight2D` | A cone of light you can aim. |
 | `LitCanvasModulate` | Sets the scene's darkness/ambient color. |
 | `LitSprite2D` | A `Sprite2D` that's already set up to receive light. |
+| `LitAnimatedSprite2D` | An `AnimatedSprite2D` that's already set up to receive light, normal maps and all, frame by frame. |
 | `LitTileMapLayer` | A `TileMapLayer` that's already set up to receive light. |
 | `LitPostProcess` | The post-processing stack (bloom, grading, CRT, and friends). |
 | `LitSplashScreen` | A drop-in branded splash (glitch-fade logo, skippable). |
@@ -106,6 +108,14 @@ That's it - everything updates live in the editor as you build.
   `Light2D`. The two systems live side by side, so you can convert a project piece by piece.
 - For **tilemaps to cast shadows**, the TileSet's occlusion layer needs **SDF Collision**
   turned on (it's off by default).
+- **Animated sprites with normal maps.** `LitAnimatedSprite2D` reads normal and specular
+  maps from each frame's `CanvasTexture`, just like `LitSprite2D`. For a sprite sheet, put
+  the diffuse, normal, and specular sheets on **one** `CanvasTexture`, save it as a
+  resource, and point the SpriteFrames panel's **Create Frames from Sprite Sheet** at it:
+  every frame becomes an `AtlasTexture` over that `CanvasTexture`. Don't go the other way
+  round - a `CanvasTexture` whose *own* slots are `AtlasTexture`s makes Godot sample the
+  whole sheet instead of the region (that's an engine limitation, and it bites plain
+  `Sprite2D` too).
 
 ---
 

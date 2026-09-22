@@ -19,8 +19,8 @@ extends RefCounted
 ##
 ## scan() reads every scene through SceneState (no scene code runs) plus every project
 ## .gd file, and returns a model + counts for the confirmation dialog. run() executes:
-## first the script pass (rebasing user scripts extending Sprite2D/TileMapLayer onto
-## the Lit classes), then the scene pass, leaves-first so instance overrides in parent
+## first the script pass (rebasing user scripts extending Sprite2D / AnimatedSprite2D /
+## TileMapLayer onto the Lit classes), then the scene pass, leaves-first so instance overrides in parent
 ## scenes can be remapped after their child scenes converted. Scenes are instantiated
 ## off-tree with GEN_EDIT_STATE_MAIN (delta preservation for sub-instances), mutated,
 ## packed, and saved back over themselves; untouched scenes are never re-saved.
@@ -68,7 +68,8 @@ static func scan_begin(roots: Array[String] = ["res://"]) -> Dictionary:
 		"custom_groups": {},
 		"unlit_nodes": [] as Array[String],
 		"counts": {"scenes": scene_paths.size(), "point_lights": 0, "directional_lights": 0,
-			"modulates": 0, "sprites": 0, "tilemaps": 0, "skipped_scripted": 0,
+			"modulates": 0, "sprites": 0, "animated_sprites": 0, "tilemaps": 0,
+			"skipped_scripted": 0,
 			"lit_stamp": 0, "remap_rows": 0, "scenes_to_process": 0, "unlit_mats": 0,
 			"custom_mats": 0, "menu_nodes": 0, "menu_core": 0},
 	}
@@ -85,7 +86,8 @@ static func scan_finish(acc: Dictionary) -> Dictionary:
 # --- Run -----------------------------------------------------------------------
 
 ## Execute the update. `kinds` gates conversions only ({lights, modulates, sprites,
-## tilemaps, scripts}); version stamping, migrations, and override remaps always run.
+## animated_sprites, tilemaps, scripts}); version stamping, migrations, and override
+## remaps always run.
 static func run(scan_result: Dictionary, kinds: Dictionary,
 		report_path: String = REPORT_PATH) -> Dictionary:
 	var rctx := run_begin(scan_result, kinds, report_path)

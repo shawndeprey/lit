@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://bjloplxq3teix" path="res://Test/test_suite/luminance/luminance_section.gd" id="1_sec"]
+
+[node name="LuminanceSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "luminance"
+section_title = "Luminance Query"

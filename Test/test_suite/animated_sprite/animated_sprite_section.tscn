@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://6n6one1p6pys" path="res://Test/test_suite/animated_sprite/animated_sprite_section.gd" id="1_sec"]
+
+[node name="AnimatedSpriteSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "animated_sprite"
+section_title = "LitAnimatedSprite2D"
