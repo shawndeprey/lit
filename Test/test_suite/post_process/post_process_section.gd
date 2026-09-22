@@ -432,12 +432,33 @@ func _effects() -> void:
 	img = await capture()
 	check_gt("fx_vhs", "bleed 1 alone smears the chroma (image changes)", image_diff(_base, img, AREA), 0.005)
 	vhs.bleed = 0.0
-	for pair in [["wobble_strength", 8.0], ["tracking_strength", 1.0], ["roll_strength", 1.0]]:
+	for pair in [["wobble_strength", 8.0], ["roll_strength", 1.0]]:
 		vhs.set(pair[0], pair[1])
 		await frames(2)
 		img = await capture()
 		check_gt("fx_vhs", "%s %.0f alone changes the image" % [pair[0], pair[1]], image_diff(_base, img, AREA), 0.01)
 		vhs.set(pair[0], 0.0)
+	# The band rolls on TIME: locate it in the capture (half-width 130 px).
+	vhs.tracking_strength = 1.0
+	await frames(2)
+	img = await capture()
+	var rows := _row_diff_profile(_base, img)
+	var peak_row := 0
+	for i in rows.size():
+		if rows[i] > rows[peak_row]:
+			peak_row = i
+	var far_sum := 0.0
+	var far_n := 0
+	for i in rows.size():
+		if absi(i - peak_row) * ROW_STEP > 200:
+			far_sum += rows[i]
+			far_n += 1
+	var far := far_sum / maxf(float(far_n), 1.0)
+	check_gt("fx_vhs", "tracking_strength 1 alone: a damaged band exists somewhere on screen (peak row change at y %d px)" % (ROW_TOP + peak_row * ROW_STEP),
+			rows[peak_row], 0.05)
+	check_lt("fx_vhs", "tracking band is a band: rows over 200 px from its peak change under a quarter as much",
+			far, rows[peak_row] * 0.25)
+	vhs.tracking_strength = 0.0
 	await _effect_off(vhs, "fx_vhs", "VHS")
 
 	var crt := LitPostCrt.new()
@@ -632,6 +653,31 @@ func _channel_diff(a: Image, b: Image, rect: Rect2, ch: int, step := 4) -> float
 			x += step
 		y += step
 	return 0.0 if n == 0 else sum / float(n)
+
+
+const ROW_STEP := 4
+const ROW_TOP := 60   # below the status bar, whose text changes between captures
+
+
+## Mean change per screen row (every ROW_STEP px from ROW_TOP), across AREA's width.
+func _row_diff_profile(a: Image, b: Image) -> PackedFloat32Array:
+	var x0 := int(to_px(AREA.position, a).x)
+	var x1 := int(to_px(AREA.end, a).x)
+	var out := PackedFloat32Array()
+	var y := ROW_TOP
+	while y < a.get_height() and y < b.get_height():
+		var sum := 0.0
+		var n := 0
+		var x := x0
+		while x < x1:
+			var ca := a.get_pixel(x, y)
+			var cb := b.get_pixel(x, y)
+			sum += absf(ca.r - cb.r) + absf(ca.g - cb.g) + absf(ca.b - cb.b)
+			n += 1
+			x += ROW_STEP
+		out.append(0.0 if n == 0 else sum / float(n * 3))
+		y += ROW_STEP
+	return out
 
 
 func _chain() -> void:

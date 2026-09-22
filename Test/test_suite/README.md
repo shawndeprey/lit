@@ -29,8 +29,11 @@ Options after `--`:
 | `vsync=on` | leave vsync on (off by default so frame waits run at GPU speed) |
 | `verbose=on` | also print every passing check while running (off by default: only checks that did not pass are printed, so the console stays short) |
 
-The window stays open on the report by default; Escape quits, the mouse wheel scrolls
-the panel. A full run takes a few seconds.
+The window stays open on the report by default. Escape quits; C copies every `SUITE`
+line of the run to the clipboard, ready to paste into a bug report; the panel text can
+also be selected and copied with Ctrl+C; the mouse wheel scrolls it. A full run takes
+a couple of minutes cold (the shader library section compiles every variant) and
+about 20 seconds warm.
 
 Every section scene (`<section>/<section>_section.tscn`) also runs on its own with the
 same HUD and options, which is the quick way to iterate on one feature set.
@@ -104,7 +107,7 @@ config naming a missing shader or unknown variant (entries skipped).
 | `lights` | point, spot and directional lights against the shading formula; masks; negative lights; 70 lights at once |
 | `cookies` | light textures: alpha shaping, tint, NATIVE / FIT_RANGE, scale, offset, rotation, spot composition, atlas |
 | `receivers` | LitSprite2D pre-wiring and proxies, emissive + mask, receiver mask, normal maps (and their rotation), specular, bare Sprite2D / Polygon2D receivers, make_material_unique |
-| `animated_sprite` | LitAnimatedSprite2D: lighting per frame (CanvasTexture and AtlasTexture-over-sheet frames), playback, specular-flag tracking, owned occluders |
+| `animated_sprite` | LitAnimatedSprite2D: lighting per frame (CanvasTexture and AtlasTexture-over-sheet frames), playback, specular-flag tracking, owned occluders, shadow_ignore_mask |
 | `tilemap` | LitTileMapLayer: proxies, lighting, tileset occluder shadows, own-tile self-exclusion, cell edits, occlusion-layer masks |
 | `shadows` | enable/colour/length, the three algorithms and their penumbra dials, gates, footprint darkening, directional and spot shadows, quality settings |
 | `shadow_masks` | self-shadow exclusion, shadow_mask vs occluder mask tiers (per-light, global, SDF culling), shadow_ignore_mask, exclude_scene_occluders, y-sorted depth |

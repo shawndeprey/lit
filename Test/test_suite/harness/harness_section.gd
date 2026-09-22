@@ -93,7 +93,7 @@ func run() -> void:
 	check_true("ambient", "no warning once the native CanvasModulate is gone",
 			_modulate._get_configuration_warnings().is_empty())
 
-	print("SUITE   project lighting model setting: %d (each section run pins its own model; see model=)" % int(
+	say("SUITE   project lighting model setting: %d (each section run pins its own model; see model=)" % int(
 			_settings_saved.get("lit/render/lighting_model", 0)))
 	# Version stamp plumbing.
 	check_true("version", "plugin.cfg carries a version", lit_version != "" and lit_version != "0")

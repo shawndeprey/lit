@@ -109,7 +109,7 @@ func run() -> void:
 	_build_static_exhibits()
 	_print_uniforms()
 	if verbose:
-		print("SUITE auto_pooling built %d Lit receiver nodes; pool %s" % [_lit_nodes().size(), _stats_text()])
+		say("SUITE auto_pooling built %d Lit receiver nodes; pool %s" % [_lit_nodes().size(), _stats_text()])
 	# Same cadence as the original frame-numbered phases: static checks after two
 	# registry refreshes, mutations one and five frames later, the final pass at 12.
 	await frames(2)
@@ -697,7 +697,7 @@ func _dump_pool(title: String) -> void:
 	if not verbose:
 		return
 	var snap: Dictionary = LitLightRegistry.pool_snapshot()
-	print("SUITE auto_pooling ---- pool entries %s: %s ----" % [title, _stats_text()])
+	say("SUITE auto_pooling ---- pool entries %s: %s ----" % [title, _stats_text()])
 	var members := {}
 	for n in _lit_nodes():
 		if _pooled(n.material):
@@ -710,9 +710,9 @@ func _dump_pool(title: String) -> void:
 		var e: Dictionary = snap[key]
 		var mat: ShaderMaterial = e.material
 		var flags: int = LitShaderLibrary.flags_of(mat.shader)
-		print("SUITE auto_pooling   %s refs=%d variant=%s members=%s" % [_label(mat), e.refs,
+		say("SUITE auto_pooling   %s refs=%d variant=%s members=%s" % [_label(mat), e.refs,
 				LitShaderLibrary.variant_name(flags), str(members.get(mat, []))])
-		print("SUITE auto_pooling     key=%s" % key)
+		say("SUITE auto_pooling     key=%s" % key)
 
 
 func _print_uniforms() -> void:
@@ -721,7 +721,7 @@ func _print_uniforms() -> void:
 	var names := PackedStringArray()
 	for u in _fast_shader.get_shader_uniform_list():
 		names.append(u.name)
-	print("SUITE auto_pooling receiver uniforms (%d): %s" % [names.size(), ", ".join(names)])
+	say("SUITE auto_pooling receiver uniforms (%d): %s" % [names.size(), ", ".join(names)])
 
 
 # --- Check plumbing ------------------------------------------------------------------

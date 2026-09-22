@@ -137,7 +137,7 @@ func _schema(live: Dictionary) -> void:
 			if not xp.has(prop_name):
 				drift.append("new stored prop %s" % prop_name)
 		if not check(case_name, "%s matches the locked schema" % klass, "no drift", "no drift" if drift.is_empty() else "; ".join(drift)):
-			print("SUITE   %s: add a MIGRATIONS entry describing the change (see docs/release_cut.md)" % klass)
+			say("SUITE   %s: add a MIGRATIONS entry describing the change (see docs/release_cut.md)" % klass)
 	for klass in live:
 		check_true(case_name, "%s has a BASELINE_SCHEMA entry" % klass, expected.has(klass))
 

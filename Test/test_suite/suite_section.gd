@@ -36,6 +36,8 @@ var model := 0
 ## Console verbosity while running: false prints only the checks that did not pass
 ## (the end-of-run report lists every feature anyway); `verbose=on` prints all of them.
 static var verbose := false
+## Every SUITE line printed so far, in order; the C key copies them to the clipboard.
+static var transcript: PackedStringArray = []
 ## Under PBR a dielectric's Lambert term is albedo x (1 - F0) = 0.96 x the Phong
 ## diffuse, and the roughness-1 specular adds under 0.006: one factor covers it.
 const PBR_DIFFUSE := 0.96
@@ -75,26 +77,26 @@ func _run_standalone() -> void:
 	pin_render_size(get_window())
 	await _await_precompile()
 	await frames(2)
-	print(env_line(get_viewport()))
+	say(env_line(get_viewport()))
 	await run_section()
 	var tagged: Array = []
 	for r in results:
 		var t: Dictionary = r.duplicate()
 		t["section"] = section_id
 		tagged.append(t)
-	print("SUITE REPORT")
+	say("SUITE REPORT")
 	var rep := print_report(tagged)
-	print("SUITE SUMMARY section=%s features=%d features_passed=%d checks=%d passed=%d failed=%d known_gaps=%d model=%s time=%.1fs" % [
+	say("SUITE SUMMARY section=%s features=%d features_passed=%d checks=%d passed=%d failed=%d known_gaps=%d model=%s time=%.1fs" % [
 			section_id, rep.features, rep.features_passed, results.size(),
 			results.size() - failed_count() - gap_count(), failed_count(), gap_count(),
 			model_name(), (Time.get_ticks_msec() - _t_start) / 1000.0])
-	print("SUITE RESULT %s" % ("PASS" if failed_count() == 0 else "FAIL"))
+	say("SUITE RESULT %s" % ("PASS" if failed_count() == 0 else "FAIL"))
 	_render_standalone_hud()
 	if _opt_quit:
 		await frames(2)
 		if _opt_capture != "":
 			get_viewport().get_texture().get_image().save_png(_opt_capture)
-			print("SUITE capture=%s" % _opt_capture)
+			say("SUITE capture=%s" % _opt_capture)
 		get_tree().quit(1 if failed_count() > 0 else 0)
 
 
@@ -104,7 +106,7 @@ func _run_standalone() -> void:
 ## on the default quality settings; the project's own values are restored afterwards.
 func run_section() -> void:
 	_t_start = Time.get_ticks_msec()
-	print("SUITE ==== %s: %s ====" % [section_id, section_title])
+	say("SUITE ==== %s: %s ====" % [section_id, section_title])
 	# Fresh-launch registry state for every run: the light-mask "seen" latch is a
 	# process-wide static that an earlier section's light setters would leave on.
 	LitLightRegistry.light_masks_seen = false
@@ -157,8 +159,24 @@ func _exit_tree() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _standalone and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+	if not _standalone or not (event is InputEventKey and event.pressed):
+		return
+	if event.keycode == KEY_ESCAPE:
 		get_tree().quit()
+	elif event.keycode == KEY_C:
+		status = "copied %d SUITE lines to the clipboard" % copy_transcript()
+
+
+## Prints a console line and keeps it for copy_transcript().
+static func say(line: String) -> void:
+	print(line)
+	transcript.append(line)
+
+
+## Copies every SUITE line printed so far to the clipboard; returns the line count.
+static func copy_transcript() -> int:
+	DisplayServer.clipboard_set("\n".join(transcript))
+	return transcript.size()
 
 
 # --- Checks -----------------------------------------------------------------------------
@@ -234,7 +252,7 @@ func _record(case_name: String, desc: String, expected, actual, ok: bool) -> boo
 			"actual": _fmt(actual), "pass": ok, "gap": gap})
 	if not ok or verbose:
 		var tag := "PASS" if ok else ("GAP" if gap else "FAIL")
-		print("SUITE %s %s/%s: %s | expected=%s actual=%s" % [tag, section_id, case_name, desc,
+		say("SUITE %s %s/%s: %s | expected=%s actual=%s" % [tag, section_id, case_name, desc,
 				_fmt(expected), _fmt(actual)])
 	return ok
 
@@ -288,15 +306,15 @@ static func print_report(tagged: Array) -> Dictionary:
 				gaps += 1
 			else:
 				failed += 1
-	print("SUITE PASSED FEATURES (%d of %d)" % [passed.size(), features.size()])
+	say("SUITE PASSED FEATURES (%d of %d)" % [passed.size(), features.size()])
 	for f in passed:
-		print("SUITE   PASS %s/%s (%d checks)" % [f.section, f.case, f.total])
-	print("SUITE NEEDS CHECKING (%d failed, %d known gaps)" % [failed, gaps])
+		say("SUITE   PASS %s/%s (%d checks)" % [f.section, f.case, f.total])
+	say("SUITE NEEDS CHECKING (%d failed, %d known gaps)" % [failed, gaps])
 	if failed + gaps == 0:
-		print("SUITE   none")
+		say("SUITE   none")
 	for r in tagged:
 		if not r.pass:
-			print("SUITE   %s %s/%s: %s | expected=%s actual=%s" % ["GAP" if r.gap else "FAIL",
+			say("SUITE   %s %s/%s: %s | expected=%s actual=%s" % ["GAP" if r.gap else "FAIL",
 					r.section, r.case, r.desc, r.expected, r.actual])
 	return {"features": features.size(), "features_passed": passed.size(),
 			"features_failed": feat_failed, "features_with_gaps": feat_gaps,
@@ -768,6 +786,8 @@ func _build_standalone_hud() -> void:
 	_hud.bbcode_enabled = true
 	_hud.scroll_active = true
 	_hud.fit_content = false
+	_hud.selection_enabled = true
+	_hud.focus_mode = Control.FOCUS_CLICK
 	_hud.add_theme_font_size_override("normal_font_size", 12)
 	_hud.text = "[b]%s[/b]\nrunning..." % section_title
 	panel.add_child(_hud)
@@ -775,7 +795,7 @@ func _build_standalone_hud() -> void:
 
 func _process(_delta: float) -> void:
 	if _standalone and _hud_status != null:
-		_hud_status.text = "%s (standalone, %s)   checks %d   failed %d   %s" % [section_title,
+		_hud_status.text = "%s (standalone, %s)   checks %d   failed %d   Escape quits, C copies the report   %s" % [section_title,
 				model_name(), results.size(), failed_count(), status]
 		if not _finished:
 			_render_standalone_hud()

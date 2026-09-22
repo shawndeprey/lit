@@ -4,9 +4,11 @@ extends LitSuiteSection
 ## proxies), lighting that follows the frame on screen (CanvasTexture normal maps per
 ## frame, AtlasTexture frames over one CanvasTexture sheet), playback under Lit, the
 ## has_specular_map flag tracking frame steps / animation switches / SpriteFrames swaps
-## / live texture edits, pooled materials re-keying per node, and an owned occluder
-## driving the self-exclusion tier.
+## / live texture edits, pooled materials re-keying per node, an owned occluder
+## driving the self-exclusion tier, and shadow_ignore_mask on the node (rx variant,
+## private material, the rendered exemption).
 
+const RxRegistryScript := preload("res://addons/lit/runtime/registry/rx_registry.gd")
 const AMBIENT := 0.05
 
 
@@ -16,6 +18,7 @@ func run() -> void:
 	await _frame_lighting()
 	await _specular_tracking()
 	await _occluder()
+	await _shadow_ignore()
 
 
 func _prewiring() -> void:
@@ -92,13 +95,13 @@ func _frame_lighting() -> void:
 	# Playback advances frames under Lit.
 	a.frame = 0
 	a.play(&"default")
-	# Sample the frame index over 0.3 s (30 fps, 4 frames looping): playback that never
-	# advances shows one index, real playback at least two.
+	# Playback runs on the animation's own clock: a second frame index within 1 s.
 	var seen := {}
-	for i in 6:
-		await get_tree().create_timer(0.05).timeout
+	var t0 := Time.get_ticks_msec()
+	while seen.size() < 2 and Time.get_ticks_msec() - t0 < 1000:
 		seen[a.frame] = true
-	check_true(case_name, "play() advances frames (at least two distinct frame indices over 0.3 s)", seen.size() >= 2)
+		await get_tree().process_frame
+	check_true(case_name, "play() advances frames (a second frame index appears within 1 s)", seen.size() >= 2)
 	a.stop()
 	a.frame = 0
 	a.flip_h = true
@@ -214,3 +217,50 @@ func _occluder() -> void:
 	await frames(1)
 	check_approx("luminance_proxy", "get_luminance() on the animated node: a light 80 px above adds 0.5 x 0.6",
 			0.3, a.get_luminance() - lum_before, 0.02)
+
+
+func _shadow_ignore() -> void:
+	var case_name := "animated_shadow_ignore"
+	var c := cell("shadow_ignore_mask: A (mask 2) ignores the\nmask-2 caster, B (mask 0) is shadowed")
+	var sprites := group("RxSprites")
+	var casters := group("RxCasters")
+	var sf := SpriteFrames.new()
+	sf.add_frame(&"default", tex_sized(Vector2(60, 60)))
+	var a := LitAnimatedSprite2D.new()
+	a.sprite_frames = sf
+	a.specular_strength = 0.0
+	a.shadow_ignore_mask = 2   # set before entering the tree, as a loaded scene does
+	place(a, c, Vector2(45, -45), 1.0, sprites)
+	var b := LitAnimatedSprite2D.new()
+	b.sprite_frames = sf
+	b.specular_strength = 0.0
+	b.receiver_mask = 2
+	place(b, c, Vector2(45, 45), 1.0, sprites)
+	# One light per row (light_mask / receiver_mask pairs) and a mask-2 caster in between.
+	for row in [[a, 1], [b, 2]]:
+		var y: float = (row[0] as Node2D).position.y
+		var l := point_light(Vector2(cell_center(c).x - 100, y), 300.0, 1.0, Color.WHITE, 150.0)
+		l.light_mask = row[1]
+		l.falloff = 0.0
+		l.shadow_enabled = true
+		l.shadow_mask = 3
+		occluder(Vector2(cell_center(c).x - 40, y), Vector2(40, 100), casters, 2)
+	await frames(4)
+	var img := await capture()
+	var lit_a := lum(img, a.position)
+	check_gt(case_name, "A (shadow_ignore_mask 2) ignores the mask-2 caster", lit_a, AMBIENT, 0.2)
+	check_lt(case_name, "B (mask 0) is shadowed by it: under a quarter of A", lum(img, b.position), lit_a * 0.25)
+	check_true(case_name, "A is on an _rx variant", LitShaderLibrary.flags_of(a.material.shader) & LitShaderLibrary.F_RX != 0)
+	check_true(case_name, "A's material is private", not LitLightRegistry.pool_is_pooled(a.material))
+	check(case_name, "rx_mask landed on A's material", 2, int(a.material.get_shader_parameter("rx_mask")))
+	check(case_name, "A is registered with its mask", 2, int(RxRegistryScript.nodes().get(a, 0)))
+	a.shadow_ignore_mask = 0
+	await frames(4)
+	img = await capture()
+	check_lt(case_name, "mask cleared: A is shadowed, under a quarter of its lit reading", lum(img, a.position), lit_a * 0.25)
+	check_true(case_name, "cleared mask leaves the _rx variant", LitShaderLibrary.flags_of(a.material.shader) & LitShaderLibrary.F_RX == 0)
+	check_true(case_name, "cleared mask unregisters A", not RxRegistryScript.nodes().has(a))
+	a.shadow_ignore_mask = 2
+	await frames(4)
+	img = await capture()
+	check_gt(case_name, "mask set again at runtime: A ignores the caster again", lum(img, a.position), AMBIENT, 0.2)

@@ -12,6 +12,9 @@ const RECEIVER_SHADER := preload("res://addons/lit/shaders/receiver/lit_receiver
 const SHADOW_ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 const SHADOW_ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 
+enum ReceiverKind { SKULL, ANIMATED, STILL, SPRITE }
+const RECEIVER_KIND_NAMES := ["skull", "animated", "still", "sprite"]
+
 # Launch-time settings, editable on the scene's root node in the inspector. CLI args
 # (after "--") override them, so scripted benchmark runs keep working. Future
 # launch-time toggles for the benchmark belong in this group.
@@ -22,6 +25,14 @@ const SHADOW_ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 ## Give every spawned light a random (seeded) shadow_length fraction, exercising the
 ## march cap + tip closure. Off by default so standing benchmarks stay comparable.
 @export var randomize_shadow_length: bool = false
+## What stands at the Test scene's Skeleton prop: the skull (LitSprite2D, as authored),
+## the animated skeleton playing its turnaround, the same node with the turnaround
+## stopped, or a LitSprite2D showing one frame of it over the same footprint occluder.
+@export var skeleton: ReceiverKind = ReceiverKind.SKULL
+## Extra receivers laid out in a grid over the scene, on top of the standing benchmark;
+## 0 adds none. Run kinds at the same count to compare them.
+@export_range(0, 1000) var receiver_count: int = 0
+@export var receivers: ReceiverKind = ReceiverKind.SKULL
 
 # Deterministic shadow-source parameters for the cone/stochastic runs. The angle is a
 # full angular diameter (source_angle convention), so this marches the same cone as
@@ -38,12 +49,12 @@ const LIGHT_COUNT := 128
 #   texoffset=on   random (seeded) texture_offset on every cookie light
 #   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
 #   post=Name,Name  add fresh default-state post effects (e.g. post=Bloom,AutoExposure)
-#   receivers=sprite|animated receiver_count=N   a grid of N Lit receiver nodes built
-#     from the animated-skeleton sheet (Test/nodes/skele_spin*.png), each owning a
-#     footprint occluder so the per-node drive path runs. sprite = LitSprite2D showing
-#     one frame; animated = LitAnimatedSprite2D playing the 8-frame turnaround. Same
-#     textures, material content and occluders, so the two runs A/B the animated
-#     node's per-frame cost. Default 0 leaves the standing benchmark untouched.
+#   skeleton=skull|animated|still|sprite   what stands at the Test scene's Skeleton prop
+#   receivers=skull|animated|still|sprite receiver_count=N   a grid of N receivers over
+#     the scene, on top of the standing benchmark. skull = Test/nodes/skeleton.tscn;
+#     animated = skeleton_animated.tscn playing its turnaround; still = the same node
+#     with the turnaround stopped; sprite = that scene with a LitSprite2D showing one
+#     frame over the same footprint occluder. Run kinds at the same count. Default 0.
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
 # 3 (stochastic); switching restarts the warmup/measure cycle so the reported numbers
 # always describe a single algorithm. Receiver shaders follow via the registry's
@@ -71,7 +82,8 @@ var _opt_rxnode := ""
 var _opt_post := ""
 var _opt_shadowlen := false
 var _opt_texoffset := false
-var _opt_receivers := "sprite"
+var _opt_skeleton := "skull"
+var _opt_receivers := "skull"
 var _opt_receiver_count := 0
 
 # Clock value used for the deterministic capture frame.
@@ -105,6 +117,9 @@ var _hud: Label
 func _ready() -> void:
 	_opt_shadow_algo = SHADOW_ALGO_NAMES[shadow_algorithm]
 	_opt_shadowlen = randomize_shadow_length
+	_opt_skeleton = RECEIVER_KIND_NAMES[skeleton]
+	_opt_receivers = RECEIVER_KIND_NAMES[receivers]
+	_opt_receiver_count = receiver_count
 	for arg in OS.get_cmdline_user_args():
 		var kv := arg.split("=")
 		if kv.size() != 2:
@@ -155,6 +170,8 @@ func _ready() -> void:
 				_opt_receivers = kv[1]
 			"receiver_count":
 				_opt_receiver_count = int(kv[1])
+			"skeleton":
+				_opt_skeleton = kv[1]
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -220,6 +237,9 @@ func _setup() -> void:
 	if _opt_maskcull == "off":
 		get_node("/root/LitManager")._registry.sdf_cull = false
 
+	if _opt_skeleton != "skull" and not _swap_skeleton(scene):
+		get_tree().quit(1)
+		return
 	_compute_area()
 	_rng.seed = RNG_SEED
 	_spawn_props()
@@ -368,64 +388,69 @@ func _make_prop(pos: Vector2, size: Vector2) -> void:
 	_props.append({"root": root, "mat": mat, "occ": occ})
 
 
-# --- receivers: the LitSprite2D vs LitAnimatedSprite2D A/B grid ------------------------
+# --- receivers: skeleton= swaps the Test scene's Skeleton prop; receivers= lays out a
+# grid of receivers on top of the standing benchmark. Kinds: skull = skeleton.tscn;
+# animated = skeleton_animated.tscn playing its turnaround; still = the same node with
+# the turnaround stopped; sprite = that scene with a LitSprite2D showing one frame over
+# the same footprint occluder. ------------------------------------------------------
 
-const RECEIVER_SHEET := "res://Test/nodes/skele_spin.png"
-const RECEIVER_SHEET_N := "res://Test/nodes/skele_spin_n.png"
-const RECEIVER_FRAMES := 8
-const RECEIVER_FRAME_PX := 24
+const SKULL_SCENE := "res://Test/nodes/skeleton.tscn"
+const ANIMATED_SCENE := "res://Test/nodes/skeleton_animated.tscn"
+
+func _swap_skeleton(scene: Node) -> bool:
+	var skull := scene.get_node_or_null("Skeleton") as Node2D
+	if skull == null or not RECEIVER_KIND_NAMES.has(_opt_skeleton):
+		print("LITBENCH error skeleton must be one of %s, got '%s'" % [", ".join(RECEIVER_KIND_NAMES), _opt_skeleton])
+		return false
+	_add_receiver(_opt_skeleton, skull.position, 0, skull.get_parent())
+	skull.queue_free()
+	return true
+
 
 func _spawn_receivers() -> bool:
-	if not ResourceLoader.exists(RECEIVER_SHEET) or not ResourceLoader.exists(RECEIVER_SHEET_N):
-		print("LITBENCH error receiver sheets missing (%s)" % RECEIVER_SHEET)
+	if not RECEIVER_KIND_NAMES.has(_opt_receivers):
+		print("LITBENCH error receivers must be one of %s, got '%s'" % [", ".join(RECEIVER_KIND_NAMES), _opt_receivers])
 		return false
-	if _opt_receivers != "sprite" and _opt_receivers != "animated":
-		print("LITBENCH error receivers must be sprite or animated, got '%s'" % _opt_receivers)
-		return false
-	# One CanvasTexture sheet, one AtlasTexture per frame over it: the shape that
-	# carries normal maps through SpriteFrames (see LitAnimatedSprite2D).
-	var sheet := CanvasTexture.new()
-	sheet.diffuse_texture = load(RECEIVER_SHEET)
-	sheet.normal_texture = load(RECEIVER_SHEET_N)
-	var frames := SpriteFrames.new()
-	frames.set_animation_speed(&"default", 8.0)
-	for i in RECEIVER_FRAMES:
-		var at := AtlasTexture.new()
-		at.atlas = sheet
-		at.region = Rect2(i * RECEIVER_FRAME_PX, 0, RECEIVER_FRAME_PX, RECEIVER_FRAME_PX)
-		frames.add_frame(&"default", at)
 	var cols := int(ceil(sqrt(float(_opt_receiver_count))))
 	var rows := int(ceil(float(_opt_receiver_count) / float(cols)))
 	var cell := Vector2(_area_half.x * 2.0 / float(cols + 1), _area_half.y * 2.0 / float(rows + 1))
 	for i in _opt_receiver_count:
 		@warning_ignore("integer_division")
 		var row := i / cols
-		var root := Node2D.new()
-		root.position = _area_center - _area_half \
-				+ Vector2(cell.x * float(i % cols + 1), cell.y * float(row + 1))
-		root.scale = Vector2(3, 3)
-		add_child(root)
-		var node: Node2D
-		if _opt_receivers == "animated":
-			var a := LitAnimatedSprite2D.new()
-			a.sprite_frames = frames
-			a.play(&"default")
-			a.frame = i % RECEIVER_FRAMES
-			node = a
-		else:
-			var s := LitSprite2D.new()
-			s.texture = frames.get_frame_texture(&"default", i % RECEIVER_FRAMES)
-			node = s
-		root.add_child(node)
-		# Footprint occluder as a descendant: owned by the receiver, so the node runs
-		# the per-frame self-rect drive like a real character would.
-		var occ := LightOccluder2D.new()
-		var poly := OccluderPolygon2D.new()
-		poly.polygon = PackedVector2Array([
-			Vector2(-5, 8), Vector2(5, 8), Vector2(5, 11), Vector2(-5, 11)])
-		occ.occluder = poly
-		node.add_child(occ)
+		_add_receiver(_opt_receivers, _area_center - _area_half
+				+ Vector2(cell.x * float(i % cols + 1), cell.y * float(row + 1)), i, self)
 	return true
+
+
+func _add_receiver(kind: String, pos: Vector2, stagger: int, parent: Node) -> void:
+	var packed := load(SKULL_SCENE if kind == "skull" else ANIMATED_SCENE) as PackedScene
+	var node := packed.instantiate() as Node2D
+	node.position = pos
+	# The scene's own lights stay off, like the Test scene's.
+	for l in _find_all(node, LitPointLight2D):
+		l.enabled = false
+	var spr := _find_first(node, LitAnimatedSprite2D) as LitAnimatedSprite2D
+	if spr == null:
+		parent.add_child(node)
+		return
+	var frame := stagger % maxi(spr.sprite_frames.get_frame_count(spr.animation), 1)
+	if kind == "sprite":
+		var s := LitSprite2D.new()
+		s.texture = spr.sprite_frames.get_frame_texture(spr.animation, frame)
+		s.position = spr.position
+		for occ in spr.get_children():
+			spr.remove_child(occ)
+			s.add_child(occ)
+		node.remove_child(spr)
+		spr.free()
+		node.add_child(s)
+		parent.add_child(node)
+		return
+	parent.add_child(node)
+	# After ready, so autoplay has started; turnarounds start staggered.
+	if kind == "still":
+		spr.stop()
+	spr.frame = frame
 
 
 # --- lights: identical construction/motion to lit_demo.gd ---------------------------
@@ -634,6 +659,7 @@ func _report() -> void:
 	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
 	print("LITBENCH shadowlen=%s" % ("on" if _opt_shadowlen else "off"))
 	print("LITBENCH post=%s" % (_opt_post if _opt_post != "" else "off"))
+	print("LITBENCH skeleton=%s" % _opt_skeleton)
 	if _opt_receiver_count > 0:
 		print("LITBENCH receivers=%s receiver_count=%d" % [_opt_receivers, _opt_receiver_count])
 	print("LITBENCH frames=%d" % n)

@@ -51,7 +51,7 @@ func run() -> void:
 	if failed_count() == 0:
 		_cleanup()
 	else:
-		print("SUITE   (update_tool scratch kept at %s for inspection)" % OUT)
+		say("SUITE   (update_tool scratch kept at %s for inspection)" % OUT)
 	var y := 100.0
 	for line in _lines:
 		label(line, Vector2(30, y), 12)

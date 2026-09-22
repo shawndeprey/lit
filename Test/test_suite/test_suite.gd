@@ -27,8 +27,9 @@ extends Node2D
 ##   vsync=on         leave vsync on (default: off, so frame waits are as fast as the GPU)
 ##   verbose=on       also print every passing check while running (default: only the
 ##                    checks that did not pass, so the console stays short)
-## The window stays open on the report by default; Escape quits. Mouse wheel scrolls
-## the panel.
+## The window stays open on the report by default; Escape quits, C copies every SUITE
+## line of the run to the clipboard, the mouse wheel scrolls the panel (its text can
+## also be selected and copied with Ctrl+C).
 ##
 ## Output lines all start with SUITE. While running:
 ##   SUITE ENV window=.. viewport_px=.. final_scale=.. debugger=.. args=..     (once, the render environment)
@@ -93,6 +94,8 @@ var _section_results: Array = []   # {id, title, results, ms}
 var _all_results: Array = []       # results tagged with section id
 var _finished := false
 var _t0 := 0
+var _copied_at := -100000
+var _copied_lines := 0
 
 
 func _ready() -> void:
@@ -143,8 +146,19 @@ func _parse_args() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+	if not (event is InputEventKey and event.pressed):
+		return
+	if event.keycode == KEY_ESCAPE:
 		get_tree().quit()
+	elif event.keycode == KEY_C:
+		_copied_at = Time.get_ticks_msec()
+		_copied_lines = LitSuiteSection.copy_transcript()
+
+
+func _copy_note() -> String:
+	if Time.get_ticks_msec() - _copied_at > 2000:
+		return ""
+	return "Copied %d SUITE lines to the clipboard." % _copied_lines
 
 
 # --- Driving ------------------------------------------------------------------------------
@@ -153,9 +167,9 @@ func _run_all() -> void:
 	await _await_precompile()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	print(LitSuiteSection.env_line(get_viewport()))
+	LitSuiteSection.say(LitSuiteSection.env_line(get_viewport()))
 	_t0 = Time.get_ticks_msec()
-	print("SUITE Lit %s test suite: %d section runs (model=%s)" % [LitShaderLibrary._get_version(), _planned.size(), _opt_model])
+	LitSuiteSection.say("SUITE Lit %s test suite: %d section runs (model=%s)" % [LitShaderLibrary._get_version(), _planned.size(), _opt_model])
 	for i in _planned.size():
 		_section_index = i
 		var spec: Dictionary = _planned[i]
@@ -163,7 +177,7 @@ func _run_all() -> void:
 		if script == null or not script.can_instantiate():
 			_all_results.append({"section": spec.run_id, "case": "load", "desc": "section script loads",
 					"expected": spec.script, "actual": "null", "pass": false, "gap": false})
-			print("SUITE FAIL %s/load: section script loads | expected=%s actual=null" % [spec.run_id, spec.script])
+			LitSuiteSection.say("SUITE FAIL %s/load: section script loads | expected=%s actual=null" % [spec.run_id, spec.script])
 			_section_results.append({"id": spec.run_id, "title": spec.title, "results": [_all_results[-1]], "ms": 0})
 			continue
 		var sec := script.new() as LitSuiteSection
@@ -199,9 +213,9 @@ func _run_all() -> void:
 func _finish() -> void:
 	_finished = true
 	var total_ms := Time.get_ticks_msec() - _t0
-	print("SUITE REPORT")
+	LitSuiteSection.say("SUITE REPORT")
 	var rep := LitSuiteSection.print_report(_all_results)
-	print("SUITE SECTIONS")
+	LitSuiteSection.say("SUITE SECTIONS")
 	for s in _section_results:
 		var sf := 0
 		var sg := 0
@@ -211,12 +225,12 @@ func _finish() -> void:
 					sg += 1
 				else:
 					sf += 1
-		print("SUITE   %s: %d checks, %d failed, %d known gaps, %d ms" % [s.id, s.results.size(), sf, sg, s.ms])
-	print("SUITE SUMMARY section_runs=%d features=%d features_passed=%d features_failed=%d features_with_gaps=%d checks=%d passed=%d failed=%d known_gaps=%d model=%s time=%.1fs" % [
+		LitSuiteSection.say("SUITE   %s: %d checks, %d failed, %d known gaps, %d ms" % [s.id, s.results.size(), sf, sg, s.ms])
+	LitSuiteSection.say("SUITE SUMMARY section_runs=%d features=%d features_passed=%d features_failed=%d features_with_gaps=%d checks=%d passed=%d failed=%d known_gaps=%d model=%s time=%.1fs" % [
 			_section_results.size(), rep.features, rep.features_passed, rep.features_failed,
 			rep.features_with_gaps, _all_results.size(), _all_results.size() - rep.failed - rep.gaps,
 			rep.failed, rep.gaps, _opt_model, total_ms / 1000.0])
-	print("SUITE RESULT %s" % ("PASS" if rep.failed == 0 else "FAIL"))
+	LitSuiteSection.say("SUITE RESULT %s" % ("PASS" if rep.failed == 0 else "FAIL"))
 	_render_hud()
 	if _opt_quit:
 		_quit_after_capture(rep.failed)
@@ -227,7 +241,7 @@ func _quit_after_capture(failed: int) -> void:
 	await RenderingServer.frame_post_draw
 	if _opt_capture != "":
 		get_viewport().get_texture().get_image().save_png(_opt_capture)
-		print("SUITE capture=%s" % _opt_capture)
+		LitSuiteSection.say("SUITE capture=%s" % _opt_capture)
 	get_tree().quit(1 if failed > 0 else 0)
 
 
@@ -275,6 +289,8 @@ func _build_hud() -> void:
 	_hud.bbcode_enabled = true
 	_hud.scroll_active = true
 	_hud.fit_content = false
+	_hud.selection_enabled = true
+	_hud.focus_mode = Control.FOCUS_CLICK
 	_hud.add_theme_font_size_override("normal_font_size", 12)
 	_hud.text = "[b]Lit test suite[/b]\nstarting..."
 	panel.add_child(_hud)
@@ -293,7 +309,8 @@ func _process(_delta: float) -> void:
 		_status.text = "Lit %s test suite   DONE   checks %d   failed %d   known gaps %d   %s" % [
 				LitShaderLibrary._get_version(), _all_results.size(), failed, gaps,
 				"ALL PASS" if failed == 0 else "FAILURES"]
-		_title.text = "Escape quits. Mouse wheel scrolls the report."
+		_title.text = _copy_note() if _copy_note() != "" \
+				else "Escape quits. C copies the report to the clipboard. Mouse wheel scrolls it."
 		return
 	var cur_checks := _current.results.size() if _current != null else 0
 	var cur_failed := _current.failed_count() if _current != null else 0
@@ -302,7 +319,8 @@ func _process(_delta: float) -> void:
 			_all_results.size() + cur_checks, failed + cur_failed,
 			(Time.get_ticks_msec() - _t0) / 1000.0 if _t0 > 0 else 0.0]
 	if _current != null:
-		_title.text = "%s   (%s)   %s" % [_current.section_title, _current.model_name(), _current.status]
+		_title.text = _copy_note() if _copy_note() != "" \
+				else "%s   (%s)   %s" % [_current.section_title, _current.model_name(), _current.status]
 		_hud.text = _current.render_results_bbcode() + _current.hud_extra()
 
 

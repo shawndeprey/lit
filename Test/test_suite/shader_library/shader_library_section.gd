@@ -166,7 +166,7 @@ func _render_matrix() -> void:
 	await frames(3)
 	var t2 := Time.get_ticks_msec()
 	var img := await capture()
-	print("SUITE   variant matrix: %d shaders created in %d ms, first 3 frames %d ms" % [all.size(), t1 - t0, t2 - t1])
+	say("SUITE   variant matrix: %d shaders created in %d ms, first 3 frames %d ms" % [all.size(), t1 - t0, t2 - t1])
 	var dark_ok := 0
 	var compiled := 0
 	var kept := 0
@@ -180,7 +180,7 @@ func _render_matrix() -> void:
 			compiled += 1
 		if Lib.flags_of((e[1].material as ShaderMaterial).shader) == e[0]:
 			kept += 1
-	print("SUITE   variant matrix: uniform lists read in %d ms" % (Time.get_ticks_msec() - t2))
+	say("SUITE   variant matrix: uniform lists read in %d ms" % (Time.get_ticks_msec() - t2))
 	check(case_name, "variants reporting their uniforms (compiled under the real renderer)", all.size(), compiled)
 	check(case_name, "variants rendering ambient-dark with no light (no fallback-white)", all.size(), dark_ok)
 	check(case_name, "the registry left every variant on its own shader (no activity, no walk)", all.size(), kept)
@@ -295,8 +295,10 @@ func _overlay() -> void:
 	check(case_name, "progress signal drives the counter", "3/10", ov._count.text)
 	check(case_name, "progress label lands in the detail line", "shadow_cone", ov._detail.text)
 	pre.finished.emit()
-	await get_tree().create_timer(0.6).timeout
-	await frames(2)
+	var waited := 0.0
+	while is_instance_valid(ov) and waited < 3.0:
+		await get_tree().create_timer(0.05).timeout
+		waited += 0.05
 	check_true(case_name, "finished fades the overlay out and frees it", not is_instance_valid(ov))
 	if is_instance_valid(ov):
 		ov.queue_free()

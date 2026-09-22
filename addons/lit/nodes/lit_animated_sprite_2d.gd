@@ -312,6 +312,10 @@ func _current_canvas_texture() -> CanvasTexture:
 
 func _update_specular_flag() -> void:
 	var present := _watched_texture != null and _watched_texture.specular_texture != null
+	# Re-run on every frame change: no material write while the flag already matches.
+	var mat := _live_mat()
+	if mat != null and mat.get_shader_parameter("has_specular_map") == present:
+		return
 	_set_live_param("has_specular_map", present)
 
 
