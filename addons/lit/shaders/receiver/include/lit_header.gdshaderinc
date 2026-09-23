@@ -182,6 +182,9 @@ uniform float shadow_min_step = 0.2;
 // light-facing edge (the way a Godot occluder shadows its own interior). Clamped to 1;
 // 0 hides it.
 uniform float footprint_shadow = 16.0;
+// Eases that interior shadow in from the shape's light-facing edge over this many
+// world px, so a footprint fades into the direction it casts. 0 is a hard edge.
+uniform float footprint_ramp = 0.0;
 
 // Horizontal reach of a directional light's shading vector relative to its `height`;
 // elevation is atan(height / scale). The default gives about 27 degrees at height 16,

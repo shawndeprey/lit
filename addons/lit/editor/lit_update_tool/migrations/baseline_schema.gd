@@ -16,6 +16,7 @@ const BASELINE_SCHEMA := {
 		"props": {
 			&"directional_horizontal_scale": {"type": TYPE_FLOAT, "default": 32.0},
 			&"emissive_strength": {"type": TYPE_FLOAT, "default": 0.0},
+			&"footprint_ramp": {"type": TYPE_FLOAT, "default": 0.0},
 			&"footprint_shadow": {"type": TYPE_FLOAT, "default": 16.0},
 			&"lit_version": {"type": TYPE_STRING, "default": ""},
 			&"metallic_value": {"type": TYPE_FLOAT, "default": 0.0},
@@ -365,6 +366,7 @@ const BASELINE_SCHEMA := {
 		"props": {
 			&"directional_horizontal_scale": {"type": TYPE_FLOAT, "default": 32.0},
 			&"emissive_strength": {"type": TYPE_FLOAT, "default": 0.0},
+			&"footprint_ramp": {"type": TYPE_FLOAT, "default": 0.0},
 			&"footprint_shadow": {"type": TYPE_FLOAT, "default": 16.0},
 			&"lit_version": {"type": TYPE_STRING, "default": ""},
 			&"metallic_value": {"type": TYPE_FLOAT, "default": 0.0},
@@ -383,6 +385,7 @@ const BASELINE_SCHEMA := {
 		"props": {
 			&"directional_horizontal_scale": {"type": TYPE_FLOAT, "default": 32.0},
 			&"emissive_strength": {"type": TYPE_FLOAT, "default": 0.0},
+			&"footprint_ramp": {"type": TYPE_FLOAT, "default": 0.0},
 			&"footprint_shadow": {"type": TYPE_FLOAT, "default": 16.0},
 			&"lit_version": {"type": TYPE_STRING, "default": ""},
 			&"metallic_value": {"type": TYPE_FLOAT, "default": 0.0},

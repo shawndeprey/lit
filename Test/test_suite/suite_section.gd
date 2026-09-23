@@ -24,12 +24,13 @@ const HUD_X := 1400.0
 const CELL := Vector2(228.0, 190.0)
 const ORIGIN := Vector2(20.0, 70.0)
 const COLS := 6
-## The proxied receiver exports (the same eleven on all three receiver classes) and a
+## The proxied receiver exports (the same twelve on all three receiver classes) and a
 ## non-default value each; check_proxies() expects the runtime material to mirror them.
 const RECEIVER_PROXIES := {
 	"emissive_strength": 0.7, "receiver_mask": 3, "self_shadow": true, "specular_strength": 0.9,
 	"specular_k": 8.0, "metallic_value": 0.5, "roughness_value": 0.3, "shadow_steps": 32,
-	"shadow_min_step": 0.5, "footprint_shadow": 4.0, "directional_horizontal_scale": 8.0,
+	"shadow_min_step": 0.5, "footprint_shadow": 4.0, "footprint_ramp": 24.0,
+	"directional_horizontal_scale": 8.0,
 }
 
 ## Set by subclasses: folder name and human title.

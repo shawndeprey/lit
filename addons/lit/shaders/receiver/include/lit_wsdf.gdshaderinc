@@ -19,6 +19,13 @@ float lit_sdf_sample(vec2 p_sdf) {
 	return d_world * lit_canvas_scale * sd_x / lit_viewport_size.x;
 }
 
+// SDF units per world px: the factor lit_sdf_sample applies to the stored distance.
+float lit_world_to_sdf() {
+	vec2 s0 = screen_uv_to_sdf(vec2(0.0));
+	float sd_x = screen_uv_to_sdf(vec2(1.0, 0.0)).x - s0.x;
+	return lit_canvas_scale * sd_x / lit_viewport_size.x;
+}
+
 // Distance along a march ray to the world SDF's coverage edge. Beyond it is unknown
 // territory, and unknown territory never casts; marches clamp their length to this so
 // boundary texels can't smear into phantom occluders.

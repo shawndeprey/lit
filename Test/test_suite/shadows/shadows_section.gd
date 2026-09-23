@@ -112,6 +112,18 @@ func _point_shadows() -> void:
 	img = await capture()
 	check_gt(case_name, "footprint_shadow 0: floor inside the footprint is lit", lum(img, F), AMBIENT, 0.2)
 	_floor_a.footprint_shadow = 16.0
+	# footprint_ramp: the interior shadow eases in over world px from the lit edge (x 310).
+	var near_edge := Vector2(318, 300)
+	_floor_a.footprint_ramp = 40.0
+	img = await capture()
+	var ramp_edge := lum(img, near_edge)
+	check_gt(case_name, "footprint_ramp 40: 8 px inside the lit edge is mostly lit", ramp_edge, AMBIENT, 0.15)
+	check_gt(case_name, "footprint_ramp 40: the box centre (20 px in) is only partly shadowed", lum(img, F),
+			AMBIENT, 0.05)
+	check_lt(case_name, "footprint_ramp 40: deeper in is darker than near the edge", lum(img, F), ramp_edge, 0.05)
+	_floor_a.footprint_ramp = 0.0
+	img = await capture()
+	check_approx(case_name, "footprint_ramp 0: hard edge again", AMBIENT, lum(img, near_edge), 0.06)
 
 	# Algorithms.
 	for algo in [ALGO.RAYMARCHED, ALGO.CONE_TRACED, ALGO.STOCHASTIC]:

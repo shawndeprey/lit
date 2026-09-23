@@ -80,7 +80,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					res = 1.0 - clamp(footprint_shadow, 0.0, 1.0) * yw
+					res = 1.0 - lit_footprint_block(t) * yw
 						* lit_tip_weight(t, t_tip, tip_band);
 					if (res <= 0.0) {
 						return 0.0;
@@ -168,7 +168,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					res = 1.0 - clamp(footprint_shadow, 0.0, 1.0) * yw
+					res = 1.0 - lit_footprint_block(t) * yw
 						* lit_tip_weight(t, t_tip, tip_band);
 					if (res <= 0.0) {
 						return 0.0;
@@ -233,7 +233,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					t += max(-d, shadow_min_step);
 					continue;
 				}
-				res = 1.0 - clamp(footprint_shadow, 0.0, 1.0)
+				res = 1.0 - lit_footprint_block(t)
 						* lit_tip_weight(t, t_tip, tip_band);
 				if (res <= 0.0) {
 					return 0.0;

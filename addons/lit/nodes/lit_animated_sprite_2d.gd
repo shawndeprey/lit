@@ -133,6 +133,14 @@ class_name LitAnimatedSprite2D
 		footprint_shadow = value
 		_set_param("footprint_shadow", value)
 
+## Eases that interior shadow in from the shape's light-facing edge over this many
+## world px, so a footprint fades into the direction it casts. 0 is a hard edge.
+## Proxies to `footprint_ramp`.
+@export var footprint_ramp: float = 0.0:
+	set(value):
+		footprint_ramp = value
+		_set_param("footprint_ramp", value)
+
 ## Directional lights only: horizontal reach of the shading vector relative to the
 ## light's `height`, so its elevation is atan(height / scale); larger is more grazing.
 ## Shading only - shadow direction is unaffected. Proxies to
@@ -193,6 +201,7 @@ func _init() -> void:
 		_set_param("shadow_steps", shadow_steps)
 		_set_param("shadow_min_step", shadow_min_step)
 		_set_param("footprint_shadow", footprint_shadow)
+		_set_param("footprint_ramp", footprint_ramp)
 		_set_param("directional_horizontal_scale", directional_horizontal_scale)
 	# An empty SpriteFrames so the node is usable the moment it's created: the editor's
 	# SpriteFrames panel only opens for a node that already has one. Assigning your own

@@ -8,6 +8,16 @@ float lit_tip_weight(float t, float t_tip, float band) {
 	return band > 0.0 ? clamp((t_tip - t) / band, 0.0, 1.0) : 1.0;
 }
 
+// Interior shadow opacity at march distance t (SDF units) for a fragment inside a
+// shape: footprint_shadow, eased in over footprint_ramp world px from the lit edge.
+float lit_footprint_block(float t) {
+	float b = clamp(footprint_shadow, 0.0, 1.0);
+	if (footprint_ramp <= 0.0) {
+		return b;
+	}
+	return b * clamp(t / (footprint_ramp * lit_world_to_sdf()), 0.0, 1.0);
+}
+
 // Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| -
 // the distance field of occluder outlines - so a shape casts from its light-facing
 // silhouette and the shadow passes through its body. A fragment starting inside a
@@ -73,7 +83,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float own_block = clamp(footprint_shadow, 0.0, 1.0) * yw
+					float own_block = lit_footprint_block(t) * yw
 							* lit_tip_weight(t, t_tip, tip_band);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
@@ -174,7 +184,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float own_block = clamp(footprint_shadow, 0.0, 1.0) * yw
+					float own_block = lit_footprint_block(t) * yw
 							* lit_tip_weight(t, t_tip, tip_band);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
@@ -256,7 +266,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
 					continue;
 				}
-				float own_block = clamp(footprint_shadow, 0.0, 1.0)
+				float own_block = lit_footprint_block(t)
 						* lit_tip_weight(t, t_tip, tip_band);
 				res = min(res, 1.0 - own_block);
 				if (res <= 0.0) {
