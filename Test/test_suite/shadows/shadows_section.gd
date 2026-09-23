@@ -121,6 +121,9 @@ func _point_shadows() -> void:
 		img = await capture()
 		check_approx("shadow_algorithms", "%s: umbra behind the box is ambient" % an, AMBIENT, lum(img, S), 0.06)
 		check_gt("shadow_algorithms", "%s: outside the band stays lit" % an, lum(img, P), AMBIENT, 0.15)
+		# Interior shadow is hard on every algorithm: 8 px inside the box's lit edge.
+		check_approx("shadow_algorithms", "%s: box interior 8 px inside its lit edge is dark (no ramp)" % an,
+				AMBIENT, lum(img, Vector2(318, 300)), 0.06)
 	# Penumbra shaping. Raymarched softness reaches outward from the geometric edge.
 	_light.shadow_algorithm = ALGO.RAYMARCHED
 	_light.shadow_hardness = 1.0
@@ -211,6 +214,12 @@ func _directional_shadows() -> void:
 	var img := await capture()
 	check_approx(case_name, "rotation 0 (from the left): shadow falls to the right", AMBIENT, lum(img, right), TOL)
 	check_gt(case_name, "rotation 0: the left side is lit", lum(img, left), AMBIENT, 0.2)
+	# Footprint under a sun: the box interior past its lit edge is shadowed like any
+	# Godot occluder's interior, with no distance ramp.
+	check_approx(case_name, "directional footprint: 35 px inside the box's lit edge is dark", AMBIENT,
+			lum(img, Vector2(1015, 180)), 0.06)
+	check_approx(case_name, "directional footprint: 8 px inside the lit edge is dark too (no ramp)", AMBIENT,
+			lum(img, Vector2(988, 180)), 0.06)
 	d.rotation = PI
 	await frames(2)
 	img = await capture()

@@ -44,6 +44,7 @@ scale = Vector2(5, 5)
 material = SubResource("ShaderMaterial_s7aw1")
 texture = SubResource("CanvasTexture_x1o0v")
 script = ExtResource("7_826ig")
+lit_version = "1.1.4"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
 [node name="LightOccluder2D2" type="LightOccluder2D" parent="LitSprite2D" unique_id=599053142]
@@ -57,6 +58,7 @@ visible = false
 position = Vector2(-0.79999995, 27.599998)
 scale = Vector2(0.19999999, 0.19999999)
 script = ExtResource("8_04jfr")
+lit_version = "1.1.4"
 energy = 0.5
 range = 1024.0
 height = 100.0

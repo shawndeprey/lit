@@ -109,6 +109,25 @@ func _mask_tiers() -> void:
 	check_gt(case_name, "mask-2 occluder does not shadow the shadow_mask-1 light (red present)", cr.r, AMBIENT, 0.2)
 	check_true(case_name, "per-light exclusions publish F_MASKS", LitLightRegistry.activity_flags & F.F_MASKS != 0)
 	check_true(case_name, "gx folds away under masks", LitLightRegistry.activity_flags & F.F_GX == 0)
+	# Self Shadow under the per-light-mask variant: an own occluder (taller than the
+	# wall so both lights' rays cross it) is exempt off, and shadows the wall on.
+	var mwall := box_receiver(Vector2(1000, 470), Vector2(120, 60))
+	mwall.specular_strength = 0.0
+	occluder(Vector2(-30, 0), Vector2(40, 200), mwall)
+	var on_mwall := Vector2(1030, 470)
+	await frames(4)
+	img = await capture()
+	check_true(case_name, "masks active: the wall is on a _mask variant",
+			F.flags_of(mwall.material.shader) & F.F_MASKS != 0)
+	check_gt(case_name, "masks active, self_shadow off: the wall stays lit behind its own occluder",
+			lum(img, on_mwall), AMBIENT, 0.1)
+	mwall.self_shadow = true
+	await frames(4)
+	img = await capture()
+	check_approx(case_name, "masks active, self_shadow on: its own occluder shadows it (both lights)", AMBIENT,
+			lum(img, on_mwall), 0.06)
+	mwall.queue_free()
+	await frames(4)
 	blue.shadow_mask = 1
 	await frames(4)
 	img = await capture()
@@ -184,6 +203,33 @@ func _rx() -> void:
 	await frames(4)
 	img = await capture()
 	check_gt(case_name, "mask set again at runtime: ignores again", lum(img, Vector2(520, 680)), AMBIENT, 0.25)
+	# An own mask-1 caster on the rx floor: self_shadow governs it on the _rx variant too.
+	var own_box := occluder(Vector2(80, 0), Vector2(40, 100), top)   # world (430, 680): the floor is centred
+	var p_own := Vector2(540, 680)
+	await frames(4)
+	img = await capture()
+	check_gt(case_name, "rx floor: its own caster is exempt with self_shadow off", lum(img, p_own), AMBIENT, 0.25)
+	top.self_shadow = true
+	await frames(4)
+	img = await capture()
+	check_approx(case_name, "rx floor: self_shadow on, its own caster shadows it (the _rx variant honours self_shadow)",
+			AMBIENT, lum(img, p_own), 0.06)
+	check_true(case_name, "rx floor: still on the _rx variant with self_shadow on",
+			F.flags_of(top.material.shader) & F.F_RX != 0)
+	top.self_shadow = false
+	own_box.queue_free()
+	await frames(4)
+	# Footprint on the rx floor (exclusion-aware loop): inside a foreign mask-1 box it
+	# lands; inside the ignored mask-2 box it is exempt like that box's cast shadow.
+	var far_box := occluder(Vector2(600, 680), Vector2(40, 100), _props)
+	await frames(4)
+	img = await capture()
+	check_approx(case_name, "rx floor: a mask-1 box's footprint lands 8 px inside its lit edge", AMBIENT,
+			lum(img, Vector2(588, 680)), 0.06)
+	check_gt(case_name, "rx floor: no footprint inside the ignored mask-2 box", lum(img, Vector2(338, 680)),
+			AMBIENT, 0.25)
+	far_box.queue_free()
+	await frames(4)
 	# Under a window stretch (canvas_items mode with the final transform at 2x, emulated
 	# with content_scale_factor on top of whatever stretch the window already has): the
 	# shader's sdf_to_px is a framebuffer-pixel basis added to the canonical frag_px, so

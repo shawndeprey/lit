@@ -90,10 +90,9 @@ class_name LitTileMapLayer
 		shadow_min_step = value
 		_set_param("shadow_min_step", value)
 
-## How strongly an occluder's own shadow darkens the receiver pixels inside that
-## occluder's shape (the contact shadow at its footprint): block = footprint_shadow x
-## depth crossed / light distance, clamped to 1. Dimensionless, so zoom doesn't change
-## the look; higher darkens footprints sooner. Proxies to `footprint_shadow`.
+## Opacity of the shadow an occluder casts on the receiver pixels inside its own shape,
+## past its light-facing edge (the way a Godot occluder shadows its own interior).
+## Clamped to 1; 0 hides it. Proxies to `footprint_shadow`.
 @export var footprint_shadow: float = 16.0:
 	set(value):
 		footprint_shadow = value

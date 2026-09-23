@@ -30,12 +30,8 @@ float lit_rect_segment_exit(vec2 a, vec2 ab, vec4 rect, float pad) {
 // plus, in the exclusion variants, the globally excluded ones.
 float lit_self_dist2(vec2 p_canvas) {
 	float best = 1e20;
-#ifdef LIT_OCC_GX
 	// self_shadow only opts out of the receiver's own rects, never the global ones.
 	int sc = self_shadow ? 0 : self_rect_count;
-#else
-	int sc = self_rect_count;
-#endif
 	for (int i = 0; i < 4; i++) {
 		if (i >= sc) {
 			break;
@@ -64,11 +60,7 @@ float lit_self_dist2(vec2 p_canvas) {
 float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 	vec2 inv = 1.0 / ab;
 	float t_end = 0.0;
-#ifdef LIT_OCC_GX
 	int sc = self_shadow ? 0 : self_rect_count;
-#else
-	int sc = self_rect_count;
-#endif
 	for (int i = 0; i < 4; i++) {
 		if (i >= sc) {
 			break;

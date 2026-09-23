@@ -24,11 +24,10 @@
 // painting hard sawtooth wedges across the scene. Pinning the source-plane sample makes
 // that term smooth and fragment-independent; far-field lights (source clear of
 // occluders) get coverage >= 1 from it, leaving their result untouched.
-// maxd may be capped short of the source (shadow_length); norm_d is the true
-// fragment-to-source distance normalizing the footprint_shadow ramp, and tip_band is
-// the tip-closure band width (0 = uncapped; see lit_tip_weight). Capped callers pass
+// maxd may be capped short of the source (shadow_length), and tip_band is the
+// tip-closure band width (0 = uncapped; see lit_tip_weight). Capped callers pass
 // src_plane false: occluders at the source sit beyond the cap and cast nothing.
-float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float tip_band, float w,
+float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float w,
 		int max_steps, float frag_d,
 		bool src_plane, bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas,
 		float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
@@ -81,7 +80,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float t
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					res = 1.0 - clamp(footprint_shadow * t / norm_d, 0.0, 1.0) * yw
+					res = 1.0 - clamp(footprint_shadow, 0.0, 1.0) * yw
 						* lit_tip_weight(t, t_tip, tip_band);
 					if (res <= 0.0) {
 						return 0.0;
@@ -169,7 +168,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float t
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					res = 1.0 - clamp(footprint_shadow * t / norm_d, 0.0, 1.0) * yw
+					res = 1.0 - clamp(footprint_shadow, 0.0, 1.0) * yw
 						* lit_tip_weight(t, t_tip, tip_band);
 					if (res <= 0.0) {
 						return 0.0;
@@ -234,7 +233,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float t
 					t += max(-d, shadow_min_step);
 					continue;
 				}
-				res = 1.0 - clamp(footprint_shadow * t / norm_d, 0.0, 1.0)
+				res = 1.0 - clamp(footprint_shadow, 0.0, 1.0)
 						* lit_tip_weight(t, t_tip, tip_band);
 				if (res <= 0.0) {
 					return 0.0;

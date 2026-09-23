@@ -11,11 +11,10 @@ float lit_tip_weight(float t, float t_tip, float band) {
 // Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| -
 // the distance field of occluder outlines - so a shape casts from its light-facing
 // silhouette and the shadow passes through its body. A fragment starting inside a
-// shape takes that shape's shadow via the footprint_shadow ramp instead of a hard hit.
+// shape takes that shape's shadow at footprint_shadow opacity once it exits it.
 // Returns 1 fully lit, 0 occluded. The caller passes the unit march direction and
 // length (dir, maxd, SDF space) and frag_d, its own texture_sdf sample, shared by
-// every light's march. maxd may be capped short of the light (shadow_length); norm_d
-// is the true fragment-to-light distance normalizing the footprint_shadow ramp, and
+// every light's march. maxd may be capped short of the light (shadow_length), and
 // tip_band is the tip-closure band width (0 = uncapped; see lit_tip_weight).
 // k shapes the penumbra estimate k*d/t: the Raymarched algorithm
 // derives it from shadow_hardness, the Cone Traced algorithm from the source's angular
@@ -23,7 +22,7 @@ float lit_tip_weight(float t, float t_tip, float band) {
 // true, samples whose nearest outline may belong to the receiver's own occluders are
 // stepped through instead of occluding; self_canvas and sdf_to_canvas map SDF-space
 // march offsets into canvas space, and self_scale is the canvas length of one SDF unit.
-float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float tip_band, float k,
+float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 		int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
 	float t_tip = maxd;                      // tip anchor: the cap, before coverage clamps it
@@ -74,7 +73,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float tip_ba
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float own_block = clamp(footprint_shadow * t / norm_d, 0.0, 1.0) * yw
+					float own_block = clamp(footprint_shadow, 0.0, 1.0) * yw
 							* lit_tip_weight(t, t_tip, tip_band);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
@@ -162,8 +161,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float tip_ba
 					t += max(-d, shadow_min_step);     // -d is the distance to the far edge
 					continue;
 				}
-				// First exit from the containing shape: apply its shadow, ramped by
-				// depth crossed over light distance, unless it is an owned occluder.
+				// First exit from the containing shape: apply its shadow, unless it is an
+				// owned occluder.
 				grace = false;
 				receding = true;
 				prev_ad = ad;
@@ -175,7 +174,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float tip_ba
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float own_block = clamp(footprint_shadow * t / norm_d, 0.0, 1.0) * yw
+					float own_block = clamp(footprint_shadow, 0.0, 1.0) * yw
 							* lit_tip_weight(t, t_tip, tip_band);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
@@ -257,7 +256,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float norm_d, float tip_ba
 					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
 					continue;
 				}
-				float own_block = clamp(footprint_shadow * t / norm_d, 0.0, 1.0)
+				float own_block = clamp(footprint_shadow, 0.0, 1.0)
 						* lit_tip_weight(t, t_tip, tip_band);
 				res = min(res, 1.0 - own_block);
 				if (res <= 0.0) {

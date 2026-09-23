@@ -178,9 +178,9 @@ uniform sampler2D ao_map : hint_default_white;
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
 
-// How strongly an occluder's own shadow lands on its footprint:
-// block = footprint_shadow * depth crossed / light distance, clamped to 1. Higher
-// values darken footprints sooner. Dimensionless, so zoom does not change the look.
+// Opacity of the shadow an occluder's shape casts on the pixels inside it, past its
+// light-facing edge (the way a Godot occluder shadows its own interior). Clamped to 1;
+// 0 hides it.
 uniform float footprint_shadow = 16.0;
 
 // Horizontal reach of a directional light's shading vector relative to its `height`;
