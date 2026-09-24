@@ -8,20 +8,20 @@ float lit_tip_weight(float t, float t_tip, float band) {
 	return band > 0.0 ? clamp((t_tip - t) / band, 0.0, 1.0) : 1.0;
 }
 
-// Interior shadow opacity at march distance t (SDF units) for a fragment inside a
-// shape: footprint_shadow, eased in over footprint_ramp world px from the lit edge.
-float lit_footprint_block(float t) {
-	float b = clamp(footprint_shadow, 0.0, 1.0);
-	if (footprint_ramp <= 0.0) {
-		return b;
-	}
-	return b * clamp(t / (footprint_ramp * lit_world_to_sdf()), 0.0, 1.0);
+#ifdef LIT_SELF_EXCLUSION
+// Shadow weight of the caster nearest a sample at march distance t (SDF units): a
+// ramped caster's shadow eases in from its lit edge over its ramp, so its weight
+// grows with how far past that edge the fragment sits. 1 for hard casters.
+float lit_ramp_weight(vec2 p_canvas, vec2 p_px, float reach, float t) {
+	float ramp = lit_occ_ramp(p_canvas, p_px, reach);
+	return ramp > 0.0 ? clamp(t / (ramp * lit_world_to_sdf()), 0.0, 1.0) : 1.0;
 }
+#endif
 
 // Soft-shadow march of Godot's screen-space SDF (the IQ technique), run on |sdf| -
 // the distance field of occluder outlines - so a shape casts from its light-facing
 // silhouette and the shadow passes through its body. A fragment starting inside a
-// shape takes that shape's shadow at footprint_shadow opacity once it exits it.
+// shape takes that shape's shadow once it exits it.
 // Returns 1 fully lit, 0 occluded. The caller passes the unit march direction and
 // length (dir, maxd, SDF space) and frag_d, its own texture_sdf sample, shared by
 // every light's march. maxd may be capped short of the light (shadow_length), and
@@ -54,7 +54,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 	// the alignment contract is gated behaviorally by Test/march_matrix.md.
 	if (mk_on) {
 		vec2 dir_canvas = sdf_to_canvas * dir;
-#if defined(LIT_YSORT) || defined(LIT_OCC_RX)
+#if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
 		vec2 dir_px = sdf_to_px * dir;
 #endif
 		float pad = (max(maxd / k, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
@@ -83,8 +83,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float own_block = lit_footprint_block(t) * yw
-							* lit_tip_weight(t, t_tip, tip_band);
+					float own_block = LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)
+							* yw * lit_tip_weight(t, t_tip, tip_band);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
 						return 0.0;
@@ -119,7 +119,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float cw = yw * lit_tip_weight(t, t_tip, tip_band);
+					float cw = yw * LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)
+							* lit_tip_weight(t, t_tip, tip_band);
 					if (hit) {
 						if (cw >= 1.0) {
 							return 0.0;
@@ -140,10 +141,10 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 #endif
 
 	// Own outlines only matter within penumbra reach; past the segment exit the fast
-	// phases finish the march. Y-sort and rx cover the whole march instead.
-	if (self_ex || LIT_YS_ON) {
+	// phases finish the march. Y-sort covers the whole march, rx and ramped clusters their bounds.
+	if (self_ex || LIT_YS_ON || LIT_RAMP_ON) {
 		vec2 dir_canvas = sdf_to_canvas * dir;
-#if defined(LIT_YSORT) || defined(LIT_OCC_RX)
+#if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
 		vec2 dir_px = sdf_to_px * dir;
 #endif
 		float pad = (max(maxd / k, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
@@ -154,6 +155,12 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 		for (int bi = 0; bi < rx_bound_count; bi++) {
 			t_slow_end = max(t_slow_end,
 					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, rx_bounds[bi], pad) * maxd);
+		}
+#endif
+#ifdef LIT_SELF_EXCLUSION
+		for (int bi = 0; bi < lit_ramp_count; bi++) {
+			t_slow_end = max(t_slow_end,
+					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, lit_ramp_rect(bi), pad) * maxd);
 		}
 #endif
 		t_ex_end = max(t_ex_end, t_slow_end);
@@ -184,8 +191,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float own_block = lit_footprint_block(t) * yw
-							* lit_tip_weight(t, t_tip, tip_band);
+					float own_block = LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)
+							* yw * lit_tip_weight(t, t_tip, tip_band);
 					res = min(res, 1.0 - own_block);
 					if (res <= 0.0) {
 						return 0.0;              // fully occluded
@@ -226,7 +233,8 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					float cw = yw * lit_tip_weight(t, t_tip, tip_band);
+					float cw = yw * LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)
+							* lit_tip_weight(t, t_tip, tip_band);
 					if (hit) {
 						if (cw >= 1.0) {
 							return 0.0;          // fully occluded
@@ -266,8 +274,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
 					continue;
 				}
-				float own_block = lit_footprint_block(t)
-						* lit_tip_weight(t, t_tip, tip_band);
+				float own_block = lit_tip_weight(t, t_tip, tip_band);
 				res = min(res, 1.0 - own_block);
 				if (res <= 0.0) {
 					return 0.0;                            // fully occluded

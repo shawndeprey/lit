@@ -4,7 +4,6 @@
 // resolution, so an outline's zero level sits a texel or two outside its polygon.
 const float LIT_SELF_PAD_SDF = 2.0;
 
-#ifdef LIT_OCC_GX
 float lit_gx_dist2(vec4 rect, vec2 p_canvas) {
 	vec2 dv = max(max(rect.xy - p_canvas, vec2(0.0)), p_canvas - rect.zw);
 	return dot(dv, dv);
@@ -24,7 +23,6 @@ float lit_rect_segment_exit(vec2 a, vec2 ab, vec4 rect, float pad) {
 	}
 	return 0.0;
 }
-#endif
 
 // Squared distance to the nearest exempt box (0 inside): the receiver's own occluders
 // plus, in the exclusion variants, the globally excluded ones.
@@ -144,6 +142,42 @@ bool lit_rx_exempt(vec2 p_canvas, vec2 p_px, float reach, int smask) {
 		}
 	}
 	return false;
+}
+#endif
+
+#ifdef LIT_SELF_EXCLUSION
+// Ramp (world px) of the caster nearest a sample, from the occluder tiles: the
+// candidate whose rect is nearest the point among those within reach, the smaller
+// ramp on ties. 0 when none is within reach or the nearest is hard.
+float lit_occ_ramp(vec2 p_canvas, vec2 p_px, float reach) {
+	ivec2 tile = clamp(ivec2(p_px) / lit_tile_size, ivec2(0), lit_tile_grid - ivec2(1));
+	vec4 header = texelFetch(lit_occ_headers, tile, 0);
+	int offset = int(round(header.x));
+	int count = int(round(header.y));
+	float r2 = reach * reach;
+	float best_d2 = 1e20;
+	float ramp = 0.0;
+	for (int j = 0; j < count; j++) {
+		int flat_idx = offset + j;
+		int oi = int(round(texelFetch(lit_occ_indices,
+				ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH), 0).x));
+		vec4 rect = texelFetch(lit_occ_data, ivec2(0, oi), 0);
+		vec2 dv = max(max(rect.xy - p_canvas, vec2(0.0)), p_canvas - rect.zw);
+		float d2 = dot(dv, dv);
+		if (d2 > r2 || d2 > best_d2) {
+			continue;
+		}
+		float r = texelFetch(lit_occ_data, ivec2(1, oi), 0).y;
+		if (d2 < best_d2 || r < ramp) {
+			ramp = r;
+		}
+		best_d2 = d2;
+	}
+	return ramp;
+}
+
+vec4 lit_ramp_rect(int i) {
+	return i == 0 ? lit_ramp_rect0 : i == 1 ? lit_ramp_rect1 : i == 2 ? lit_ramp_rect2 : lit_ramp_rect3;
 }
 #endif
 

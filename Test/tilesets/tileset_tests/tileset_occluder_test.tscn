@@ -30,8 +30,7 @@ shader_parameter/metallic_value = 0.0
 shader_parameter/roughness_value = 1.0
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
-shader_parameter/footprint_shadow = 16.0
-shader_parameter/footprint_ramp = 0.0
+shader_parameter/shadow_ramp = 0.0
 shader_parameter/directional_horizontal_scale = 32.0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_dbp26"]
@@ -48,8 +47,7 @@ shader_parameter/metallic_value = 0.0
 shader_parameter/roughness_value = 1.0
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
-shader_parameter/footprint_shadow = 16.0
-shader_parameter/footprint_ramp = 35.395
+shader_parameter/shadow_ramp = 20.12
 shader_parameter/directional_horizontal_scale = 32.0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_dhtrv"]
@@ -68,8 +66,7 @@ shader_parameter/roughness_value = 1.0
 shader_parameter/ao_map = ExtResource("6_38hih")
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
-shader_parameter/footprint_shadow = 16.0
-shader_parameter/footprint_ramp = 0.0
+shader_parameter/shadow_ramp = 0.0
 shader_parameter/directional_horizontal_scale = 32.0
 
 [sub_resource type="CanvasTexture" id="CanvasTexture_w87s8"]
@@ -103,11 +100,11 @@ position = Vector2(6, 8.999999)
 scale = Vector2(5, 5)
 tile_map_data = PackedByteArray("AAAKAAcAAAABABIAAAALAAcAAAABABIAAAAMAAcAAAABABIAAAANAAcAAAABABIAAAA=")
 emissive_strength = 0.0
-footprint_ramp = 35.395
+shadow_ramp = 20.12
 
 [node name="LitSprite2D" type="Sprite2D" parent="Wall Tiles" unique_id=1013011082]
 material = SubResource("ShaderMaterial_dhtrv")
-position = Vector2(853, 716)
+position = Vector2(735, 605)
 scale = Vector2(2, 2)
 texture = SubResource("CanvasTexture_w87s8")
 script = ExtResource("11_8cpey")
@@ -124,7 +121,7 @@ occluder = SubResource("OccluderPolygon2D_qw4gw")
 [node name="Lights" type="Node2D" parent="." unique_id=1211423204]
 
 [node name="LitPointLight2D" type="Node2D" parent="Lights" unique_id=235878211]
-position = Vector2(697, 557)
+position = Vector2(691, 497)
 script = ExtResource("12_atder")
 lit_version = "1.1.4"
 energy = 4.0

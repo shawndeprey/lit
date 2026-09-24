@@ -24,6 +24,10 @@ const F_STOCH := 8
 const F_GX := 16
 const F_MASKS := 32
 const F_RX := 64
+# Ramped casters need the exclusion march on every receiver: this axis compiles it
+# into the fast tier (the header promotes its define to LIT_SELF_EXCLUSION); the
+# full tier already has it and drops the flag.
+const F_RAMP := 128
 
 const TIER_MASK := F_SELF_EXCL | F_YSORT
 
@@ -36,6 +40,7 @@ const AXES := [
 	{"flag": F_GX, "define": "LIT_OCC_GX", "token": "gx", "scope": "activity"},
 	{"flag": F_MASKS, "define": "LIT_OCC_MASKS", "token": "mask", "scope": "activity"},
 	{"flag": F_RX, "define": "LIT_OCC_RX", "token": "rx", "scope": "node"},
+	{"flag": F_RAMP, "define": "LIT_OCC_RAMP", "token": "ramp", "scope": "activity"},
 ]
 
 const ENTRY_PATHS := {
@@ -79,6 +84,8 @@ static func resolve(tier: int, node_flags: int, activity: int) -> int:
 static func _prune(flags: int) -> int:
 	if flags & F_YSORT != 0:
 		flags |= F_SELF_EXCL
+	if flags & F_SELF_EXCL != 0:
+		flags &= ~F_RAMP
 	if flags & (F_MASKS | F_RX) != 0:
 		flags &= ~F_GX
 	return flags

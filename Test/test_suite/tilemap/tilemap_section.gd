@@ -22,6 +22,7 @@ func run() -> void:
 	await _lighting()
 	await _shadows()
 	await _self_exclusion()
+	await _shadow_ramp()
 	await _edits()
 	await _masks()
 	await _extras()
@@ -235,6 +236,30 @@ func _self_exclusion() -> void:
 	await frames(2)
 	img = await capture()
 	check_gt(case_name, "self_shadow = false again: exempt again", lum(img, own_floor), AMBIENT, 0.2)
+
+
+# Wall cells span x 392..424 (lit edge 392): the receiver point is 308 px past it,
+# the layer's own floor cell (8, 4) 80 px.
+func _shadow_ramp() -> void:
+	var case_name := "tilemap_shadow_ramp"
+	var shadow_pt := Vector2(700, 120 + 4.5 * TILE)
+	var own_floor := _cell_center(8, 4)
+	_map.self_shadow = true
+	_map.shadow_ramp = 600.0
+	await frames(4)
+	var img := await capture()
+	check_between(case_name, "layer shadow_ramp 600: the receiver 308 px past the wall's lit edge is partly shadowed",
+			lum(img, shadow_pt), AMBIENT + 0.05, lum(img, Vector2(700, 128)) - 0.05)
+	check_gt(case_name, "own floor cell 80 px in (self_shadow on) is mostly lit", lum(img, own_floor), AMBIENT, 0.15)
+	_map.shadow_ramp = 0.0
+	await frames(4)
+	img = await capture()
+	check_approx(case_name, "shadow_ramp 0: the receiver behind the wall is dark again", AMBIENT,
+			lum(img, shadow_pt), TOL)
+	check_approx(case_name, "shadow_ramp 0: own floor cell dark again (albedo 0.8 x ambient)", AMBIENT * 0.8,
+			lum(img, own_floor), TOL)
+	_map.self_shadow = false
+	await frames(2)
 
 
 func _edits() -> void:

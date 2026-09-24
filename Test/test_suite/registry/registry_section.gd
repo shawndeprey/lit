@@ -157,6 +157,17 @@ func _activity_flags() -> void:
 	await frames(3)
 	check(case_name, "raymarched with default masks publishes 0", 0, RegistryScript.activity_flags)
 	check(case_name, "materials back on the base variant", 0, F.flags_of(_mat(plain).shader))
+	lit.shadow_ramp = 50.0
+	occluder(Vector2(0, 40), Vector2(20, 20), lit)
+	await frames(6)
+	fl = RegistryScript.activity_flags
+	check_true(case_name, "a ramped caster publishes F_RAMP", fl & F.F_RAMP != 0)
+	check(case_name, "F_RAMP puts the bare receiver on the fast tier's _ramp variant",
+			F.F_RAMP, F.flags_of(_mat(plain).shader))
+	lit.shadow_ramp = 0.0
+	await frames(6)
+	check(case_name, "ramp back to 0: flags 0", 0, RegistryScript.activity_flags)
+	check(case_name, "bare receiver back on the base variant after the ramp", 0, F.flags_of(_mat(plain).shader))
 	var gx := occluder(Vector2(500, 720), Vector2(40, 40), _props, 2)
 	await frames(6)
 	fl = RegistryScript.activity_flags

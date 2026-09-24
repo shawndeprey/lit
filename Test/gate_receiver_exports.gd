@@ -15,7 +15,7 @@ const RECEIVERS := [
 ]
 const PHONG_ONLY := ["specular_strength", "specular_k"]
 const PBR_ONLY := ["metallic_value", "roughness_value"]
-const NEVER_GATED := ["shadow_min_step", "footprint_shadow", "directional_horizontal_scale",
+const NEVER_GATED := ["shadow_min_step", "shadow_ramp", "directional_horizontal_scale",
 	"emissive_strength"]
 
 const S_MODEL := "lit/render/lighting_model"

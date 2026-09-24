@@ -18,6 +18,11 @@
 //    shadow algorithms (the _cone / _stoch / _cone_stoch wrappers). Base wrappers
 //    support only the Raymarched algorithm and compile byte-identical to the
 //    pre-algorithm-selection shader.
+//  - LIT_OCC_RAMP: shadow ramps on a fast-tier receiver (the _ramp wrappers): the
+//    ramp weight rides the exclusion march, so it is LIT_SELF_EXCLUSION here.
+#if defined(LIT_OCC_RAMP) && !defined(LIT_SELF_EXCLUSION)
+#define LIT_SELF_EXCLUSION
+#endif
 
 // Transport: global uniforms plus the per-frame light-data texture, packed by the
 // manager. Read via texelFetch (integer coords, no filtering), so the texture's
@@ -67,13 +72,11 @@ global uniform int       lit_tile_size;                 // tile edge in pixels
 global uniform bool      lit_ysort_enabled;
 global uniform float     lit_ysort_band;                // fade half-width, world px
 #endif
-// Occluder identity tiles (y-sort depth + per-receiver exclusion): per-occluder canvas
-// rect and light mask, binned into the light tile grid.
-#if defined(LIT_YSORT) || defined(LIT_OCC_RX)
-global uniform sampler2D lit_occ_data;                  // t0 rect min.xy|max.xy (max.y depth line); t1.x mask
+// Occluder identity tiles (y-sort depth, per-receiver exclusion, shadow ramps):
+// per-occluder canvas rect, light mask and ramp, binned into the light tile grid.
+global uniform sampler2D lit_occ_data;                  // t0 rect min.xy|max.xy (max.y depth line); t1.x mask, t1.y ramp
 global uniform sampler2D lit_occ_headers;               // per tile: offset | count | min depth
 global uniform sampler2D lit_occ_indices;
-#endif
 
 // Globally excluded occluders (no shadow-casting light's mask matches theirs): exempt
 // canvas rects treated exactly like self rects, for every light at once.
@@ -89,6 +92,23 @@ global uniform vec4 lit_gx_rect0;                       // canvas min.xy | max.x
 global uniform vec4 lit_gx_rect1;
 global uniform vec4 lit_gx_rect2;
 global uniform vec4 lit_gx_rect3;                       // extras unioned into this slot
+#endif
+
+// Shadow ramps: canvas bounds of the ramped casters (4 clusters, extras unioned into
+// the last). A march runs its slow phase while crossing one, where every sample's
+// shadow is weighted by the ramp of the caster nearest it (lit_ramp_weight). Ramped
+// scenes put fast-tier receivers on the _ramp variants, which march exclusions too.
+#ifdef LIT_SELF_EXCLUSION
+global uniform int  lit_ramp_count;
+global uniform vec4 lit_ramp_rect0;                     // canvas min.xy | max.xy each
+global uniform vec4 lit_ramp_rect1;
+global uniform vec4 lit_ramp_rect2;
+global uniform vec4 lit_ramp_rect3;
+#define LIT_RAMP_ON (lit_ramp_count > 0)
+#define LIT_RAMP_W(p_canvas, p_px, reach, t) (LIT_RAMP_ON ? lit_ramp_weight(p_canvas, p_px, reach, t) : 1.0)
+#else
+#define LIT_RAMP_ON false
+#define LIT_RAMP_W(p_canvas, p_px, reach, t) 1.0
 #endif
 
 // Per-receiver shadow exclusion (shadow_ignore_mask, the _rx wrappers): this receiver
@@ -178,22 +198,19 @@ uniform sampler2D ao_map : hint_default_white;
 uniform int   shadow_steps = 64;
 uniform float shadow_min_step = 0.2;
 
-// Opacity of the shadow an occluder's shape casts on the pixels inside it, past its
-// light-facing edge (the way a Godot occluder shadows its own interior). Clamped to 1;
-// 0 hides it.
-uniform float footprint_shadow = 16.0;
-// Eases that interior shadow in from the shape's light-facing edge over this many
-// world px, so a footprint fades into the direction it casts. 0 is a hard edge.
-uniform float footprint_ramp = 0.0;
+// Shadow ramp of this node's occluders (its descendants, else its sibling casters), in
+// world px: their shadows ease in from the lit edge over this distance on every
+// receiver they land on. Read by the registry, never here. 0 is a hard edge.
+uniform float shadow_ramp = 0.0;
 
 // Horizontal reach of a directional light's shading vector relative to its `height`;
 // elevation is atan(height / scale). The default gives about 27 degrees at height 16,
 // so the direction reads clearly. Larger is more grazing.
 uniform float directional_horizontal_scale = 32.0;
 
-// Screen-pixel march basis, needed by the tile lookups of y-sort and per-receiver
-// exclusion; the macros erase it from variants with neither.
-#if defined(LIT_YSORT) || defined(LIT_OCC_RX)
+// Screen-pixel march basis, needed by the tile lookups of y-sort, per-receiver
+// exclusion and shadow ramps; the macros erase it from the fast tier.
+#if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
 #define LIT_PX_PARAMS , mat2 sdf_to_px, vec2 frag_px
 #define LIT_PX_ARGS , sdf_to_px, frag_px
 #else

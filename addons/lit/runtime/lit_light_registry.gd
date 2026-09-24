@@ -91,6 +91,12 @@ static var gx_active: bool = false
 # True once any light has shown a non-default shadow_mask or exclusion toggle (set by
 # the light setters, scene loads included); gates the per-light mask reads in refresh.
 static var light_masks_seen: bool = false
+# Receiver shadow_ramp edits (the node setters): each registry instance re-resolves
+# its casters' receivers on the next refresh. Scene loads go through the tree hook.
+static var ramp_edit_version: int = 0
+
+static func shadow_ramp_changed(_value: float) -> void:
+	ramp_edit_version += 1
 
 # --- Receiver material pool ----------------------------------------------------------
 # Runtime content-keyed sharing of receiver materials: registry/material_pool.gd.
@@ -164,6 +170,7 @@ static func editor_release_live() -> void:
 # facade-seam methods and passes its dictionaries onward as explicit arguments.
 const OccluderTilesScript := preload("res://addons/lit/runtime/registry/occluder_tiles.gd")
 var _occluder_tiles := OccluderTilesScript.new()
+var _ramp_edit_seen := 0
 
 var _mask_seed_done := false
 # Runtime only (lit/render/occluder_mask_sdf_culling): globally excluded occluders are
@@ -242,26 +249,35 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 		RxRegistryScript.rescan_editor(receiver_root)
 	if RxRegistryScript.nodes().is_empty():
 		_ctx.rx_union = 0
+	if _ramp_edit_seen != ramp_edit_version:
+		_ramp_edit_seen = ramp_edit_version
+		_occluder_tiles.note_ramp_seen()
+		_occluder_tiles.mark_dirty()
+	var ramp_active := false
 	if ysort_enabled or masks_active or not _exclusions.gx_masks().is_empty() \
-			or not RxRegistryScript.nodes().is_empty():
+			or not RxRegistryScript.nodes().is_empty() or _occluder_tiles.ramp_seen():
 		_ctx.rx_union = _rx_registry.compute_union()
 		var pack_same: bool = _occluder_tiles.build(_ctx, receiver_root, lights,
 				_exclusions.gx_masks(), _exclusions.smasks(), _exclusions.owners(),
 				ysort_enabled, sdf_cull)
 		gx_active = _occluder_tiles.gx_this_frame()
+		ramp_active = _occluder_tiles.ramp_this_frame()
 		if masks_active:
 			_exclusions.maybe_rebuild_lists(pack_same, _ctx.occ_rects, _ctx.occ_masks,
 					_ctx.occ_owners)
 	elif gx_active:
 		gx_active = false
 		_occluder_tiles.publish_gx_empty()
+	if not ramp_active:
+		_occluder_tiles.publish_ramp_empty()
 
 	# The one activity publish point: everything the working state decided this
 	# refresh lands in the node-facing flags together.
 	var new_flags := (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
 			| (LitShaderLibrary.F_STOCH if active_algos & 2 != 0 else 0) \
 			| (LitShaderLibrary.F_MASKS if masks_active else 0) \
-			| (LitShaderLibrary.F_GX if gx_active else 0)
+			| (LitShaderLibrary.F_GX if gx_active else 0) \
+			| (LitShaderLibrary.F_RAMP if ramp_active else 0)
 	if new_flags != activity_flags:
 		activity_flags = new_flags
 		activity_version += 1
@@ -325,6 +341,9 @@ func _on_tree_changed(node: Node) -> void:
 	_receiver_driver.mark_receivers_dirty()
 	if node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer or node is LightOccluder2D:
 		_receiver_driver.mark_bare_dirty()
+	if node is CanvasItem and OccluderTilesScript.ramp_of(node as CanvasItem) > 0.0:
+		_occluder_tiles.note_ramp_seen()
+		_occluder_tiles.mark_dirty()
 	if node is TileMapLayer or node is LightOccluder2D:
 		_occluder_tiles.mark_dirty()
 		_world_sdf.mark_content_dirty()

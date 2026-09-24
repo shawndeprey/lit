@@ -10,8 +10,8 @@ const INDEX_TEX_WIDTH := 2048
 
 const FrameContext := preload("res://addons/lit/runtime/registry/frame_context.gd")
 
-var _occ_nodes: Array = []       # [LightOccluder2D, owner id]
-var _occ_layers: Array = []      # [TileMapLayer, cell rects, xform, world rects, masks, distinct, ts snapshot]
+var _occ_nodes: Array = []       # [LightOccluder2D, owner id, ramp receiver]
+var _occ_layers: Array = []      # [TileMapLayer, cell rects, xform, world rects, masks, distinct, ts snapshot, ramp receiver]
 var _occ_dirty := true
 var _occ_pack_buf := PackedFloat32Array()
 var _occ_mask_set := {}          # distinct SDF-casting occluder masks, exact at cache rebuild
@@ -20,6 +20,11 @@ var _scope_ids := {}             # scope root Node -> owner id
 var _scope_occ_masks := {}       # owner id -> {mask: true} of SDF casters under that scope
 var _gx_rects: Array[Rect2] = []
 var _gx_packed := PackedVector4Array()
+var _occ_ramps := PackedFloat32Array()   # per _occ_rects entry, world px (0 hard)
+var _ramp_rects: Array[Rect2] = []
+var _ramp_packed := PackedVector4Array()
+var _ramp_seen := false          # a caster's receiver authors a shadow_ramp (cache-derived)
+var _ramp_frame := false         # ramped casters published this build
 var _sdf_culled := {}            # occluders whose sdf_collision this registry disabled
 var _ts_culled := {}             # TileSet -> {occlusion layer idx} this registry disabled
 var _occ_spans := PackedInt32Array()
@@ -73,6 +78,18 @@ func note_mask_seen() -> void:
 
 func masks_seen() -> bool:
 	return _occ_masks_seen
+
+
+func note_ramp_seen() -> void:
+	_ramp_seen = true
+
+
+func ramp_seen() -> bool:
+	return _ramp_seen
+
+
+func ramp_this_frame() -> bool:
+	return _ramp_frame
 
 
 func mask_set() -> Dictionary:
@@ -132,15 +149,18 @@ func build(ctx: FrameContext, root: Node, lights: Array, gx_masks: Dictionary,
 	# Generous pad: off-view casters still shadow into the oversized SDF.
 	var cull_rect := world_rect.grow(maxf(world_rect.size.x, world_rect.size.y) * 0.25)
 
-	# Y-sort needs every caster's identity; masks alone only need the excludable ones
-	# (the weight test is only consulted near exempt rects), so non-excluded occluders
-	# and whole non-excluded tilemap layers are skipped without per-cell work.
-	var full_set := ysort_enabled
+	# Y-sort and ramps need every caster's identity; masks alone only need the
+	# excludable ones (the weight test is only consulted near exempt rects), so
+	# non-excluded occluders and whole non-excluded tilemap layers are skipped without
+	# per-cell work.
+	var full_set := ysort_enabled or _ramp_seen
 
 	_occ_rects.clear()
 	_occ_masks.clear()
 	_occ_owners.clear()
+	_occ_ramps.clear()
 	_gx_rects.clear()
+	_ramp_rects.clear()
 
 	for entry in _occ_nodes:
 		var node = entry[0]
@@ -179,6 +199,10 @@ func build(ctx: FrameContext, root: Node, lights: Array, gx_masks: Dictionary,
 		_occ_rects.append(r)
 		_occ_masks.append(m)
 		_occ_owners.append(entry[1])
+		var ramp := ramp_of(entry[2])
+		_occ_ramps.append(ramp)
+		if ramp > 0.0:
+			_ramp_rects.append(r)
 
 	for entry in _occ_layers:
 		var layer: TileMapLayer = entry[0]
@@ -230,6 +254,9 @@ func build(ctx: FrameContext, root: Node, lights: Array, gx_masks: Dictionary,
 				world[i] = xf * entry[1][i]
 			entry[3] = world
 		var layer_masks: PackedInt32Array = entry[4]
+		var layer_ramp := ramp_of(entry[7])
+		var layer_bounds := Rect2()
+		var layer_ramped := false
 		for i in entry[3].size():
 			var m := layer_masks[i]
 			if culled.has(m):
@@ -245,6 +272,12 @@ func build(ctx: FrameContext, root: Node, lights: Array, gx_masks: Dictionary,
 				_occ_rects.append(r)
 				_occ_masks.append(m)
 				_occ_owners.append(0)
+				_occ_ramps.append(layer_ramp)
+				if layer_ramp > 0.0:
+					layer_bounds = r if not layer_ramped else layer_bounds.merge(r)
+					layer_ramped = true
+		if layer_ramped:
+			_ramp_rects.append(layer_bounds)
 
 	# Global tier: 4 slots, extras unioned into the last; published as globals so every
 	# receiver type sees them with no material walk.
@@ -258,13 +291,26 @@ func build(ctx: FrameContext, root: Node, lights: Array, gx_masks: Dictionary,
 				_gx_rects[i].end.x, _gx_rects[i].end.y)
 	_publish_gx(gx_packed)
 
+	# Ramped clusters: one rect per loose caster or tilemap layer, 4 slots, extras
+	# unioned into the last; marches run their slow phase only while crossing one.
+	while _ramp_rects.size() > 4:
+		_ramp_rects[3] = _ramp_rects[3].merge(_ramp_rects.pop_back())
+	_ramp_frame = not _ramp_rects.is_empty()
+	var ramp_packed := PackedVector4Array()
+	ramp_packed.resize(_ramp_rects.size())
+	for i in _ramp_rects.size():
+		ramp_packed[i] = Vector4(_ramp_rects[i].position.x, _ramp_rects[i].position.y,
+				_ramp_rects[i].end.x, _ramp_rects[i].end.y)
+	_publish_ramp(ramp_packed)
+
 	var count := _occ_rects.size()
 	var tiles_x := maxi(int(ceil(vp_size.x / float(TILE_SIZE))), 1)
 	var tiles_y := maxi(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
 	var tile_count := tiles_x * tiles_y
 	var grid := Vector2i(tiles_x, tiles_y)
 
-	# Two texels per occluder: t0 rect, t1.x light mask (the rx tile test reads it).
+	# Two texels per occluder: t0 rect, t1.x light mask (the rx tile test reads it),
+	# t1.y shadow ramp (the ramp weight reads it).
 	var floats_needed := maxi(count, 1) * 8
 	if _occ_pack_buf.size() != floats_needed:
 		_occ_pack_buf.resize(floats_needed)
@@ -277,11 +323,12 @@ func build(ctx: FrameContext, root: Node, lights: Array, gx_masks: Dictionary,
 		_occ_pack_buf[o + 2] = r.end.x
 		_occ_pack_buf[o + 3] = r.end.y
 		_occ_pack_buf[o + 4] = float(_occ_masks[i])
+		_occ_pack_buf[o + 5] = _occ_ramps[i]
 
 	var pack_same := _occ_pack_buf == _occ_prev_pack
 	# Masks alone need no tile binning; the exempt rects travel in the light rows.
-	# Y-sort and rx both consume the occluder tiles, so either builds them.
-	if not ysort_enabled and _rx_union_frame == 0:
+	# Y-sort, rx and ramps consume the occluder tiles, so any of them builds them.
+	if not ysort_enabled and _rx_union_frame == 0 and not _ramp_frame:
 		if not pack_same:
 			_occ_prev_pack = _occ_pack_buf.duplicate()
 		return pack_same
@@ -403,6 +450,7 @@ func _rebuild_occ_cache(root: Node, lights: Array) -> void:
 	_scope_occ_masks.clear()
 	_occ_mask_set.clear()
 	_occ_masks_seen = false
+	_ramp_seen = false
 	_occ_dirty = false
 	if root == null:
 		return
@@ -415,7 +463,10 @@ func _rebuild_occ_cache(root: Node, lights: Array) -> void:
 			_scope_ids[scope] = _scope_ids.size() + 1
 	for occ in root.find_children("*", "LightOccluder2D", true, false):
 		var owner_id := _occ_owner_id(occ)
-		_occ_nodes.append([occ, owner_id])
+		var ramp_owner := _ramp_owner(occ, false)
+		_occ_nodes.append([occ, owner_id, ramp_owner])
+		if ramp_of(ramp_owner) > 0.0:
+			_ramp_seen = true
 		# Only SDF casters matter to exclusion; others cast no Lit shadows at all.
 		# Culled occluders still count so their mask stays classified (no oscillation).
 		if not occ.sdf_collision and not _sdf_culled.has(occ):
@@ -435,12 +486,50 @@ func _rebuild_occ_cache(root: Node, lights: Array) -> void:
 		for m in pair[1]:
 			distinct[m] = true
 			_occ_mask_set[m] = true
+		var ramp_owner := _ramp_owner(layer, true)
 		_occ_layers.append([layer, pair[0], null, [], pair[1], distinct.keys(),
-				_ts_layer_masks(layer.tile_set)])
+				_ts_layer_masks(layer.tile_set), ramp_owner])
+		if ramp_of(ramp_owner) > 0.0:
+			_ramp_seen = true
 	for m in _occ_mask_set:
 		if int(m) != 1:
 			_occ_masks_seen = true
 			break
+
+## The receiver a caster takes its shadow ramp from: itself (tilemap layers), else its
+## nearest ancestor receiver, else the first sibling receiver; null when none.
+func _ramp_owner(node: Node, include_self: bool) -> CanvasItem:
+	var n: Node = node if include_self else node.get_parent()
+	while n != null:
+		if _is_receiver(n):
+			return n as CanvasItem
+		n = n.get_parent()
+	var parent := node.get_parent()
+	if parent != null:
+		for sibling in parent.get_children():
+			if sibling != node and _is_receiver(sibling):
+				return sibling as CanvasItem
+	return null
+
+
+static func _is_receiver(n: Node) -> bool:
+	var ci := n as CanvasItem
+	if ci == null:
+		return false
+	var mat := ci.material as ShaderMaterial
+	return mat != null and mat.shader != null and LitShaderLibrary.flags_of(mat.shader) >= 0
+
+
+## A receiver's authored shadow_ramp (world px); 0 for null, freed or non-receivers.
+static func ramp_of(owner) -> float:
+	if owner == null or not is_instance_valid(owner) or not (owner is CanvasItem):
+		return 0.0
+	var mat := (owner as CanvasItem).material as ShaderMaterial
+	if mat == null:
+		return 0.0
+	var v: Variant = mat.get_shader_parameter("shadow_ramp")
+	return maxf(float(v), 0.0) if v != null else 0.0
+
 
 ## Nearest ancestor that is a light scope root; 0 when none.
 func _occ_owner_id(occ: Node) -> int:
@@ -588,17 +677,41 @@ func _publish_gx(packed: PackedVector4Array) -> void:
 func publish_gx_empty() -> void:
 	_publish_gx(PackedVector4Array())
 
+func publish_ramp_empty() -> void:
+	_ramp_frame = false
+	_publish_ramp(PackedVector4Array())
+
+## Publish the ramped cluster rects only when they changed.
+func _publish_ramp(packed: PackedVector4Array) -> void:
+	if packed == _ramp_packed:
+		return
+	_ramp_packed = packed
+	RenderingServer.global_shader_parameter_set("lit_ramp_count", packed.size())
+	RenderingServer.global_shader_parameter_set("lit_ramp_rect0",
+			packed[0] if packed.size() > 0 else Vector4())
+	RenderingServer.global_shader_parameter_set("lit_ramp_rect1",
+			packed[1] if packed.size() > 1 else Vector4())
+	RenderingServer.global_shader_parameter_set("lit_ramp_rect2",
+			packed[2] if packed.size() > 2 else Vector4())
+	RenderingServer.global_shader_parameter_set("lit_ramp_rect3",
+			packed[3] if packed.size() > 3 else Vector4())
+
 ## Recompute the distinct-mask set from the cached nodes (editor live edits only).
 ## Tileset masks are cache-derived, so they are compared against a live snapshot here;
 ## any drift (mask edit, missed changed signal) marks the cache dirty to self-heal.
 func refresh_mask_set() -> void:
 	_occ_mask_set.clear()
 	_occ_masks_seen = false
+	_ramp_seen = false
 	for entry in _occ_nodes:
+		if ramp_of(entry[2]) > 0.0:
+			_ramp_seen = true
 		if is_instance_valid(entry[0]) \
 				and (entry[0].sdf_collision or _sdf_culled.has(entry[0])):
 			_occ_mask_set[entry[0].occluder_light_mask] = true
 	for entry in _occ_layers:
+		if ramp_of(entry[7]) > 0.0:
+			_ramp_seen = true
 		if not is_instance_valid(entry[0]) or entry[0].tile_set == null \
 				or entry[6] != _ts_layer_masks(entry[0].tile_set):
 			_occ_dirty = true

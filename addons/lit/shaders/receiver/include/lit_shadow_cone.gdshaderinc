@@ -52,7 +52,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 	// the alignment contract is gated behaviorally by Test/march_matrix.md.
 	if (mk_on) {
 		vec2 dir_canvas = sdf_to_canvas * dir;
-#if defined(LIT_YSORT) || defined(LIT_OCC_RX)
+#if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
 		vec2 dir_px = sdf_to_px * dir;
 #endif
 		float pad = (max(w * maxd, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
@@ -80,8 +80,8 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					res = 1.0 - lit_footprint_block(t) * yw
-						* lit_tip_weight(t, t_tip, tip_band);
+					res = 1.0 - LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)
+						* yw * lit_tip_weight(t, t_tip, tip_band);
 					if (res <= 0.0) {
 						return 0.0;
 					}
@@ -111,7 +111,8 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 						frag_px + dir_px * t, own_r) : 1.0;
 #endif
-				float faded = mix(1.0, max(cand, 0.0), yw * lit_tip_weight(t, t_tip, tip_band));
+				float faded = mix(1.0, max(cand, 0.0), yw * lit_tip_weight(t, t_tip, tip_band)
+						* LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t));
 				if (faded < res) {
 					res = faded;
 					if (res <= 0.0) {
@@ -125,10 +126,10 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 #endif
 
 	// Own outlines only matter within the cone's widest reach; past the segment exit
-	// the fast phases finish the march. Y-sort and rx cover the whole march instead.
-	if (self_ex || LIT_YS_ON) {
+	// the fast phases finish the march. Y-sort covers the whole march, rx and ramped clusters their bounds.
+	if (self_ex || LIT_YS_ON || LIT_RAMP_ON) {
 		vec2 dir_canvas = sdf_to_canvas * dir;
-#if defined(LIT_YSORT) || defined(LIT_OCC_RX)
+#if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
 		vec2 dir_px = sdf_to_px * dir;
 #endif
 		float pad = (max(w * maxd, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
@@ -140,6 +141,12 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 		for (int bi = 0; bi < rx_bound_count; bi++) {
 			t_slow_end = max(t_slow_end,
 					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, rx_bounds[bi], pad) * maxd);
+		}
+#endif
+#ifdef LIT_SELF_EXCLUSION
+		for (int bi = 0; bi < lit_ramp_count; bi++) {
+			t_slow_end = max(t_slow_end,
+					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, lit_ramp_rect(bi), pad) * maxd);
 		}
 #endif
 		t_ex_end = max(t_ex_end, t_slow_end);
@@ -168,8 +175,8 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 							frag_px + dir_px * t, own_r) : 1.0;
 #endif
-					res = 1.0 - lit_footprint_block(t) * yw
-						* lit_tip_weight(t, t_tip, tip_band);
+					res = 1.0 - LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)
+						* yw * lit_tip_weight(t, t_tip, tip_band);
 					if (res <= 0.0) {
 						return 0.0;
 					}
@@ -205,7 +212,8 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 						frag_px + dir_px * t, own_r) : 1.0;
 #endif
-				float faded = mix(1.0, max(cand, 0.0), yw * lit_tip_weight(t, t_tip, tip_band));
+				float faded = mix(1.0, max(cand, 0.0), yw * lit_tip_weight(t, t_tip, tip_band)
+						* LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t));
 				if (faded < res) {
 					res = faded;
 					if (res <= 0.0) {
@@ -233,8 +241,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					t += max(-d, shadow_min_step);
 					continue;
 				}
-				res = 1.0 - lit_footprint_block(t)
-						* lit_tip_weight(t, t_tip, tip_band);
+				res = 1.0 - lit_tip_weight(t, t_tip, tip_band);
 				if (res <= 0.0) {
 					return 0.0;
 				}
@@ -331,6 +338,9 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					yw = ys_on ? lit_ysort_weight(self_canvas + sdf_to_canvas * (dir * maxd),
 							frag_px + sdf_to_px * (dir * maxd), own_r) : 1.0;
 				}
+#endif
+#ifdef LIT_SELF_EXCLUSION
+				yw *= LIT_RAMP_W(self_canvas + sdf_to_canvas * (dir * maxd), frag_px + sdf_to_px * (dir * maxd), own_r, maxd);
 #endif
 				res = min(res, mix(1.0, max(cand, 0.0), yw));
 			}

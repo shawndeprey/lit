@@ -107,23 +107,8 @@ func _point_shadows() -> void:
 	_box.position = B
 	await frames(2)
 	img = await capture()
-	check_approx(case_name, "footprint_shadow 16: floor inside the box footprint is dark", AMBIENT, lum(img, F), 0.06)
-	_floor_a.footprint_shadow = 0.0
-	img = await capture()
-	check_gt(case_name, "footprint_shadow 0: floor inside the footprint is lit", lum(img, F), AMBIENT, 0.2)
-	_floor_a.footprint_shadow = 16.0
-	# footprint_ramp: the interior shadow eases in over world px from the lit edge (x 310).
-	var near_edge := Vector2(318, 300)
-	_floor_a.footprint_ramp = 40.0
-	img = await capture()
-	var ramp_edge := lum(img, near_edge)
-	check_gt(case_name, "footprint_ramp 40: 8 px inside the lit edge is mostly lit", ramp_edge, AMBIENT, 0.15)
-	check_gt(case_name, "footprint_ramp 40: the box centre (20 px in) is only partly shadowed", lum(img, F),
-			AMBIENT, 0.05)
-	check_lt(case_name, "footprint_ramp 40: deeper in is darker than near the edge", lum(img, F), ramp_edge, 0.05)
-	_floor_a.footprint_ramp = 0.0
-	img = await capture()
-	check_approx(case_name, "footprint_ramp 0: hard edge again", AMBIENT, lum(img, near_edge), 0.06)
+	check_approx(case_name, "floor inside the box footprint is dark (interior shadow)", AMBIENT, lum(img, F), 0.06)
+	await _shadow_ramp()
 
 	# Algorithms.
 	for algo in [ALGO.RAYMARCHED, ALGO.CONE_TRACED, ALGO.STOCHASTIC]:
@@ -213,6 +198,78 @@ func _point_shadows() -> void:
 			LitLightRegistry.activity_flags & LitShaderLibrary.F_CONE != 0)
 
 
+# The box (under _props) has no receiver above it. A receiver sibling under _props
+# lends it its ramp; reparenting the box under that receiver, then under a bare
+# Sprite2D receiver, exercises the ancestor rule and the material-only path. The
+# lit edge is x 310 (light on the left), the far edge x 350.
+func _shadow_ramp() -> void:
+	var case_name := "shadow_ramp"
+	var post := box_receiver(Vector2(330, 480), Vector2(8, 8), Color.WHITE, _props)
+	post.specular_strength = 0.0
+	var near_edge := Vector2(318, 300)   # 8 px past the lit edge
+	var in_box := Vector2(346, 300)      # 4 px before the far edge
+	var behind := Vector2(354, 300)      # 4 px past it, on the floor
+	var deep := Vector2(420, 300)        # 110 px past the lit edge
+	await frames(3)
+	var img := await capture()
+	check_approx(case_name, "ramp 0: 8 px inside the lit edge is dark", AMBIENT, lum(img, near_edge), 0.06)
+	check_true(case_name, "ramp 0: no F_RAMP activity",
+			LitLightRegistry.activity_flags & LitShaderLibrary.F_RAMP == 0)
+	post.shadow_ramp = 100.0
+	await frames(4)
+	img = await capture()
+	check_true(case_name, "a ramped caster publishes F_RAMP",
+			LitLightRegistry.activity_flags & LitShaderLibrary.F_RAMP != 0)
+	check(case_name, "the floor is on the _ramp variant", LitShaderLibrary.F_RAMP,
+			LitShaderLibrary.flags_of(_floor_a.material.shader) & (LitShaderLibrary.F_RAMP | LitShaderLibrary.TIER_MASK))
+	var edge_l := lum(img, near_edge)
+	check_gt(case_name, "sibling receiver ramp 100: 8 px inside the lit edge is mostly lit", edge_l, AMBIENT, 0.2)
+	check_lt(case_name, "deeper inside is darker", lum(img, F), edge_l, 0.03)
+	check_approx(case_name, "no seam at the far edge: 4 px inside matches 4 px behind", lum(img, in_box, 1),
+			lum(img, behind, 1), 0.08)
+	check_lt(case_name, "further behind is darker still", lum(img, deep), lum(img, behind), 0.05)
+	check_approx(case_name, "110 px past the lit edge the shadow is full", AMBIENT, lum(img, deep), 0.06)
+	check_gt(case_name, "beside the shadow band the floor stays lit", lum(img, P), AMBIENT, 0.15)
+	_box.reparent(post)
+	await frames(4)
+	img = await capture()
+	check_gt(case_name, "ancestor receiver ramp 100: 8 px inside the lit edge is mostly lit", lum(img, near_edge),
+			AMBIENT, 0.2)
+	check_approx(case_name, "ancestor rule: 110 px past the lit edge is full", AMBIENT, lum(img, deep), 0.06)
+	for algo in [ALGO.CONE_TRACED, ALGO.STOCHASTIC]:
+		var an: String = ["Raymarched", "Cone Traced", "Stochastic"][algo]
+		_light.shadow_algorithm = algo
+		await frames(3)
+		img = await capture()
+		check_gt(case_name, "%s: 8 px inside the lit edge is mostly lit" % an, lum(img, near_edge), AMBIENT, 0.2)
+		check_approx(case_name, "%s: 110 px past the lit edge is full" % an, AMBIENT, lum(img, deep), 0.06)
+	_light.shadow_algorithm = ALGO.RAYMARCHED
+	post.shadow_ramp = 0.0
+	_box.reparent(_props)
+	post.queue_free()
+	await frames(4)
+	img = await capture()
+	check_approx(case_name, "ramp 0 again: hard interior", AMBIENT, lum(img, near_edge), 0.06)
+	# Bare receiver: the ramp lives on the material alone.
+	var bare := Sprite2D.new()
+	bare.texture = tex_sized(Vector2(8, 8))
+	bare.material = receiver_material()
+	(bare.material as ShaderMaterial).set_shader_parameter("shadow_ramp", 100.0)
+	bare.position = Vector2(330, 500)
+	_props.add_child(bare)
+	_box.reparent(bare)
+	await frames(4)
+	img = await capture()
+	check_gt(case_name, "bare receiver material ramp 100: 8 px inside the lit edge is mostly lit",
+			lum(img, near_edge), AMBIENT, 0.2)
+	_box.reparent(_props)
+	bare.queue_free()
+	await frames(4)
+	check_true(case_name, "F_RAMP cleared", LitLightRegistry.activity_flags & LitShaderLibrary.F_RAMP == 0)
+	check(case_name, "the floor is back on the fast variant", 0,
+			LitShaderLibrary.flags_of(_floor_a.material.shader) & (LitShaderLibrary.F_RAMP | LitShaderLibrary.TIER_MASK))
+
+
 func _directional_shadows() -> void:
 	var case_name := "directional_shadows"
 	var d := directional_light(0.0, 0.5, Color.WHITE, 40.0)
@@ -232,6 +289,20 @@ func _directional_shadows() -> void:
 			lum(img, Vector2(1015, 180)), 0.06)
 	check_approx(case_name, "directional footprint: 8 px inside the lit edge is dark too (no ramp)", AMBIENT,
 			lum(img, Vector2(988, 180)), 0.06)
+	var sun_post := box_receiver(Vector2(1000, 480), Vector2(8, 8), Color.WHITE, _props)
+	sun_post.specular_strength = 0.0
+	sun_post.shadow_ramp = 100.0
+	await frames(4)
+	img = await capture()
+	check_gt(case_name, "shadow_ramp 100 (sibling receiver): 8 px inside the lit edge is mostly lit",
+			lum(img, Vector2(988, 180)), AMBIENT, 0.2)
+	check_between(case_name, "shadow_ramp 100: 35 px past the lit edge is partly shadowed",
+			lum(img, Vector2(1015, 180)), AMBIENT + 0.03, lum(img, left) - 0.03)
+	check_approx(case_name, "shadow_ramp 100: 105 px past the lit edge is full", AMBIENT,
+			lum(img, Vector2(1085, 180)), TOL)
+	sun_post.shadow_ramp = 0.0
+	sun_post.queue_free()
+	await frames(4)
 	d.rotation = PI
 	await frames(2)
 	img = await capture()

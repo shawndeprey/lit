@@ -125,21 +125,15 @@ class_name LitAnimatedSprite2D
 		shadow_min_step = value
 		_set_param("shadow_min_step", value)
 
-## Opacity of the shadow an occluder casts on the receiver pixels inside its own shape,
-## past its light-facing edge (the way a Godot occluder shadows its own interior).
-## Clamped to 1; 0 hides it. Proxies to `footprint_shadow`.
-@export var footprint_shadow: float = 16.0:
+## Shadow ramp of this node's occluders, in world px: their shadows ease in from the
+## lit edge over this distance on every receiver they land on, instead of starting
+## hard. An occluder takes the ramp of its nearest ancestor receiver, else of its
+## first sibling receiver. 0 is a hard edge. Proxies to `shadow_ramp`.
+@export var shadow_ramp: float = 0.0:
 	set(value):
-		footprint_shadow = value
-		_set_param("footprint_shadow", value)
-
-## Eases that interior shadow in from the shape's light-facing edge over this many
-## world px, so a footprint fades into the direction it casts. 0 is a hard edge.
-## Proxies to `footprint_ramp`.
-@export var footprint_ramp: float = 0.0:
-	set(value):
-		footprint_ramp = value
-		_set_param("footprint_ramp", value)
+		shadow_ramp = value
+		_set_param("shadow_ramp", value)
+		LitLightRegistry.shadow_ramp_changed(value)
 
 ## Directional lights only: horizontal reach of the shading vector relative to the
 ## light's `height`, so its elevation is atan(height / scale); larger is more grazing.
@@ -200,8 +194,7 @@ func _init() -> void:
 		_set_param("roughness_value", roughness_value)
 		_set_param("shadow_steps", shadow_steps)
 		_set_param("shadow_min_step", shadow_min_step)
-		_set_param("footprint_shadow", footprint_shadow)
-		_set_param("footprint_ramp", footprint_ramp)
+		_set_param("shadow_ramp", shadow_ramp)
 		_set_param("directional_horizontal_scale", directional_horizontal_scale)
 	# An empty SpriteFrames so the node is usable the moment it's created: the editor's
 	# SpriteFrames panel only opens for a node that already has one. Assigning your own
