@@ -43,6 +43,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
 	float t_self_end = 0.0;
 	float t_ex_end = 0.0;                                  // reach of the exclusion-aware phases
+	float in_min = 1.0;                                    // coverage inside a crossed shape, weighted at its lit edge
 #ifdef LIT_OCC_MASKS
 	float t_mk_end = 0.0;
 
@@ -97,6 +98,14 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				}
 				receding = false;
 			}
+			if (in_min < 1.0 && d >= 0.0) {
+				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
+				res = min(res, mix(1.0, in_min, LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)));
+				in_min = 1.0;
+				if (res <= 0.0) {
+					return 0.0;
+				}
+			}
 			float cand = 0.5 + d / (2.0 * w * t);
 			if (cand < res) {
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
@@ -111,8 +120,13 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 						frag_px + dir_px * t, own_r) : 1.0;
 #endif
-				float faded = mix(1.0, max(cand, 0.0), yw * lit_tip_weight(t, t_tip, tip_band)
-						* LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t));
+				float cw = yw * lit_tip_weight(t, t_tip, tip_band);
+				float faded = 1.0;
+				if (d < 0.0 && LIT_RAMP_ON) {
+					in_min = min(in_min, mix(1.0, max(cand, 0.0), cw));
+				} else {
+					faded = mix(1.0, max(cand, 0.0), cw * LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t));
+				}
 				if (faded < res) {
 					res = faded;
 					if (res <= 0.0) {
@@ -199,6 +213,14 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 			// the fraction 0.5 + d/(2*w*t) unblocked, hitting 0 only when the edge is
 			// a full half-width past center - which is what lets the umbra close
 			// behind small occluders.
+			if (in_min < 1.0 && d >= 0.0) {
+				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
+				res = min(res, mix(1.0, in_min, LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)));
+				in_min = 1.0;
+				if (res <= 0.0) {
+					return 0.0;
+				}
+			}
 			float cand = 0.5 + d / (2.0 * w * t);
 			if (cand < res) {
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
@@ -212,8 +234,13 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
 						frag_px + dir_px * t, own_r) : 1.0;
 #endif
-				float faded = mix(1.0, max(cand, 0.0), yw * lit_tip_weight(t, t_tip, tip_band)
-						* LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t));
+				float cw = yw * lit_tip_weight(t, t_tip, tip_band);
+				float faded = 1.0;
+				if (d < 0.0 && LIT_RAMP_ON) {
+					in_min = min(in_min, mix(1.0, max(cand, 0.0), cw));
+				} else {
+					faded = mix(1.0, max(cand, 0.0), cw * LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t));
+				}
 				if (faded < res) {
 					res = faded;
 					if (res <= 0.0) {
@@ -222,6 +249,13 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				}
 			}
 			t += max(ad, shadow_min_step);
+		}
+	}
+
+	if (in_min < 1.0) {
+		res = min(res, mix(1.0, in_min, LIT_RAMP_W(self_canvas + sdf_to_canvas * (dir * t), frag_px + sdf_to_px * (dir * t), LIT_SELF_PAD_SDF * self_scale, t)));
+		if (res <= 0.0) {
+			return 0.0;
 		}
 	}
 
@@ -340,7 +374,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				}
 #endif
 #ifdef LIT_SELF_EXCLUSION
-				yw *= LIT_RAMP_W(self_canvas + sdf_to_canvas * (dir * maxd), frag_px + sdf_to_px * (dir * maxd), own_r, maxd);
+				yw *= LIT_RAMP_W(self_canvas + sdf_to_canvas * (dir * maxd), frag_px + sdf_to_px * (dir * maxd), own_r, maxd + max(-d, 0.0));
 #endif
 				res = min(res, mix(1.0, max(cand, 0.0), yw));
 			}

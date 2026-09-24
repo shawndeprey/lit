@@ -207,7 +207,8 @@ func _shadow_ramp() -> void:
 	var post := box_receiver(Vector2(330, 480), Vector2(8, 8), Color.WHITE, _props)
 	post.specular_strength = 0.0
 	var near_edge := Vector2(318, 300)   # 8 px past the lit edge
-	var in_box := Vector2(346, 300)      # 4 px before the far edge
+	var inner := Vector2(338, 300)       # 12 px before the far edge
+	var in_box := Vector2(346, 300)      # 4 px before it
 	var behind := Vector2(354, 300)      # 4 px past it, on the floor
 	var deep := Vector2(420, 300)        # 110 px past the lit edge
 	await frames(3)
@@ -225,8 +226,10 @@ func _shadow_ramp() -> void:
 	var edge_l := lum(img, near_edge)
 	check_gt(case_name, "sibling receiver ramp 100: 8 px inside the lit edge is mostly lit", edge_l, AMBIENT, 0.2)
 	check_lt(case_name, "deeper inside is darker", lum(img, F), edge_l, 0.03)
-	check_approx(case_name, "no seam at the far edge: 4 px inside matches 4 px behind", lum(img, in_box, 1),
-			lum(img, behind, 1), 0.08)
+	check_approx(case_name, "no seam at the far edge: the 8 px step across it matches the step inside",
+			lum(img, inner, 1) - lum(img, in_box, 1), lum(img, in_box, 1) - lum(img, behind, 1), 0.02)
+	check_approx(case_name, "no rim on the far edge: the edge pixel sits between its neighbours",
+			(lum(img, in_box, 0) + lum(img, behind, 0)) * 0.5, lum(img, Vector2(350, 300), 0), 0.03)
 	check_lt(case_name, "further behind is darker still", lum(img, deep), lum(img, behind), 0.05)
 	check_approx(case_name, "110 px past the lit edge the shadow is full", AMBIENT, lum(img, deep), 0.06)
 	check_gt(case_name, "beside the shadow band the floor stays lit", lum(img, P), AMBIENT, 0.15)
@@ -236,14 +239,38 @@ func _shadow_ramp() -> void:
 	check_gt(case_name, "ancestor receiver ramp 100: 8 px inside the lit edge is mostly lit", lum(img, near_edge),
 			AMBIENT, 0.2)
 	check_approx(case_name, "ancestor rule: 110 px past the lit edge is full", AMBIENT, lum(img, deep), 0.06)
-	for algo in [ALGO.CONE_TRACED, ALGO.STOCHASTIC]:
+	for algo in [ALGO.RAYMARCHED, ALGO.CONE_TRACED, ALGO.STOCHASTIC]:
 		var an: String = ["Raymarched", "Cone Traced", "Stochastic"][algo]
 		_light.shadow_algorithm = algo
 		await frames(3)
 		img = await capture()
 		check_gt(case_name, "%s: 8 px inside the lit edge is mostly lit" % an, lum(img, near_edge), AMBIENT, 0.2)
+		check_approx(case_name, "%s: no seam at the far edge" % an, lum(img, inner, 1) - lum(img, in_box, 1),
+				lum(img, in_box, 1) - lum(img, behind, 1), 0.02)
 		check_approx(case_name, "%s: 110 px past the lit edge is full" % an, AMBIENT, lum(img, deep), 0.06)
-	_light.shadow_algorithm = ALGO.RAYMARCHED
+	# Oblique exit: with the light high and wide, rays behind the box leave it through
+	# its near edge at ~65 degrees, so a cone sample's edge distance undershoots the
+	# ray's own; the shadow must still run straight through the far edge.
+	_light.position = Vector2(200, 40)
+	_light.source_radius = 64.0
+	post.shadow_ramp = 200.0
+	var far_edge := Vector2(350, 335)
+	var to_light := (_light.position - far_edge).normalized()
+	for algo in [ALGO.RAYMARCHED, ALGO.CONE_TRACED, ALGO.STOCHASTIC]:
+		var an: String = ["Raymarched", "Cone Traced", "Stochastic"][algo]
+		_light.shadow_algorithm = algo
+		await frames(3)
+		img = await capture()
+		var l_in := lum(img, far_edge + to_light * 3.0, 1)
+		var l_in2 := lum(img, far_edge + to_light * 9.0, 1)
+		var l_out := lum(img, far_edge - to_light * 3.0, 1)
+		var l_out2 := lum(img, far_edge - to_light * 9.0, 1)
+		check_gt(case_name, "%s oblique: 9 px inside the far edge is shadowed" % an, lum(img, P), l_in2, 0.05)
+		check_approx(case_name, "%s oblique: no seam at the far edge" % an, l_in - l_out,
+				0.5 * ((l_in2 - l_in) + (l_out - l_out2)), 0.012)
+	_light.position = L
+	_light.source_radius = 32.0
+	_light.shadow_algorithm = ALGO.CONE_TRACED
 	post.shadow_ramp = 0.0
 	_box.reparent(_props)
 	post.queue_free()

@@ -24,6 +24,7 @@ Options after `--`:
 | `capture=PATH` | save the report frame as a PNG (implies `quit=on`) |
 | `only=a,b` | run only these sections (folder names) |
 | `skip=a,b` | skip these sections |
+| `full=on` | also run the separate sections (`shader_library`), which the default run leaves out; naming one in `only=` runs it too |
 | `model=both\|phong\|pbr` | which lighting model(s) the model-sensitive sections run under; `both` (default) runs them twice and reports the PBR pass as `<section>@pbr` |
 | `hold=SECONDS` | keep each finished section on screen that long, for eyeballing |
 | `vsync=on` | leave vsync on (off by default so frame waits run at GPU speed) |
@@ -31,9 +32,18 @@ Options after `--`:
 
 The window stays open on the report by default. Escape quits; C copies every `SUITE`
 line of the run to the clipboard, ready to paste into a bug report; the panel text can
-also be selected and copied with Ctrl+C; the mouse wheel scrolls it. A full run takes
-a couple of minutes cold (the shader library section compiles every variant) and
-about 20 seconds warm.
+also be selected and copied with Ctrl+C; the mouse wheel scrolls it. A default run
+takes about a minute cold and 20 seconds warm.
+
+The `shader_library` section compiles and renders every receiver variant on the main
+thread, minutes with the window frozen, so it is a separate section: the default run
+skips it and lists it as not run. Run it on its own after touching the shader
+library, the includes or the precompiler, and before a release:
+
+```
+godot --path . res://Test/test_suite/TestSuite.tscn -- quit=on only=shader_library
+godot --path . res://Test/test_suite/TestSuite.tscn -- quit=on full=on
+```
 
 Every section scene (`<section>/<section>_section.tscn`) also runs on its own with the
 same HUD and options, which is the quick way to iterate on one feature set.
@@ -121,7 +131,7 @@ config naming a missing shader or unknown variant (entries skipped).
 | `post_process` | every built-in post effect on a fixed base image (every LUT preset included), chain order, rank slotting, host visibility, parameter persistence, custom effects, auto exposure |
 | `auto_pooling` | the receiver material pool bench (moved here from Test/misc/auto-pooling; see its README) |
 | `registry` | light cache, bare-receiver driving, activity flags and the automatic variant swap, the rx registry |
-| `shader_library` | variant matrix gates, every variant compiled and rendered, entry shaders, world SDF pipeline, precompiler statics and overlay |
+| `shader_library` | (separate, see above) variant matrix gates, every variant compiled and rendered, entry shaders, world SDF pipeline, precompiler statics and overlay |
 | `migration` | schema lock: migration files, lit_version stamps, live stored properties vs the locked baseline |
 | `update_tool` | "Update Project to Lit" on the Test/.update_tool_bench fixtures (scratch copy): conversions, scripts, reports, idempotency |
 | `splash` | LitSplashScreen playback, natural end on its own clock, key and mouse skip, finished signal, auto_free |
