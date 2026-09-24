@@ -50,7 +50,7 @@ shader_parameter/roughness_value = 1.0
 shader_parameter/ao_map = ExtResource("2_0nhq4")
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
-shader_parameter/shadow_ramp = 443.63
+shader_parameter/shadow_ramp = 346.53
 shader_parameter/directional_horizontal_scale = 32.0
 
 [sub_resource type="CompressedTexture2D" id="CompressedTexture2D_m84n4"]
@@ -89,7 +89,7 @@ scale = Vector2(5, 5)
 texture = SubResource("CanvasTexture_tkxmq")
 script = ExtResource("4_lf0he")
 lit_version = "1.1.4"
-shadow_ramp = 443.63
+shadow_ramp = 346.53
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
 [node name="LightOccluder2D" type="LightOccluder2D" parent="LitSprite2D" unique_id=1735893173]
@@ -103,7 +103,7 @@ lit_version = "1.1.4"
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
 [node name="LitPointLight2D" type="Node2D" parent="." unique_id=1871495841]
-position = Vector2(907, 208)
+position = Vector2(882, 188)
 script = ExtResource("8_o2hcw")
 lit_version = "1.1.4"
 energy = 2.0

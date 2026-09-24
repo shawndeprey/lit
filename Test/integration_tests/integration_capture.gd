@@ -2,6 +2,9 @@ extends Node2D
 ## Renders an integration test scene at 1920x1080 (one pixel per canvas unit), saves one
 ## frame and quits. Options after "--":
 ##   scene=res://PATH   out=PATH   frames=N (default 8)   algo=raymarch|cone|stochastic
+##   steps=N   min_step=X   (override shadow_steps / shadow_min_step on every receiver)
+##   shadows=off   (disable shadows on every light, for an unshadowed baseline)
+##   light=off   hardness=X   (zero every light's energy / set its shadow_hardness)
 
 const ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 
@@ -9,6 +12,11 @@ var _scene := "res://Test/integration_tests/shadow_ramp/shadow_ramp_integration_
 var _out := "user://integration_capture.png"
 var _frames := 8
 var _algo := -1
+var _steps := -1
+var _min_step := -1.0
+var _shadows_off := false
+var _light_off := false
+var _hardness := -1.0
 
 
 func _ready() -> void:
@@ -25,6 +33,16 @@ func _ready() -> void:
 				_frames = int(kv[1])
 			"algo":
 				_algo = ALGO_IDS.get(kv[1], -1)
+			"steps":
+				_steps = int(kv[1])
+			"min_step":
+				_min_step = float(kv[1])
+			"shadows":
+				_shadows_off = kv[1] == "off"
+			"light":
+				_light_off = kv[1] == "off"
+			"hardness":
+				_hardness = float(kv[1])
 	var win := get_window()
 	win.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
@@ -32,9 +50,23 @@ func _ready() -> void:
 	win.content_scale_factor = 1.0
 	var root: Node = load(_scene).instantiate()
 	add_child(root)
-	if _algo >= 0:
-		for n in root.find_children("*", "LitPointLight2D", true, false):
+	for n in root.find_children("*", "LitPointLight2D", true, false):
+		if _algo >= 0:
 			n.shadow_algorithm = _algo
+		if _shadows_off:
+			n.shadow_enabled = false
+		if _light_off:
+			n.energy = 0.0
+		if _hardness >= 0.0:
+			n.shadow_hardness = _hardness
+	for n in root.find_children("*", "CanvasItem", true, false):
+		var m := n.material as ShaderMaterial
+		if m == null:
+			continue
+		if _steps >= 0:
+			m.set_shader_parameter("shadow_steps", _steps)
+		if _min_step >= 0.0:
+			m.set_shader_parameter("shadow_min_step", _min_step)
 	_capture.call_deferred()
 
 

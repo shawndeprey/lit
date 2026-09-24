@@ -41,6 +41,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 	bool grace = frag_d < 0.0;
 	int s = 0;
 	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+	int s_end = max_steps + max(max_steps >> 2, 4);        // budget plus a forced-floor tail for near-tangent crawls
 	float t_self_end = 0.0;
 	float t_ex_end = 0.0;                                  // reach of the exclusion-aware phases
 	float in_min = 1.0;                                    // coverage inside a crossed shape, weighted at its lit edge
@@ -59,19 +60,16 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 		float pad = (max(w * maxd, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
 		t_mk_end = lit_rect_segment_exit(self_canvas, dir_canvas * maxd, mk_rect, pad) * maxd;
 		t_ex_end = t_mk_end;
-		bool receding = false;
-		float prev_d = frag_d;
-		for (; s < max_steps && t < maxd && t <= t_mk_end; s++) {
+		for (; s < s_end && t < maxd && t <= t_mk_end; s++) {
 			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float ad = abs(d);
+			float floor_t = s < max_steps ? shadow_min_step : max(shadow_min_step, (min(t_mk_end, maxd) - t) / float(s_end - s));
 			if (grace) {
 				if (d < 0.0) {
-					t += max(-d, shadow_min_step);
+					t += max(-d, floor_t);
 					continue;
 				}
 				grace = false;
-				receding = true;
-				prev_d = d;
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
 				if (lit_self_dist2(self_canvas + dir_canvas * t) > own_r * own_r
 						&& !lit_mk_exempt(mk_row, self_canvas + dir_canvas * t, own_r)
@@ -87,16 +85,8 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 						return 0.0;
 					}
 				}
-				t += max(ad, shadow_min_step);
+				t += max(ad, floor_t);
 				continue;
-			}
-			if (receding) {
-				if (d >= prev_d) {
-					prev_d = d;
-					t += max(ad, shadow_min_step);
-					continue;
-				}
-				receding = false;
 			}
 			if (in_min < 1.0 && d >= 0.0) {
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
@@ -112,7 +102,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				if (lit_self_dist2(self_canvas + dir_canvas * t) <= own_r * own_r
 						|| lit_mk_exempt(mk_row, self_canvas + dir_canvas * t, own_r)
 						|| LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r)) {
-					t += max(ad, shadow_min_step);
+					t += max(ad, floor_t);
 					continue;
 				}
 				float yw = 1.0;
@@ -134,7 +124,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					}
 				}
 			}
-			t += max(ad, shadow_min_step);
+			t += max(ad, floor_t);
 		}
 	}
 #endif
@@ -164,23 +154,20 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 		}
 #endif
 		t_ex_end = max(t_ex_end, t_slow_end);
-		bool receding = false;
-		float prev_d = frag_d;
 		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
 		// body, which taxes the whole shader even on fragments that never take it.
-		for (; s < max_steps && t < maxd && t <= t_slow_end; s++) {
+		for (; s < s_end && t < maxd && t <= t_slow_end; s++) {
 			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float ad = abs(d);
+			float floor_t = s < max_steps ? shadow_min_step : max(shadow_min_step, (min(t_slow_end, maxd) - t) / float(s_end - s));
 			if (grace) {
 				// March out of the containing shape; apply its footprint shadow once,
 				// at the exit sample, unless the shape is an owned occluder.
 				if (d < 0.0) {
-					t += max(-d, shadow_min_step);
+					t += max(-d, floor_t);
 					continue;
 				}
 				grace = false;
-				receding = true;
-				prev_d = d;
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
 				if (lit_self_dist2(self_canvas + dir_canvas * t) > own_r * own_r
 						&& !LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r)) {
@@ -195,18 +182,8 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 						return 0.0;
 					}
 				}
-				t += max(ad, shadow_min_step);
+				t += max(ad, floor_t);
 				continue;
-			}
-			if (receding) {
-				// Mute accumulation while still receding from the exited edge, or the
-				// receiver's own surface would count as half-blocking the cone.
-				if (d >= prev_d) {
-					prev_d = d;
-					t += max(ad, shadow_min_step);
-					continue;
-				}
-				receding = false;
 			}
 			// Half-plane coverage of the cone's cross-section (half-width w*t at
 			// distance t): an edge at signed distance d from the cone's center leaves
@@ -226,7 +203,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
 				if (lit_self_dist2(self_canvas + dir_canvas * t) <= own_r * own_r
 						|| LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r)) {
-					t += max(ad, shadow_min_step);   // owned occluder: contributes nothing
+					t += max(ad, floor_t);   // owned occluder: contributes nothing
 					continue;
 				}
 				float yw = 1.0;
@@ -248,7 +225,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 					}
 				}
 			}
-			t += max(ad, shadow_min_step);
+			t += max(ad, floor_t);
 		}
 	}
 

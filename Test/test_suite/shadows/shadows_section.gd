@@ -268,8 +268,25 @@ func _shadow_ramp() -> void:
 		check_gt(case_name, "%s oblique: 9 px inside the far edge is shadowed" % an, lum(img, P), l_in2, 0.05)
 		check_approx(case_name, "%s oblique: no seam at the far edge" % an, l_in - l_out,
 				0.5 * ((l_in2 - l_in) + (l_out - l_out2)), 0.012)
-	_light.position = L
+	# Grazing ray: the light 3 px outside the lit face, so rays below the box run
+	# along it with almost no clearance; a march that crawls out its budget there
+	# reads lit and paints a bright slit down the tangent line.
+	_light.position = Vector2(307, 179)
 	_light.source_radius = 32.0
+	_light.shadow_hardness = 0.0
+	var graze_y := 400.0
+	for algo in [ALGO.RAYMARCHED, ALGO.CONE_TRACED, ALGO.STOCHASTIC]:
+		var an: String = ["Raymarched", "Cone Traced", "Stochastic"][algo]
+		_light.shadow_algorithm = algo
+		await frames(3)
+		img = await capture()
+		var slit := 0.0
+		for x in range(306, 316):
+			slit = maxf(slit, lum(img, Vector2(x, graze_y), 0))
+		var beside := maxf(lum(img, Vector2(300, graze_y), 0), lum(img, Vector2(322, graze_y), 0))
+		check_lt(case_name, "%s grazing: no bright slit down the tangent line below the box" % an, slit, beside, -0.02)
+	_light.position = L
+	_light.shadow_hardness = 0.5
 	_light.shadow_algorithm = ALGO.CONE_TRACED
 	post.shadow_ramp = 0.0
 	_box.reparent(_props)
