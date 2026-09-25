@@ -1,0 +1,6 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" path="res://Test/integration_tests/integration_capture.gd" id="1_cap"]
+
+[node name="IntegrationCapture" type="Node2D"]
+script = ExtResource("1_cap")

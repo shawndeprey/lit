@@ -9,7 +9,7 @@
 shader = ExtResource("1_uk7ci")
 shader_parameter/emissive_strength = 1.0
 shader_parameter/receiver_mask = 1
-shader_parameter/self_shadow = false
+shader_parameter/self_shadow = true
 shader_parameter/self_rect_count = 0
 shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/specular_strength = 0.5
@@ -21,6 +21,15 @@ shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
 shader_parameter/footprint_shadow = 16.0
 shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_uk7ci"]
+polygon = PackedVector2Array(-8.003708, -24.011139, -2.4280853, -23.83128, -2.4280853, -15.557777, 7.643997, -15.377918, 8, 8, -8, 8)
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_7x70a"]
+polygon = PackedVector2Array(-7.913784, -15.647709, 8.093643, -15.647709, 8, 8, -8, 8)
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_qmmuv"]
+polygon = PackedVector2Array(8.003708, -24.011139, 2.4280853, -23.83128, 2.4280853, -15.557777, -7.643997, -15.377918, -8, 8, 8, 8)
 
 [sub_resource type="CanvasTexture" id="CanvasTexture_2lfkm"]
 diffuse_texture = ExtResource("1_g5y12")
@@ -65,14 +74,17 @@ texture = SubResource("CanvasTexture_2lfkm")
 0:18/size_in_atlas = Vector2i(1, 2)
 0:18/0 = 0
 0:18/0/texture_origin = Vector2i(0, 8)
+0:18/0/occlusion_layer_0/polygon_0/polygon = SubResource("OccluderPolygon2D_uk7ci")
 0:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(-7.733925, -23.92121, -2.1583042, -24.101068, -2.1583042, -15.647709, 8, -8, 8, 8, -8, 8)
 1:18/size_in_atlas = Vector2i(1, 2)
 1:18/0 = 0
 1:18/0/texture_origin = Vector2i(0, 8)
+1:18/0/occlusion_layer_0/polygon_0/polygon = SubResource("OccluderPolygon2D_7x70a")
 1:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(-8, -8, 8, -8, 8, 8, -8, 8)
 2:18/size_in_atlas = Vector2i(1, 2)
 2:18/0 = 0
 2:18/0/texture_origin = Vector2i(0, 8)
+2:18/0/occlusion_layer_0/polygon_0/polygon = SubResource("OccluderPolygon2D_qmmuv")
 2:18/0/physics_layer_0/polygon_0/points = PackedVector2Array(7.733925, -23.92121, 2.1583042, -24.101068, 2.1583042, -15.647709, -8, -8, -8, 8, 8, 8)
 3:16/size_in_atlas = Vector2i(1, 2)
 3:16/0 = 0
@@ -125,6 +137,7 @@ texture = SubResource("CanvasTexture_2lfkm")
 
 [sub_resource type="TileSet" id="TileSet_07hdm"]
 occlusion_layer_0/light_mask = 1
+occlusion_layer_0/sdf_collision = true
 physics_layer_0/collision_layer = 0
 physics_layer_0/collision_mask = 0
 sources/0 = SubResource("TileSetAtlasSource_jnrll")
@@ -133,5 +146,6 @@ sources/0 = SubResource("TileSetAtlasSource_jnrll")
 material = SubResource("ShaderMaterial_7x70a")
 tile_set = SubResource("TileSet_07hdm")
 script = ExtResource("3_7dvdw")
+lit_version = "1.1.4"
 emissive_strength = 1.0
-shadow_ignore_mask = 16
+self_shadow = true

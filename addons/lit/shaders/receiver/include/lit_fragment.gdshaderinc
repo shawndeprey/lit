@@ -53,7 +53,7 @@ void fragment() {
 #ifdef LIT_YSORT
 	bool ys_on = lit_ysort_enabled && ysort_on;
 #endif
-#if defined(LIT_YSORT) || defined(LIT_OCC_RX)
+#if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
 	mat2 sdf_to_px = mat2(vec2(0.0), vec2(0.0));
 	vec2 frag_px = SCREEN_UV * lit_viewport_size;
 #endif
@@ -63,7 +63,7 @@ void fragment() {
 	// Any tile light may carry exclusions, so the basis is always needed.
 	const bool occ_basis = true;
 #else
-	bool occ_basis = self_ex || LIT_YS_ON;
+	bool occ_basis = self_ex || LIT_YS_ON || LIT_RAMP_ON;
 #endif
 	if (occ_basis) {
 		// Columns: per-pixel-step delta of each space, in x and y.
@@ -71,7 +71,7 @@ void fragment() {
 				screen_uv_to_sdf(SCREEN_UV + vec2(SCREEN_PIXEL_SIZE.x, 0.0)) - frag_sdf,
 				screen_uv_to_sdf(SCREEN_UV + vec2(0.0, SCREEN_PIXEL_SIZE.y)) - frag_sdf);
 		mat2 px_to_canvas = mat2(dFdx(v_canvas), dFdy(v_canvas));
-#if defined(LIT_YSORT) || defined(LIT_OCC_RX)
+#if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
 		sdf_to_px = inverse(px_to_sdf);
 		sdf_to_canvas = px_to_canvas * sdf_to_px;
 #else

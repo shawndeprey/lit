@@ -33,7 +33,7 @@ const SCALAR_SPLITS := {
 	"emissive_strength": 0.7, "receiver_mask": 3, "self_shadow": true,
 	"specular_strength": 0.9, "specular_k": 8.0, "metallic_value": 0.5,
 	"roughness_value": 0.3, "shadow_steps": 32, "shadow_min_step": 0.5,
-	"footprint_shadow": 4.0, "directional_horizontal_scale": 8.0,
+	"shadow_ramp": 4.0, "directional_horizontal_scale": 8.0,
 }
 
 const DEFAULT_COUNT := 10

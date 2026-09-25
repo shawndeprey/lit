@@ -183,7 +183,6 @@ func _occluder() -> void:
 	var sf := SpriteFrames.new()
 	sf.add_frame(&"default", tex_sized(Vector2(60, 120)))
 	a.sprite_frames = sf
-	a.footprint_shadow = 0.0
 	a.specular_strength = 0.0
 	place(a, c, Vector2(0, 10))
 	occluder(Vector2(0, 20), Vector2(40, 10), a)

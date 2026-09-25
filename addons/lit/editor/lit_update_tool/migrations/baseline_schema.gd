@@ -16,7 +16,6 @@ const BASELINE_SCHEMA := {
 		"props": {
 			&"directional_horizontal_scale": {"type": TYPE_FLOAT, "default": 32.0},
 			&"emissive_strength": {"type": TYPE_FLOAT, "default": 0.0},
-			&"footprint_shadow": {"type": TYPE_FLOAT, "default": 16.0},
 			&"lit_version": {"type": TYPE_STRING, "default": ""},
 			&"metallic_value": {"type": TYPE_FLOAT, "default": 0.0},
 			&"receiver_mask": {"type": TYPE_INT, "default": 1},
@@ -24,6 +23,7 @@ const BASELINE_SCHEMA := {
 			&"self_shadow": {"type": TYPE_BOOL, "default": false},
 			&"shadow_ignore_mask": {"type": TYPE_INT, "default": 0},
 			&"shadow_min_step": {"type": TYPE_FLOAT, "default": 0.2},
+			&"shadow_ramp": {"type": TYPE_FLOAT, "default": 0.0},
 			&"shadow_steps": {"type": TYPE_INT, "default": 64},
 			&"specular_k": {"type": TYPE_FLOAT, "default": 32.0},
 			&"specular_strength": {"type": TYPE_FLOAT, "default": 0.5},
@@ -365,7 +365,6 @@ const BASELINE_SCHEMA := {
 		"props": {
 			&"directional_horizontal_scale": {"type": TYPE_FLOAT, "default": 32.0},
 			&"emissive_strength": {"type": TYPE_FLOAT, "default": 0.0},
-			&"footprint_shadow": {"type": TYPE_FLOAT, "default": 16.0},
 			&"lit_version": {"type": TYPE_STRING, "default": ""},
 			&"metallic_value": {"type": TYPE_FLOAT, "default": 0.0},
 			&"receiver_mask": {"type": TYPE_INT, "default": 1},
@@ -373,6 +372,7 @@ const BASELINE_SCHEMA := {
 			&"self_shadow": {"type": TYPE_BOOL, "default": false},
 			&"shadow_ignore_mask": {"type": TYPE_INT, "default": 0},
 			&"shadow_min_step": {"type": TYPE_FLOAT, "default": 0.2},
+			&"shadow_ramp": {"type": TYPE_FLOAT, "default": 0.0},
 			&"shadow_steps": {"type": TYPE_INT, "default": 64},
 			&"specular_k": {"type": TYPE_FLOAT, "default": 32.0},
 			&"specular_strength": {"type": TYPE_FLOAT, "default": 0.5},
@@ -383,7 +383,6 @@ const BASELINE_SCHEMA := {
 		"props": {
 			&"directional_horizontal_scale": {"type": TYPE_FLOAT, "default": 32.0},
 			&"emissive_strength": {"type": TYPE_FLOAT, "default": 0.0},
-			&"footprint_shadow": {"type": TYPE_FLOAT, "default": 16.0},
 			&"lit_version": {"type": TYPE_STRING, "default": ""},
 			&"metallic_value": {"type": TYPE_FLOAT, "default": 0.0},
 			&"receiver_mask": {"type": TYPE_INT, "default": 1},
@@ -391,6 +390,7 @@ const BASELINE_SCHEMA := {
 			&"self_shadow": {"type": TYPE_BOOL, "default": false},
 			&"shadow_ignore_mask": {"type": TYPE_INT, "default": 0},
 			&"shadow_min_step": {"type": TYPE_FLOAT, "default": 0.2},
+			&"shadow_ramp": {"type": TYPE_FLOAT, "default": 0.0},
 			&"shadow_steps": {"type": TYPE_INT, "default": 64},
 			&"specular_k": {"type": TYPE_FLOAT, "default": 32.0},
 			&"specular_strength": {"type": TYPE_FLOAT, "default": 0.5},

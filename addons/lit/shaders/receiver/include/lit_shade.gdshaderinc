@@ -267,7 +267,7 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 				// packs the tangent directly).
 				float w = max(is_directional ? t7.x
 						: t7.x * lit_canvas_scale * px_to_sdf / max(march_len, 1e-4), 1e-4);
-				s = lit_shadow_cone(frag_sdf, march_dir, t_cap, march_len,
+				s = lit_shadow_cone(frag_sdf, march_dir, t_cap,
 						capped ? w * t_cap : 0.0, w, steps,
 						frag_d, !is_directional && !capped, self_ex, self_canvas, sdf_to_canvas,
 						self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
@@ -276,13 +276,13 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 #endif
 			{
 				float k = mix(8.0, 256.0, t3.w);
-				s = lit_shadow(frag_sdf, march_dir, t_cap, march_len, capped ? t_cap / k : 0.0,
+				s = lit_shadow(frag_sdf, march_dir, t_cap, capped ? t_cap / k : 0.0,
 						k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 			}
 #else
 			// Low hardness is soft, high is crisp.
 			float k = mix(8.0, 256.0, t3.w);
-			s = lit_shadow(frag_sdf, march_dir, t_cap, march_len, capped ? t_cap / k : 0.0,
+			s = lit_shadow(frag_sdf, march_dir, t_cap, capped ? t_cap / k : 0.0,
 					k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 #endif
 		}

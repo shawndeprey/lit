@@ -20,6 +20,9 @@ extends Node2D
 ##   capture=PATH     save a PNG of the final report frame (implies quit=on)
 ##   only=a,b,c       run only these sections (folder names)
 ##   skip=a,b         skip these sections
+##   full=on          also run the separate sections (shader_library compiles every
+##                    receiver variant, minutes on the main thread); by default they
+##                    run only when named in only=
 ##   model=both|phong|pbr   which lighting model(s) the model-sensitive sections run
 ##                    under (default both: those sections run twice, the PBR pass is
 ##                    reported as <section>@pbr)
@@ -52,7 +55,8 @@ extends Node2D
 
 # "pbr": true marks a section whose exhibits are shaded by the receiver's lighting
 # model; it runs once per model (see model=). The rest is model-independent and runs
-# once (the lighting_model section switches models itself).
+# once (the lighting_model section switches models itself). "separate": true keeps a
+# section out of the default run (see full=).
 const SECTIONS := [
 	{"id": "harness", "title": "Harness & Ambient", "script": "res://Test/test_suite/harness/harness_section.gd"},
 	{"id": "lights", "title": "Lights", "script": "res://Test/test_suite/lights/lights_section.gd", "pbr": true},
@@ -68,7 +72,7 @@ const SECTIONS := [
 	{"id": "post_process", "title": "Post Processing", "script": "res://Test/test_suite/post_process/post_process_section.gd"},
 	{"id": "auto_pooling", "title": "Material Auto-Pooling", "script": "res://Test/test_suite/auto_pooling/auto_pooling_bench.gd"},
 	{"id": "registry", "title": "Registry & Receiver Driving", "script": "res://Test/test_suite/registry/registry_section.gd"},
-	{"id": "shader_library", "title": "Shader Library & Precompile", "script": "res://Test/test_suite/shader_library/shader_library_section.gd"},
+	{"id": "shader_library", "title": "Shader Library & Precompile", "script": "res://Test/test_suite/shader_library/shader_library_section.gd", "separate": true},
 	{"id": "migration", "title": "Schema Lock & Migrations", "script": "res://Test/test_suite/migration/migration_section.gd"},
 	{"id": "update_tool", "title": "Update Project to Lit", "script": "res://Test/test_suite/update_tool/update_tool_section.gd"},
 	{"id": "splash", "title": "Splash Screen", "script": "res://Test/test_suite/splash/splash_section.gd"},
@@ -80,6 +84,7 @@ var _opt_quit := false
 var _opt_capture := ""
 var _opt_only: PackedStringArray = []
 var _opt_skip: PackedStringArray = []
+var _opt_full := false
 var _opt_hold := 0.0
 var _opt_vsync := false
 var _opt_model := "both"
@@ -90,6 +95,7 @@ var _title: Label
 var _current: LitSuiteSection = null
 var _section_index := 0
 var _planned: Array = []
+var _separate_skipped: PackedStringArray = []
 var _section_results: Array = []   # {id, title, results, ms}
 var _all_results: Array = []       # results tagged with section id
 var _finished := false
@@ -109,6 +115,9 @@ func _ready() -> void:
 		if not _opt_only.is_empty() and not _opt_only.has(s.id):
 			continue
 		if _opt_skip.has(s.id):
+			continue
+		if s.get("separate", false) and not _opt_full and not _opt_only.has(s.id):
+			_separate_skipped.append(s.id)
 			continue
 		var sensitive: bool = s.get("pbr", false)
 		if not sensitive or _opt_model != "pbr":
@@ -135,6 +144,8 @@ func _parse_args() -> void:
 				_opt_only = kv[1].split(",", false)
 			"skip":
 				_opt_skip = kv[1].split(",", false)
+			"full":
+				_opt_full = kv[1] == "on" or kv[1] == "1" or kv[1] == "true"
 			"hold":
 				_opt_hold = float(kv[1])
 			"vsync":
@@ -170,6 +181,8 @@ func _run_all() -> void:
 	LitSuiteSection.say(LitSuiteSection.env_line(get_viewport()))
 	_t0 = Time.get_ticks_msec()
 	LitSuiteSection.say("SUITE Lit %s test suite: %d section runs (model=%s)" % [LitShaderLibrary._get_version(), _planned.size(), _opt_model])
+	for id in _separate_skipped:
+		LitSuiteSection.say("SUITE SEPARATE %s not run: only=%s runs it alone, full=on includes it" % [id, id])
 	for i in _planned.size():
 		_section_index = i
 		var spec: Dictionary = _planned[i]
@@ -226,6 +239,8 @@ func _finish() -> void:
 				else:
 					sf += 1
 		LitSuiteSection.say("SUITE   %s: %d checks, %d failed, %d known gaps, %d ms" % [s.id, s.results.size(), sf, sg, s.ms])
+	for id in _separate_skipped:
+		LitSuiteSection.say("SUITE   %s: not run (separate section; only=%s or full=on)" % [id, id])
 	LitSuiteSection.say("SUITE SUMMARY section_runs=%d features=%d features_passed=%d features_failed=%d features_with_gaps=%d checks=%d passed=%d failed=%d known_gaps=%d model=%s time=%.1fs" % [
 			_section_results.size(), rep.features, rep.features_passed, rep.features_failed,
 			rep.features_with_gaps, _all_results.size(), _all_results.size() - rep.failed - rep.gaps,

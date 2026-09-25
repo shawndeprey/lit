@@ -174,3 +174,23 @@ lit_gx_rect3={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+lit_ramp_count={
+"type": "int",
+"value": 0
+}
+lit_ramp_rect0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+lit_ramp_rect1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+lit_ramp_rect2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+lit_ramp_rect3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}

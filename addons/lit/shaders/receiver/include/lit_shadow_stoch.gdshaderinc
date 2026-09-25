@@ -40,7 +40,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 	bool capped = t_cap < maxd;
 	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
 	float band = capped ? w_gate * t_cap : 0.0;
-	float gate = lit_shadow_cone(frag_sdf, dir, t_cap, maxd, band, w_gate, max_steps, frag_d,
+	float gate = lit_shadow_cone(frag_sdf, dir, t_cap, band, w_gate, max_steps, frag_d,
 			!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 	if (gate <= 0.0) {
 		return 0.0;
@@ -75,7 +75,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 			sdir = delta / max(smaxd, 1e-4);
 			w_sub = half_stratum / max(smaxd, 1e-4);
 		}
-		sum += lit_shadow_cone(frag_sdf, sdir, smaxd * cap_frac, smaxd, band, max(w_sub, 1e-4),
+		sum += lit_shadow_cone(frag_sdf, sdir, smaxd * cap_frac, band, max(w_sub, 1e-4),
 				max_steps, frag_d,
 				!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 	}

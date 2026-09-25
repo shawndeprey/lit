@@ -541,6 +541,11 @@ func _ps_global_defs() -> Array:
 		{"name": "lit_gx_rect1", "def": {"type": "vec4", "value": Vector4()}},
 		{"name": "lit_gx_rect2", "def": {"type": "vec4", "value": Vector4()}},
 		{"name": "lit_gx_rect3", "def": {"type": "vec4", "value": Vector4()}},
+		{"name": "lit_ramp_count", "def": {"type": "int", "value": 0}},
+		{"name": "lit_ramp_rect0", "def": {"type": "vec4", "value": Vector4()}},
+		{"name": "lit_ramp_rect1", "def": {"type": "vec4", "value": Vector4()}},
+		{"name": "lit_ramp_rect2", "def": {"type": "vec4", "value": Vector4()}},
+		{"name": "lit_ramp_rect3", "def": {"type": "vec4", "value": Vector4()}},
 	]
 
 ## RenderingServer live-add defs: name + GlobalShaderParameterType + default.
@@ -579,6 +584,11 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_gx_rect1", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
 		{"name": "lit_gx_rect2", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
 		{"name": "lit_gx_rect3", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
+		{"name": "lit_ramp_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
+		{"name": "lit_ramp_rect0", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
+		{"name": "lit_ramp_rect1", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
+		{"name": "lit_ramp_rect2", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
+		{"name": "lit_ramp_rect3", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
 	]
 
 ## Persist the shader_globals into project.godot. Idempotent: writes only the missing

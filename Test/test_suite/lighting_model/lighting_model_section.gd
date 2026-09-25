@@ -149,7 +149,7 @@ func _gating() -> void:
 		for p in ["specular_strength", "specular_k", "shadow_steps"]:
 			ro_ok = ro_ok and usage.has(p) and (usage[p] & PROPERTY_USAGE_READ_ONLY) != 0
 		var rw_ok := true
-		for p in ["metallic_value", "roughness_value", "shadow_min_step", "footprint_shadow",
+		for p in ["metallic_value", "roughness_value", "shadow_min_step", "shadow_ramp",
 				"directional_horizontal_scale", "emissive_strength"]:
 			rw_ok = rw_ok and usage.has(p) and (usage[p] & PROPERTY_USAGE_READ_ONLY) == 0
 		check_true(case_name, "%s: inert exports read-only (PBR, scaling on)" % cls, ro_ok)

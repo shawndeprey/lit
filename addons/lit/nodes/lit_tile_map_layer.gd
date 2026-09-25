@@ -90,14 +90,15 @@ class_name LitTileMapLayer
 		shadow_min_step = value
 		_set_param("shadow_min_step", value)
 
-## How strongly an occluder's own shadow darkens the receiver pixels inside that
-## occluder's shape (the contact shadow at its footprint): block = footprint_shadow x
-## depth crossed / light distance, clamped to 1. Dimensionless, so zoom doesn't change
-## the look; higher darkens footprints sooner. Proxies to `footprint_shadow`.
-@export var footprint_shadow: float = 16.0:
+## Shadow ramp of this layer's tile occluders and occluder descendants, in world px: their shadows ease in from the
+## lit edge over this distance on every receiver they land on, instead of starting
+## hard. An occluder takes the ramp of its nearest ancestor receiver, else of its
+## first sibling receiver. 0 is a hard edge. Proxies to `shadow_ramp`.
+@export var shadow_ramp: float = 0.0:
 	set(value):
-		footprint_shadow = value
-		_set_param("footprint_shadow", value)
+		shadow_ramp = value
+		_set_param("shadow_ramp", value)
+		LitLightRegistry.shadow_ramp_changed(value)
 
 ## Directional lights only: horizontal reach of the shading vector relative to the
 ## light's `height`, so its elevation is atan(height / scale); larger is more grazing.
@@ -133,7 +134,7 @@ func _init() -> void:
 		_set_param("roughness_value", roughness_value)
 		_set_param("shadow_steps", shadow_steps)
 		_set_param("shadow_min_step", shadow_min_step)
-		_set_param("footprint_shadow", footprint_shadow)
+		_set_param("shadow_ramp", shadow_ramp)
 		_set_param("directional_horizontal_scale", directional_horizontal_scale)
 	# Signal, not _ready: a subclass overriding _ready without super() must not
 	# silently disable the node.
