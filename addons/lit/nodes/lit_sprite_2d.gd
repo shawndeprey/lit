@@ -134,16 +134,18 @@ class_name LitSprite2D
 @export_group("")
 
 
-## How much Lit light reaches this sprite's origin right now: 0.0 = pitch black,
-## 1.0 = fully lit (see LitManager.sample_luminance for the full contract). Uses this
-## sprite's receiver_mask and shadow_ignore_mask, so it sees exactly the lights and
-## shadows the sprite renders with. Runtime only; returns 0.0 in the editor.
+## How lit this sprite is right now: 0.0 = pitch black, 1.0 = fully lit (see
+## LitManager.sample_luminance for the full contract). The mean diffuse light over the
+## pixels of the frame it draws, through its own normal map, receiver_mask,
+## shadow_ignore_mask and directional_horizontal_scale; a shadow or cookie edge crossing
+## it counts for the part it covers. Runtime only; returns 0.0 in the editor.
 func get_luminance() -> float:
-	var manager = get_node_or_null(^"/root/LitManager")
-	if manager == null:
-		return 0.0
-	return manager.sample_luminance(global_position, receiver_mask, shadow_ignore_mask,
-			null if self_shadow else self)
+	var src := Rect2()
+	if texture != null:
+		src = region_rect if region_enabled else Rect2(Vector2.ZERO, texture.get_size())
+		src.size /= Vector2(hframes, vframes)
+		src.position += Vector2(frame_coords) * src.size
+	return LitReceiverHelper.luminance(self, texture, src, get_rect().get_center())
 
 
 # The CanvasTexture currently watched for specular-slot changes, so we can re-evaluate

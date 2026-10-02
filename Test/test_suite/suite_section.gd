@@ -526,6 +526,29 @@ func image_mean(img: Image, rect: Rect2, step := 4) -> Color:
 	return Color.BLACK if n == 0 else sum / float(n)
 
 
+## Rec. 601 luma of the mean colour inside a logical rect.
+func mean_lum(img: Image, rect: Rect2, step := 2) -> float:
+	var c := image_mean(img, rect, step)
+	return c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+
+
+## Mean Rec. 601 luma of the pixels inside a logical rect brighter than `floor_lum`: an
+## exhibit's own pixels when it sits on a black unlit backdrop, whatever its outline.
+func masked_mean_lum(img: Image, rect: Rect2, floor_lum := 0.1) -> float:
+	var p0 := to_px(rect.position, img)
+	var p1 := to_px(rect.end, img)
+	var sum := 0.0
+	var n := 0
+	for y in range(maxi(int(p0.y), 0), mini(int(p1.y), img.get_height())):
+		for x in range(maxi(int(p0.x), 0), mini(int(p1.x), img.get_width())):
+			var c := img.get_pixel(x, y)
+			var l := c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+			if l > floor_lum:
+				sum += l
+				n += 1
+	return 0.0 if n == 0 else sum / float(n)
+
+
 # --- Project settings (restored when the section ends) ------------------------------------
 
 func set_setting(setting: String, value) -> void:

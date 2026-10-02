@@ -146,16 +146,20 @@ class_name LitAnimatedSprite2D
 @export_group("")
 
 
-## How much Lit light reaches this sprite's origin right now: 0.0 = pitch black,
-## 1.0 = fully lit (see LitManager.sample_luminance for the full contract). Uses this
-## sprite's receiver_mask and shadow_ignore_mask, so it sees exactly the lights and
-## shadows the sprite renders with. Runtime only; returns 0.0 in the editor.
+## How lit this sprite is right now: 0.0 = pitch black, 1.0 = fully lit (see
+## LitManager.sample_luminance for the full contract). The mean diffuse light over the
+## pixels of the frame it draws, through its own normal map, receiver_mask,
+## shadow_ignore_mask and directional_horizontal_scale; a shadow or cookie edge crossing
+## it counts for the part it covers. Runtime only; returns 0.0 in the editor.
 func get_luminance() -> float:
-	var manager = get_node_or_null(^"/root/LitManager")
-	if manager == null:
-		return 0.0
-	return manager.sample_luminance(global_position, receiver_mask, shadow_ignore_mask,
-			null if self_shadow else self)
+	var tex: Texture2D = null
+	var frames := sprite_frames
+	if frames != null and frames.has_animation(animation) and frame >= 0 \
+			and frame < frames.get_frame_count(animation):
+		tex = frames.get_frame_texture(animation, frame)
+	var size := tex.get_size() if tex != null else Vector2.ZERO
+	return LitReceiverHelper.luminance(self, tex, Rect2(Vector2.ZERO, size),
+			offset + (Vector2.ZERO if centered else size * 0.5))
 
 
 # The SpriteFrames currently watched for frame edits (textures swapped in the
