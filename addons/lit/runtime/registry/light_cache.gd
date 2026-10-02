@@ -31,8 +31,8 @@ var _cache_tree: SceneTree = null
 var _on_changed := Callable()
 
 # Packed mirror, parallel to _light_cache. _nodes/_kinds keep the hot cull loop off
-# the [node, kind] entry arrays; _index maps node -> mirror row for the pending-set
-# writes.
+# the [node, kind] entry arrays; _index maps instance id -> mirror row for the
+# pending-set writes.
 var _nodes: Array = []
 var _kinds := PackedByteArray()
 var _ranges := PackedFloat32Array()
@@ -46,7 +46,7 @@ var _index := {}
 static var _pending := {}
 
 static func note_changed(node: Node) -> void:
-	_pending[node] = true
+	_pending[node.get_instance_id()] = true
 
 
 func set_fan_out(cb: Callable) -> void:
@@ -164,10 +164,10 @@ func _get_cached_lights(tree: SceneTree) -> Array:
 	if _cache_dirty:
 		_rebuild_light_cache(tree)
 	elif not _pending.is_empty() and not Engine.is_editor_hint():
-		for node in _pending:
-			var i: int = _index.get(node, -1)
-			if i >= 0 and is_instance_valid(node):
-				_write_mirror(i, node, _light_cache[i][1])
+		for id in _pending:
+			var i: int = _index.get(id, -1)
+			if i >= 0 and is_instance_valid(_nodes[i]):
+				_write_mirror(i, _nodes[i], _kinds[i])
 		_pending.clear()
 	return _light_cache
 
@@ -217,7 +217,7 @@ func _rebuild_light_cache(tree: SceneTree) -> void:
 		var entry: Array = _light_cache[i]
 		_nodes[i] = entry[0]
 		_kinds[i] = entry[1]
-		_index[entry[0]] = i
+		_index[entry[0].get_instance_id()] = i
 		_write_mirror(i, entry[0], entry[1])
 	_pending.clear()
 	_cache_dirty = false

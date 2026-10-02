@@ -9,6 +9,7 @@ extends LitSuiteSection
 
 const RegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const RxRegistryScript := preload("res://addons/lit/runtime/registry/rx_registry.gd")
+const LightCacheScript := preload("res://addons/lit/runtime/registry/light_cache.gd")
 const F := preload("res://addons/lit/runtime/lit_shader_library.gd")
 const AMBIENT := 0.1
 
@@ -26,6 +27,7 @@ func run() -> void:
 	await _bare_driving()
 	await _activity_flags()
 	await _rx_registry()
+	await _freed_node_keys()
 
 
 func _make_bare(pos: Vector2, size := Vector2(80, 80)) -> Sprite2D:
@@ -217,3 +219,32 @@ func _rx_registry() -> void:
 	s.queue_free()
 	await frames(2)
 	check(case_name, "freed rx nodes are pruned from the registry", registered_before, RxRegistryScript.nodes().size())
+
+
+## No registry keeps a freed node as a key: two freed twins make a `for` over it endless.
+func _freed_node_keys() -> void:
+	var case_name := "freed_node_keys"
+	var pending: Dictionary = LightCacheScript._pending
+	var rx: Dictionary = RxRegistryScript.nodes()
+	var rx_before := rx.size()
+	for i in 2:
+		var l := LitPointLight2D.new()
+		l.range = 300.0
+		l.free()
+		var s := LitSprite2D.new()
+		s.shadow_ignore_mask = 2
+		s.free()
+	var node_keys := 0
+	for key in pending.keys():
+		if typeof(key) == TYPE_OBJECT:
+			node_keys += 1
+	check(case_name, "lights touched and freed outside the tree leave no node keys in the pending set", 0, node_keys)
+	check(case_name, "rx receivers freed outside the tree leave the registry at once", rx_before, rx.size())
+	# A failing run must report, not freeze on the next refresh.
+	if node_keys > 0:
+		pending.clear()
+	for key in rx.keys():
+		if not is_instance_valid(key):
+			rx.erase(key)
+	await frames(2)
+	check(case_name, "the pending set is consumed by the next refresh", 0, pending.size())
