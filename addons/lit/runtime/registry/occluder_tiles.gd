@@ -620,8 +620,9 @@ static func _merge_cell_strips(rects: Array[Rect2], masks: PackedInt32Array) -> 
 		out_masks.append(m)
 	return [out_rects, out_masks]
 
-## Re-enable SDF collision on culled occluders/tileset layers a light's mask matches again.
-func restore_unculled(gx_masks: Dictionary) -> void:
+## Re-enable SDF collision on culled occluders/tileset layers a light's mask matches
+## again, or on all of them once culling is switched off.
+func restore_unculled(gx_masks: Dictionary, p_sdf_cull: bool) -> void:
 	_gx_masks = gx_masks
 	if _sdf_culled.is_empty() and _ts_culled.is_empty():
 		return
@@ -629,7 +630,7 @@ func restore_unculled(gx_masks: Dictionary) -> void:
 	for occ in _sdf_culled:
 		if not is_instance_valid(occ):
 			restore.append(occ)
-		elif not _gx_masks.has(occ.occluder_light_mask):
+		elif not p_sdf_cull or not _gx_masks.has(occ.occluder_light_mask):
 			occ.sdf_collision = true
 			restore.append(occ)
 	for occ in restore:
@@ -641,7 +642,7 @@ func restore_unculled(gx_masks: Dictionary) -> void:
 		for l in layers:
 			if l >= ts.get_occlusion_layers_count():
 				back.append(l)
-			elif not _gx_masks.has(ts.get_occlusion_layer_light_mask(l)):
+			elif not p_sdf_cull or not _gx_masks.has(ts.get_occlusion_layer_light_mask(l)):
 				ts.set_occlusion_layer_sdf_collision(l, true)
 				back.append(l)
 		for l in back:

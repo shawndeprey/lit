@@ -72,8 +72,11 @@ void fragment() {
 				screen_uv_to_sdf(SCREEN_UV + vec2(0.0, SCREEN_PIXEL_SIZE.y)) - frag_sdf);
 		mat2 px_to_canvas = mat2(dFdx(v_canvas), dFdy(v_canvas));
 #if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
-		sdf_to_px = inverse(px_to_sdf);
-		sdf_to_canvas = px_to_canvas * sdf_to_px;
+		mat2 sdf_to_fb = inverse(px_to_sdf);
+		sdf_to_canvas = px_to_canvas * sdf_to_fb;
+		// frag_px counts canvas units; a stretched window's framebuffer pixel is not one.
+		vec2 fb_to_px = SCREEN_PIXEL_SIZE * lit_viewport_size;
+		sdf_to_px = mat2(sdf_to_fb[0] * fb_to_px, sdf_to_fb[1] * fb_to_px);
 #else
 		sdf_to_canvas = px_to_canvas * inverse(px_to_sdf);
 #endif

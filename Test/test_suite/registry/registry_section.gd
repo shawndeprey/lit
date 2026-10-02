@@ -99,8 +99,8 @@ func _bare_driving() -> void:
 	await frames(2)
 	check_true(case_name, "bare: rect follows the occluder", _mat(bare).get_shader_parameter("self_rects") != rect_first)
 	# Y-sort participation before the raw self_shadow write below: the setting toggle
-	# re-drives the material, and the two known-gap checks need that drive not to have
-	# seen the raw write.
+	# re-drives the material, and the checks after it need the raw write to land with
+	# no other input moving.
 	set_setting("lit/render/y_sorting", true)
 	await frames(3)
 	check(case_name, "y_sorting on: a bare receiver with an owned occluder joins the y-sort (ysort_on)", true,
@@ -110,15 +110,17 @@ func _bare_driving() -> void:
 	await frames(3)
 	_mat(bare).set_shader_parameter("self_shadow", true)
 	await frames(2)
-	check(case_name, "(known gap) bare: self_shadow=true drops to the fast tier without another input moving",
+	check(case_name, "bare: self_shadow=true drops to the fast tier without another input moving",
 			0, F.flags_of(_mat(bare).shader))
 	check(case_name, "LitSprite2D drives its own rect", 1, int(lit_node.material.get_shader_parameter("self_rect_count")))
 	check(case_name, "LitSprite2D tiered to full", F.F_SELF_EXCL, F.flags_of(lit_node.material.shader) & F.TIER_MASK)
 	_mat(bare).set_shader_parameter("self_shadow", false)
+	await frames(2)
+	check(case_name, "bare: self_shadow=false returns to the full tier", F.F_SELF_EXCL, F.flags_of(_mat(bare).shader))
 	occ.free()
 	await frames(3)
 	check(case_name, "bare: freed occluder heals rects to zero", 0, int(_mat(bare).get_shader_parameter("self_rect_count")))
-	check(case_name, "(known gap) bare receiver that lost its last occluder returns to the fast tier", 0,
+	check(case_name, "bare receiver that lost its last occluder returns to the fast tier", 0,
 			F.flags_of(_mat(bare).shader))
 	# A bare receiver with a stale saved rect count and no occluders heals at cache rebuild.
 	var stale := _make_bare(Vector2(900, 300))
