@@ -1,8 +1,21 @@
 extends Node
 class_name LitShaderPrecompiler
 
-## Headless precompile manager: work list, skip marker, frame-budgeted compile loop,
-## PSO warm draws. Presentation lives in lit_precompile_overlay.gd via the signals.
+## Precompile manager: work list, skip marker, and the three ways a list is run.
+##  - build: every item is introduced in this process with one warm draw each (the
+##    startup takeover, and each worker process over the items it claims);
+##  - follow: worker processes bake into the shared disk caches while this process
+##    only reports their progress, so its own frames never wait on a compile;
+##  - silent: the caches are fresh, so the variants are just instantiated.
+## Presentation lives in lit_precompile_overlay.gd via the signals.
+##
+## What each stage of a cold shader costs decides the shape of all three. Assigning
+## shader code parses it on the calling thread and starts the backend compile on the
+## engine's thread pool; only the first draw waits for it. That draw then builds the
+## pipeline in the GPU driver, the longest step by far, and it always blocks the
+## rendering of the process that draws. The driver's own disk cache is read when a
+## process starts, so a pipeline baked by a worker is a hit for the next launch, never
+## for a process that is already running.
 
 signal progress(done: int, total: int, label: String)
 signal finished
@@ -10,33 +23,43 @@ signal finished
 const MARKER_PATH := "user://lit_shaders.cfg"
 const CONFIG_PATH := "res://lit_precompile.cfg"
 const WORKER_DIR := "user://lit_worker"
+const WORKER_ARG := "lit-worker"
+const WORKER_SCENE_PATH := "res://addons/lit/runtime/lit_worker_scene.tscn"
 const WorldSdfScript := preload("res://addons/lit/runtime/registry/world_sdf.gd")
 const BUILD_BUDGET_MS := 8.0
 const SILENT_PER_FRAME := 4
 const QUAD_POOL := 16
+const MAX_WORKERS := 4
+const HEARTBEAT_STALE_SEC := 5.0
+const WORKER_BOOT_SEC := 15.0
+const FOLLOW_POLL_MSEC := 250
+
+enum Mode { SILENT, BUILD, FOLLOW }
 
 var took_over := false
 
-var _worker_pid := -1
-var _parent_check := 0.0
-var _hb_accum := 0.0
-var _hb_wait := 0.0
-var _worker_wait := 0.0
-var _report_done := false
-var _hb_thread: Thread
-var _hb_exit := false
-
+var _mode := Mode.SILENT
+var _is_worker := false
 var _work: Array = []
 var _next := 0
+var _done := 0
 var _pending: Array = []
-var _batch := 4
-var _silent := false
-var _async := false
 var _prev_paused := false
-var _last_tick := 0
 var _quad_layer: CanvasLayer
 var _quads: Array[Sprite2D] = []
 var _encode_vp: SubViewport
+
+# Follow mode: _plan is filled by the worker thread and adopted on the main thread.
+var _plan := {}
+var _plan_mutex := Mutex.new()
+var _remaining := {}
+var _marker := {}
+var _follow_poll := 0
+var _finishing := false
+
+var _thread: Thread
+var _hb_exit := false
+var _start_msec := 0
 
 
 func _init() -> void:
@@ -181,8 +204,17 @@ static func marker_fresh(work: Array) -> bool:
 	var cfg := ConfigFile.new()
 	if cfg.load(MARKER_PATH) != OK:
 		return false
-	return cfg.get_value("lit", "bundle", "") == bundle_hash(work) \
-			and cfg.get_value("lit", "worklist", "") == str(work).md5_text()
+	var want := marker_values(work)
+	return cfg.get_value("lit", "bundle", "") == want.bundle \
+			and cfg.get_value("lit", "worklist", "") == want.worklist
+
+
+static func marker_values(work: Array) -> Dictionary:
+	return {
+		"version": LitShaderLibrary._get_version(),
+		"bundle": bundle_hash(work),
+		"worklist": str(work).md5_text(),
+	}
 
 
 ## Worker done-file key for a work item (variant flags or static shader path).
@@ -208,151 +240,284 @@ static func item_label(item: Variant) -> String:
 	return str(item).get_file().get_basename()
 
 
-## Worker-process entry: compile the full worklist flat out in a hidden instance,
-## reporting each baked variant via a done-file the parent polls.
-func start_worker(_parent_pid: int) -> void:
-	_report_done = true
-	DirAccess.make_dir_recursive_absolute(WORKER_DIR)
-	# Heartbeat from a thread: compile frames can stall for seconds, and a frame-bound
-	# heartbeat reads as death to the parent mid-stall.
-	_hb_thread = Thread.new()
-	_hb_thread.start(_hb_loop)
-	start(false)
+## How many worker processes bake a list of this size: each is a whole engine instance
+## whose driver compile runs on one thread. Measured scaling is well short of linear
+## (about 1.5x for two, 2x for four), so the cap stays low.
+static func worker_count(work_size: int) -> int:
+	return clampi(mini(OS.get_processor_count() / 6, work_size), 1, MAX_WORKERS)
 
 
-func _hb_loop() -> void:
-	while not _hb_exit:
-		var fa := FileAccess.open(WORKER_DIR + "/worker_alive", FileAccess.WRITE)
-		if fa != null:
-			fa.close()
-		OS.delay_msec(1000)
-
-
-func _stop_hb() -> void:
-	if _hb_thread != null:
-		_hb_exit = true
-		_hb_thread.wait_to_finish()
-		_hb_thread = null
-
-
-func _exit_tree() -> void:
-	_stop_hb()
-
-
-func start(silent: bool, asynchronous: bool = false, worker_pid: int = -1) -> void:
+## Run the work list. Silent only instantiates the variants (the caches are fresh).
+## Otherwise follow_workers picks between baking in worker processes, which this call
+## spawns and then only reports on, and building everything here behind a paused tree.
+func start(silent: bool, follow_workers: bool = false) -> void:
+	if not silent and follow_workers:
+		# Listing the work, hashing it and spawning the workers all happen on the
+		# thread, so calling this mid-game costs the caller's frame nothing.
+		_mode = Mode.FOLLOW
+		_start_thread(_follow_thread)
+		set_process(true)
+		return
 	_work = work_list()
-	_silent = silent
-	_async = asynchronous
-	_worker_pid = worker_pid if asynchronous else -1
+	_mark_warmed()
+	if silent:
+		_mode = Mode.SILENT
+	else:
+		_mode = Mode.BUILD
+		took_over = true
+		_prev_paused = get_tree().paused
+		get_tree().paused = true
+		_build_quads()
+	set_process(true)
+
+
+## Worker-process entry: build the items this process manages to claim, flat out in a
+## hidden instance, reporting each baked item via a done-file the parent polls.
+func start_worker() -> void:
+	_is_worker = true
+	_mode = Mode.BUILD
+	_work = work_list()
+	_start_thread(_heartbeat.bind("worker_alive", "parent_alive"))
+	_build_quads()
+	set_process(true)
+
+
+# Dev builds log variants compiled outside the work list (LitShaderLibrary._log_miss).
+func _mark_warmed() -> void:
 	LitShaderLibrary._warmed.clear()
 	for item in _work:
 		if item is int:
 			LitShaderLibrary._warmed[item] = true
-	if not silent:
-		if not _async:
-			took_over = true
-			_prev_paused = get_tree().paused
-			get_tree().paused = true
-		_build_quads()
-	_last_tick = Time.get_ticks_usec()
-	set_process(true)
 
 
-func _process(delta: float) -> void:
-	# Worker liveness: pid APIs are unreliable for non-child processes, so the parent
-	# heartbeats a file once a second and the worker quits when it goes stale.
-	if _report_done:
-		_parent_check += delta
-		if _parent_check >= 1.0:
-			_parent_check = 0.0
-			_hb_wait += 1.0
-			var hb := FileAccess.get_modified_time(WORKER_DIR + "/parent_alive")
-			if (hb > 0 and Time.get_unix_time_from_system() - hb > 5.0) \
-					or (hb == 0 and _hb_wait > 10.0):
-				get_tree().quit()
-				return
-	elif _worker_pid > 0:
-		_hb_accum += delta
-		if _hb_accum >= 1.0:
-			_hb_accum = 0.0
-			_worker_wait += 1.0
-			var fa := FileAccess.open(WORKER_DIR + "/parent_alive", FileAccess.WRITE)
-			if fa != null:
-				fa.close()
-	if _silent:
-		for i in SILENT_PER_FRAME:
-			if _next >= _work.size():
-				_finish()
-				return
-			var item: Variant = _work[_next]
-			# Statics warm the disk cache only; the in-process shader dict is variant-only.
-			if item is int:
-				LitShaderLibrary.get_receiver(item)
-			_next += 1
+func _start_thread(body: Callable) -> void:
+	_start_msec = Time.get_ticks_msec()
+	_hb_exit = false
+	_thread = Thread.new()
+	_thread.start(body)
+
+
+func _follow_thread() -> void:
+	var work := work_list()
+	var plan := {"work": work, "marker": marker_values(work)}
+	_spawn_workers(worker_count(work.size()))
+	_plan_mutex.lock()
+	_plan = plan
+	_plan_mutex.unlock()
+	_heartbeat("parent_alive", "")
+
+
+# Liveness runs on a thread on both sides: a frame-bound heartbeat stops for as long
+# as a compile or a scene load holds the frame, which reads as death to the other side.
+# A worker also watches its parent from here and ends the process outright, so it
+# never outlives the game by the length of the compile its frame is sitting in.
+func _heartbeat(file: String, watch: String) -> void:
+	while not _hb_exit:
+		var fa := FileAccess.open(WORKER_DIR + "/" + file, FileAccess.WRITE)
+		if fa != null:
+			fa.close()
+		if watch != "" and _peer_dead(watch):
+			OS.kill(OS.get_process_id())
+		for i in 20:
+			if _hb_exit:
+				break
+			OS.delay_msec(50)
+
+
+func _stop_thread() -> void:
+	if _thread != null:
+		_hb_exit = true
+		_thread.wait_to_finish()
+		_thread = null
+
+
+func _exit_tree() -> void:
+	_stop_thread()
+
+
+# The other side is gone once its heartbeat file is stale, or never appeared within
+# the boot window.
+func _peer_dead(file: String) -> bool:
+	var at := FileAccess.get_modified_time(WORKER_DIR + "/" + file)
+	if at > 0:
+		return Time.get_unix_time_from_system() - at > HEARTBEAT_STALE_SEC
+	return float(Time.get_ticks_msec() - _start_msec) / 1000.0 > WORKER_BOOT_SEC
+
+
+## Hidden extra instances of this process, each claiming items off the same list and
+## baking them into the shared shader caches. Thread-safe: only OS and file calls.
+static func _spawn_workers(count: int) -> void:
+	var wd := ProjectSettings.globalize_path(WORKER_DIR)
+	if DirAccess.dir_exists_absolute(wd):
+		for f in DirAccess.get_files_at(wd):
+			DirAccess.remove_absolute(wd.path_join(f))
+		for d in DirAccess.get_directories_at(wd):
+			DirAccess.remove_absolute(wd.path_join(d))
+	DirAccess.make_dir_recursive_absolute(wd)
+	var hb := FileAccess.open(wd.path_join("parent_alive"), FileAccess.WRITE)
+	if hb != null:
+		hb.close()
+	var exe := OS.get_executable_path()
+	var args := PackedStringArray(["--position", "-32000,-32000", "--resolution", "640x220"])
+	if OS.has_feature("editor"):
+		args.append_array(PackedStringArray(["--path", ProjectSettings.globalize_path("res://")]))
+	# Boot the empty worker scene, never the game's main scene.
+	args.append(WORKER_SCENE_PATH)
+	args.append_array(PackedStringArray(["--", WORKER_ARG]))
+	if OS.get_name() == "Windows" and _spawn_hidden(exe, args, count):
 		return
+	for i in count:
+		if OS.get_name() == "Windows":
+			# start /min births the window minimized so it never flashes on screen. The
+			# spaced title is required: create_process drops empty args, and start reads
+			# the first quoted token as its title - which would swallow a quoted (spaced)
+			# exe path.
+			var cargs := PackedStringArray(["/c", "start", "Lit Worker", "/min", exe])
+			cargs.append_array(args)
+			OS.create_process("cmd.exe", cargs)
+		else:
+			OS.create_process(exe, args)
 
+
+# Start-Process -WindowStyle Hidden hands each worker a hidden first window show, so
+# neither a window nor a taskbar button ever appears (a minimized birth still puts a
+# button on the taskbar until the worker has booted far enough to drop it). The
+# command goes over encoded, so no path in it needs shell quoting.
+static func _spawn_hidden(exe: String, args: PackedStringArray, count: int) -> bool:
+	var line := PackedStringArray()
+	for arg in args:
+		line.append("\"%s\"" % arg if arg.contains(" ") else arg)
+	var script := "1..%d | ForEach-Object { Start-Process -WindowStyle Hidden -FilePath '%s' -ArgumentList '%s' }" \
+			% [count, exe.replace("'", "''"), " ".join(line).replace("'", "''")]
+	return OS.create_process("powershell.exe", PackedStringArray(["-NoProfile", "-NonInteractive",
+			"-EncodedCommand", Marshalls.raw_to_base64(script.to_utf16_buffer())])) != -1
+
+
+func _process(_delta: float) -> void:
+	if _finishing:
+		# The thread sees the exit flag within one sleep slice; joining it only once
+		# it has returned keeps the join from holding a frame.
+		if not _thread.is_alive():
+			_stop_thread()
+			_finishing = false
+			set_process(false)
+			finished.emit()
+		return
+	match _mode:
+		Mode.SILENT:
+			_process_silent()
+		Mode.FOLLOW:
+			_process_follow()
+		Mode.BUILD:
+			_process_build()
+
+
+func _process_silent() -> void:
+	for i in SILENT_PER_FRAME:
+		if _next >= _work.size():
+			_finish(true)
+			return
+		var item: Variant = _work[_next]
+		# Statics warm the disk cache only; the in-process shader dict is variant-only.
+		if item is int:
+			LitShaderLibrary.get_receiver(item)
+		_next += 1
+
+
+# The workers do all of the building; this process only counts their done-files, one
+# directory listing per poll. It never introduces a baked item itself: that would
+# build the pipeline a second time, on this process's own frames.
+func _process_follow() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _follow_poll < FOLLOW_POLL_MSEC:
+		return
+	_follow_poll = now
+	var first := _marker.is_empty()
+	if first:
+		_plan_mutex.lock()
+		var plan := _plan
+		_plan_mutex.unlock()
+		if plan.is_empty():
+			return
+		_work = plan.work
+		_marker = plan.marker
+		for item in _work:
+			_remaining[done_key(item) + ".done"] = item
+		_mark_warmed()
+	var label := ""
+	for f in DirAccess.get_files_at(WORKER_DIR):
+		if _remaining.has(f):
+			label = item_label(_remaining[f])
+			_remaining.erase(f)
+	if label != "" or first:
+		_done = _work.size() - _remaining.size()
+		progress.emit(_done, _work.size(), label)
+	if _remaining.is_empty():
+		_finish(true)
+		return
+	# Workers that died or never came up leave the rest unbuilt: stop without the
+	# marker, so the next launch runs the list again with the baked items as hits.
+	if _peer_dead("worker_alive"):
+		push_warning("Lit: shader precompile workers stopped with %d of %d items left; the next launch resumes" % [_remaining.size(), _work.size()])
+		_finish(false)
+
+
+func _process_build() -> void:
 	# Whatever was assigned last frame has drawn by now: its pipelines are warm.
-	if _report_done:
+	if _is_worker:
 		for item in _pending:
 			var fa := FileAccess.open("%s/%s.done" % [WORKER_DIR, done_key(item)], FileAccess.WRITE)
 			if fa != null:
 				fa.close()
-	var done := _next - _pending.size()
-	if _pending.is_empty() and _next >= _work.size():
-		_finish()
-		return
+	_done += _pending.size()
 	_pending.clear()
-
-	# Adapt batch size to the whole previous frame (PSO stalls show up here).
-	var now := Time.get_ticks_usec()
-	var frame_ms := float(now - _last_tick) / 1000.0
-	_last_tick = now
-	if frame_ms > 25.0:
-		_batch = maxi(1, _batch >> 1)
-	elif frame_ms < 12.0:
-		_batch = mini(QUAD_POOL, _batch + 2)
 
 	var t0 := Time.get_ticks_usec()
 	var quad := 0
-	while _next < _work.size() and quad < _batch:
-		var item: Variant = _work[_next]
-		# Follow the worker: introduce only items it has baked (cache hits). Worker
-		# death is judged by its heartbeat going stale (spawn shells hide the real pid);
-		# on death, drop to self-compiling the remainder. Both cases stay silent.
-		if _worker_pid > 0 and not FileAccess.file_exists("%s/%s.done" % [WORKER_DIR, done_key(item)]):
-			var wa := FileAccess.get_modified_time(WORKER_DIR + "/worker_alive")
-			if (wa > 0 and Time.get_unix_time_from_system() - wa < 5.0) \
-					or (wa == 0 and _worker_wait < 15.0):
-				break
-			_worker_pid = -1
-		if item is int:
-			(_quads[quad].material as ShaderMaterial).shader = LitShaderLibrary.get_receiver(item)
-			_quads[quad].visible = true
-			quad += 1
-		elif str(item) == WorldSdfScript.ENCODE_SHADER_PATH:
+	while _next < _work.size() and quad < _quads.size():
+		var item: Variant = _work[walk_index(_next, _work.size())]
+		_next += 1
+		if _is_worker and not _claim(item):
+			continue
+		if item is String and item == WorldSdfScript.ENCODE_SHADER_PATH:
 			# PSOs key on the render-pass format: the encode shader draws into an HDR
 			# target in real use, so its warm draw runs in the matching SubViewport
-			# built by _build_quads (unparked here so the worker-follow gate still holds).
+			# built by _build_quads.
 			_encode_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		else:
-			(_quads[quad].material as ShaderMaterial).shader = load(item)
+			(_quads[quad].material as ShaderMaterial).shader = \
+					LitShaderLibrary.get_receiver(item) if item is int else load(item)
 			_quads[quad].visible = true
 			quad += 1
 		_pending.append(item)
-		_next += 1
 		if float(Time.get_ticks_usec() - t0) / 1000.0 > BUILD_BUDGET_MS:
 			break
 	for i in range(quad, _quads.size()):
 		_quads[i].visible = false
+	if _pending.is_empty():
+		_finish(true)
+		return
+	progress.emit(_done, _work.size(), item_label(_pending[0]))
 
-	var label := item_label(_pending[0]) if not _pending.is_empty() else ""
-	progress.emit(done, _work.size(), label)
+
+## Build order: the list walked from both ends at once. Its light and heavy ends
+## alternate, so progress moves at an even pace instead of crawling through the heavy
+## tail, and the workers' last items are not all the slow ones.
+static func walk_index(step: int, size: int) -> int:
+	var at := step >> 1
+	return at if step & 1 == 0 else size - 1 - at
 
 
-func _finish() -> void:
-	if not _silent:
-		_write_marker()
-		if not _async:
+# Directory creation is atomic across processes: exactly one worker gets OK.
+func _claim(item: Variant) -> bool:
+	return DirAccess.make_dir_absolute("%s/%s.claim" % [WORKER_DIR, done_key(item)]) == OK
+
+
+# complete = every item of the list is baked. A worker only ever bakes its share and
+# leaves the marker to its parent.
+func _finish(complete: bool) -> void:
+	if _mode == Mode.BUILD:
+		if took_over:
 			get_tree().paused = _prev_paused
 		if _quad_layer != null:
 			_quad_layer.queue_free()
@@ -361,27 +526,34 @@ func _finish() -> void:
 		if _encode_vp != null:
 			_encode_vp.queue_free()
 			_encode_vp = null
-	progress.emit(_work.size(), _work.size(), "")
+	if _is_worker:
+		_stop_thread()
+		get_tree().quit()
+		return
+	if complete:
+		if _mode != Mode.SILENT:
+			_write_marker(_marker if _mode == Mode.FOLLOW else marker_values(_work))
+		progress.emit(_work.size(), _work.size(), "")
+	if _thread != null:
+		_hb_exit = true
+		_finishing = true
+		return
 	set_process(false)
 	finished.emit()
-	if _report_done:
-		_stop_hb()
-		get_tree().quit()
 
 
-func _write_marker() -> void:
+static func _write_marker(values: Dictionary) -> void:
 	var cfg := ConfigFile.new()
-	cfg.set_value("lit", "version", LitShaderLibrary._get_version())
-	cfg.set_value("lit", "bundle", bundle_hash(_work))
-	cfg.set_value("lit", "worklist", str(_work).md5_text())
+	for key in values:
+		cfg.set_value("lit", key, values[key])
 	cfg.save(MARKER_PATH)
 
 
-# 4x4 quads drawn behind the overlay's opaque cover (async: behind the game, near-
-# transparent), matching real receiver render state; their draw forces tier C.
+# 4x4 quads drawn behind the overlay's opaque cover, matching real receiver render
+# state; their draw forces the pipeline build.
 func _build_quads() -> void:
 	_quad_layer = CanvasLayer.new()
-	_quad_layer.layer = -128 if _async else 99
+	_quad_layer.layer = 99
 	add_child(_quad_layer)
 	var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -393,14 +565,12 @@ func _build_quads() -> void:
 		s.position = Vector2(4 + i * 6, 4)
 		s.material = ShaderMaterial.new()
 		s.visible = false
-		if _async:
-			s.modulate.a = 0.02
 		_quad_layer.add_child(s)
 		_quads.append(s)
 
 	# World-SDF encode warm target: an HDR SubViewport matching world_sdf.gd's render
 	# state (a main-viewport quad would bake a PSO for the wrong target format).
-	# Parked until its work item comes up in _process.
+	# Parked until its work item comes up in _process_build.
 	_encode_vp = SubViewport.new()
 	_encode_vp.size = Vector2i(64, 64)
 	_encode_vp.use_hdr_2d = true
