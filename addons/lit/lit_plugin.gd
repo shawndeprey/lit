@@ -682,6 +682,16 @@ func _project_setting_defs() -> Array:
 			"info": {"name": "lit/startup/precompile_async", "type": TYPE_BOOL},
 		},
 		{
+			"name": "lit/startup/precompile_async_position",
+			"default": 8,
+			"info": {
+				"name": "lit/startup/precompile_async_position",
+				"type": TYPE_INT,
+				"hint": PROPERTY_HINT_ENUM,
+				"hint_string": "Top Left,Top Center,Top Right,Center Left,Center,Center Right,Bottom Left,Bottom Center,Bottom Right",
+			},
+		},
+		{
 			"name": "lit/startup/precompile_max_workers",
 			"default": 4,
 			"description": "The most hidden worker processes an asynchronous or API shader precompile may start.\n\n"
@@ -697,16 +707,6 @@ func _project_setting_defs() -> Array:
 				"type": TYPE_INT,
 				"hint": PROPERTY_HINT_RANGE,
 				"hint_string": "1,16,1,suffix:workers x 6 threads each",
-			},
-		},
-		{
-			"name": "lit/startup/precompile_async_position",
-			"default": 8,
-			"info": {
-				"name": "lit/startup/precompile_async_position",
-				"type": TYPE_INT,
-				"hint": PROPERTY_HINT_ENUM,
-				"hint_string": "Top Left,Top Center,Top Right,Center Left,Center,Center Right,Bottom Left,Bottom Center,Bottom Right",
 			},
 		},
 		{
