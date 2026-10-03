@@ -156,9 +156,7 @@ func _gating() -> void:
 		check_true(case_name, "%s: live exports editable" % cls, rw_ok)
 		if obj is Node:
 			(obj as Node).free()
-	# Light dials: only the selected algorithm's inputs stay in the inspector. The probe
-	# nodes live in the tree and leave through queue_free: constructing Lit nodes and
-	# freeing them within one frame outside the tree hung the renderer at teardown.
+	# Light dials: only the selected algorithm's inputs stay in the inspector.
 	var pl := LitPointLight2D.new()
 	pl.enabled = false
 	add_child(pl)

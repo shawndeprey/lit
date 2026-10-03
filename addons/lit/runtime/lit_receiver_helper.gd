@@ -167,6 +167,24 @@ static func _snapshot(node: Node2D, occluders: Array, tile_rects: Array,
 		state.occ_polys[i] = o.occluder if inside else null
 
 
+## get_luminance() of the sprite receivers: the manager's sample over the frame `node`
+## draws. `src` is that frame's rect in `tex`, `center` its centre in node space.
+static func luminance(node: Node2D, tex: Texture2D, src: Rect2, center: Vector2) -> float:
+	var manager = node.get_node_or_null(^"/root/LitManager")
+	if manager == null:
+		return 0.0
+	while tex is AtlasTexture:
+		src.position += (tex as AtlasTexture).region.position
+		tex = (tex as AtlasTexture).atlas
+	# Texel offsets from the frame's centre into the world, mirrored like the draw.
+	var to_world: Transform2D = node.global_transform * Transform2D(
+			Vector2(-1.0 if node.flip_h else 1.0, 0.0),
+			Vector2(0.0, -1.0 if node.flip_v else 1.0), center)
+	return manager.sample_receiver_luminance(node.global_position, node.receiver_mask,
+			node.shadow_ignore_mask, null if node.self_shadow else node,
+			node.directional_horizontal_scale, tex, src, to_world)
+
+
 # --- Export gating --------------------------------------------------------------
 #
 # Some receiver exports are inert under certain project settings: the Blinn-Phong

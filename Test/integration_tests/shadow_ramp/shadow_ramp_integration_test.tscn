@@ -12,7 +12,7 @@
 shader = ExtResource("6_1vnok")
 shader_parameter/emissive_strength = 0.0
 shader_parameter/receiver_mask = 1
-shader_parameter/self_shadow = false
+shader_parameter/self_shadow = true
 shader_parameter/self_rect_count = 0
 shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/specular_strength = 0.5
@@ -34,6 +34,9 @@ gradient = SubResource("Gradient_0nhq4")
 [sub_resource type="CanvasTexture" id="CanvasTexture_76f21"]
 diffuse_texture = SubResource("GradientTexture1D_ywxc3")
 
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_sfpfb"]
+polygon = PackedVector2Array(-9, -9, 9, -9, 9, 9.0000305, -9, 9.0000305)
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_gwcxi"]
 shader = ExtResource("1_rshw2")
 shader_parameter/emissive_strength = 0.0
@@ -50,25 +53,10 @@ shader_parameter/roughness_value = 1.0
 shader_parameter/ao_map = ExtResource("2_0nhq4")
 shader_parameter/shadow_steps = 64
 shader_parameter/shadow_min_step = 0.2
-shader_parameter/shadow_ramp = 346.53
+shader_parameter/shadow_ramp = 160.0
 shader_parameter/directional_horizontal_scale = 32.0
 
-[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_m84n4"]
-load_path = "res://.godot/imported/cinderskull_preview.png-70cc0e8b084765ffec4638322cdc340c.ctex"
-
-[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_8unm6"]
-load_path = "res://.godot/imported/cinderskull_preview_n.png-6ae660305e56bb6c2ec30fc5f381b703.ctex"
-
-[sub_resource type="CompressedTexture2D" id="CompressedTexture2D_2tvb2"]
-load_path = "res://.godot/imported/cinderskull_preview_s.png-563542d06893a7645a0a862ce6c706d5.ctex"
-
-[sub_resource type="CanvasTexture" id="CanvasTexture_tkxmq"]
-diffuse_texture = SubResource("CompressedTexture2D_m84n4")
-normal_texture = SubResource("CompressedTexture2D_8unm6")
-specular_texture = SubResource("CompressedTexture2D_2tvb2")
-
-[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_sfpfb"]
-polygon = PackedVector2Array(-9, -9, 9, -9, 9, 9.0000305, -9, 9.0000305)
+[sub_resource type="CanvasTexture" id="CanvasTexture_fv8vw"]
 
 [node name="ShadowRampIntegrationTest" type="Node2D" unique_id=410051553]
 
@@ -79,17 +67,33 @@ scale = Vector2(7.7656245, 1165.75)
 texture = SubResource("CanvasTexture_76f21")
 script = ExtResource("4_lf0he")
 lit_version = "1.1.4"
+self_shadow = true
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Label" type="Label" parent="." unique_id=2115988711]
+offset_left = 716.0
+offset_top = 206.0
+offset_right = 1046.0
+offset_bottom = 273.0
+theme_override_constants/outline_size = 20
+theme_override_font_sizes/font_size = 48
+text = "Shadow Ramp"
+
+[node name="LightOccluder2D" type="LightOccluder2D" parent="." unique_id=1798568240]
+z_index = -100
+position = Vector2(993.0001, 376.00003)
+scale = Vector2(5, 5)
+occluder = SubResource("OccluderPolygon2D_sfpfb")
 
 [node name="LitSprite2D" type="Sprite2D" parent="." unique_id=1889016131]
 z_index = 1
 material = SubResource("ShaderMaterial_gwcxi")
 position = Vector2(919.99994, 473.00006)
 scale = Vector2(5, 5)
-texture = SubResource("CanvasTexture_tkxmq")
+texture = SubResource("CanvasTexture_fv8vw")
 script = ExtResource("4_lf0he")
 lit_version = "1.1.4"
-shadow_ramp = 346.53
+shadow_ramp = 160.0
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
 [node name="LightOccluder2D" type="LightOccluder2D" parent="LitSprite2D" unique_id=1735893173]
@@ -110,3 +114,8 @@ energy = 2.0
 range = 1024.0
 shadow_enabled = true
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=412110770]
+position = Vector2(879.99994, 390.0001)
+scale = Vector2(5, 5)
+zoom = Vector2(2, 2)

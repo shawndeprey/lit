@@ -140,8 +140,10 @@ func _mask_tiers() -> void:
 	set_setting("lit/render/occluder_mask_sdf_culling", false)
 	await frames(4)
 	img = await capture()
-	check(case_name, "(known gap) turning SDF culling off at runtime restores culled occluders", true, box.sdf_collision)
-	# Toggle the mask so the un-cull runs, then the gx shader tier carries the exemption.
+	check(case_name, "turning SDF culling off at runtime restores culled occluders", true, box.sdf_collision)
+	check_gt(case_name, "culling switched off: the gx shader tier takes over (blue still reaches)",
+			probe(img, p_blue).b, AMBIENT, 0.2)
+	# A mask change keeps it in the SDF, and the gx shader tier carries the exemption.
 	box.occluder_light_mask = 4
 	await frames(4)
 	box.occluder_light_mask = 2
@@ -232,11 +234,8 @@ func _rx() -> void:
 	await frames(4)
 	# Under a window stretch (canvas_items mode with the final transform at 2x, emulated
 	# with content_scale_factor on top of whatever stretch the window already has): the
-	# shader's sdf_to_px is a framebuffer-pixel basis added to the canonical frag_px, so
-	# a march sample's occluder-tile index lands tiles away from the caster (190 px along
-	# this ray, three tiles) and the rx exemption never fires: the floor is shadowed as
-	# if it had no ignore mask. Shadows themselves are world-space and keep casting. The
-	# view is shifted down 540 so the rx rows stay inside the 2x view.
+	# march samples' occluder-tile lookups stay in canvas units, so the rx exemption
+	# holds. The view is shifted down 540 so the rx rows stay inside the 2x view.
 	var win := get_window()
 	var base_stretch := get_viewport().get_final_transform().get_scale().x
 	get_viewport().canvas_transform = Transform2D(0.0, Vector2(0.0, -540.0))
@@ -250,7 +249,7 @@ func _rx() -> void:
 			2.0, get_viewport().get_final_transform().get_scale().x, 0.1)
 	check_lt(case_name, "2x stretch: the bottom floor (mask 0) is still shadowed by its caster",
 			lum(img, Vector2(520, 920)), AMBIENT + 0.15)
-	check_gt(case_name, "(known gap) shadow_ignore_mask still applies under a 2x window stretch",
+	check_gt(case_name, "shadow_ignore_mask still applies under a 2x window stretch",
 			lum(img, Vector2(520, 680)), AMBIENT, 0.25)
 	pin_render_size(win)
 	get_viewport().canvas_transform = Transform2D()
@@ -344,9 +343,8 @@ func _ysort() -> void:
 	check_gt(case_name, "y-sort on: an occluder above the floor's line no longer shadows it", lit_on,
 			AMBIENT, 0.25)
 	check_approx(case_name, "y-sort on: an occluder below the line still shadows", AMBIENT, lum(img, p_front), 0.06)
-	# Same window-stretch defect as the rx case: at a 2x final transform the y-sort
-	# candidate lookup reads a tile near the light instead of the higher box (230 px off
-	# along this ray), finds nothing, and the box shadows the floor again.
+	# Same window stretch as the rx case: at a 2x final transform the y-sort candidate
+	# lookup still finds the higher box.
 	var win := get_window()
 	var base_stretch := get_viewport().get_final_transform().get_scale().x
 	win.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
@@ -357,7 +355,7 @@ func _ysort() -> void:
 	img = await capture()
 	check_approx(case_name, "window stretch emulated at 2x for the next check (final transform scale)",
 			2.0, get_viewport().get_final_transform().get_scale().x, 0.1)
-	check_gt(case_name, "(known gap) y-sort exclusion still applies under a 2x window stretch",
+	check_gt(case_name, "y-sort exclusion still applies under a 2x window stretch",
 			lum(img, p_behind), AMBIENT, 0.25)
 	pin_render_size(win)
 	await frames(2)

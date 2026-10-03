@@ -77,6 +77,7 @@ func _init() -> void:
 	_light_cache.set_fan_out(_on_tree_changed)
 	_occluder_tiles.set_fan_out(_on_tilemap_changed)
 	_receiver_driver.set_fan_out(_on_tilemap_changed)
+	_world_sdf.set_fan_out(_on_tilemap_changed)
 
 # --- Occluder identity (y-sort depth + per-light shadow exclusions) ------------------
 # Per-occluder canvas rect + depth line + mask|owner, binned into the light tile grid.
@@ -146,13 +147,18 @@ var _luminance := LuminanceScript.new()
 ## Luminance at `world_pos` (see LitManager.sample_luminance for the user contract).
 func sample_luminance(tree: SceneTree, root: Node, world_pos: Vector2,
 		receiver_mask: int = 1, shadow_ignore_mask: int = 0,
-		exclude_occluders_of: Node = null) -> float:
+		exclude_occluders_of: Node = null, directional_horizontal_scale: float = 32.0,
+		pbr: bool = false, surface: Array = []) -> float:
 	var lights := _light_cache.cull_visible(tree,
 			Rect2(world_pos - Vector2.ONE, Vector2(2.0, 2.0)))
 	_occluder_tiles.ensure_fresh(root, _light_cache.all(), false)
 	return _luminance.sample(tree, lights, _occluder_tiles.occ_nodes(),
 			_occluder_tiles.occ_layers(), world_pos, receiver_mask, shadow_ignore_mask,
-			exclude_occluders_of)
+			exclude_occluders_of, directional_horizontal_scale, pbr, surface)
+
+## A receiver's drawn surface for sample_luminance (see luminance.gd surface()).
+func luminance_surface(texture: Texture2D, src: Rect2, to_world: Transform2D) -> Array:
+	return _luminance.surface(texture, src, to_world)
 
 # --- Editor live materials -----------------------------------------------------------
 # Node- and plugin-facing static API; the clone and authored-uniform maps live in
@@ -173,6 +179,7 @@ var _occluder_tiles := OccluderTilesScript.new()
 var _ramp_edit_seen := 0
 
 var _mask_seed_done := false
+var _tileset_edited := false
 # Runtime only (lit/render/occluder_mask_sdf_culling): globally excluded occluders are
 # pulled out of the SDF entirely instead of exempted in-shader - marches get faster, not
 # slower. Never set in the editor, where mutating scene nodes would risk saves; the
@@ -220,6 +227,9 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# shader). Computed over every enabled light in the tree, not just the view-culled
 	# set, so camera movement past a light's AABB never thrashes receiver shaders. Only
 	# shadow-casting lights count: an algorithm on a shadowless light is never marched.
+	if _tileset_edited:
+		_tileset_edited = false
+		_note_tileset_masks(receiver_root if receiver_root != null else tree.root)
 	var mask_potential: bool = _occluder_tiles.masks_seen()
 	# The per-light reads only matter once a light or occluder has ever shown mask
 	# potential; the editor always reads so live inspector edits are never missed.
@@ -235,7 +245,7 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# both calls are provably no-ops (their state is empty by construction).
 	if read_masks or not _mask_seed_done:
 		_classify_exclusions(lights, receiver_root, mask_potential, smask_union)
-		_occluder_tiles.restore_unculled(_exclusions.gx_masks())
+		_occluder_tiles.restore_unculled(_exclusions.gx_masks(), sdf_cull)
 	_ctx.excl_active = _exclusions.has_exclusions()
 	if masks_active:
 		_ctx.texels_per_light = TEXELS_PER_LIGHT
@@ -363,6 +373,19 @@ func _on_tree_changed(node: Node) -> void:
 func _on_tilemap_changed() -> void:
 	_receiver_driver.mark_bare_dirty()
 	_occluder_tiles.mark_dirty()
+	_world_sdf.mark_layer_changed()
+	_tileset_edited = true
+
+## A TileSet edit can introduce the first non-default occlusion-layer mask.
+func _note_tileset_masks(root: Node) -> void:
+	for layer in root.find_children("*", "TileMapLayer", true, false):
+		var ts: TileSet = layer.tile_set
+		if ts == null:
+			continue
+		for l in ts.get_occlusion_layers_count():
+			if ts.get_occlusion_layer_light_mask(l) != 1:
+				_occluder_tiles.note_mask_seen()
+				return
 
 ## Node-facing static API; the walk lives in registry/receiver_driver.gd.
 static func tile_occluder_rects(layer: TileMapLayer) -> Array[Rect2]:

@@ -9,6 +9,7 @@ extends LitSuiteSection
 
 const RegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const RxRegistryScript := preload("res://addons/lit/runtime/registry/rx_registry.gd")
+const LightCacheScript := preload("res://addons/lit/runtime/registry/light_cache.gd")
 const F := preload("res://addons/lit/runtime/lit_shader_library.gd")
 const AMBIENT := 0.1
 
@@ -26,6 +27,7 @@ func run() -> void:
 	await _bare_driving()
 	await _activity_flags()
 	await _rx_registry()
+	await _freed_node_keys()
 
 
 func _make_bare(pos: Vector2, size := Vector2(80, 80)) -> Sprite2D:
@@ -99,8 +101,8 @@ func _bare_driving() -> void:
 	await frames(2)
 	check_true(case_name, "bare: rect follows the occluder", _mat(bare).get_shader_parameter("self_rects") != rect_first)
 	# Y-sort participation before the raw self_shadow write below: the setting toggle
-	# re-drives the material, and the two known-gap checks need that drive not to have
-	# seen the raw write.
+	# re-drives the material, and the checks after it need the raw write to land with
+	# no other input moving.
 	set_setting("lit/render/y_sorting", true)
 	await frames(3)
 	check(case_name, "y_sorting on: a bare receiver with an owned occluder joins the y-sort (ysort_on)", true,
@@ -110,15 +112,17 @@ func _bare_driving() -> void:
 	await frames(3)
 	_mat(bare).set_shader_parameter("self_shadow", true)
 	await frames(2)
-	check(case_name, "(known gap) bare: self_shadow=true drops to the fast tier without another input moving",
+	check(case_name, "bare: self_shadow=true drops to the fast tier without another input moving",
 			0, F.flags_of(_mat(bare).shader))
 	check(case_name, "LitSprite2D drives its own rect", 1, int(lit_node.material.get_shader_parameter("self_rect_count")))
 	check(case_name, "LitSprite2D tiered to full", F.F_SELF_EXCL, F.flags_of(lit_node.material.shader) & F.TIER_MASK)
 	_mat(bare).set_shader_parameter("self_shadow", false)
+	await frames(2)
+	check(case_name, "bare: self_shadow=false returns to the full tier", F.F_SELF_EXCL, F.flags_of(_mat(bare).shader))
 	occ.free()
 	await frames(3)
 	check(case_name, "bare: freed occluder heals rects to zero", 0, int(_mat(bare).get_shader_parameter("self_rect_count")))
-	check(case_name, "(known gap) bare receiver that lost its last occluder returns to the fast tier", 0,
+	check(case_name, "bare receiver that lost its last occluder returns to the fast tier", 0,
 			F.flags_of(_mat(bare).shader))
 	# A bare receiver with a stale saved rect count and no occluders heals at cache rebuild.
 	var stale := _make_bare(Vector2(900, 300))
@@ -215,3 +219,32 @@ func _rx_registry() -> void:
 	s.queue_free()
 	await frames(2)
 	check(case_name, "freed rx nodes are pruned from the registry", registered_before, RxRegistryScript.nodes().size())
+
+
+## No registry keeps a freed node as a key: two freed twins make a `for` over it endless.
+func _freed_node_keys() -> void:
+	var case_name := "freed_node_keys"
+	var pending: Dictionary = LightCacheScript._pending
+	var rx: Dictionary = RxRegistryScript.nodes()
+	var rx_before := rx.size()
+	for i in 2:
+		var l := LitPointLight2D.new()
+		l.range = 300.0
+		l.free()
+		var s := LitSprite2D.new()
+		s.shadow_ignore_mask = 2
+		s.free()
+	var node_keys := 0
+	for key in pending.keys():
+		if typeof(key) == TYPE_OBJECT:
+			node_keys += 1
+	check(case_name, "lights touched and freed outside the tree leave no node keys in the pending set", 0, node_keys)
+	check(case_name, "rx receivers freed outside the tree leave the registry at once", rx_before, rx.size())
+	# A failing run must report, not freeze on the next refresh.
+	if node_keys > 0:
+		pending.clear()
+	for key in rx.keys():
+		if not is_instance_valid(key):
+			rx.erase(key)
+	await frames(2)
+	check(case_name, "the pending set is consumed by the next refresh", 0, pending.size())

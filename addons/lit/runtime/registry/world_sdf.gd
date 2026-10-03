@@ -27,6 +27,9 @@ var _wsdf_origin_last := Vector2.INF
 var _wsdf_tex_published := false
 var _wsdf_occ: Array = []        # [node, xform, visible, is_occluder, res, sdf_col, poly hash]
 var _wsdf_occ_dirty := true
+var _wsdf_layer_changed := false
+# Facade fan-out for tilemap changed signals; every layer in the tree is connected here.
+var _on_changed := Callable()
 var _wsdf_occ_root: Node = null
 var _wsdf_rd_init := 0           # 0 untried, 1 pending, 2 ready, -1 unavailable
 var _wsdf_pack_age := 0
@@ -38,8 +41,17 @@ var _wsdf_rd_sampler := RID()
 var _wsdf_rd_set := RID()
 
 
+func set_fan_out(cb: Callable) -> void:
+	_on_changed = cb
+
+
 func mark_content_dirty() -> void:
 	_wsdf_occ_dirty = true
+
+
+## Re-render once; the cached list stays valid.
+func mark_layer_changed() -> void:
+	_wsdf_layer_changed = true
 
 
 ## Create (or re-find after a script reload) the world-SDF SubViewport under `host`.
@@ -291,8 +303,11 @@ func _wsdf_pack_copy() -> void:
 	rd.compute_list_end()
 
 ## True when SDF content changed: an occluder or tilemap moved, toggled visibility or
-## SDF flags, swapped its polygon resource, or the cached list went stale.
+## SDF flags, swapped its polygon resource, a tilemap's TileSet changed, or the cached
+## list went stale.
 func _poll_wsdf_content(root: Node) -> bool:
+	var changed := _wsdf_layer_changed
+	_wsdf_layer_changed = false
 	if _wsdf_occ_dirty or root != _wsdf_occ_root:
 		_wsdf_occ_root = root
 		_wsdf_occ_dirty = false
@@ -302,10 +317,11 @@ func _poll_wsdf_content(root: Node) -> bool:
 				_wsdf_occ.append([occ, occ.global_transform, occ.is_visible_in_tree(),
 						true, occ.occluder, occ.sdf_collision, _wsdf_poly_hash(occ)])
 			for layer in root.find_children("*", "TileMapLayer", true, false):
+				if _on_changed.is_valid() and not layer.changed.is_connected(_on_changed):
+					layer.changed.connect(_on_changed)
 				_wsdf_occ.append([layer, layer.global_transform, layer.is_visible_in_tree(),
 						false, null, false, 0])
 		return true
-	var changed := false
 	for entry in _wsdf_occ:
 		var node = entry[0]
 		if not is_instance_valid(node) or not node.is_inside_tree():

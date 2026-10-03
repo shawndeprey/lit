@@ -148,10 +148,10 @@ func _cell_center(x: int, y: int) -> Vector2:
 	return _map.position + Vector2((x + 0.5) * TILE, (y + 0.5) * TILE)
 
 
-## The world SDF re-renders when tracked content moves (occluder / tilemap transforms
-## and visibility, loose-occluder flags) or the view reframes; tileset flag and cell
-## edits are not tracked, so a static scene keeps the old SDF. Nudging the layer one
-## pixel and back forces two re-renders and leaves it where it was.
+## The world SDF re-renders when tracked content changes (occluder / tilemap transforms
+## and visibility, loose-occluder flags, TileSet edits) or the view reframes; cell edits
+## are not tracked, so a static scene keeps the old SDF. Nudging the layer one pixel
+## and back forces two re-renders and leaves it where it was.
 func _refresh_sdf() -> void:
 	_map.position.x += 1.0
 	await frames(2)
@@ -193,7 +193,7 @@ func _shadows() -> void:
 	_ts.set_occlusion_layer_sdf_collision(0, false)
 	await frames(3)
 	img = await capture()
-	check_gt(case_name, "(known gap) tileset SDF Collision toggled at runtime re-renders the world SDF by itself",
+	check_gt(case_name, "tileset SDF Collision toggled at runtime re-renders the world SDF by itself",
 			lum(img, shadow_pt), AMBIENT, 0.2)
 	await _refresh_sdf()
 	img = await capture()
@@ -305,9 +305,11 @@ func _masks() -> void:
 	_ts.set_occlusion_layer_light_mask(0, 2)
 	await frames(4)
 	var img := await capture()
-	check(case_name, "(known gap) an occlusion-layer mask edited at runtime is classified without the layer re-entering the tree",
+	check(case_name, "an occlusion-layer mask edited at runtime is classified without the layer re-entering the tree",
 			false, _ts.get_occlusion_layer_sdf_collision(0))
-	# Authored masks are noticed when the layer enters the tree: re-enter it.
+	check_gt(case_name, "mask edited at runtime: walls cast nothing without a tree re-entry",
+			lum(img, shadow_pt), AMBIENT, 0.2)
+	# Authored masks are noticed when the layer enters the tree too: re-enter it.
 	var parent := _map.get_parent()
 	parent.remove_child(_map)
 	parent.add_child(_map)
@@ -320,14 +322,13 @@ func _masks() -> void:
 	check_gt(case_name, "occlusion layer light mask 2 vs shadow_mask 1: walls cast nothing (SDF re-rendered on re-entry)",
 			lum(img, shadow_pt), AMBIENT, 0.2)
 	# Restore through a light mask change alone (no tree change): the registry flips the
-	# tileset flag back, but world_sdf.gd polls only transform and visibility for tilemap
-	# layers, so the old wall-free SDF texture stays bound until something tracked moves.
+	# tileset flag back and the layer's changed signal re-renders the world SDF.
 	_light.shadow_mask = 3
 	await frames(4)
 	check(case_name, "light shadow_mask 3 matches mask 2: culling restored the tileset flag",
 			true, _ts.get_occlusion_layer_sdf_collision(0))
 	img = await capture()
-	check_approx(case_name, "(known gap) restoring a tileset layer via a light shadow_mask change re-renders the world SDF by itself",
+	check_approx(case_name, "restoring a tileset layer via a light shadow_mask change re-renders the world SDF by itself",
 			AMBIENT, lum(img, shadow_pt), TOL)
 	await _refresh_sdf()
 	img = await capture()
@@ -339,13 +340,13 @@ func _masks() -> void:
 	check_gt(case_name, "receiver shadow_ignore_mask 2 ignores the tilemap's shadow", lum(img, shadow_pt),
 			AMBIENT, 0.2)
 	_floor.shadow_ignore_mask = 0
-	# Cull again through the light alone: same staleness in the other direction.
+	# Cull again through the light alone: the other direction.
 	_light.shadow_mask = 1
 	await frames(4)
 	check(case_name, "light shadow_mask back to 1: the tileset layer is culled again",
 			false, _ts.get_occlusion_layer_sdf_collision(0))
 	img = await capture()
-	check_gt(case_name, "(known gap) culling a tileset layer via a light shadow_mask change re-renders the world SDF by itself",
+	check_gt(case_name, "culling a tileset layer via a light shadow_mask change re-renders the world SDF by itself",
 			lum(img, shadow_pt), AMBIENT, 0.2)
 	await _refresh_sdf()
 	img = await capture()

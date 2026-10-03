@@ -261,6 +261,8 @@ func _validate_property(property: Dictionary) -> void:
 
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and shadow_ignore_mask != 0:
+		LitLightRegistry.rx_set(self, 0)
 	if what == NOTIFICATION_PREDELETE and _pool_held != null:
 		# Release the reference this node took, whatever `material` holds by now (a
 		# runtime material swap must not strand the entry).

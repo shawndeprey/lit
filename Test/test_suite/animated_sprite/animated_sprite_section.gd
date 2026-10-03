@@ -78,18 +78,28 @@ func _frame_lighting() -> void:
 	var f0 := lum(img, a.position)
 	check_approx(case_name, "frame 0 (CanvasTexture facing the light) matches a LitSprite2D twin",
 			lum(img, twin.position), f0, 0.04)
+	# get_luminance() against the mean of the pixels each frame renders.
+	var drawn := Rect2(a.position - Vector2(28, 28), Vector2(56, 56))
+	check_approx("luminance_proxy", "get_luminance() matches the rendered frame 0 (normal map facing the light)",
+			mean_lum(img, drawn), a.get_luminance(), 0.015)
 	a.frame = 1
 	img = await capture()
 	var f1 := lum(img, a.position)
 	check_lt(case_name, "frame 1 (facing away) is darker than frame 0", f1, f0, 0.1)
+	check_approx("luminance_proxy", "get_luminance() matches the rendered frame 1 (facing away)",
+			mean_lum(img, drawn), a.get_luminance(), 0.015)
 	a.frame = 3
 	img = await capture()
 	var f3 := lum(img, a.position)
 	check_between(case_name, "frame 3 (no normal map) sits between the two", f3, f1 + 0.02, f0 - 0.02)
+	check_approx("luminance_proxy", "get_luminance() matches the rendered frame 3 (no normal map)",
+			mean_lum(img, drawn), a.get_luminance(), 0.015)
 	a.frame = 2
 	img = await capture()
 	check_approx(case_name, "frame 2 (AtlasTexture region over a CanvasTexture sheet) reads its region's normal",
 			f1, lum(img, a.position), 0.05)
+	check_approx("luminance_proxy", "get_luminance() matches the rendered frame 2 (atlas region of a sheet)",
+			mean_lum(img, drawn), a.get_luminance(), 0.015)
 	# Playback advances frames under Lit.
 	a.frame = 0
 	a.play(&"default")
@@ -105,6 +115,8 @@ func _frame_lighting() -> void:
 	a.flip_h = true
 	img = await capture()
 	check_lt(case_name, "flip_h on frame 0 mirrors the normal (darker)", lum(img, a.position), f0, 0.08)
+	check_approx("luminance_proxy", "get_luminance() matches the rendered frame 0 under flip_h",
+			mean_lum(img, drawn), a.get_luminance(), 0.015)
 	a.flip_h = false
 
 
@@ -208,12 +220,12 @@ func _occluder() -> void:
 	img = await capture()
 	check_lt(case_name, "self_shadow = true rendered: the sprite darkens under its own occluder", lum(img, on_sprite),
 			lit_on_sprite, 0.15)
-	# get_luminance(): a light 80 px above adds energy x (1 - 80 / 200) to the sample.
+	# get_luminance(): a second light 80 px above lifts the mean over the sprite.
 	var lum_before := a.get_luminance()
 	point_light(a.global_position + Vector2(0, -80), 200.0, 0.5, Color.WHITE, 100.0)
 	await frames(1)
-	check_approx("luminance_proxy", "get_luminance() on the animated node: a light 80 px above adds 0.5 x 0.6",
-			0.3, a.get_luminance() - lum_before, 0.02)
+	check_gt("luminance_proxy", "get_luminance() on the animated node: a light 80 px above lifts it",
+			a.get_luminance() - lum_before, 0.1)
 
 
 func _shadow_ignore() -> void:

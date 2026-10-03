@@ -11,7 +11,7 @@ extends RefCounted
 var _published_algos: int = 0
 var _receiver_dirty: bool = true
 
-var _bare_cache: Array = []      # [node, mat, occluders, tile rects, DriveState]
+var _bare_cache: Array = []      # [node, mat, occluders, tile rects, DriveState, self_shadow]
 var _bare_driven := {}
 var _bare_dirty := true
 var _bare_shared_warned := false
@@ -161,11 +161,17 @@ func _rebuild_bare_cache(root: Node) -> void:
 			if stale != null and int(stale) != 0:
 				mat.set_shader_parameter("self_rect_count", 0)
 			continue
-		_bare_cache.append([node, mat, occluders, tile_rects, LitReceiverHelper.DriveState.new()])
+		_bare_cache.append([node, mat, occluders, tile_rects, LitReceiverHelper.DriveState.new(), false])
 		driven[mat] = true
 	for mat in _bare_driven:
 		if not driven.has(mat) and is_instance_valid(mat):
 			mat.set_shader_parameter("self_rect_count", 0)
+			# Back to the fast tier; the editor never re-tiers authored materials.
+			var flags: int = LitShaderLibrary.flags_of(mat.shader)
+			if flags >= 0 and not Engine.is_editor_hint():
+				var wanted := LitShaderLibrary.resolve(0, 0, activity_flags)
+				if flags != wanted:
+					mat.shader = LitShaderLibrary.get_receiver(wanted)
 	_bare_driven = driven
 	_bare_dirty = false
 
@@ -255,6 +261,11 @@ func _push_self_rects(entry: Array) -> void:
 	if Engine.is_editor_hint():
 		mat = _live_binder.call(spr, mat)
 	var state: LitReceiverHelper.DriveState = entry[4]
+	# A raw self_shadow write moves no drive input; bare receivers have no proxy setter.
+	var self_shadow: bool = mat.get_shader_parameter("self_shadow") == true
+	if self_shadow != entry[5]:
+		entry[5] = self_shadow
+		state.dirty = true
 	LitReceiverHelper.drive(spr, mat, entry[2], entry[3],
 			not (spr is TileMapLayer), 0, state)
 	if state.stale:
