@@ -17,8 +17,8 @@ const LitPrecompileOverlayScript := preload("res://addons/lit/nodes/lit_precompi
 
 const SETTING_PRECOMPILE := "lit/startup/precompile_shaders"
 const SETTING_PRECOMPILE_ASYNC := "lit/startup/precompile_async"
-# Preloaded so exports always pack the worker scene.
-const WorkerScene := preload("res://addons/lit/runtime/lit_worker_scene.tscn")
+# Preloaded so exports always pack the worker's main loop script.
+const WorkerLoop := preload("res://addons/lit/runtime/lit_worker_loop.gd")
 const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_Y_SORTING := "lit/render/y_sorting"
 const SETTING_Y_SORT_SMOOTHING := "lit/render/y_sort_smoothing"
@@ -92,19 +92,11 @@ func _boot_worker() -> void:
 	w.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
 	precompiler = LitShaderPrecompilerScript.new()
 	add_child(precompiler)
-	# Some launch shapes ignore the boot-scene argument; swap the main scene out either way.
-	_ensure_worker_scene.call_deferred()
 	var overlay: Node = LitPrecompileOverlayScript.new()
 	overlay.force_takeover = true
 	overlay.attach(precompiler)
 	get_tree().root.add_child.call_deferred(overlay)
 	precompiler.start_worker()
-
-
-func _ensure_worker_scene() -> void:
-	var cs := get_tree().current_scene
-	if cs == null or cs.scene_file_path != LitShaderPrecompilerScript.WORKER_SCENE_PATH:
-		get_tree().change_scene_to_packed(WorkerScene)
 
 
 ## Public API: run the precompile pipeline on demand (always worker-backed); wire UI to

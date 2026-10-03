@@ -241,7 +241,14 @@ func _precompiler() -> void:
 	else:
 		FileAccess.open(Pre.MARKER_PATH, FileAccess.WRITE).store_buffer(marker_backup)
 	check(case_name, "one worker for a single item", 1, Pre.worker_count(1))
-	check_between(case_name, "worker count stays within 1..MAX_WORKERS", float(Pre.worker_count(1000)), 1.0, float(Pre.MAX_WORKERS))
+	var by_threads: int = maxi(OS.get_processor_count() / Pre.THREADS_PER_WORKER, 1)
+	check(case_name, "default: one worker per 6 hardware threads, capped at 4",
+			mini(by_threads, Pre.DEFAULT_MAX_WORKERS), Pre.worker_count(1000))
+	set_setting(Pre.SETTING_MAX_WORKERS, 1)
+	check(case_name, "precompile_max_workers 1 caps the farm at one worker", 1, Pre.worker_count(1000))
+	set_setting(Pre.SETTING_MAX_WORKERS, 16)
+	check(case_name, "precompile_max_workers 16 leaves the 6-thread rule in charge", mini(by_threads, 16), Pre.worker_count(1000))
+	set_setting(Pre.SETTING_MAX_WORKERS, Pre.DEFAULT_MAX_WORKERS)
 	var walk_ok := true
 	for size in 8:
 		var seen := {}

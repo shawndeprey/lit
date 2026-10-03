@@ -65,6 +65,7 @@ func _enter_tree() -> void:
 	_persist_globals()          # guarded: writes project.godot only if a key is missing
 	_persist_project_settings() # guarded: same, for the lit/* settings
 	_ensure_autoload()          # guarded: adds only if not already registered
+	get_tree().node_added.connect(_on_editor_node_added)
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	add_tool_menu_item(TOOL_MENU_PRECOMPILE, _generate_precompile_config)
 	_update_menu_label = "Update Project to Lit %s..." % LitMigrationsScript.current_version()
@@ -99,6 +100,7 @@ func _exit_tree() -> void:
 	_receiver_inspector = null
 	remove_export_plugin(_export_plugin)
 	_export_plugin = null
+	get_tree().node_added.disconnect(_on_editor_node_added)
 	_remove_live_globals()
 
 func _disable_plugin() -> void:
@@ -680,6 +682,24 @@ func _project_setting_defs() -> Array:
 			"info": {"name": "lit/startup/precompile_async", "type": TYPE_BOOL},
 		},
 		{
+			"name": "lit/startup/precompile_max_workers",
+			"default": 4,
+			"description": "The most hidden worker processes an asynchronous or API shader precompile may start.\n\n"
+					+ "Lit starts one worker for every 6 hardware threads of the CPU the game is running on, "
+					+ "because each worker uses up to 6 threads. This setting only caps that number, it never raises it: "
+					+ "a 24-thread CPU has room for 4 workers, so it runs 4 whether this is set to 4 or to 16, "
+					+ "and an 8-thread CPU always runs 1.\n\n"
+					+ "Raise it only if builds on CPUs with more than 24 threads need to finish sooner. "
+					+ "Every worker is a whole hidden copy of the game, so more of them cost memory and frame rate "
+					+ "while the build runs, and each extra worker adds less speed than the one before.",
+			"info": {
+				"name": "lit/startup/precompile_max_workers",
+				"type": TYPE_INT,
+				"hint": PROPERTY_HINT_RANGE,
+				"hint_string": "1,16,1,suffix:workers x 6 threads each",
+			},
+		},
+		{
 			"name": "lit/startup/precompile_async_position",
 			"default": 8,
 			"info": {
@@ -739,6 +759,39 @@ func _project_setting_defs() -> Array:
 			},
 		},
 	]
+
+## Hover descriptions for the lit/* settings that carry one. The editor only shows
+## descriptions from its built-in class reference, so a custom setting's tooltip reads
+## "No description available": this writes ours into that tooltip as it is created.
+## node_added fires inside the tooltip's add_child, and its ready signal still lands
+## before the editor measures the content, so the tooltip sizes itself to the new text.
+func _on_editor_node_added(node: Node) -> void:
+	if not (node is PopupPanel and node.get_class() == "EditorHelpBitTooltip"):
+		return
+	var prop := node.get_parent() as EditorProperty
+	if prop == null:
+		return
+	# The property's tooltip text is the help symbol; it carries the full setting path
+	# (the sectioned inspector's own property name is section-relative).
+	var symbol := "property|ProjectSettings|"
+	if not prop.tooltip_text.begins_with(symbol):
+		return
+	var setting := prop.tooltip_text.trim_prefix(symbol)
+	for d in _project_setting_defs():
+		if d.name == setting and d.has("description"):
+			node.ready.connect(_describe_setting_tooltip.bind(node, d.description), CONNECT_ONE_SHOT)
+			return
+
+
+func _describe_setting_tooltip(tooltip: Node, description: String) -> void:
+	# The help bit holds two rich labels: the title, then the description.
+	var labels := tooltip.find_children("*", "RichTextLabel", true, false)
+	if labels.size() < 2:
+		return
+	var content := labels[1] as RichTextLabel
+	content.clear()
+	content.add_text(description)
+
 
 ## Persist the lit/* settings into project.godot, guarded like _persist_globals.
 ## set_initial_value + add_property_info run every enable so the inspector keeps the

@@ -24,12 +24,14 @@ const MARKER_PATH := "user://lit_shaders.cfg"
 const CONFIG_PATH := "res://lit_precompile.cfg"
 const WORKER_DIR := "user://lit_worker"
 const WORKER_ARG := "lit-worker"
-const WORKER_SCENE_PATH := "res://addons/lit/runtime/lit_worker_scene.tscn"
+const WORKER_LOOP_PATH := "res://addons/lit/runtime/lit_worker_loop.gd"
 const WorldSdfScript := preload("res://addons/lit/runtime/registry/world_sdf.gd")
 const BUILD_BUDGET_MS := 8.0
 const SILENT_PER_FRAME := 4
 const QUAD_POOL := 16
-const MAX_WORKERS := 4
+const SETTING_MAX_WORKERS := "lit/startup/precompile_max_workers"
+const DEFAULT_MAX_WORKERS := 4
+const THREADS_PER_WORKER := 6
 const HEARTBEAT_STALE_SEC := 5.0
 const WORKER_BOOT_SEC := 15.0
 const FOLLOW_POLL_MSEC := 250
@@ -240,11 +242,14 @@ static func item_label(item: Variant) -> String:
 	return str(item).get_file().get_basename()
 
 
-## How many worker processes bake a list of this size: each is a whole engine instance
-## whose driver compile runs on one thread. Measured scaling is well short of linear
-## (about 1.5x for two, 2x for four), so the cap stays low.
+## How many worker processes bake a list of this size: one per THREADS_PER_WORKER
+## hardware threads (a shader's backend compile runs six engine variants in parallel),
+## up to the lit/startup/precompile_max_workers setting. Each is a whole engine
+## instance, and measured scaling is well short of linear (about 1.5x for two, 2x for
+## four), so the default cap stays low.
 static func worker_count(work_size: int) -> int:
-	return clampi(mini(OS.get_processor_count() / 6, work_size), 1, MAX_WORKERS)
+	var cap := clampi(int(ProjectSettings.get_setting(SETTING_MAX_WORKERS, DEFAULT_MAX_WORKERS)), 1, 16)
+	return clampi(mini(OS.get_processor_count() / THREADS_PER_WORKER, work_size), 1, cap)
 
 
 ## Run the work list. Silent only instantiates the variants (the caches are fresh).
@@ -361,9 +366,8 @@ static func _spawn_workers(count: int) -> void:
 	var args := PackedStringArray(["--position", "-32000,-32000", "--resolution", "640x220"])
 	if OS.has_feature("editor"):
 		args.append_array(PackedStringArray(["--path", ProjectSettings.globalize_path("res://")]))
-	# Boot the empty worker scene, never the game's main scene.
-	args.append(WORKER_SCENE_PATH)
-	args.append_array(PackedStringArray(["--", WORKER_ARG]))
+	# A script main loop boots the autoloads and no scene, never the game's main scene.
+	args.append_array(PackedStringArray(["--script", WORKER_LOOP_PATH, "--", WORKER_ARG]))
 	if OS.get_name() == "Windows" and _spawn_hidden(exe, args, count):
 		return
 	for i in count:
