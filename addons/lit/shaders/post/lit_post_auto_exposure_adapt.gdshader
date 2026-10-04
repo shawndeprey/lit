@@ -6,6 +6,7 @@ shader_type canvas_item;
 uniform sampler2D hist_tex : hint_default_black, filter_nearest;
 uniform sampler2D prev_tex : hint_default_black, filter_nearest;
 
+uniform bool reset = false;        // new viewports hold undefined texels
 uniform float delta_t = 0.016;
 uniform float target_level = 1.0;
 uniform float exposure_compensation = 0.0;
@@ -106,7 +107,9 @@ void fragment() {
 	float rate = 1.0 - exp(-delta_t * 3.0 / max(adapt_time, 0.001));
 	float applied = state_valid ? mix(applied_prev, desired, rate) : 0.0;
 
-	if (SCREEN_UV.x < 0.5) {
+	if (reset) {
+		COLOR = vec4(0.0, 0.0, 0.0, 1.0);
+	} else if (SCREEN_UV.x < 0.5) {
 		COLOR = vec4(encode16((applied + GEV) / (2.0 * GEV)), 1.0, 1.0);
 	} else {
 		COLOR = vec4(encode16((baseline - BEV_MIN) / (BEV_MAX - BEV_MIN)),

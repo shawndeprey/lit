@@ -123,6 +123,7 @@ var _reduce_mat: ShaderMaterial = null   # persists across toggles, like _mat
 var _hist_mat: ShaderMaterial = null
 var _adapt_mat: Array[ShaderMaterial] = []
 var _flip := false
+var _warmup := 0   # adapt frames left until the reduce -> hist chain has rendered
 
 
 func _shader() -> Shader:
@@ -163,6 +164,8 @@ func _effect_process(delta: float) -> void:
 		return
 	_flip = not _flip
 	var idx := 1 if _flip else 0
+	_adapt_mat[idx].set_shader_parameter("reset", _warmup > 0)
+	_warmup = maxi(_warmup - 1, 0)
 	_adapt_mat[idx].set_shader_parameter("delta_t", minf(delta, 0.25))
 	_adapt_vp[idx].render_target_update_mode = SubViewport.UPDATE_ONCE
 	_mat.set_shader_parameter("exposure_tex", _adapt_vp[idx].get_texture())
@@ -209,6 +212,7 @@ func _sync_meter() -> void:
 	for i in 2:
 		_adapt_mat[i].set_shader_parameter("hist_tex", _hist_vp.get_texture())
 		_adapt_mat[i].set_shader_parameter("prev_tex", _adapt_vp[1 - i].get_texture())
+	_warmup = 2
 	apply_params()
 
 

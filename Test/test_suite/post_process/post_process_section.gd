@@ -835,6 +835,9 @@ func _auto_exposure() -> void:
 	ae.visible = false
 	await frames(3)
 	ae.visible = true
+	await frames(4)
+	img = await capture()
+	check_lt(case_name, "re-shown on the dark scene it starts neutral (no exposure carried over)", image_diff(dark, img, AREA), 0.006)
 	await get_tree().create_timer(0.5).timeout
 	_base_sprite.modulate = Color.WHITE
 	await get_tree().create_timer(0.3).timeout
