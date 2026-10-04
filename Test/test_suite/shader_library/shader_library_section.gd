@@ -284,6 +284,10 @@ func _precompiler() -> void:
 		all_post = all_post and String(pth).ends_with(".gdshader") and ResourceLoader.exists(String(pth))
 	check_true(case_name, "used_post_shaders() lists existing post-effect shaders referenced by saved scenes (%d found)" % (used.size() if used is Array else -1),
 			all_post)
+	var all_axes := 0
+	for axis in Lib.AXES:
+		all_axes |= int(axis.flag)
+	check(case_name, "the config scan detects every variant axis of the shader library", all_axes, Config.SCANNED_AXES)
 	if not cfg_present:
 		# The editor's "Generate Lit Precompile Config" is runtime-safe: scan the saved
 		# scenes, write the config, parse it back, remove it again.
@@ -292,6 +296,10 @@ func _precompiler() -> void:
 				bool(gen.get("saved", false)) and FileAccess.file_exists(Pre.CONFIG_PATH))
 		check_true(case_name, "generated config lists the fast receiver variant and the entry shaders",
 				Array(gen.get("variants", [])).has("lit_receiver_fast") and Array(gen.get("shaders", [])).has(Lib.ENTRY_PATHS[0]))
+		var ramp_listed := false
+		for vname in Array(gen.get("variants", [])):
+			ramp_listed = ramp_listed or String(vname).ends_with("_ramp")
+		check_true(case_name, "generated config lists the ramp variants (a saved test scene uses shadow_ramp)", ramp_listed)
 		var listed = Pre.config_work_list()
 		check_true(case_name, "generated config parses back into a non-empty work list", listed is Array and listed.size() > 0)
 		DirAccess.remove_absolute(Pre.CONFIG_PATH)

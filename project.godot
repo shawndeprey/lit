@@ -38,8 +38,6 @@ enabled=PackedStringArray("res://addons/lit/plugin.cfg")
 [lit]
 
 render/lighting_model=1
-startup/precompile_async=true
-startup/precompile_async_position=4
 
 [physics]
 
@@ -48,7 +46,6 @@ startup/precompile_async_position=4
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-rendering_device/driver.windows="d3d12"
 
 [shader_globals]
 
