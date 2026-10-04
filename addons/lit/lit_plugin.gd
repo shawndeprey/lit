@@ -69,7 +69,7 @@ func _enter_tree() -> void:
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	add_tool_menu_item(TOOL_MENU_PRECOMPILE, _generate_precompile_config)
 	_update_menu_label = "Update Project to Lit %s..." % LitMigrationsScript.current_version()
-	add_tool_menu_item(_update_menu_label, _update_project)
+	add_tool_menu_item(_update_menu_label, _update_gate)
 	# The "Add Effect" button on the LitPostProcess inspector.
 	_post_inspector = LitPostInspectorScript.new()
 	_post_inspector.undo_redo = get_undo_redo()
@@ -262,7 +262,61 @@ func _generate_precompile_config() -> void:
 # and brings every Lit
 # node to the current version. The engine lives in editor/lit_update_tool.gd; this
 # is the dialog flow around it. Open scenes are saved first so the SceneState scan
-# reads current data, and changed open scenes reload afterwards.
+# reads current data, and changed open scenes reload afterwards. A version-control
+# gate runs first; nothing is saved or scanned until the user answers yes.
+
+func _update_gate() -> void:
+	var editor_theme := EditorInterface.get_editor_theme()
+	var ui_scale := EditorInterface.get_editor_scale()
+	var bold := editor_theme.get_font("bold", "EditorFonts")
+	var red := editor_theme.get_color("error_color", "Editor")
+	var yellow := editor_theme.get_color("warning_color", "Editor")
+	var dlg := ConfirmationDialog.new()
+	dlg.title = _update_menu_label.trim_suffix("...")
+	dlg.ok_button_text = "Yes, it is"
+	dlg.cancel_button_text = "No"
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", int(12 * ui_scale))
+	for entry in [
+			["STOP", 56, red, true],
+			["This tool updates your whole project to Lit %s." % LitMigrationsScript.current_version(),
+					20, null, true],
+			["-  Lights, sprites and tilemaps in every scene become Lit nodes.\n"
+					+ "-  Scripts that use them are rewritten.\n"
+					+ "-  Files are changed on disk. There is no undo.\n"
+					+ "-  It can partly succeed and leave fixes for you to do by hand.", 0, null, false],
+			["Without version control you CANNOT go back.", 20, yellow, true],
+			["Is this project in version control (Git, jj, etc.)?", 20, null, true]]:
+		var label := Label.new()
+		label.text = entry[0]
+		if entry[1] > 0:
+			label.add_theme_font_override("font", bold)
+			label.add_theme_font_size_override("font_size", int(entry[1] * ui_scale))
+		if entry[2] != null:
+			label.add_theme_color_override("font_color", entry[2])
+		if entry[3]:
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vb.add_child(label)
+	dlg.add_child(vb)
+	EditorInterface.get_base_control().add_child(dlg)
+	dlg.confirmed.connect(_update_project)
+	dlg.get_cancel_button().pressed.connect(_update_refused, CONNECT_DEFERRED)
+	dlg.visibility_changed.connect(func() -> void:
+		if not dlg.visible:
+			dlg.queue_free())
+	dlg.popup_centered()
+	dlg.get_cancel_button().grab_focus()
+
+func _update_refused() -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = _update_menu_label.trim_suffix("...")
+	dlg.ok_button_text = "Okay"
+	dlg.dialog_text = "This tool cannot be used without version control.\n\nPut the project in version control (Git, jj, etc.), commit everything,\nthen run the tool again."
+	EditorInterface.get_base_control().add_child(dlg)
+	dlg.visibility_changed.connect(func() -> void:
+		if not dlg.visible:
+			dlg.queue_free())
+	dlg.popup_centered()
 
 func _update_project() -> void:
 	EditorInterface.save_all_scenes()
