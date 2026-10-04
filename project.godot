@@ -27,6 +27,10 @@ window/size/viewport_height=1080
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[editor]
+
+movie_writer/movie_file="D:/Game Dev/lit/movie.avi"
+
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/lit/plugin.cfg")
@@ -42,7 +46,6 @@ render/lighting_model=1
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
-rendering_device/driver.windows="d3d12"
 
 [shader_globals]
 

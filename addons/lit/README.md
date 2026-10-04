@@ -167,14 +167,23 @@ In the editor the same warm-up happens silently in the background, so precompila
 only ever runs in a running game. You choose how it runs, in Project Settings → Lit:
 
 **Synchronous (the default).** A **Lit Shaders Precompiling** screen covers the game
-until every shader is built - the classic "preparing shaders" boot screen. Fastest
-total build, nothing else runs.
+until every shader is built - the classic "preparing shaders" boot screen. The build
+runs inside the game itself, so everything is in memory when the screen lifts: the
+first session is as clean as every later one.
 
 **Asynchronous** (`lit/startup/precompile_async`). The game starts immediately and
-plays normally while a hidden second process builds the shaders in parallel at full
-speed; a small floating progress box shows the countdown. Shaders your scenes demand
-before they're ready still compile on the spot (a menu scene typically hits one or
-two), so this trades a guaranteed-clean first session for an instant start.
+plays normally while hidden worker processes build the shaders into the on-disk
+caches; a small floating progress box shows the countdown. One worker starts for every
+6 hardware threads of the player's CPU, up to `lit/startup/precompile_max_workers`
+(4 by default, 1 to 16). Each worker is a whole hidden copy of the game using up to
+6 threads, so raise the cap only if builds on many-core machines really need to
+finish sooner: it costs memory and frame rate while the build runs, and the speedup
+flattens (four workers build about twice as fast as one).
+The game's own frames never wait on that build. A graphics driver only picks its
+cache up when a process starts, so the build pays off from the next launch on: in
+this first session, shaders your scenes use still compile on the spot the first time
+they appear (a menu scene typically hits one or two). This trades a guaranteed-clean
+first session for an instant start.
 
 **API-initiated.** Turn off `lit/startup/precompile_shaders` and run the same
 worker-backed build yourself, wherever it fits your flow (a settings screen, behind
