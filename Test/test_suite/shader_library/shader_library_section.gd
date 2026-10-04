@@ -320,15 +320,16 @@ func _worker_protocol() -> void:
 	DirAccess.make_dir_recursive_absolute(wd)
 	var items: Array = [Lib.F_CONE, Lib.F_STOCH, Lib.ENTRY_PATHS[0]]
 	var paths: Array[String] = []
+	Pre.clear_worker_dir()
 	for item in items:
 		paths.append(wd.path_join(Pre.done_key(item)))
-		DirAccess.remove_absolute(paths[-1] + ".done")
-		DirAccess.remove_absolute(paths[-1] + ".claim")
 
 	var worker := Pre.new()
 	check_true(case_name, "the first claim of an item wins", worker._claim(items[0]))
 	check_true(case_name, "a second claim of the same item loses", not worker._claim(items[0]))
 	check_true(case_name, "another item is still free to claim", worker._claim(items[1]))
+	check_true(case_name, "a claim records which process took the item",
+			FileAccess.file_exists("%s.claim/%d" % [paths[0], OS.get_process_id()]))
 	worker.free()
 
 	var marker_backup := FileAccess.get_file_as_bytes(Pre.MARKER_PATH)
@@ -364,10 +365,9 @@ func _worker_protocol() -> void:
 		DirAccess.remove_absolute(Pre.MARKER_PATH)
 	else:
 		FileAccess.open(Pre.MARKER_PATH, FileAccess.WRITE).store_buffer(marker_backup)
-	for path in paths:
-		DirAccess.remove_absolute(path + ".done")
-		DirAccess.remove_absolute(path + ".claim")
-	DirAccess.remove_absolute(wd.path_join("worker_alive"))
+	Pre.clear_worker_dir()
+	check_true(case_name, "clear_worker_dir empties claims and done-files",
+			DirAccess.get_files_at(wd).is_empty() and DirAccess.get_directories_at(wd).is_empty())
 	if not existed:
 		DirAccess.remove_absolute(wd)
 

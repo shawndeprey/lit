@@ -46,6 +46,7 @@ var _work: Array = []
 var _next := 0
 var _done := 0
 var _pending: Array = []
+var _claimed_at := {}
 var _prev_paused := false
 var _quad_layer: CanvasLayer
 var _quads: Array[Sprite2D] = []
@@ -353,11 +354,7 @@ func _peer_dead(file: String) -> bool:
 ## baking them into the shared shader caches. Thread-safe: only OS and file calls.
 static func _spawn_workers(count: int) -> void:
 	var wd := ProjectSettings.globalize_path(WORKER_DIR)
-	if DirAccess.dir_exists_absolute(wd):
-		for f in DirAccess.get_files_at(wd):
-			DirAccess.remove_absolute(wd.path_join(f))
-		for d in DirAccess.get_directories_at(wd):
-			DirAccess.remove_absolute(wd.path_join(d))
+	clear_worker_dir()
 	DirAccess.make_dir_recursive_absolute(wd)
 	var hb := FileAccess.open(wd.path_join("parent_alive"), FileAccess.WRITE)
 	if hb != null:
@@ -472,6 +469,8 @@ func _process_build() -> void:
 		for item in _pending:
 			var fa := FileAccess.open("%s/%s.done" % [WORKER_DIR, done_key(item)], FileAccess.WRITE)
 			if fa != null:
+				fa.store_string("%d %.3f %.3f" % [OS.get_process_id(), _claimed_at.get(item, 0.0),
+						Time.get_unix_time_from_system()])
 				fa.close()
 	_done += _pending.size()
 	_pending.clear()
@@ -512,9 +511,32 @@ static func walk_index(step: int, size: int) -> int:
 	return at if step & 1 == 0 else size - 1 - at
 
 
-# Directory creation is atomic across processes: exactly one worker gets OK.
+# Directory creation is atomic across processes: exactly one worker gets OK. The file
+# inside it (named by pid, holding the claim time) and the done-file's content exist
+# for diagnostics only; the bake itself reads neither.
 func _claim(item: Variant) -> bool:
-	return DirAccess.make_dir_absolute("%s/%s.claim" % [WORKER_DIR, done_key(item)]) == OK
+	var dir := "%s/%s.claim" % [WORKER_DIR, done_key(item)]
+	if DirAccess.make_dir_absolute(dir) != OK:
+		return false
+	_claimed_at[item] = Time.get_unix_time_from_system()
+	var fa := FileAccess.open("%s/%d" % [dir, OS.get_process_id()], FileAccess.WRITE)
+	if fa != null:
+		fa.store_string("%.3f" % _claimed_at[item])
+		fa.close()
+	return true
+
+
+## Empties the worker directory: heartbeats, done-files and claim folders.
+static func clear_worker_dir() -> void:
+	var wd := ProjectSettings.globalize_path(WORKER_DIR)
+	if not DirAccess.dir_exists_absolute(wd):
+		return
+	for f in DirAccess.get_files_at(wd):
+		DirAccess.remove_absolute(wd.path_join(f))
+	for d in DirAccess.get_directories_at(wd):
+		for f in DirAccess.get_files_at(wd.path_join(d)):
+			DirAccess.remove_absolute(wd.path_join(d).path_join(f))
+		DirAccess.remove_absolute(wd.path_join(d))
 
 
 # complete = every item of the list is baked. A worker only ever bakes its share and
