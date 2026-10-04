@@ -23,6 +23,10 @@ const RECEIVER_SCRIPTS := {
 	"res://addons/lit/nodes/lit_tile_map_layer.gd": true,
 }
 
+## Every variant axis this scan knows how to detect. The test suite checks it against
+## LitShaderLibrary.AXES, so a new axis fails there until the scan below handles it.
+const SCANNED_AXES := LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT 		| LitShaderLibrary.F_CONE | LitShaderLibrary.F_STOCH | LitShaderLibrary.F_GX 		| LitShaderLibrary.F_MASKS | LitShaderLibrary.F_RX | LitShaderLibrary.F_RAMP
+
 
 ## Scan, write the settings, and return a summary:
 ## {scenes, variants: PackedStringArray, shaders: Array, full: int}.
@@ -36,6 +40,7 @@ static func generate() -> Dictionary:
 	var cone := false
 	var stoch := false
 	var masks := false
+	var ramp := false
 	for scene_path in scenes:
 		var packed := load(scene_path) as PackedScene
 		if packed == null:
@@ -66,6 +71,8 @@ static func generate() -> Dictionary:
 				masks = true
 			if int(props.get("shadow_ignore_mask", 0)) != 0:
 				rx = true
+			if float(props.get("shadow_ramp", 0.0)) > 0.0:
+				ramp = true
 			var ts = props.get("tile_set")
 			if ts is TileSet:
 				for l in (ts as TileSet).get_occlusion_layers_count():
@@ -77,6 +84,10 @@ static func generate() -> Dictionary:
 				if flags >= 0:
 					receivers = true
 					tiers[flags & LitShaderLibrary.TIER_MASK] = true
+					# A bare receiver carries its ramp on the material only.
+					var mat_ramp = (mat as ShaderMaterial).get_shader_parameter("shadow_ramp")
+					if mat_ramp != null and float(mat_ramp) > 0.0:
+						ramp = true
 
 	# Receiver tiers fluctuate at runtime (LitReceiverHelper re-tiers per frame): any
 	# receiver can sit on fast or full, and on the y-sort tier while the project
@@ -97,6 +108,8 @@ static func generate() -> Dictionary:
 	if masks:
 		axes.append(LitShaderLibrary.F_MASKS)
 		axes.append(LitShaderLibrary.F_GX)
+	if ramp:
+		axes.append(LitShaderLibrary.F_RAMP)
 	var node_opts: Array[int] = [0]
 	if rx:
 		node_opts.append(LitShaderLibrary.F_RX)

@@ -229,6 +229,35 @@ func _precompiler() -> void:
 	if bool(ProjectSettings.get_setting("lit/startup/precompile_shaders", true)):
 		check_true(case_name, "marker fresh after this run's boot precompile", Pre.marker_fresh(work))
 	check_true(case_name, "marker not fresh for a different work list", not Pre.marker_fresh([0]))
+	var values: Dictionary = Pre.marker_values(work)
+	check(case_name, "marker values carry the bundle hash", h1, values.bundle)
+	check(case_name, "marker values carry the work-list hash", str(work).md5_text(), values.worklist)
+	var marker_backup := FileAccess.get_file_as_bytes(Pre.MARKER_PATH)
+	Pre._write_marker(Pre.marker_values([Lib.F_CONE]))
+	check_true(case_name, "a written marker reads back fresh for its own work list", Pre.marker_fresh([Lib.F_CONE]))
+	check_true(case_name, "and not fresh for the full list", not Pre.marker_fresh(work))
+	if marker_backup.is_empty():
+		DirAccess.remove_absolute(Pre.MARKER_PATH)
+	else:
+		FileAccess.open(Pre.MARKER_PATH, FileAccess.WRITE).store_buffer(marker_backup)
+	check(case_name, "one worker for a single item", 1, Pre.worker_count(1))
+	var by_threads: int = maxi(OS.get_processor_count() / Pre.THREADS_PER_WORKER, 1)
+	check(case_name, "default: one worker per 6 hardware threads, capped at 4",
+			mini(by_threads, Pre.DEFAULT_MAX_WORKERS), Pre.worker_count(1000))
+	set_setting(Pre.SETTING_MAX_WORKERS, 1)
+	check(case_name, "precompile_max_workers 1 caps the farm at one worker", 1, Pre.worker_count(1000))
+	set_setting(Pre.SETTING_MAX_WORKERS, 16)
+	check(case_name, "precompile_max_workers 16 leaves the 6-thread rule in charge", mini(by_threads, 16), Pre.worker_count(1000))
+	set_setting(Pre.SETTING_MAX_WORKERS, Pre.DEFAULT_MAX_WORKERS)
+	var walk_ok := true
+	for size in 8:
+		var seen := {}
+		for step in size:
+			seen[Pre.walk_index(step, size)] = true
+		walk_ok = walk_ok and seen.size() == size and (size == 0 or (seen.has(0) and seen.has(size - 1)))
+	check_true(case_name, "build order visits every item exactly once (sizes 0-7)", walk_ok)
+	check(case_name, "build order alternates the list's two ends", [0, 4, 1, 3, 2],
+			[Pre.walk_index(0, 5), Pre.walk_index(1, 5), Pre.walk_index(2, 5), Pre.walk_index(3, 5), Pre.walk_index(4, 5)])
 	check(case_name, "variant_label(0)", "base", Pre.variant_label(0))
 	check_true(case_name, "variant_label names the axes", Pre.variant_label(Lib.F_CONE | Lib.F_SELF_EXCL).contains("shadow_cone")
 			and Pre.variant_label(Lib.F_CONE | Lib.F_SELF_EXCL).contains("self_exclusion"))
@@ -255,6 +284,10 @@ func _precompiler() -> void:
 		all_post = all_post and String(pth).ends_with(".gdshader") and ResourceLoader.exists(String(pth))
 	check_true(case_name, "used_post_shaders() lists existing post-effect shaders referenced by saved scenes (%d found)" % (used.size() if used is Array else -1),
 			all_post)
+	var all_axes := 0
+	for axis in Lib.AXES:
+		all_axes |= int(axis.flag)
+	check(case_name, "the config scan detects every variant axis of the shader library", all_axes, Config.SCANNED_AXES)
 	if not cfg_present:
 		# The editor's "Generate Lit Precompile Config" is runtime-safe: scan the saved
 		# scenes, write the config, parse it back, remove it again.
@@ -263,14 +296,80 @@ func _precompiler() -> void:
 				bool(gen.get("saved", false)) and FileAccess.file_exists(Pre.CONFIG_PATH))
 		check_true(case_name, "generated config lists the fast receiver variant and the entry shaders",
 				Array(gen.get("variants", [])).has("lit_receiver_fast") and Array(gen.get("shaders", [])).has(Lib.ENTRY_PATHS[0]))
+		var ramp_listed := false
+		for vname in Array(gen.get("variants", [])):
+			ramp_listed = ramp_listed or String(vname).ends_with("_ramp")
+		check_true(case_name, "generated config lists the ramp variants (a saved test scene uses shadow_ramp)", ramp_listed)
 		var listed = Pre.config_work_list()
 		check_true(case_name, "generated config parses back into a non-empty work list", listed is Array and listed.size() > 0)
 		DirAccess.remove_absolute(Pre.CONFIG_PATH)
 		check_true(case_name, "generated config removed again", not FileAccess.file_exists(Pre.CONFIG_PATH))
+	_worker_protocol()
 	var mgr := get_node("/root/LitManager")
 	check_true(case_name, "LitManager exposes precompile_shaders()", mgr.has_method("precompile_shaders"))
 	check_true(case_name, "LitManager exposes the progress and finished signals",
 			mgr.has_signal("precompile_progress") and mgr.has_signal("precompile_finished"))
+
+
+## The follow side of a worker bake, driven by hand: the plan a worker thread would
+## publish, then done-files appearing in the worker directory. No process is spawned.
+func _worker_protocol() -> void:
+	var case_name := "precompile_workers"
+	var wd := ProjectSettings.globalize_path(Pre.WORKER_DIR)
+	var existed := DirAccess.dir_exists_absolute(wd)
+	DirAccess.make_dir_recursive_absolute(wd)
+	var items: Array = [Lib.F_CONE, Lib.F_STOCH, Lib.ENTRY_PATHS[0]]
+	var paths: Array[String] = []
+	Pre.clear_worker_dir()
+	for item in items:
+		paths.append(wd.path_join(Pre.done_key(item)))
+
+	var worker := Pre.new()
+	check_true(case_name, "the first claim of an item wins", worker._claim(items[0]))
+	check_true(case_name, "a second claim of the same item loses", not worker._claim(items[0]))
+	check_true(case_name, "another item is still free to claim", worker._claim(items[1]))
+	check_true(case_name, "a claim records which process took the item",
+			FileAccess.file_exists("%s.claim/%d" % [paths[0], OS.get_process_id()]))
+	worker.free()
+
+	var marker_backup := FileAccess.get_file_as_bytes(Pre.MARKER_PATH)
+	var warmed_backup: Dictionary = Lib._warmed.duplicate()
+	var pre := Pre.new()
+	add_child(pre)
+	var seen: Array = []
+	var ended: Array = []
+	pre.progress.connect(func(done: int, total: int, label: String) -> void: seen.append([done, total, label]))
+	pre.finished.connect(func() -> void: ended.append(true))
+	pre._mode = Pre.Mode.FOLLOW
+	pre._start_msec = Time.get_ticks_msec()
+	pre._plan = {"work": items, "marker": Pre.marker_values(items)}
+	FileAccess.open(wd.path_join("worker_alive"), FileAccess.WRITE).close()
+	pre._process_follow()
+	check(case_name, "adopting the plan reports 0 of the list", [[0, 3, ""]], seen)
+	FileAccess.open(paths[1] + ".done", FileAccess.WRITE).close()
+	pre._follow_poll = 0
+	pre._process_follow()
+	check(case_name, "a done-file advances progress and names its item", [1, 3, Pre.item_label(items[1])], seen[-1])
+	check_true(case_name, "the bake is still running with items left", ended.is_empty())
+	FileAccess.open(paths[0] + ".done", FileAccess.WRITE).close()
+	FileAccess.open(paths[2] + ".done", FileAccess.WRITE).close()
+	pre._follow_poll = 0
+	pre._process_follow()
+	check(case_name, "the last done-files complete the list", [3, 3, ""], seen[-1])
+	check_true(case_name, "finished fires once every item is done", ended.size() == 1)
+	check_true(case_name, "a completed bake writes the marker for its list", Pre.marker_fresh(items))
+	pre.queue_free()
+
+	Lib._warmed = warmed_backup
+	if marker_backup.is_empty():
+		DirAccess.remove_absolute(Pre.MARKER_PATH)
+	else:
+		FileAccess.open(Pre.MARKER_PATH, FileAccess.WRITE).store_buffer(marker_backup)
+	Pre.clear_worker_dir()
+	check_true(case_name, "clear_worker_dir empties claims and done-files",
+			DirAccess.get_files_at(wd).is_empty() and DirAccess.get_directories_at(wd).is_empty())
+	if not existed:
+		DirAccess.remove_absolute(wd)
 
 
 func _overlay() -> void:

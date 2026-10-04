@@ -248,19 +248,26 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			// physical algorithms pay nothing for them.
 			int algo = (flags >> 3) & 3;
 #ifdef LIT_SHADOW_STOCH
+#ifdef LIT_SHADOW_CONE
+			if (algo != 0) {
+#else
 			if (algo == 2) {
+#endif
 				vec4 t7 = texelFetch(lit_light_data, ivec2(7, i), 0); // source | samples | jitter
 				// Point/spot: t7.x is the source disc's radius in world px. Directional:
 				// t7.x is tan(source half-angle), used as an angular extent directly.
 				float src = is_directional ? t7.x : t7.x * lit_canvas_scale * px_to_sdf;
+				// Cone Traced is the stochastic gate alone (0 samples); a stochastic
+				// light always marches at least one stratum.
+				bool stoch = algo == 2;
 				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
-						march_len, t_cap, src, is_directional, int(round(t7.y)), t7.z,
+						march_len, t_cap, stoch ? t_cap < march_len : capped, src, is_directional,
+						stoch ? max(int(round(t7.y)), 1) : 0, t7.z,
 						frag_uv * lit_viewport_size, steps, frag_d,
 						self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 				s = lit_shadow_contrast(s, t3.w);
 			} else
-#endif
-#ifdef LIT_SHADOW_CONE
+#elif defined(LIT_SHADOW_CONE)
 			if (algo == 1) {
 				vec4 t7 = texelFetch(lit_light_data, ivec2(7, i), 0); // source | samples | jitter
 				// Cone half-angle tangent: source size over source distance (directional

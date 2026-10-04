@@ -44,7 +44,8 @@ const SHADOW_SAMPLES := 8
 const LIGHT_COUNT := 128
 # Overrides for cost attribution, passed after "--" on the CLI:
 #   shadows=off   kinds=point|spot|dir|cookie|mix   lights=N   warmup=N   measure=N
-#   shadow_algo=raymarch|cone|stochastic   sdf=25|50|100 (SDF scale probe)
+#   shadow_algo=raymarch|cone|stochastic|mixed   sdf=25|50|100 (SDF scale probe)
+#     mixed cycles the three algorithms across the spawned lights (launch only)
 #   shadowlen=on   random (seeded) shadow_length fraction per light
 #   texoffset=on   random (seeded) texture_offset on every cookie light
 #   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
@@ -55,6 +56,7 @@ const LIGHT_COUNT := 128
 #     animated = skeleton_animated.tscn playing its turnaround; still = the same node
 #     with the turnaround stopped; sprite = that scene with a LitSprite2D showing one
 #     frame over the same footprint occluder. Run kinds at the same count. Default 0.
+#   precompile=api   run the worker-backed shader precompile during the measure window
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
 # 3 (stochastic); switching restarts the warmup/measure cycle so the reported numbers
 # always describe a single algorithm. Receiver shaders follow via the registry's
@@ -85,6 +87,11 @@ var _opt_texoffset := false
 var _opt_skeleton := "skull"
 var _opt_receivers := "skull"
 var _opt_receiver_count := 0
+# precompile=api: start LitManager.precompile_shaders() when measuring begins; the
+# measure window then ends when the precompile finishes (measure=S is the timeout).
+var _opt_precompile := ""
+var _pre_elapsed := -1.0
+var _last_usec := 0
 
 # Clock value used for the deterministic capture frame.
 const CAPTURE_CLOCK := 60.0
@@ -132,7 +139,7 @@ func _ready() -> void:
 			"lights":
 				_opt_light_count = int(kv[1])
 			"shadow_algo":
-				if SHADOW_ALGO_IDS.has(kv[1]):
+				if SHADOW_ALGO_IDS.has(kv[1]) or kv[1] == "mixed":
 					_opt_shadow_algo = kv[1]
 			"capture":
 				_opt_capture = kv[1]
@@ -172,6 +179,14 @@ func _ready() -> void:
 				_opt_receiver_count = int(kv[1])
 			"skeleton":
 				_opt_skeleton = kv[1]
+			"precompile":
+				_opt_precompile = kv[1]
+	# A startup takeover (lit/startup/precompile_shaders) is already running by now:
+	# report how long the boot spent in it.
+	var boot_pre: Node = get_node("/root/LitManager").precompiler
+	if boot_pre != null and boot_pre.took_over and boot_pre.is_processing():
+		boot_pre.finished.connect(func() -> void:
+			print("LITBENCH boot_precompile_s=%.2f" % (float(Time.get_ticks_msec()) / 1000.0)))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -530,8 +545,11 @@ func _update_lights() -> void:
 # Fixed values keep runs comparable across algorithms; cone/stochastic read hardness
 # as a contrast remap, where 0.5 is neutral.
 func _configure_shadow_algo(n, kind: String) -> void:
-	n.shadow_algorithm = SHADOW_ALGO_IDS[_opt_shadow_algo]
-	if _opt_shadow_algo == "raymarch":
+	var algo := _opt_shadow_algo
+	if algo == "mixed":
+		algo = SHADOW_ALGO_NAMES[_lights.size() % 3]
+	n.shadow_algorithm = SHADOW_ALGO_IDS[algo]
+	if algo == "raymarch":
 		n.shadow_hardness = 0.0
 	else:
 		n.shadow_hardness = 0.5
@@ -568,6 +586,7 @@ func _input(event: InputEvent) -> void:
 		_configure_shadow_algo(d.node, d.kind)
 	_state = "warmup"
 	_state_time = 0.0
+	_last_usec = 0
 	_frame_times.clear()
 	_process_times.clear()
 	_render_cpu.clear()
@@ -586,16 +605,28 @@ func _process(dt: float) -> void:
 		if _state_time >= _opt_warmup:
 			_state = "measure"
 			_state_time = 0.0
+			_last_usec = 0
+			if _opt_precompile == "api":
+				var mgr := get_node("/root/LitManager")
+				mgr.precompile_finished.connect(func() -> void: _pre_elapsed = _state_time)
+				if not mgr.precompile_shaders():
+					print("LITBENCH error precompile already running")
 		return
 
 	# measure
+	# Frame times come from the wall clock: the engine caps dt at its physics catch-up
+	# limit (about 133 ms), which would hide the length of any longer stall.
+	var now := Time.get_ticks_usec()
+	var wall := float(now - _last_usec) / 1000000.0 if _last_usec != 0 else dt
+	_last_usec = now
+	_state_time += wall - dt
 	var vp_rid := get_viewport().get_viewport_rid()
-	_frame_times.append(dt)
+	_frame_times.append(wall)
 	_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS))
 	_render_cpu.append(RenderingServer.viewport_get_measured_render_time_cpu(vp_rid))
 	_render_gpu.append(RenderingServer.viewport_get_measured_render_time_gpu(vp_rid))
 	_hud.text = "MEASURE %.1f / %.1f s   lights %d   algo %s   fps %d" % [_state_time, _opt_measure, _lights.size(), _opt_shadow_algo, Engine.get_frames_per_second()]
-	if _state_time >= _opt_measure:
+	if _state_time >= _opt_measure or _pre_elapsed >= 0.0:
 		_state = "done"
 		_report()
 		if _opt_capture != "":
@@ -656,6 +687,9 @@ func _report() -> void:
 	print("LITBENCH histo stall100=%d hitch25=%d smooth=%d worst_ms=%.1f smooth_share=%.2f"
 			% [stall, hitch, smooth, worst * 1000.0, smooth_time / total])
 
+	if _opt_precompile != "":
+		print("LITBENCH precompile=%s finished=%s elapsed_s=%.2f" % [_opt_precompile,
+				"yes" if _pre_elapsed >= 0.0 else "no", _pre_elapsed if _pre_elapsed >= 0.0 else total])
 	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
 	print("LITBENCH shadowlen=%s" % ("on" if _opt_shadowlen else "off"))
 	print("LITBENCH post=%s" % (_opt_post if _opt_post != "" else "off"))

@@ -17,10 +17,8 @@ const LitPrecompileOverlayScript := preload("res://addons/lit/nodes/lit_precompi
 
 const SETTING_PRECOMPILE := "lit/startup/precompile_shaders"
 const SETTING_PRECOMPILE_ASYNC := "lit/startup/precompile_async"
-const WORKER_ARG := "lit-worker"
-const WORKER_SCENE_PATH := "res://addons/lit/runtime/lit_worker_scene.tscn"
-# Preloaded so exports always pack the worker scene.
-const WorkerScene := preload("res://addons/lit/runtime/lit_worker_scene.tscn")
+# Preloaded so exports always pack the worker's main loop script.
+const WorkerLoop := preload("res://addons/lit/runtime/lit_worker_loop.gd")
 const SETTING_LIGHTING_MODEL := "lit/render/lighting_model"
 const SETTING_Y_SORTING := "lit/render/y_sorting"
 const SETTING_Y_SORT_SMOOTHING := "lit/render/y_sort_smoothing"
@@ -54,10 +52,8 @@ func _ready() -> void:
 	# Run after gameplay scripts have moved their lights this frame.
 	process_priority = 1000
 
-	var uargs := OS.get_cmdline_user_args()
-	var widx := uargs.find(WORKER_ARG)
-	if widx != -1:
-		_boot_worker(int(uargs[widx + 1]) if widx + 1 < uargs.size() else -1)
+	if OS.get_cmdline_user_args().has(LitShaderPrecompilerScript.WORKER_ARG):
+		_boot_worker()
 		return
 
 	# Pick up the lit/* project settings now and whenever they change at runtime.
@@ -78,62 +74,29 @@ func _ready() -> void:
 			# wins same-layer ties against game HUDs at layer 128.
 			get_tree().root.add_child.call_deferred(overlay)
 			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false))
-			precompiler.start(fresh, asynchronous, _spawn_worker() if asynchronous else -1)
+			precompiler.start(fresh, asynchronous)
 		else:
 			precompiler.start(fresh)
 
 
-## Hidden second instance of this process: bakes every variant into the shared shader
-## caches flat out, so the main process introduces cache hits instead of compiles.
-func _spawn_worker() -> int:
-	var wd := ProjectSettings.globalize_path(LitShaderPrecompilerScript.WORKER_DIR)
-	if DirAccess.dir_exists_absolute(wd):
-		for f in DirAccess.get_files_at(wd):
-			DirAccess.remove_absolute(wd.path_join(f))
-	DirAccess.make_dir_recursive_absolute(wd)
-	var hb := FileAccess.open(wd.path_join("parent_alive"), FileAccess.WRITE)
-	if hb != null:
-		hb.close()
-	var exe := OS.get_executable_path()
-	var args := PackedStringArray(["--position", "-32000,-32000", "--resolution", "640x220"])
-	if OS.has_feature("editor"):
-		args.append_array(PackedStringArray(["--path", ProjectSettings.globalize_path("res://")]))
-	# Boot the empty worker scene, never the game's main scene.
-	args.append(WORKER_SCENE_PATH)
-	args.append_array(PackedStringArray(["--", WORKER_ARG, str(OS.get_process_id())]))
-	if OS.get_name() == "Windows":
-		# start /min births the window minimized so it never flashes on screen. The spaced
-		# title is required: create_process drops empty args, and start reads the first
-		# quoted token as its title - which would swallow a quoted (spaced) exe path.
-		var cargs := PackedStringArray(["/c", "start", "Lit Worker", "/min", exe])
-		cargs.append_array(args)
-		return OS.create_process("cmd.exe", cargs)
-	return OS.create_process(exe, args)
-
-
-func _boot_worker(parent_pid: int) -> void:
+func _boot_worker() -> void:
 	var w := get_window()
 	w.title = "Lit Shader Worker"
-	w.mode = Window.MODE_MINIMIZED
+	# Windows spawns the worker hidden (or born minimized); minimizing a hidden window
+	# there would show it.
+	if OS.get_name() != "Windows":
+		w.mode = Window.MODE_MINIMIZED
 	# Unfocusable maps to WS_EX_NOACTIVATE on Windows, which also drops the taskbar
 	# button - the worker can't be clicked into view.
 	w.unfocusable = true
 	w.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
 	precompiler = LitShaderPrecompilerScript.new()
 	add_child(precompiler)
-	# Some launch shapes ignore the boot-scene argument; swap the main scene out either way.
-	_ensure_worker_scene.call_deferred()
 	var overlay: Node = LitPrecompileOverlayScript.new()
 	overlay.force_takeover = true
 	overlay.attach(precompiler)
 	get_tree().root.add_child.call_deferred(overlay)
-	precompiler.start_worker(parent_pid)
-
-
-func _ensure_worker_scene() -> void:
-	var cs := get_tree().current_scene
-	if cs == null or cs.scene_file_path != WORKER_SCENE_PATH:
-		get_tree().change_scene_to_packed(WorkerScene)
+	precompiler.start_worker()
 
 
 ## Public API: run the precompile pipeline on demand (always worker-backed); wire UI to
@@ -145,7 +108,7 @@ func precompile_shaders() -> bool:
 	add_child(_api_precompiler)
 	_api_precompiler.progress.connect(_on_api_progress)
 	_api_precompiler.finished.connect(_on_api_finished)
-	_api_precompiler.start(false, true, _spawn_worker())
+	_api_precompiler.start(false, true)
 	return true
 
 

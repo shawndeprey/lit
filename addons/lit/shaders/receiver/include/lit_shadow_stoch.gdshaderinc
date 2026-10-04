@@ -31,53 +31,59 @@ const int LIT_MAX_SHADOW_SAMPLES = 32;
 // within the wedge, which contains all sample rays. Between the endpoints the n-march
 // estimate runs unchanged, so multi-occluder accumulation (which the single-blocker
 // cone minimum underestimates) is preserved exactly where it matters.
-// t_cap caps every march short of the source (shadow_length); t_cap == maxd is
-// uncapped. The tip band spans the FULL source's penumbra width at the cap and is
-// shared by the gate and all strata, so the aggregate closes as one shadow.
-float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float t_cap, float src,
+// t_cap caps every march short of the source (shadow_length) when capped is set. The
+// tip band spans the FULL source's penumbra width at the cap and is shared by the gate
+// and all strata, so the aggregate closes as one shadow.
+//
+// The gate runs as iteration -1 of the strata loop so the cone march has one call
+// site: every call site inlines its own copy of the march. n = 0 returns the gate
+// alone, which is the Cone Traced algorithm.
+float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float t_cap, bool capped, float src,
 		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
-	bool capped = t_cap < maxd;
 	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
 	float band = capped ? w_gate * t_cap : 0.0;
-	float gate = lit_shadow_cone(frag_sdf, dir, t_cap, band, w_gate, max_steps, frag_d,
-			!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
-	if (gate <= 0.0) {
-		return 0.0;
-	}
-	if (gate >= 1.0) {
-		return 1.0;
-	}
-	n = clamp(n, 1, LIT_MAX_SHADOW_SAMPLES);
+	n = min(n, LIT_MAX_SHADOW_SAMPLES);
 	vec2 perp = vec2(-dir.y, dir.x);
 	// Interleaved gradient noise gives the per-pixel base; the golden-ratio sequence
 	// decorrelates it across samples.
 	float ign = fract(52.9829189 * fract(dot(noise_px, vec2(0.06711056, 0.00583715))));
 	// Half-extent of one stratum: each sub-cone's angular half-width (directional) or
 	// half-width at the source (point/spot), so the n sub-cones tile the source exactly.
-	float half_stratum = src / float(n);
+	float half_stratum = src / float(max(n, 1));
 	// Per-stratum cap as a fraction so point/spot strata (whose lengths differ per
 	// stratum) all close on the same tip isoline.
 	float cap_frac = capped ? t_cap / max(maxd, 1e-4) : 1.0;
 	float sum = 0.0;
-	for (int i = 0; i < n; i++) {
-		float rnd = fract(ign + float(i) * 0.61803398875);
-		float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
+	for (int i = -1; i < n; i++) {
 		vec2 sdir = dir;
-		float smaxd = maxd;
-		float w_sub;
-		if (is_dir) {
-			sdir = normalize(dir + perp * (u * src));
-			w_sub = half_stratum;
-		} else {
-			vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
-			smaxd = length(delta);
-			sdir = delta / max(smaxd, 1e-4);
-			w_sub = half_stratum / max(smaxd, 1e-4);
+		float smaxd = t_cap;
+		float w_sub = w_gate;
+		if (i >= 0) {
+			float rnd = fract(ign + float(i) * 0.61803398875);
+			float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
+			if (is_dir) {
+				sdir = normalize(dir + perp * (u * src));
+				smaxd = maxd * cap_frac;
+				w_sub = max(half_stratum, 1e-4);
+			} else {
+				vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
+				float len = length(delta);
+				sdir = delta / max(len, 1e-4);
+				smaxd = len * cap_frac;
+				w_sub = max(half_stratum / max(len, 1e-4), 1e-4);
+			}
 		}
-		sum += lit_shadow_cone(frag_sdf, sdir, smaxd * cap_frac, band, max(w_sub, 1e-4),
+		float c = lit_shadow_cone(frag_sdf, sdir, smaxd, band, w_sub,
 				max_steps, frag_d,
 				!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+		if (i < 0) {
+			if (n <= 0 || c <= 0.0 || c >= 1.0) {
+				return c;
+			}
+			continue;
+		}
+		sum += c;
 	}
 	return sum / float(n);
 }
