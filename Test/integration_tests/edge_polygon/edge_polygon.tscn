@@ -1,0 +1,208 @@
+[gd_scene format=4 uid="uid://cghvqgm5hg4ou"]
+
+[ext_resource type="Script" uid="uid://cu3pe61cb27k4" path="res://Test/integration_tests/edge_polygon/edge_polygon.gd" id="1_root"]
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="2_rx"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_mod"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="4_light"]
+[ext_resource type="Script" uid="uid://djrtgftop1i8a" path="res://addons/lit/nodes/lit_post_process.gd" id="5_post"]
+[ext_resource type="Script" uid="uid://cmcjuxnnqhqrm" path="res://addons/lit/nodes/post/lit_post_dither.gd" id="6_dither"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_rx"]
+shader = ExtResource("2_rx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="OccluderPolygon2D" id="Occ_Bar"]
+polygon = PackedVector2Array(300, 200, 900, 200, 900, 240, 300, 240)
+
+[sub_resource type="OccluderPolygon2D" id="Occ_Post"]
+polygon = PackedVector2Array(300, 240, 340, 240, 340, 800, 300, 800)
+
+[sub_resource type="OccluderPolygon2D" id="Occ_Pentagon"]
+polygon = PackedVector2Array(1100, 180, 1700, 120, 1760, 500, 1500, 560, 1200, 420)
+
+[sub_resource type="OccluderPolygon2D" id="Occ_Quad"]
+polygon = PackedVector2Array(600, 600, 1000, 700, 900, 1000, 500, 960)
+
+[sub_resource type="OccluderPolygon2D" id="Occ_Beam"]
+polygon = PackedVector2Array(1200, 700, 1800, 700, 1800, 740, 1200, 740)
+
+[sub_resource type="OccluderPolygon2D" id="Occ_RingLarge"]
+polygon = PackedVector2Array(1652, 900, 1649.08, 929.65, 1640.43, 958.17, 1626.38, 984.45, 1607.48, 1007.48, 1584.45, 1026.38, 1558.17, 1040.43, 1529.65, 1049.08, 1500, 1052, 1470.35, 1049.08, 1441.83, 1040.43, 1415.55, 1026.38, 1392.52, 1007.48, 1373.62, 984.45, 1359.57, 958.17, 1350.92, 929.65, 1348, 900, 1350.92, 870.35, 1359.57, 841.83, 1373.62, 815.55, 1392.52, 792.52, 1415.55, 773.62, 1441.83, 759.57, 1470.35, 750.92, 1500, 748, 1529.65, 750.92, 1558.17, 759.57, 1584.45, 773.62, 1607.48, 792.52, 1626.38, 815.55, 1640.43, 841.83, 1649.08, 870.35, 1652, 900, 1625.54, 875.03, 1618.26, 851.02, 1606.43, 828.89, 1590.51, 809.49, 1571.11, 793.57, 1548.98, 781.74, 1524.97, 774.46, 1500, 772, 1475.03, 774.46, 1451.02, 781.74, 1428.89, 793.57, 1409.49, 809.49, 1393.57, 828.89, 1381.74, 851.02, 1374.46, 875.03, 1372, 900, 1374.46, 924.97, 1381.74, 948.98, 1393.57, 971.11, 1409.49, 990.51, 1428.89, 1006.43, 1451.02, 1018.26, 1475.03, 1025.54, 1500, 1028, 1524.97, 1025.54, 1548.98, 1018.26, 1571.11, 1006.43, 1590.51, 990.51, 1606.43, 971.11, 1618.26, 948.98, 1625.54, 924.97, 1628, 900, 1625.54, 875.03)
+
+[sub_resource type="OccluderPolygon2D" id="Occ_RingSmall"]
+polygon = PackedVector2Array(248, 950, 246.12, 969.12, 240.54, 987.5, 231.48, 1004.45, 219.3, 1019.3, 204.45, 1031.48, 187.5, 1040.54, 169.12, 1046.12, 150, 1048, 130.88, 1046.12, 112.5, 1040.54, 95.55, 1031.48, 80.7, 1019.3, 68.52, 1004.45, 59.46, 987.5, 53.88, 969.12, 52, 950, 53.88, 930.88, 59.46, 912.5, 68.52, 895.55, 80.7, 880.7, 95.55, 868.52, 112.5, 859.46, 130.88, 853.88, 150, 852, 169.12, 853.88, 187.5, 859.46, 204.45, 868.52, 219.3, 880.7, 231.48, 895.55, 240.54, 912.5, 246.12, 930.88, 248, 950, 230.42, 934, 225.76, 918.62, 218.18, 904.44, 207.98, 892.02, 195.56, 881.82, 181.38, 874.24, 166, 869.58, 150, 868, 134, 869.58, 118.62, 874.24, 104.44, 881.82, 92.02, 892.02, 81.82, 904.44, 74.24, 918.62, 69.58, 934, 68, 950, 69.58, 966, 74.24, 981.38, 81.82, 995.56, 92.02, 1007.98, 104.44, 1018.18, 118.62, 1025.76, 134, 1030.42, 150, 1032, 166, 1030.42, 181.38, 1025.76, 195.56, 1018.18, 207.98, 1007.98, 218.18, 995.56, 225.76, 981.38, 230.42, 966, 232, 950, 230.42, 934)
+
+[node name="EdgePolygon" type="Node2D" unique_id=794141980]
+script = ExtResource("1_root")
+
+[node name="Background" type="ColorRect" parent="." unique_id=168805343]
+offset_right = 1920.0
+offset_bottom = 1080.0
+color = Color(0, 0, 0, 1)
+
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=2125049331]
+script = ExtResource("3_mod")
+lit_version = "1.1.6"
+color = Color(0, 0, 0, 1)
+ambient_energy = 0.0
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="Bar" type="Node2D" parent="." unique_id=584396542]
+position = Vector2(0, -8)
+
+[node name="Pad" type="Polygon2D" parent="Bar" unique_id=1766532121]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(908, 248, 292, 248, 292, 192, 908, 192)
+
+[node name="Wall" type="Polygon2D" parent="Bar" unique_id=1689778674]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(300, 200, 900, 200, 900, 240, 300, 240)
+
+[node name="Occluder" type="LightOccluder2D" parent="Bar" unique_id=2130002950]
+occluder = SubResource("Occ_Bar")
+
+[node name="Post" type="Node2D" parent="." unique_id=1291262790]
+
+[node name="Pad" type="Polygon2D" parent="Post" unique_id=744599102]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(348, 808, 292, 808, 292, 232, 348, 232)
+
+[node name="Wall" type="Polygon2D" parent="Post" unique_id=1398282276]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(300, 240, 340, 240, 340, 800, 300, 800)
+
+[node name="Occluder" type="LightOccluder2D" parent="Post" unique_id=3577480]
+occluder = SubResource("Occ_Post")
+
+[node name="Pentagon" type="Node2D" parent="." unique_id=812224129]
+
+[node name="Pad" type="Polygon2D" parent="Pentagon" unique_id=797102457]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(1769.07, 506.12, 1499.11, 568.41, 1193.81, 425.94, 1088.46, 173.11, 1706.72, 111.29)
+
+[node name="Wall" type="Polygon2D" parent="Pentagon" unique_id=2068543931]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(1100, 180, 1700, 120, 1760, 500, 1500, 560, 1200, 420)
+
+[node name="Occluder" type="LightOccluder2D" parent="Pentagon" unique_id=736292272]
+occluder = SubResource("Occ_Pentagon")
+
+[node name="Quad" type="Node2D" parent="." unique_id=2111958130]
+
+[node name="Pad" type="Polygon2D" parent="Quad" unique_id=1842189004]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(1010.32, 694.33, 905.57, 1008.6, 489.75, 967.01, 594.38, 590.35)
+
+[node name="Wall" type="Polygon2D" parent="Quad" unique_id=1910110759]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(600, 600, 1000, 700, 900, 1000, 500, 960)
+
+[node name="Occluder" type="LightOccluder2D" parent="Quad" unique_id=843802083]
+occluder = SubResource("Occ_Quad")
+
+[node name="Beam" type="Node2D" parent="." unique_id=1587744943]
+
+[node name="Pad" type="Polygon2D" parent="Beam" unique_id=1779475508]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(1808, 748, 1192, 748, 1192, 692, 1808, 692)
+
+[node name="Wall" type="Polygon2D" parent="Beam" unique_id=1980610175]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(1200, 700, 1800, 700, 1800, 740, 1200, 740)
+
+[node name="Occluder" type="LightOccluder2D" parent="Beam" unique_id=1061880172]
+occluder = SubResource("Occ_Beam")
+
+[node name="RingLarge" type="Node2D" parent="." unique_id=2078779135]
+
+[node name="OuterPad" type="Polygon2D" parent="RingLarge" unique_id=454107503]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(1660, 900, 1656.93, 931.21, 1647.82, 961.23, 1633.04, 988.89, 1613.14, 1013.14, 1588.89, 1033.04, 1561.23, 1047.82, 1531.21, 1056.93, 1500, 1060, 1468.79, 1056.93, 1438.77, 1047.82, 1411.11, 1033.04, 1386.86, 1013.14, 1366.96, 988.89, 1352.18, 961.23, 1343.07, 931.21, 1340, 900, 1343.07, 868.79, 1352.18, 838.77, 1366.96, 811.11, 1386.86, 786.86, 1411.11, 766.96, 1438.77, 752.18, 1468.79, 743.07, 1500, 740, 1531.21, 743.07, 1561.23, 752.18, 1588.89, 766.96, 1613.14, 786.86, 1633.04, 811.11, 1647.82, 838.77, 1656.93, 868.79)
+
+[node name="Wall" type="Polygon2D" parent="RingLarge" unique_id=1679134702]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(1652, 900, 1649.08, 929.65, 1640.43, 958.17, 1626.38, 984.45, 1607.48, 1007.48, 1584.45, 1026.38, 1558.17, 1040.43, 1529.65, 1049.08, 1500, 1052, 1470.35, 1049.08, 1441.83, 1040.43, 1415.55, 1026.38, 1392.52, 1007.48, 1373.62, 984.45, 1359.57, 958.17, 1350.92, 929.65, 1348, 900, 1350.92, 870.35, 1359.57, 841.83, 1373.62, 815.55, 1392.52, 792.52, 1415.55, 773.62, 1441.83, 759.57, 1470.35, 750.92, 1500, 748, 1529.65, 750.92, 1558.17, 759.57, 1584.45, 773.62, 1607.48, 792.52, 1626.38, 815.55, 1640.43, 841.83, 1649.08, 870.35)
+
+[node name="InnerPad" type="Polygon2D" parent="RingLarge" unique_id=2084505046]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(1628, 900, 1625.54, 924.97, 1618.26, 948.98, 1606.43, 971.11, 1590.51, 990.51, 1571.11, 1006.43, 1548.98, 1018.26, 1524.97, 1025.54, 1500, 1028, 1475.03, 1025.54, 1451.02, 1018.26, 1428.89, 1006.43, 1409.49, 990.51, 1393.57, 971.11, 1381.74, 948.98, 1374.46, 924.97, 1372, 900, 1374.46, 875.03, 1381.74, 851.02, 1393.57, 828.89, 1409.49, 809.49, 1428.89, 793.57, 1451.02, 781.74, 1475.03, 774.46, 1500, 772, 1524.97, 774.46, 1548.98, 781.74, 1571.11, 793.57, 1590.51, 809.49, 1606.43, 828.89, 1618.26, 851.02, 1625.54, 875.03)
+
+[node name="Center" type="Polygon2D" parent="RingLarge" unique_id=1912843244]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(1620, 900, 1617.69, 923.41, 1610.87, 945.92, 1599.78, 966.67, 1584.85, 984.85, 1566.67, 999.78, 1545.92, 1010.87, 1523.41, 1017.69, 1500, 1020, 1476.59, 1017.69, 1454.08, 1010.87, 1433.33, 999.78, 1415.15, 984.85, 1400.22, 966.67, 1389.13, 945.92, 1382.31, 923.41, 1380, 900, 1382.31, 876.59, 1389.13, 854.08, 1400.22, 833.33, 1415.15, 815.15, 1433.33, 800.22, 1454.08, 789.13, 1476.59, 782.31, 1500, 780, 1523.41, 782.31, 1545.92, 789.13, 1566.67, 800.22, 1584.85, 815.15, 1599.78, 833.33, 1610.87, 854.08, 1617.69, 876.59)
+
+[node name="Occluder" type="LightOccluder2D" parent="RingLarge" unique_id=527479639]
+occluder = SubResource("Occ_RingLarge")
+
+[node name="RingSmall" type="Node2D" parent="." unique_id=382972584]
+
+[node name="OuterPad" type="Polygon2D" parent="RingSmall" unique_id=1234586280]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(256, 950, 253.96, 970.68, 247.93, 990.56, 238.14, 1008.89, 224.95, 1024.95, 208.89, 1038.14, 190.56, 1047.93, 170.68, 1053.96, 150, 1056, 129.32, 1053.96, 109.44, 1047.93, 91.11, 1038.14, 75.05, 1024.95, 61.86, 1008.89, 52.07, 990.56, 46.04, 970.68, 44, 950, 46.04, 929.32, 52.07, 909.44, 61.86, 891.11, 75.05, 875.05, 91.11, 861.86, 109.44, 852.07, 129.32, 846.04, 150, 844, 170.68, 846.04, 190.56, 852.07, 208.89, 861.86, 224.95, 875.05, 238.14, 891.11, 247.93, 909.44, 253.96, 929.32)
+
+[node name="Wall" type="Polygon2D" parent="RingSmall" unique_id=1678872495]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(248, 950, 246.12, 969.12, 240.54, 987.5, 231.48, 1004.45, 219.3, 1019.3, 204.45, 1031.48, 187.5, 1040.54, 169.12, 1046.12, 150, 1048, 130.88, 1046.12, 112.5, 1040.54, 95.55, 1031.48, 80.7, 1019.3, 68.52, 1004.45, 59.46, 987.5, 53.88, 969.12, 52, 950, 53.88, 930.88, 59.46, 912.5, 68.52, 895.55, 80.7, 880.7, 95.55, 868.52, 112.5, 859.46, 130.88, 853.88, 150, 852, 169.12, 853.88, 187.5, 859.46, 204.45, 868.52, 219.3, 880.7, 231.48, 895.55, 240.54, 912.5, 246.12, 930.88)
+
+[node name="InnerPad" type="Polygon2D" parent="RingSmall" unique_id=1872111629]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.85, 0.85, 0.85, 1)
+polygon = PackedVector2Array(232, 950, 230.42, 966, 225.76, 981.38, 218.18, 995.56, 207.98, 1007.98, 195.56, 1018.18, 181.38, 1025.76, 166, 1030.42, 150, 1032, 134, 1030.42, 118.62, 1025.76, 104.44, 1018.18, 92.02, 1007.98, 81.82, 995.56, 74.24, 981.38, 69.58, 966, 68, 950, 69.58, 934, 74.24, 918.62, 81.82, 904.44, 92.02, 892.02, 104.44, 881.82, 118.62, 874.24, 134, 869.58, 150, 868, 166, 869.58, 181.38, 874.24, 195.56, 881.82, 207.98, 892.02, 218.18, 904.44, 225.76, 918.62, 230.42, 934)
+
+[node name="Center" type="Polygon2D" parent="RingSmall" unique_id=353735649]
+color = Color(0, 0, 0, 1)
+polygon = PackedVector2Array(224, 950, 222.58, 964.44, 218.37, 978.32, 211.53, 991.11, 202.33, 1002.33, 191.11, 1011.53, 178.32, 1018.37, 164.44, 1022.58, 150, 1024, 135.56, 1022.58, 121.68, 1018.37, 108.89, 1011.53, 97.67, 1002.33, 88.47, 991.11, 81.63, 978.32, 77.42, 964.44, 76, 950, 77.42, 935.56, 81.63, 921.68, 88.47, 908.89, 97.67, 897.67, 108.89, 888.47, 121.68, 881.63, 135.56, 877.42, 150, 876, 164.44, 877.42, 178.32, 881.63, 191.11, 888.47, 202.33, 897.67, 211.53, 908.89, 218.37, 921.68, 222.58, 935.56)
+
+[node name="Occluder" type="LightOccluder2D" parent="RingSmall" unique_id=2024789954]
+occluder = SubResource("Occ_RingSmall")
+
+[node name="LitPointLight2D" type="Node2D" parent="." unique_id=889503536]
+position = Vector2(960, 540)
+script = ExtResource("4_light")
+lit_version = "1.1.6"
+range = 500.0
+height = 600.0
+shadow_hardness = 1.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LitPostProcess" type="CanvasLayer" parent="." unique_id=1151032193]
+script = ExtResource("5_post")
+lit_version = "1.1.6"
+metadata/_custom_type_script = "uid://djrtgftop1i8a"
+
+[node name="LitPostDither" type="Node2D" parent="LitPostProcess" unique_id=1683003279]
+script = ExtResource("6_dither")
+levels = 6.0
+pattern_scale = 2.0
+monochrome = true
+lit_version = "1.1.6"
+metadata/_custom_type_script = "uid://cmcjuxnnqhqrm"
+
+[node name="Label" type="Label" parent="." unique_id=151435177]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 600.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 22
+text = "Mouse: light   S: toggle shadows"
