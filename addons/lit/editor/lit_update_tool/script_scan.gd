@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Read-only analysis of every project .gd file for "Update Project to Lit":
+## Read-only analysis of every project .gd file for "Project Migration Tool":
 ## inheritance chains rooting in rebasable core classes (with member-collision
 ## checks against the Lit classes), core-class references for the retype pass,
 ## @tool presence, and scene-path string literals (code-usage evidence for the

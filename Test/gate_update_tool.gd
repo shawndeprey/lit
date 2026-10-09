@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Behavior gate for "Update Project to Lit": copies the Test/.update_tool_bench
+## Behavior gate for "Project Migration Tool": copies the Test/.update_tool_bench
 ## fixtures to a scratch dir, runs the full update rooted there, and asserts every
 ## conversion contract: property mapping, script rebasing + collision skip, override
 ## remap with delta preservation, connection/unique-name/occluder survival, animation

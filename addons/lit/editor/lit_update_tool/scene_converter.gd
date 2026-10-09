@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## The scene pass of "Update Project to Lit": loads one scene off-tree, converts its
+## The scene pass of "Project Migration Tool": loads one scene off-tree, converts its
 ## candidate rows (node replacement for lights/modulates, in-place script swaps for
 ## receivers, fixups for rebased-script nodes, migrations + stamping for Lit nodes),
 ## remaps instance overrides and animation tracks, then packs and saves - only when
@@ -375,7 +375,7 @@ static func _receiver_fixups(node: Node, row: Dictionary, current: String,
 		report: Array, ctx: Dictionary) -> bool:
 	if node.get(&"receiver_mask") == null:
 		report.append("ERROR %s: rebased script not yet compiled against the Lit base; "
-				% row["path"] + "restart the editor and run the update again")
+				% row["path"] + "restart the editor and run the migration again")
 		return false
 	var changed := false
 	var cls := RxMats.classify(row["props"].get("material"))

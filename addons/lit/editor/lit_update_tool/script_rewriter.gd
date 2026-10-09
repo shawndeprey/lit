@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## The script pass of "Update Project to Lit": rebases user chains onto the Lit
+## The script pass of "Project Migration Tool": rebases user chains onto the Lit
 ## classes, adds @tool where the Lit base requires it, retypes core-class references,
 ## and force-reloads everything it rewrote. UI-only scripts are skipped by the
 ## caller's ui_roots/ui_scripts sets when menus are excluded.

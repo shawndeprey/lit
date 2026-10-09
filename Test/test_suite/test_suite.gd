@@ -74,7 +74,7 @@ const SECTIONS := [
 	{"id": "registry", "title": "Registry & Receiver Driving", "script": "res://Test/test_suite/registry/registry_section.gd"},
 	{"id": "shader_library", "title": "Shader Library & Precompile", "script": "res://Test/test_suite/shader_library/shader_library_section.gd", "separate": true},
 	{"id": "migration", "title": "Schema Lock & Migrations", "script": "res://Test/test_suite/migration/migration_section.gd"},
-	{"id": "update_tool", "title": "Update Project to Lit", "script": "res://Test/test_suite/update_tool/update_tool_section.gd"},
+	{"id": "update_tool", "title": "Project Migration Tool", "script": "res://Test/test_suite/update_tool/update_tool_section.gd"},
 	{"id": "splash", "title": "Splash Screen", "script": "res://Test/test_suite/splash/splash_section.gd"},
 ]
 

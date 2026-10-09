@@ -1,6 +1,6 @@
 extends LitSuiteSection
 
-## "Update Project to Lit" (Project > Tools): the fixtures under Test/.update_tool_bench
+## "Project Migration Tool" (Project > Tools): the fixtures under Test/.update_tool_bench
 ## are copied to a scratch folder and the full update runs rooted there. Checks the
 ## conversion contracts the tool ships: core light / modulate replacement with property
 ## mapping, receiver script swaps with CanvasTexture wrapping, user-script rebasing
@@ -33,7 +33,7 @@ var _lines: Array[String] = []
 
 
 func run() -> void:
-	label("Update Project to Lit: fixtures converted in a scratch copy of Test/.update_tool_bench",
+	label("Project Migration Tool: fixtures converted in a scratch copy of Test/.update_tool_bench",
 			Vector2(24, 74))
 	if not DirAccess.dir_exists_absolute(SRC):
 		check_true("update_tool", "fixture folder %s present" % SRC, false)

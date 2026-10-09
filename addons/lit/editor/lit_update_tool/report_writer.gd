@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Report output for "Update Project to Lit": the grouped material notes appended at
+## Report output for "Project Migration Tool": the grouped material notes appended at
 ## the end of a run, and the report file itself.
 
 
@@ -58,7 +58,7 @@ static func write(report: Array, scan_result: Dictionary,
 		log.append(line)
 		i += 1
 	var c: Dictionary = scan_result["counts"]
-	f.store_line("Update Project to Lit %s - %d scenes scanned, %d rewritten"
+	f.store_line("Project Migration Tool (Lit %s) - %d scenes scanned, %d rewritten"
 			% [scan_result["current"], c["scenes"], changed_scenes.size()])
 	f.store_line("")
 	if not attention.is_empty():

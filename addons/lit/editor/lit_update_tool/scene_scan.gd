@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Per-scene model building for "Update Project to Lit": one row per SceneState node
+## Per-scene model building for "Project Migration Tool": one row per SceneState node
 ## (type, script, instance edge, stored props), plus the leaves-first processing
 ## order over the instance graph. Read-only; no scene code runs.
 
@@ -14,7 +14,7 @@ static func scan_scene(acc: Dictionary, scene_path: String) -> void:
 	var current: String = acc["current"]
 	var packed := load(scene_path) as PackedScene
 	if packed == null:
-		push_warning("Lit: update scan could not load '%s'; skipped" % scene_path)
+		push_warning("Lit: migration scan could not load '%s'; skipped" % scene_path)
 		return
 	var state := packed.get_state()
 	var rows: Array[Dictionary] = []

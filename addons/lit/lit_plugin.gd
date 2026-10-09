@@ -68,7 +68,7 @@ func _enter_tree() -> void:
 	get_tree().node_added.connect(_on_editor_node_added)
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	add_tool_menu_item(TOOL_MENU_PRECOMPILE, _generate_precompile_config)
-	_update_menu_label = "Update Project to Lit %s..." % LitMigrationsScript.current_version()
+	_update_menu_label = "Project Migration Tool (Lit %s)..." % LitMigrationsScript.current_version()
 	add_tool_menu_item(_update_menu_label, _update_gate)
 	# The "Add Effect" button on the LitPostProcess inspector.
 	_post_inspector = LitPostInspectorScript.new()
@@ -255,9 +255,9 @@ func _generate_precompile_config() -> void:
 				% [result.scenes, variants.size(), result.full, shaders.size()]
 	_popup_tool_dialog("Lit Precompile Config", text)
 
-# --- Update Project tool -------------------------------------------------------
+# --- Project Migration tool ------------------------------------------------------
 #
-# "Update Project to Lit X.Y.Z" converts core nodes project-wide, rebases user
+# "Project Migration Tool (Lit X.Y.Z)" converts core nodes project-wide, rebases user
 # scripts extending Sprite2D / AnimatedSprite2D / TileMapLayer onto the Lit classes,
 # and brings every Lit
 # node to the current version. The engine lives in editor/lit_update_tool.gd; this
@@ -279,7 +279,12 @@ func _update_gate() -> void:
 	vb.add_theme_constant_override("separation", int(12 * ui_scale))
 	for entry in [
 			["STOP", 56, red, true],
-			["This tool updates your whole project to Lit %s." % LitMigrationsScript.current_version(),
+			["EXPERIMENTAL TOOL", 28, red, true],
+			["Real projects come in more shapes than this tool knows how to handle.\n"
+					+ "It can change more or less than you expect, and some of its results\n"
+					+ "will need finishing by hand. Treat every change it makes as a draft to review.",
+					0, red, true],
+			["This tool migrates your whole project to Lit %s." % LitMigrationsScript.current_version(),
 					20, null, true],
 			["-  Lights, sprites and tilemaps in every scene become Lit nodes.\n"
 					+ "-  Scripts that use them are rewritten.\n"
@@ -342,7 +347,7 @@ func _update_project() -> void:
 
 	var dlg := ConfirmationDialog.new()
 	dlg.title = title
-	dlg.ok_button_text = "Update"
+	dlg.ok_button_text = "Migrate"
 	var vb := VBoxContainer.new()
 	var head := Label.new()
 	head.text = "Scanned %d scenes; %d need changes. Converting:" \
@@ -391,7 +396,7 @@ func _update_project() -> void:
 	info_lines.append("")
 	info_lines.append("Scene files and scripts are rewritten in place. Commit or back up first.")
 	info_lines.append("@tool scripts in affected scenes run during processing.")
-	info_lines.append("The editor reloads the project when the update finishes.")
+	info_lines.append("The editor reloads the project when the migration finishes.")
 	info.text = "\n".join(info_lines)
 	vb.add_child(info)
 	dlg.add_child(vb)
@@ -411,12 +416,12 @@ func _run_update(scan: Dictionary, kinds: Dictionary) -> void:
 	# restore so the editor preview keeps the currently open scene's ambient.
 	var ambient_color: Variant = RenderingServer.global_shader_parameter_get("lit_ambient_color")
 	var ambient_energy: Variant = RenderingServer.global_shader_parameter_get("lit_ambient_energy")
-	_progress_open(_update_menu_label.trim_suffix("..."), "Updating scripts...")
+	_progress_open(_update_menu_label.trim_suffix("..."), "Migrating scripts...")
 	await get_tree().process_frame
 	var rctx: Dictionary = LitUpdateToolScript.run_begin(scan, kinds)
 	var scenes: Array = rctx["scenes"]
 	for i in scenes.size():
-		_progress_set("Updating scenes... %d / %d" % [i + 1, scenes.size()],
+		_progress_set("Migrating scenes... %d / %d" % [i + 1, scenes.size()],
 				float(i) / maxf(scenes.size(), 1.0))
 		await get_tree().process_frame
 		LitUpdateToolScript.run_scene(rctx, scenes[i])

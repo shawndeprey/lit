@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Version framework for "Update Project to Lit".
+## Version framework for "Project Migration Tool".
 ##
 ## baseline_schema.gd locks the stored property surface of every Lit node class as
 ## of BASELINE_VERSION; it only advances through the migration files registered in
