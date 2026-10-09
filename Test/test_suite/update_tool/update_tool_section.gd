@@ -24,7 +24,7 @@ const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
 	"fixture_preview.tscn",
 	"fixture_rebase_sprite.gd", "fixture_collide_sprite.gd", "fixture_light_script.gd",
 	"fixture_watcher.gd", "fixture_oneline_tile.gd", "fixture_lit_light.gd",
-	"fixture_icon_sprite.gd", "fixture_rebase_anim.gd"]
+	"fixture_icon_sprite.gd", "fixture_rebase_anim.gd", "fixture_env_ref_user.gd"]
 const BIN_SCENE := "env_bin.scn"
 const ALL_KINDS := {"lights": true, "modulates": true, "sprites": true,
 	"animated_sprites": true, "tilemaps": true, "scripts": true}
@@ -273,7 +273,7 @@ func _parent() -> void:
 	if not check_true(c, "parent scene loads", packed != null):
 		return
 	var state := packed.get_state()
-	check(c, "parent stores 10 rows (deltas only)", 10, state.get_node_count())
+	check(c, "parent stores 11 rows (deltas only)", 11, state.get_node_count())
 	check_true(c, "env stays an instance, placeholder preserved", _row_is_instance(state, "Env") and "instance_placeholder=" in text)
 	var root := packed.instantiate()
 	var child_light := root.get_node("Child/Light")
@@ -339,9 +339,9 @@ func _run_result(scan1: Dictionary, run1: Dictionary) -> void:
 			and cnt["sprites"] == 6 and cnt["animated_sprites"] == 1 and cnt["tilemaps"] == 1
 			and cnt["skipped_scripted"] == 1 and cnt["rebase_roots"] == 3 and cnt["unlit_mats"] == 2 and cnt["custom_mats"] == 2)
 	check_true(c, "scan counts menu candidates, menu core, menu scripts, retypes, @tool additions",
-			cnt["menu_nodes"] == 6 and cnt["menu_core"] == 1 and cnt["menu_scripts"] == 1 and cnt["retype_scripts"] == 1 and cnt["tool_add"] == 4)
+			cnt["menu_nodes"] == 6 and cnt["menu_core"] == 1 and cnt["menu_scripts"] == 1 and cnt["retype_scripts"] == 2 and cnt["tool_add"] == 4)
 	check_true(c, "UI-only chain root classified via usage", scan1["scripts"]["ui_roots"].has(OUT + "/fixture_icon_sprite.gd"))
-	check_true(c, "one script retyped, four gained @tool", run1["retyped_scripts"].size() == 1 and run1["tooled_scripts"].size() == 4)
+	check_true(c, "two scripts retyped, four gained @tool", run1["retyped_scripts"].size() == 2 and run1["tooled_scripts"].size() == 4)
 	var joined := "\n".join(run1["report"])
 	var missing: Array[String] = []
 	for tag in ["SKIPPED-COLLISION", "CLAMPED", "REMAPPED-TRACK", "REMAPPED-OVERRIDE",

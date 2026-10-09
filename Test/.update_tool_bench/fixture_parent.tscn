@@ -1,9 +1,10 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_child.tscn" id="1_child"]
 [ext_resource type="Texture2D" path="res://Test/base.png" id="2_tex"]
 [ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_env.tscn" id="3_env"]
 [ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_menu.tscn" id="4_menu"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_env_ref_user.gd" id="5_us"]
 
 [sub_resource type="TileSetAtlasSource" id="atlas"]
 texture = ExtResource("2_tex")
@@ -41,5 +42,13 @@ texture = ExtResource("2_tex")
 
 [node name="Ghost" parent="." instance_placeholder="res://Test/.update_tool_bench/fixture_child.tscn"]
 light_mask = 2
+
+[node name="GhostWatch" type="Node" parent="." node_paths=PackedStringArray("lamp", "lamps", "by_name")]
+script = ExtResource("5_us")
+lamp = NodePath("../Ghost/Light")
+lamps = [NodePath("../Ghost/Light")]
+by_name = {
+"ghost": NodePath("../Ghost/Light")
+}
 
 [editable path="Child"]

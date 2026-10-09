@@ -15,6 +15,11 @@ const RxMats := preload("res://addons/lit/editor/lit_update_tool/receiver_materi
 # default transparent black means invisible shadows. Lit tints shadowed light by rgb
 # (alpha unused), so the behavior-preserving map is mix(WHITE, rgb, alpha).
 const CORE_SHADOW_DEFAULT := Color(0, 0, 0, 0)
+# Property hint_string prefix of a node-typed element (Array / Dictionary sides).
+const NODE_HINT_PREFIX := "%d/%d:" % [TYPE_OBJECT, PROPERTY_HINT_NODE_TYPE]
+
+# class_name -> script path, rebuilt per scene so an editor session never goes stale.
+static var _global_class_paths := {}
 
 
 static func process_scene(scene_path: String, m: Dictionary, scan_result: Dictionary,
@@ -30,6 +35,7 @@ static func process_scene(scene_path: String, m: Dictionary, scan_result: Dictio
 		return false
 
 	var changed := false
+	_global_class_paths.clear()
 	var lit_by_script := Migrations.lit_scripts_by_path()
 	var core_names := Maps.core_mapped_names()
 	var current: String = scan_result["current"]
@@ -95,6 +101,9 @@ static func process_scene(scene_path: String, m: Dictionary, scan_result: Dictio
 			continue
 		if _remap_overrides(node, row, report):
 			changed = true
+
+	if _restore_node_refs(root, m, report):
+		changed = true
 
 	if _remap_animation_tracks(root, report):
 		changed = true
@@ -480,6 +489,302 @@ static func _is_receiver_script(script_path: String) -> bool:
 			return true
 		script = script.get_base_script()
 	return false
+
+
+# --- Exported node references ---------------------------------------------------
+
+## `@export var x: SomeNode` (plus arrays and dictionaries of them) are stored as
+## NodePaths but live as objects. Replacing a referenced node leaves the live reference
+## dead, and an annotation retyped this run already refused the old core node at load.
+## Re-resolve every stored path from the scan capture; where the annotation refuses the
+## node the reference is cleared and reported rather than left dangling. Acceptance is
+## decided from the annotation's class name, not from a trial set(): in the editor,
+## non-@tool scripts are placeholder instances whose set() validates nothing.
+##
+## Live values are only ever classified as live (valid node) or empty: in this engine a
+## freed node compares equal to null and a typed container's empty slot is an object
+## null, so dead and null are indistinguishable by value. The stored path and the
+## outcome of resolving it decide what counts as a change instead.
+static func _restore_node_refs(root: Node, m: Dictionary, report: Array) -> bool:
+	var changed := false
+	for row in m["rows"]:
+		if row["placeholder"]:
+			continue
+		var node := root.get_node_or_null(row["path"])
+		if node == null or node.get_script() == null:
+			continue
+		# No usage filter: editor placeholder instances report exports without
+		# PROPERTY_USAGE_SCRIPT_VARIABLE. The node-type hint plus a stored NodePath /
+		# Array / Dictionary value identifies a reference on its own.
+		var exports := {}
+		for info in node.get_property_list():
+			exports[String(info["name"])] = info
+		var stored: Dictionary = row["props"]
+		for prop in stored:
+			if not exports.has(prop):
+				continue
+			var info: Dictionary = exports[prop]
+			var value: Variant = stored[prop]
+			var hint := String(info["hint_string"])
+			if value is NodePath and int(info["type"]) == TYPE_OBJECT \
+					and int(info["hint"]) == PROPERTY_HINT_NODE_TYPE:
+				if _restore_node_ref(node, prop, value, hint, row["path"], report):
+					changed = true
+			elif value is Array and int(info["type"]) == TYPE_ARRAY \
+					and int(info["hint"]) == PROPERTY_HINT_TYPE_STRING \
+					and hint.begins_with(NODE_HINT_PREFIX):
+				if _restore_node_ref_array(node, prop, value, hint.trim_prefix(NODE_HINT_PREFIX),
+						row["path"], report):
+					changed = true
+			elif value is Dictionary and int(info["type"]) == TYPE_DICTIONARY \
+					and int(info["hint"]) in [PROPERTY_HINT_TYPE_STRING, PROPERTY_HINT_DICTIONARY_TYPE]:
+				var sides := hint.split(";")
+				if sides.size() != 2:
+					continue
+				var key_cls := sides[0].trim_prefix(NODE_HINT_PREFIX) \
+						if sides[0].begins_with(NODE_HINT_PREFIX) else ""
+				var value_cls := sides[1].trim_prefix(NODE_HINT_PREFIX) \
+						if sides[1].begins_with(NODE_HINT_PREFIX) else ""
+				if (not key_cls.is_empty() or not value_cls.is_empty()) \
+						and _restore_node_ref_dict(node, prop, value, key_cls, value_cls,
+								row["path"], report):
+					changed = true
+	return changed
+
+
+static func _restore_node_ref(node: Node, prop: String, path: NodePath, annotation: String,
+		row_path: NodePath, report: Array) -> bool:
+	if path.is_empty():
+		return false
+	var have: Variant = node.get(prop)
+	var live := _live(have)
+	var want := node.get_node_or_null(path)
+	if want == null:
+		report.append("MANUAL %s: `%s` pointed at %s, which no longer resolves; re-link it by hand"
+				% [row_path, prop, path])
+		if not live:
+			node.set(prop, null)
+		return false
+	# Annotation first, even when the live value already equals the target: an editor
+	# placeholder instance accepts any value at load, the runtime instance will not.
+	if not _annotation_accepts(annotation, want):
+		node.set(prop, null)
+		report.append(_refused_line(row_path, "`%s: %s`" % [prop, annotation], path, want))
+		return true
+	if live and have == want:
+		return false
+	if not live and _under_load_placeholder(want):
+		# Headless, placeholder instances have no children at load, so the reference is
+		# empty here but intact in the editor; set it, but it is not a change to save.
+		node.set(prop, want)
+		return false
+	node.set(prop, want)
+	if node.get(prop) != want:
+		node.set(prop, null)
+		report.append(_refused_line(row_path, "`%s: %s`" % [prop, annotation], path, want))
+		return true
+	report.append("RELINKED %s: `%s` -> %s (%s)" % [row_path, prop, path, _class_label(want)])
+	return true
+
+
+static func _restore_node_ref_array(node: Node, prop: String, paths: Array, elem_cls: String,
+		row_path: NodePath, report: Array) -> bool:
+	var have: Variant = node.get(prop)
+	if not (have is Array):
+		return false
+	var current: Array = have
+	var out: Array = current.duplicate()
+	out.clear()
+	var relinked := 0
+	var real_change := false
+	for p in paths:
+		if not (p is NodePath) or (p as NodePath).is_empty():
+			out.append(null)
+			continue
+		var want := node.get_node_or_null(p)
+		if want == null:
+			report.append("MANUAL %s: `%s` listed %s, which no longer resolves; re-link it by hand"
+					% [row_path, prop, p])
+			out.append(null)
+			real_change = true
+		elif not _annotation_accepts(elem_cls, want) \
+				or not _typed_accepts(out.get_typed_script(), out.get_typed_class_name(), want):
+			report.append(_refused_line(row_path, "`%s` (Array[%s])" % [prop, elem_cls], p, want))
+			out.append(null)
+			real_change = true
+		else:
+			out.append(want)
+			relinked += 1
+	# Empty slots whose target sits under a load-placeholder instance are applied but
+	# are not a change to save: headless the placeholder has no children at load, the
+	# editor already holds the reference.
+	var same := out.size() == current.size() and not real_change
+	if current.size() > out.size():
+		real_change = true
+	for i in out.size():
+		var cur: Variant = current[i] if i < current.size() else null
+		var o: Variant = out[i]
+		if (_live(cur) and cur == o) or (not _live(cur) and o == null):
+			continue
+		same = false
+		if _live(cur) or not (_live(o) and _under_load_placeholder(o)):
+			real_change = true
+	if same:
+		return false
+	node.set(prop, out)
+	if not real_change:
+		return false
+	if relinked > 0:
+		report.append("RELINKED %s: `%s` -> %d of %d listed nodes" % [row_path, prop, relinked, paths.size()])
+	return true
+
+
+# Typed Dictionary[K, V] with a node-typed key or value side (class name given, else "").
+# A key that cannot be re-linked is dropped with its value named in the report (a null
+# key would collide); a value that cannot be re-linked becomes null. `current` is never
+# iterated directly and never duplicated: freed node keys hang `for k in d` and fail
+# the typed-key validation a duplicate() runs.
+static func _restore_node_ref_dict(node: Node, prop: String, stored: Dictionary,
+		key_cls: String, value_cls: String, row_path: NodePath, report: Array) -> bool:
+	var have: Variant = node.get(prop)
+	if not (have is Dictionary):
+		return false
+	var current: Dictionary = have
+	var out := Dictionary({}, current.get_typed_key_builtin(), current.get_typed_key_class_name(),
+			current.get_typed_key_script(), current.get_typed_value_builtin(),
+			current.get_typed_value_class_name(), current.get_typed_value_script())
+	var relinked := 0
+	var real_change := false
+	for k in stored:
+		var key: Variant = k
+		var val: Variant = stored[k]
+		if not key_cls.is_empty() and k is NodePath:
+			if (k as NodePath).is_empty():
+				continue
+			key = node.get_node_or_null(k)
+			if key == null:
+				report.append("MANUAL %s: `%s` entry keyed by %s (value %s) no longer resolves; re-create it by hand"
+						% [row_path, prop, k, val])
+				real_change = true
+				continue
+			if not _annotation_accepts(key_cls, key) or not _typed_accepts(
+					out.get_typed_key_script(), out.get_typed_key_class_name(), key):
+				report.append(_refused_line(row_path, "`%s` key (Dictionary[%s, ...], value %s)"
+						% [prop, key_cls, val], k, key))
+				real_change = true
+				continue
+			relinked += 1
+		if not value_cls.is_empty() and val is NodePath:
+			if (val as NodePath).is_empty():
+				val = null
+			else:
+				var want := node.get_node_or_null(val)
+				if want == null:
+					report.append("MANUAL %s: `%s[%s]` pointed at %s, which no longer resolves; re-link it by hand"
+							% [row_path, prop, k, val])
+					val = null
+					real_change = true
+				elif not _annotation_accepts(value_cls, want) or not _typed_accepts(
+						out.get_typed_value_script(), out.get_typed_value_class_name(), want):
+					report.append(_refused_line(row_path, "`%s[%s]` (Dictionary[..., %s])"
+							% [prop, k, value_cls], val, want))
+					val = null
+					real_change = true
+				else:
+					val = want
+					relinked += 1
+		out[key] = val
+	# Same placeholder rule as arrays, on values and on node keys.
+	var same := out.size() == current.size() and not real_change
+	for k in current.keys():
+		# A key is never an empty slot, so an invalid object key is a freed node; skip the
+		# has() lookup that would run the typed-key validator on it.
+		if (typeof(k) == TYPE_OBJECT and not is_instance_valid(k)) or not out.has(k):
+			same = false
+			real_change = true
+			break
+		var cur: Variant = current[k]
+		var o: Variant = out[k]
+		if cur == o:
+			continue
+		same = false
+		if _live(cur) or not (_live(o) and _under_load_placeholder(o)):
+			real_change = true
+	for k in out:
+		if current.has(k):
+			continue
+		same = false
+		var probe: Variant = k if _live(k) else out[k]
+		if not (_live(probe) and _under_load_placeholder(probe)):
+			real_change = true
+	if same:
+		return false
+	node.set(prop, out)
+	if not real_change:
+		return false
+	if relinked > 0:
+		report.append("RELINKED %s: `%s` -> %d of %d entries" % [row_path, prop, relinked, stored.size()])
+	return true
+
+
+static func _refused_line(row_path: NodePath, what: String, path: Variant, node: Node) -> String:
+	return "MANUAL %s: %s pointed at %s, now a %s the annotation refuses; " \
+			% [row_path, what, path, _class_label(node)] \
+			+ "align the annotation with the node's class and re-link it"
+
+
+## Does `node` satisfy an export annotation naming these classes (comma-separated:
+## native names, or global class_names resolved through the project class list)?
+static func _annotation_accepts(names: String, node: Node) -> bool:
+	if names.is_empty():
+		return true
+	for raw in names.split(","):
+		var name := raw.strip_edges()
+		if name.is_empty():
+			continue
+		if ClassDB.class_exists(name):
+			if node.is_class(name):
+				return true
+			continue
+		var script := _global_class_script(name)
+		if script != null and is_instance_of(node, script):
+			return true
+	return false
+
+
+static func _global_class_script(name: String) -> Script:
+	if _global_class_paths.is_empty():
+		for entry in ProjectSettings.get_global_class_list():
+			_global_class_paths[String(entry["class"])] = String(entry["path"])
+	if not _global_class_paths.has(name):
+		return null
+	return load(_global_class_paths[name]) as Script
+
+
+static func _under_load_placeholder(node: Node) -> bool:
+	var n := node
+	while n != null:
+		if n.get_scene_instance_load_placeholder():
+			return true
+		n = n.get_parent()
+	return false
+
+
+static func _typed_accepts(typed_script: Variant, cls: StringName, want: Node) -> bool:
+	if typed_script != null:
+		return is_instance_of(want, typed_script)
+	return cls == &"" or want.is_class(cls)
+
+
+static func _live(v: Variant) -> bool:
+	return typeof(v) == TYPE_OBJECT and is_instance_valid(v)
+
+
+static func _class_label(node: Node) -> String:
+	var script := node.get_script() as Script
+	if script != null and not script.get_global_name().is_empty():
+		return script.get_global_name()
+	return node.get_class()
 
 
 # --- Animation track remap ------------------------------------------------------

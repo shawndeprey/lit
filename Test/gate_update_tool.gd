@@ -7,11 +7,17 @@ extends SceneTree
 ## track renames, material classification (custom materials are never auto-migrated;
 ## they land in the report's attention section), and byte-identical idempotency on a
 ## second run.
-## Run: godot --headless --path . --script res://Test/gate_update_tool.gd
+## Run both; the editor-mode run loads user scripts as placeholder instances, the way
+## the editor does when the tool is used, and has caught divergence the game-mode run
+## cannot (property usage flags, unvalidated placeholder set()):
+##   godot --headless --path . --script res://Test/gate_update_tool.gd
+##   godot --headless -e --path . --script res://Test/gate_update_tool.gd
 
 const Tool := preload("res://addons/lit/editor/lit_update_tool.gd")
 const Maps := preload("res://addons/lit/editor/lit_update_tool/conversion_maps.gd")
 const Migrations := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
+const Rewriter := preload("res://addons/lit/editor/lit_update_tool/script_rewriter.gd")
+const Converter := preload("res://addons/lit/editor/lit_update_tool/scene_converter.gd")
 
 # The bench folder carries a .gdignore: the editor never imports the fixtures (their
 # class_names must not register globally) and the update tool's own project scan
@@ -27,7 +33,9 @@ const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
 	"fixture_preview.tscn",
 	"fixture_rebase_sprite.gd", "fixture_collide_sprite.gd", "fixture_light_script.gd",
 	"fixture_watcher.gd", "fixture_oneline_tile.gd", "fixture_lit_light.gd",
-	"fixture_icon_sprite.gd", "fixture_rebase_anim.gd"]
+	"fixture_icon_sprite.gd", "fixture_rebase_anim.gd",
+	"fixture_env_ref.tscn", "fixture_env_ref.gd", "fixture_hud_env.gd",
+	"fixture_env_ref_parent.tscn", "fixture_env_ref_user.tscn", "fixture_env_ref_user.gd"]
 # Built by _prepare from fixture_env; locks binary-scene support and .scn preservation.
 const BIN_SCENE := "env_bin.scn"
 const ALL_KINDS := {"lights": true, "modulates": true, "sprites": true,
@@ -37,6 +45,7 @@ var _fails := 0
 
 
 func _initialize() -> void:
+	print("[mode] %s" % ("editor (placeholder script instances)" if Engine.is_editor_hint() else "game (real script instances)"))
 	_prepare()
 	var scan1: Dictionary = Tool.scan([OUT])
 	var run1: Dictionary = Tool.run(scan1, ALL_KINDS, OUT + "/report.txt")
@@ -50,6 +59,8 @@ func _initialize() -> void:
 	_gate_run_result(scan1, run1)
 	_gate_idempotency()
 	_gate_menus_on()
+	_gate_node_refs()
+	_gate_scripts_off()
 	print("GATE RESULT: " + ("PASS" if _fails == 0 else "FAIL (%d failures)" % _fails))
 	if _fails == 0:
 		_cleanup()
@@ -68,10 +79,16 @@ func _check(ok: bool, label: String) -> bool:
 func _prepare() -> void:
 	_cleanup()
 	DirAccess.make_dir_recursive_absolute(OUT)
+	var scripts: Array = []
 	for f in FILES:
 		var text := FileAccess.get_file_as_string(SRC + "/" + f)
 		var w := FileAccess.open(OUT + "/" + f, FileAccess.WRITE)
 		w.store_string(text.replace(SRC + "/", OUT + "/"))
+		w = null
+		if f.ends_with(".gd"):
+			scripts.append(OUT + "/" + f)
+	# Cached GDScripts keep the source an earlier run rewrote; reset them to disk.
+	Rewriter.reload_scripts(scripts)
 	var env := ResourceLoader.load(OUT + "/fixture_env.tscn", "PackedScene",
 			ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
 	ResourceSaver.save(env, OUT + "/" + BIN_SCENE)
@@ -102,6 +119,16 @@ func _row_is_instance(state: SceneState, node_path: String) -> bool:
 		if String(state.get_node_path(i)).trim_prefix("./") == node_path:
 			return state.get_node_instance(i) != null
 	return false
+
+
+func _row_prop(state: SceneState, node_name: String, prop: String) -> Variant:
+	for i in state.get_node_count():
+		if String(state.get_node_name(i)) != node_name:
+			continue
+		for p in state.get_node_property_count(i):
+			if String(state.get_node_property_name(i, p)) == prop:
+				return state.get_node_property_value(i, p)
+	return null
 
 
 func _row_has_prop(state: SceneState, node_path: String, prop: String) -> bool:
@@ -387,7 +414,7 @@ func _gate_parent() -> void:
 	if not _check(packed != null, "parent scene loads"):
 		return
 	var state := packed.get_state()
-	_check(state.get_node_count() == 10, "parent stores 10 rows (deltas only), got %d"
+	_check(state.get_node_count() == 11, "parent stores 11 rows (deltas only), got %d"
 			% state.get_node_count())
 	_check(_row_is_instance(state, "Env"), "env stays an instance in the parent")
 	_check("instance_placeholder=" in text, "instance placeholder preserved")
@@ -485,33 +512,33 @@ func _gate_scripts() -> void:
 
 func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 	print("[gate 4] run summary + report markers")
-	_check(run1["changed_scenes"].size() == 7, "seven scenes rewritten, got %d"
+	_check(run1["changed_scenes"].size() == 9, "nine scenes rewritten, got %d"
 			% run1["changed_scenes"].size())
 	var c: Dictionary = scan1["counts"]
-	_check(c["point_lights"] == 5 and c["directional_lights"] == 1 and c["modulates"] == 3,
+	_check(c["point_lights"] == 8 and c["directional_lights"] == 2 and c["modulates"] == 4,
 			"scan counts lights + modulates")
 	_check(c["sprites"] == 6 and c["animated_sprites"] == 1 and c["tilemaps"] == 1,
 			"scan counts convertible receivers")
-	_check(c["skipped_scripted"] == 1, "scan counts the scripted light")
+	_check(c["skipped_scripted"] == 2, "scan counts the scripted lights")
 	_check(c["rebase_roots"] == 3,
 			"scan counts every rebase root (plain + one-line form + animated)")
 	_check(c["unlit_mats"] == 2, "scan counts deliberately-unlit materials")
 	_check(c["custom_mats"] == 2, "scan counts custom shader materials")
 	_check(c["menu_nodes"] == 6, "scan counts menu/UI candidates, got %d" % c["menu_nodes"])
 	_check(c["menu_core"] == 1, "scan counts menu core lights/modulates")
-	_check(c["menu_scripts"] == 1, "scan counts the menu-only script chain")
+	_check(c["menu_scripts"] == 2, "scan counts the menu-only scripts, got %d" % c["menu_scripts"])
 	_check(scan1["scripts"]["ui_roots"].has(OUT + "/fixture_icon_sprite.gd"),
 			"UI-only chain root classified via usage")
-	_check(c["retype_scripts"] == 1, "scan counts the retypable script")
+	_check(c["retype_scripts"] == 3, "scan counts the retypable scripts, got %d" % c["retype_scripts"])
 	_check(c["tool_add"] == 4, "scan counts @tool additions (3 rebases + 1 Lit-based)")
-	_check(run1["retyped_scripts"].size() == 1, "one script retyped")
+	_check(run1["retyped_scripts"].size() == 3, "three scripts retyped")
 	_check(run1["tooled_scripts"].size() == 4, "four scripts gained @tool")
 	var joined := "\n".join(run1["report"])
 	for marker in ["SKIPPED-COLLISION", "CLAMPED", "REMAPPED-TRACK", "REMAPPED-OVERRIDE",
 			"custom script", "REBASED", "STAMPED", "UNLIT", "MatSprite", "UnshadedVfxSprite",
 			"MANUAL custom material", "CustomFxSprite", "Custom Shaders docs page",
 			"rendered nothing", "fixture_fx_root", "external animation",
-			"inner class", "instance placeholder", "units differ", "RETYPED", "TOOLED",
+			"inner class", "instance placeholder", "units differ", "RETYPED", "TOOLED", "RELINKED",
 			"CAUTION", "string literals name core classes", "menu/UI core lights",
 			"MENU-SCRIPT", "MENU-SCENE", "converts for world use"]:
 		_check(marker in joined, "report mentions %s" % marker)
@@ -543,6 +570,125 @@ func _gate_idempotency() -> void:
 	_check(run2["retyped_scripts"].is_empty(), "no references retyped on the second run")
 	for f in tracked:
 		_check(FileAccess.get_md5(OUT + "/" + f) == hashes[f], "%s byte-identical" % f)
+
+
+func _gate_node_refs() -> void:
+	print("[gate 7] @export node references survive conversion")
+	_prepare()
+	var scan7: Dictionary = Tool.scan([OUT])
+	var run7: Dictionary = Tool.run(scan7, ALL_KINDS, OUT + "/report7.txt")
+	var joined := "\n".join(run7["report"])
+	# Parent scene: an override on an instanced child re-points at a light converted here.
+	var parent := _fresh(OUT + "/fixture_env_ref_parent.tscn")
+	if _check(parent != null, "env-ref parent scene loads"):
+		var holder := parent.get_node("EnvRef/Holder")
+		_check(holder.get("lamp") == parent.get_node("ParentLamp"),
+				"override reference resolves to the parent's converted light")
+		_check(holder.get("env") == parent.get_node("EnvRef/Modulate"),
+				"non-overridden reference inside the instance still resolves")
+		parent.free()
+	# Menu-only script (menus unchecked) keeps its core annotation: the Lit node cannot
+	# be re-linked, so the loss must be reported, never silent, and never a wrong node.
+	_check("MANUAL ./Hud/EnvReadout: `env: CanvasModulate`" in joined,
+			"report flags the un-relinkable menu-script reference")
+	_check(not ("RELINKED ./Hud/EnvReadout" in joined),
+			"menu-script reference is not re-linked while the annotation stays core")
+	# Reverse direction: the annotation was retyped to Lit but the light kept its custom
+	# script and stays core; the reference is refused, cleared and reported.
+	_check("MANUAL ./Holder: `scripted: LitPointLight2D` pointed at ../ScriptedLamp, now a PointLight2D"
+			in joined, "report flags the retyped reference to a core light left scripted")
+	_check(joined.count("MANUAL ./Holder") == 1,
+			"no other Holder reference is flagged, got %d" % joined.count("MANUAL ./Holder"))
+	# A scene with nothing of its own to convert, referencing a node inside an instanced
+	# child: processed for the reference pass, left untouched when the annotation accepts.
+	var user_packed := ResourceLoader.load(OUT + "/fixture_env_ref_user.tscn", "PackedScene",
+			ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
+	if _check(user_packed != null, "env-ref user scene loads"):
+		_check(_row_prop(user_packed.get_state(), "User", "lamp") == NodePath("../EnvRef/Lamp"),
+				"cross-instance reference kept in the file")
+		var user_root := user_packed.instantiate()
+		_check(user_root.get_node("User").get("lamp") == user_root.get_node("EnvRef/Lamp"),
+				"cross-instance reference resolves to the converted light")
+		user_root.free()
+		_check("--- %s/fixture_env_ref_user.tscn\nUNCHANGED" % OUT in joined,
+				"cross-instance scene processed and left unchanged")
+	# A reference into a load-placeholder instance: intact in the file, never a reason
+	# to rewrite the scene (gate 5 locks the second-run side).
+	var parent_packed := ResourceLoader.load(OUT + "/fixture_parent.tscn", "PackedScene",
+			ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
+	if _check(parent_packed != null, "parent scene loads for the placeholder reference"):
+		_check(_row_prop(parent_packed.get_state(), "GhostWatch", "lamp") == NodePath("../Ghost/Light"),
+				"reference into a placeholder instance kept in the file")
+		_check(not ("RELINKED ./GhostWatch" in joined),
+				"reference into a placeholder instance is not reported as re-linked")
+		_check(str(_row_prop(parent_packed.get_state(), "GhostWatch", "lamps")) == str([NodePath("../Ghost/Light")]),
+				"array reference into a placeholder instance kept in the file")
+		_check(str(_row_prop(parent_packed.get_state(), "GhostWatch", "by_name")) == str({"ghost": NodePath("../Ghost/Light")}),
+				"dictionary reference into a placeholder instance kept in the file")
+	# Annotation parser: comma-separated class lists, native and global class names.
+	var lit_light := Node2D.new()
+	lit_light.set_script(load(String(Maps.REPLACEMENTS[&"PointLight2D"]["script"])))
+	_check(Converter._annotation_accepts("Node2D", lit_light), "native base accepts the Lit node")
+	_check(not Converter._annotation_accepts("PointLight2D", lit_light), "core class refuses the Lit node")
+	_check(Converter._annotation_accepts("LitPointLight2D", lit_light), "global class name accepts the Lit node")
+	_check(not Converter._annotation_accepts("LitCanvasModulate", lit_light), "other Lit class refuses the Lit node")
+	_check(Converter._annotation_accepts("Control, LitPointLight2D", lit_light), "any listed class accepts")
+	_check(not Converter._annotation_accepts("Control,Node3D", lit_light), "no listed class refuses")
+	_check(Converter._annotation_accepts("", lit_light), "empty annotation accepts")
+	lit_light.free()
+	var script := FileAccess.get_file_as_string(OUT + "/fixture_env_ref.gd")
+	_check("@export var env: LitCanvasModulate" in script, "modulate export annotation retyped")
+	_check("@export var lamp: LitPointLight2D" in script, "light export annotation retyped")
+	_check("@export var sun: LitDirectionalLight2D" in script,
+			"directional export annotation retyped")
+	_check("Array[LitPointLight2D]" in script, "typed array element retyped")
+	_check("Dictionary[String, LitPointLight2D]" in script, "typed dictionary value retyped")
+	_check("Dictionary[LitCanvasModulate, int]" in script, "typed dictionary key retyped")
+	var packed := ResourceLoader.load(OUT + "/fixture_env_ref.tscn", "PackedScene",
+			ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
+	if not _check(packed != null, "env-ref scene loads"):
+		return
+	var stored := {}
+	var state := packed.get_state()
+	for i in state.get_node_count():
+		if String(state.get_node_name(i)) != "Holder":
+			continue
+		for p in state.get_node_property_count(i):
+			stored[String(state.get_node_property_name(i, p))] = state.get_node_property_value(i, p)
+	_check(stored.get("env_path") == NodePath("../Modulate"), "plain NodePath export untouched")
+	_check(stored.get("env") == NodePath("../Modulate"),
+			"stored env reference still points at the modulate, got %s" % str(stored.get("env")))
+	_check(stored.get("lamp") == NodePath("../Lamp"),
+			"stored lamp reference still points at the light, got %s" % str(stored.get("lamp")))
+	_check(stored.get("sun") == NodePath("../Sun"),
+			"stored sun reference still points at the directional, got %s" % str(stored.get("sun")))
+	_check(str(stored.get("lamps")) == str([NodePath("../Lamp"), NodePath("../Lamp2")]),
+			"stored typed array still lists both lights, got %s" % str(stored.get("lamps")))
+	_check(stored.get("any_node") == NodePath("../Lamp2"),
+			"stored untyped Node export still points at the light, got %s" % str(stored.get("any_node")))
+	_check(str(stored.get("by_name")) == str({"main": NodePath("../Lamp"), "side": NodePath("../Lamp2")}),
+			"stored typed dictionary values still list both lights, got %s" % str(stored.get("by_name")))
+	_check(str(stored.get("keyed")) == str({NodePath("../Modulate"): 1}),
+			"stored typed dictionary key still names the modulate, got %s" % str(stored.get("keyed")))
+	_check(not stored.has("scripted"), "refused reference to the scripted core light cleared, got %s"
+			% str(stored.get("scripted")))
+	var root := packed.instantiate()
+	var holder := root.get_node("Holder")
+	_check(holder.get("env") == root.get_node("Modulate"), "live env resolves to the Lit modulate")
+	_check(holder.get("lamp") == root.get_node("Lamp"), "live lamp resolves to the Lit light")
+	_check(holder.get("sun") == root.get_node("Sun"), "live sun resolves to the Lit directional")
+	var lamps: Array = holder.get("lamps")
+	_check(lamps.size() == 2 and lamps[0] == root.get_node("Lamp") and lamps[1] == root.get_node("Lamp2"),
+			"live typed array resolves to both Lit lights")
+	var by_name: Dictionary = holder.get("by_name")
+	_check(by_name.size() == 2 and by_name.get("main") == root.get_node("Lamp") \
+			and by_name.get("side") == root.get_node("Lamp2"),
+			"live typed dictionary values resolve to both Lit lights")
+	var keyed: Dictionary = holder.get("keyed")
+	_check(keyed.size() == 1 and keyed.has(root.get_node("Modulate")) \
+			and keyed[root.get_node("Modulate")] == 1,
+			"live typed dictionary key resolves to the Lit modulate")
+	root.free()
 
 
 func _gate_menus_on() -> void:
@@ -586,3 +732,81 @@ func _gate_menus_on() -> void:
 		_check(_script_path(icon_root.get_node("IconArt")) == String(Maps.SWAPS[&"Sprite2D"]),
 				"usage-classified icon child converted when menus checked")
 		icon_root.free()
+	var hud_script := FileAccess.get_file_as_string(OUT + "/fixture_hud_env.gd")
+	_check("@export var env: LitCanvasModulate" in hud_script,
+			"menu-only HUD script retyped when menus checked")
+	var env_root := _fresh(OUT + "/fixture_env_ref.tscn")
+	if _check(env_root != null, "env-ref scene loads after menus-on run"):
+		var readout := env_root.get_node("Hud/EnvReadout")
+		_check(readout.get("env") == env_root.get_node("Modulate"),
+				"retyped menu-script reference re-links to the Lit modulate when menus checked")
+		_check(readout.get("lamp") == env_root.get_node("Lamp"),
+				"retyped menu-script reference re-links to the Lit light when menus checked")
+		env_root.free()
+
+
+# Scripts unchecked: annotations stay core and refuse the Lit nodes, so every exported
+# reference to a converted node must be reported and cleared - never left pointing at
+# whatever node reused the freed slot.
+func _gate_scripts_off() -> void:
+	print("[gate 8] scripts checkbox off: references are reported, never dangling")
+	_prepare()
+	var kinds := ALL_KINDS.duplicate()
+	kinds["scripts"] = false
+	var scan5: Dictionary = Tool.scan([OUT])
+	var run5: Dictionary = Tool.run(scan5, kinds, OUT + "/report5.txt")
+	var joined := "\n".join(run5["report"])
+	var script := FileAccess.get_file_as_string(OUT + "/fixture_env_ref.gd")
+	_check("@export var env: CanvasModulate" in script, "script left on core types")
+	for prop in ["env", "lamp", "sun"]:
+		_check("MANUAL ./Holder: `%s: " % prop in joined, "report flags `%s` as un-relinkable" % prop)
+	_check("MANUAL ./Holder: `lamps` (Array[PointLight2D]) pointed at ../Lamp, now a LitPointLight2D"
+			in joined, "report flags the typed array elements")
+	_check("MANUAL ./Holder: `by_name[main]` (Dictionary[..., PointLight2D]) pointed at ../Lamp"
+			in joined, "report flags the typed dictionary value")
+	_check("MANUAL ./Holder: `keyed` key (Dictionary[CanvasModulate, ...], value 1) pointed at ../Modulate"
+			in joined, "report flags the typed dictionary key with its value")
+	_check(not ("MANUAL ./Holder: `scripted" in joined),
+			"core-typed reference to the core scripted light is not flagged")
+	_check("MANUAL ./User: `lamp: PointLight2D` pointed at ../EnvRef/Lamp, now a LitPointLight2D" in joined,
+			"report flags the core-typed cross-instance reference")
+	var user_packed := ResourceLoader.load(OUT + "/fixture_env_ref_user.tscn", "PackedScene",
+			ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
+	if _check(user_packed != null, "env-ref user scene loads after scripts-off run"):
+		_check(_row_prop(user_packed.get_state(), "User", "lamp") == null,
+				"cross-instance reference cleared rather than dangling, got %s"
+				% str(_row_prop(user_packed.get_state(), "User", "lamp")))
+	_check(not ("RELINKED ./Holder: `env`" in joined), "core-typed env not re-linked")
+	var packed := ResourceLoader.load(OUT + "/fixture_env_ref.tscn", "PackedScene",
+			ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
+	if not _check(packed != null, "env-ref scene loads after scripts-off run"):
+		return
+	var stored := {}
+	var state := packed.get_state()
+	for i in state.get_node_count():
+		if String(state.get_node_name(i)) != "Holder":
+			continue
+		for p in state.get_node_property_count(i):
+			stored[String(state.get_node_property_name(i, p))] = state.get_node_property_value(i, p)
+	# Cleared references equal the null default, so pack omits them: absence is the contract.
+	for name in ["env", "lamp", "sun"]:
+		_check(not stored.has(name), "stored `%s` cleared rather than dangling, got %s"
+				% [name, str(stored.get(name))])
+	_check(stored.get("scripted") == NodePath("../ScriptedLamp"),
+			"core-typed reference to the core scripted light kept, got %s" % str(stored.get("scripted")))
+	_check(stored.get("any_node") == NodePath("../Lamp2"),
+			"untyped Node export re-linked, got %s" % str(stored.get("any_node")))
+	_check(stored.get("env_path") == NodePath("../Modulate"), "plain NodePath export untouched")
+	var lamps: Variant = stored.get("lamps")
+	_check(lamps is Array and lamps.size() == 2 and lamps[0] == null and lamps[1] == null,
+			"stored `lamps` elements cleared rather than dangling, got %s" % str(lamps))
+	var by_name: Variant = stored.get("by_name")
+	_check(by_name is Dictionary and by_name.size() == 2 and by_name.get("main") == null \
+			and by_name.get("side") == null,
+			"stored `by_name` keeps its keys with cleared values, got %s" % str(by_name))
+	_check(not stored.has("keyed") or (stored["keyed"] is Dictionary and stored["keyed"].is_empty()),
+			"stored `keyed` drops the un-relinkable key, got %s" % str(stored.get("keyed")))
+	var root := packed.instantiate()
+	_check(root.get_node("Holder").get("any_node") == root.get_node("Lamp2"),
+			"untyped Node export resolves live after scripts-off run")
+	root.free()

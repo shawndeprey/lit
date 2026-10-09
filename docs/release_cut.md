@@ -29,6 +29,7 @@ old data stays detectable. Run locally:
 ```
 godot --headless --path . --script res://Test/gate_migration_schema.gd
 godot --headless --path . --script res://Test/gate_update_tool.gd
+godot --headless -e --path . --script res://Test/gate_update_tool.gd
 ```
 
 A release must be tagged prior to uploading to the Asset Library.
