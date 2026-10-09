@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Receiver material policy for "Update Project to Lit": classifying what sits in a
+## Receiver material policy for "Project Migration Tool": classifying what sits in a
 ## candidate's material slot, and producing/syncing the Lit receiver material and
 ## CanvasTexture wrap. Shared by the scan classifier and the scene converter.
 

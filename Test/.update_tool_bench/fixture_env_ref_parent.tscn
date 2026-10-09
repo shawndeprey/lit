@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_env_ref.tscn" id="1_env"]
+
+[node name="FixtureEnvRefParent" type="Node2D"]
+
+[node name="ParentLamp" type="PointLight2D" parent="."]
+energy = 0.6
+
+[node name="EnvRef" parent="." instance=ExtResource("1_env")]
+
+[node name="Holder" parent="EnvRef" node_paths=PackedStringArray("lamp")]
+lamp = NodePath("../../ParentLamp")
+
+[editable path="EnvRef"]

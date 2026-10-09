@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Candidate classification for "Update Project to Lit", run after every scene is
+## Candidate classification for "Project Migration Tool", run after every scene is
 ## modeled so UI ancestry can resolve through instanced menu scenes: splits candidates
 ## into world converts vs menu/UI exclusions (in-scene Control/CanvasLayer ancestry,
 ## plus usage - a scene or script used only from menus classifies as UI unless code

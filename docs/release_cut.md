@@ -20,7 +20,7 @@ file (or, for a brand-new class, a schema entry) describing the change from the
 previous release version; never edit `BASELINE_SCHEMA` in place after a release. One
 breaking change = one file: `migrations/X_Y_Z_migration.gd` extending `migration.gd`
 (which documents the pattern), registered in `migration_registry.gd`. Migrations are
-chained per node oldest-to-newest by the "Update Project to Lit" tool;
+chained per node oldest-to-newest by the "Project Migration Tool";
 value-transforming `apply` overrides receive the node plus its as-saved property
 dictionary and must be idempotent (guard on the old stored name, or on the node's
 stamped `lit_version`). A semantic-only change (same name, type, and default, new
@@ -29,6 +29,7 @@ old data stays detectable. Run locally:
 ```
 godot --headless --path . --script res://Test/gate_migration_schema.gd
 godot --headless --path . --script res://Test/gate_update_tool.gd
+godot --headless -e --path . --script res://Test/gate_update_tool.gd
 ```
 
 A release must be tagged prior to uploading to the Asset Library.

@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Engine behind "Update Project to Lit" (Project > Tools). Idempotent, two jobs in
+## Engine behind "Project Migration Tool" (Project > Tools). Idempotent, two jobs in
 ## one pass: convert core Godot nodes to their Lit equivalents project-wide (mapping
 ## property values into the right slots), and bring every Lit node up to the current
 ## plugin version through the migration chain, stamping `lit_version`.

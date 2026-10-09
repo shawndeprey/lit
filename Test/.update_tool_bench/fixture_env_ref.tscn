@@ -1,0 +1,46 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_env_ref.gd" id="1_er"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_hud_env.gd" id="2_he"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_light_script.gd" id="3_ls"]
+
+[node name="FixtureEnvRef" type="Node2D"]
+
+[node name="Modulate" type="CanvasModulate" parent="."]
+color = Color(0.2, 0.2, 0.3, 1)
+
+[node name="Lamp" type="PointLight2D" parent="."]
+energy = 0.7
+
+[node name="Lamp2" type="PointLight2D" parent="."]
+energy = 0.4
+
+[node name="Sun" type="DirectionalLight2D" parent="."]
+energy = 0.8
+
+[node name="ScriptedLamp" type="PointLight2D" parent="."]
+script = ExtResource("3_ls")
+
+[node name="Holder" type="Node" parent="." node_paths=PackedStringArray("env", "lamp", "sun", "lamps", "any_node", "scripted", "by_name", "keyed")]
+script = ExtResource("1_er")
+env = NodePath("../Modulate")
+lamp = NodePath("../Lamp")
+sun = NodePath("../Sun")
+env_path = NodePath("../Modulate")
+any_node = NodePath("../Lamp2")
+scripted = NodePath("../ScriptedLamp")
+lamps = [NodePath("../Lamp"), NodePath("../Lamp2")]
+by_name = {
+"main": NodePath("../Lamp"),
+"side": NodePath("../Lamp2")
+}
+keyed = {
+NodePath("../Modulate"): 1
+}
+
+[node name="Hud" type="Control" parent="."]
+
+[node name="EnvReadout" type="Control" parent="Hud" node_paths=PackedStringArray("env", "lamp")]
+script = ExtResource("2_he")
+env = NodePath("../../Modulate")
+lamp = NodePath("../../Lamp")

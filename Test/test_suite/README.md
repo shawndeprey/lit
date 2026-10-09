@@ -133,7 +133,7 @@ config naming a missing shader or unknown variant (entries skipped).
 | `registry` | light cache, bare-receiver driving, activity flags and the automatic variant swap, the rx registry |
 | `shader_library` | (separate, see above) variant matrix gates, every variant compiled and rendered, entry shaders, world SDF pipeline, precompiler statics and overlay |
 | `migration` | schema lock: migration files, lit_version stamps, live stored properties vs the locked baseline |
-| `update_tool` | "Update Project to Lit" on the Test/.update_tool_bench fixtures (scratch copy): conversions, scripts, reports, idempotency |
+| `update_tool` | "Project Migration Tool" on the Test/.update_tool_bench fixtures (scratch copy): conversions, scripts, reports, idempotency |
 | `splash` | LitSplashScreen playback, natural end on its own clock, key and mouse skip, finished signal, auto_free |
 
 Every section run starts from a fresh-launch registry state (the light-mask latch is
