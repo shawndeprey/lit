@@ -1,0 +1,132 @@
+[gd_scene format=4 uid="uid://dfiutmr31fjks"]
+
+[ext_resource type="Script" uid="uid://xnxucfp3d1i" path="res://Test/integration_tests/stencil_buffer/stencil_buffer.gd" id="1_root"]
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="2_rx"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="3_mod"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="4_light"]
+[ext_resource type="Shader" uid="uid://dkhsoktc2tkus" path="res://Test/integration_tests/stencil_buffer/stencil_threshold.gdshader" id="5_threshold"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_rx"]
+shader = ExtResource("2_rx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_threshold"]
+shader = ExtResource("5_threshold")
+shader_parameter/threshold = 0.01
+
+[sub_resource type="OccluderPolygon2D" id="Occ_Slab"]
+polygon = PackedVector2Array(-140, -75, 140, -75, 140, 75, -140, 75)
+
+[sub_resource type="OccluderPolygon2D" id="Occ_Block"]
+polygon = PackedVector2Array(-110, -110, 110, -110, 110, 110, -110, 110)
+
+[sub_resource type="OccluderPolygon2D" id="Occ_Bar"]
+polygon = PackedVector2Array(-170, -45, 170, -45, 170, 45, -170, 45)
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_stencil"]
+viewport_path = NodePath("StencilViewport")
+
+[node name="StencilBuffer" type="Node2D"]
+script = ExtResource("1_root")
+
+[node name="Floor" type="Polygon2D" parent="."]
+material = SubResource("ShaderMaterial_rx")
+color = Color(0.45, 0.45, 0.45, 1)
+polygon = PackedVector2Array(0, 0, 1920, 0, 1920, 1080, 0, 1080)
+
+[node name="Slab" type="Polygon2D" parent="."]
+position = Vector2(880, 290)
+color = Color(0.6, 0.6, 0.6, 1)
+polygon = PackedVector2Array(-140, -75, 140, -75, 140, 75, -140, 75)
+
+[node name="Occluder" type="LightOccluder2D" parent="Slab"]
+occluder = SubResource("Occ_Slab")
+
+[node name="Block" type="Polygon2D" parent="."]
+position = Vector2(440, 690)
+rotation = -0.5236
+color = Color(0.6, 0.6, 0.6, 1)
+polygon = PackedVector2Array(-110, -110, 110, -110, 110, 110, -110, 110)
+
+[node name="Occluder" type="LightOccluder2D" parent="Block"]
+occluder = SubResource("Occ_Block")
+
+[node name="Bar" type="Polygon2D" parent="."]
+position = Vector2(1420, 680)
+rotation = -0.7854
+color = Color(0.6, 0.6, 0.6, 1)
+polygon = PackedVector2Array(-170, -45, 170, -45, 170, 45, -170, 45)
+
+[node name="Occluder" type="LightOccluder2D" parent="Bar"]
+occluder = SubResource("Occ_Bar")
+
+[node name="LitCanvasModulate" type="Node2D" parent="."]
+script = ExtResource("3_mod")
+lit_version = "1.1.6"
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="LitPointLight2D" type="Node2D" parent="."]
+position = Vector2(1100, 560)
+script = ExtResource("4_light")
+lit_version = "1.1.6"
+range = 2400.0
+height = 400.0
+shadow_enabled = true
+shadow_hardness = 1.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="StencilViewport" type="SubViewport" parent="."]
+disable_3d = true
+size = Vector2i(1920, 1080)
+render_target_update_mode = 4
+
+[node name="Floor" type="Polygon2D" parent="StencilViewport"]
+material = SubResource("ShaderMaterial_rx")
+polygon = PackedVector2Array(0, 0, 1920, 0, 1920, 1080, 0, 1080)
+
+[node name="Threshold" type="ColorRect" parent="StencilViewport"]
+material = SubResource("ShaderMaterial_threshold")
+offset_right = 1920.0
+offset_bottom = 1080.0
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(960, 540)
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="StencilPreview" type="TextureRect" parent="UI"]
+offset_left = 1424.0
+offset_top = 794.0
+offset_right = 1904.0
+offset_bottom = 1064.0
+texture = SubResource("ViewportTexture_stencil")
+expand_mode = 1
+
+[node name="StencilLabel" type="Label" parent="UI"]
+offset_left = 1424.0
+offset_top = 762.0
+offset_right = 1904.0
+offset_bottom = 790.0
+theme_override_font_sizes/font_size = 22
+text = "STENCIL  ($StencilViewport.get_texture())"
+
+[node name="Label" type="Label" parent="UI"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 600.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 22
+text = "Mouse: light   Wheel: zoom 1.00   S: shadows on"
