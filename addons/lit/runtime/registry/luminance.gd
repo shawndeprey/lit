@@ -74,7 +74,7 @@ func sample(tree: SceneTree, lights: Array, occ_nodes: Array, occ_layers: Array,
 
 	var lum := _ambient(tree)
 	for light in lights:
-		if (int(light.light_mask) & receiver_mask) == 0:
+		if (int(light.light_mask) & receiver_mask & 1048575) == 0:
 			continue
 		if light.ranged and not _in_ranges(light, receiver_z, receiver_layer):
 			continue

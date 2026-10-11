@@ -158,11 +158,13 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 # True while any range is narrower than pass-all (kept by the setters), so the packer
 # and the luminance sampler read the four ranges only for ranged lights.
 var ranged: bool = false
+var range_pack := Vector3.ZERO
 
 
 func _update_ranged() -> void:
-	ranged = range_z_min > -4096 or range_z_max < 4096 \
-			or range_layer_min != 0 or range_layer_max != 0
+	range_pack = LitLightRegistry.LightPackerScript.range_pack(range_z_min, range_z_max,
+			range_layer_min, range_layer_max)
+	ranged = range_pack.z != 0.0
 	if ranged:
 		LitLightRegistry.light_ranges_seen = true
 

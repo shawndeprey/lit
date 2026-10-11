@@ -8,34 +8,46 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float metallic, float roughness,
 		vec2 frag_uv, vec2 frag_sdf, float sdf_diag, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS) {
-	// Texel 0 carries the cheap fields (type | flags | mask | falloff) so masked-out
-	// lights bail after a single fetch, before any position/color/shadow texels.
+	// Texel 0 carries the cheap fields (z code | flags | mask + z code high bits |
+	// falloff) so masked-out and z-rejected lights bail after a single fetch, before
+	// any position/color/shadow texels.
 	vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0);
 
-	// type: 0 = point, 1 = directional, 2 = spot. flags bit 0 = shadow_enabled,
-	// bit 1 = subtractive.
-	int type = int(round(t0.x));
+	// flags bit 0 = shadow_enabled, bit 1 = subtractive, bits 20-21 = type (0 = point,
+	// 1 = directional, 2 = spot).
+	int flags = int(round(t0.y));
+	int type = (flags >> 20) & 3;
 	bool is_directional = type == 1;
 	bool is_spot = type == 2;
-	int flags = int(round(t0.y));
 	bool shadow_enabled = (flags & 1) != 0;
 	bool subtractive = (flags & 2) != 0;
 	float falloff = t0.w;
 
 	// Skip lights this receiver's mask doesn't share a bit with, before paying for
-	// any of the work below.
-	int light_mask = int(round(t0.z));
+	// any of the work below. The mask is the low 20 bits of t0.z.
+	int t0z = int(round(t0.z));
+	int light_mask = t0z & 1048575;
 	if ((light_mask & receiver_mask) == 0) {
 		return vec3(0.0);
 	}
 
-	// Light ranges (flags bit 19): skip the light when this receiver's z_index or
-	// canvas layer falls outside its row-9 ranges. Unranged lights never fetch it.
+	// Light ranges. A z range (flags bit 19) rides in texel 0 (z_min + 4096 in the low 14
+	// bits of t0.x, z_max + 4096 split between the bits above and t0.z bits 20-23), so it
+	// rejects without another fetch; a layer range (bit 22) reads row 9. Lights without
+	// one skip it.
 	if ((flags & 524288) != 0) {
+		int zc = int(round(t0.x));
+		int z_min = zc & 16383;
+		int z_max = (zc >> 14) | ((t0z >> 20) << 10);
+		int rz = receiver_z + 4096;
+		if (rz < z_min || rz > z_max) {
+			return vec3(0.0);
+		}
+	}
+	if ((flags & 4194304) != 0) {
 		vec4 t9 = texelFetch(lit_light_data, ivec2(9, i), 0); // z_min | z_max | layer_min | layer_max
-		float rz = float(receiver_z);
 		float rl = float(receiver_layer);
-		if (rz < t9.x || rz > t9.y || rl < t9.z || rl > t9.w) {
+		if (rl < t9.z || rl > t9.w) {
 			return vec3(0.0);
 		}
 	}

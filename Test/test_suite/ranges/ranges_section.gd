@@ -611,15 +611,21 @@ func _packed_rows() -> void:
 	check(case_name, "ranged light: flags bit 19 set", 524288, int(_packed(ranged, 1)) & 524288)
 	check_true(case_name, "a ranged light widens the live rows to at least 10 texels", int(packer._tpl) >= 10)
 	check(case_name, "default light next to it: flags bit 19 still clear", 0, int(_packed(plain, 1)) & 524288)
-	check_approx(case_name, "texel 9.x = z_min", -1.0, _packed(ranged, 36), 0.001)
-	check_approx(case_name, "texel 9.y = z_max", 1.0, _packed(ranged, 37), 0.001)
-	check_true(case_name, "layer 0..0 packs as an unbounded layer range (min)", _packed(ranged, 38) < -1e8)
-	check_true(case_name, "layer 0..0 packs as an unbounded layer range (max)", _packed(ranged, 39) > 1e8)
+	check_approx(case_name, "z-only range: texel 9 stays unwritten", 0.0,
+			absf(_packed(ranged, 36)) + absf(_packed(ranged, 37)) + absf(_packed(ranged, 38)) + absf(_packed(ranged, 39)), 0.001)
+	check(case_name, "z -1..1: t0.x holds z_min + 4096 and the low 10 bits of z_max + 4096 << 14", 20479, int(_packed(ranged, 0)))
+	check(case_name, "z -1..1: t0.z holds the mask plus the high 4 bits of z_max + 4096 << 20", 4194305, int(_packed(ranged, 2)))
+	check(case_name, "layer 0..0: flags bit 22 (layer range set) clear", 0, int(_packed(ranged, 1)) & 4194304)
+	check(case_name, "point light: type bits (flags 20-21) are 0", 0, (int(_packed(plain, 1)) >> 20) & 3)
+	check(case_name, "default light: t0.x zero, t0.z the bare mask", 1, int(_packed(plain, 0)) + int(_packed(plain, 2)))
 	ranged.range_layer_min = 3
 	ranged.range_layer_max = 4
 	await frames(2)
+	check_approx(case_name, "layer 3..4: texel 9.x = z_min", -1.0, _packed(ranged, 36), 0.001)
+	check_approx(case_name, "layer 3..4: texel 9.y = z_max", 1.0, _packed(ranged, 37), 0.001)
 	check_approx(case_name, "texel 9.z = layer_min", 3.0, _packed(ranged, 38), 0.001)
 	check_approx(case_name, "texel 9.w = layer_max", 4.0, _packed(ranged, 39), 0.001)
+	check(case_name, "layer 3..4: flags bit 22 set", 4194304, int(_packed(ranged, 1)) & 4194304)
 	ranged.range_z_min = -4096
 	ranged.range_z_max = 4096
 	ranged.range_layer_min = 0
@@ -627,14 +633,22 @@ func _packed_rows() -> void:
 	await frames(2)
 	check(case_name, "back to the defaults: flags bit 19 clear again", 0, int(_packed(ranged, 1)) & 524288)
 	check_approx(case_name, "back to the defaults: texel 9 zeroed", 0.0, _packed(ranged, 36), 0.001)
+	check(case_name, "back to the defaults: t0.x zeroed, t0.z the bare mask", 1, int(_packed(ranged, 0)) + int(_packed(ranged, 2)))
 	var sun := directional_light(0.0, 0.0, Color.WHITE, 16.0)
 	sun.range_layer_min = 2
 	sun.range_layer_max = 2
+	var spot := spot_light(c + Vector2(0, 460), 0.0, 100.0, 0.0, Color.WHITE, 200.0)
 	await frames(2)
-	check(case_name, "directional light: flags bit 19 set", 524288, int(_packed(sun, 1)) & 524288)
+	check(case_name, "directional light, layer range only: flags bit 22 set, bit 19 clear", 4194304,
+			int(_packed(sun, 1)) & (524288 + 4194304))
+	check(case_name, "directional light: type bits are 1", 1, (int(_packed(sun, 1)) >> 20) & 3)
+	check(case_name, "spot light: type bits are 2", 2, (int(_packed(spot, 1)) >> 20) & 3)
+	check(case_name, "directional light, full z: t0.x codes 0 and z_max 8192 puts 8 above the mask", 8388609,
+			int(_packed(sun, 0)) + int(_packed(sun, 2)))
 	check_approx(case_name, "directional light: texel 9.x = z_min (full)", -4096.0, _packed(sun, 36), 0.001)
 	check_approx(case_name, "directional light: texel 9.z = layer_min", 2.0, _packed(sun, 38), 0.001)
 	sun.queue_free()
+	spot.queue_free()
 	await frames(1)
 
 

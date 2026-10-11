@@ -77,9 +77,10 @@ const LIGHT_COUNT := 128
 #     frame over the same footprint occluder. Run kinds at the same count. Default 0.
 #   plain=on       pair-grid receivers as plain Sprite2D with no Lit material and no
 #     footprint occluder, so the layer grids show Godot's own per-canvas cost apart from Lit's
-#   rangecost=pass|miss|mask   every light ranged to a z band every receiver passes
-#     (pass), to z 4096 so every receiver rejects it (miss), or put on light_mask 2 so
-#     the mask test rejects it instead (mask): the range test's price against the mask test
+#   rangecost=pass|layer|miss|mask   every light ranged to a z band every receiver passes
+#     (pass), to a layer band every receiver passes (layer), to z 4096 so every receiver
+#     rejects it (miss), or put on light_mask 2 so the mask test rejects it instead
+#     (mask): the range tests' price against the mask test
 #   precompile=api   run the worker-backed shader precompile during the measure window
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
 # 3 (stochastic); switching restarts the warmup/measure cycle so the reported numbers
@@ -334,6 +335,9 @@ func _setup() -> void:
 			"pass":
 				d.node.range_z_min = -4000
 				d.node.range_z_max = 4000
+			"layer":
+				d.node.range_layer_min = -4000
+				d.node.range_layer_max = 4000
 			"miss":
 				d.node.range_z_min = 4096
 				d.node.range_z_max = 4096
