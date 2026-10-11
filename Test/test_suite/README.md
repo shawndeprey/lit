@@ -125,7 +125,7 @@ config naming a missing shader or unknown variant (entries skipped).
 | `tilemap` | LitTileMapLayer: proxies, lighting, tileset occluder shadows, own-tile self-exclusion, cell edits, occlusion-layer masks |
 | `shadows` | enable/colour/length, the three algorithms and their penumbra dials, gates, footprint darkening, directional and spot shadows, quality settings |
 | `shadow_masks` | self-shadow exclusion, shadow_mask vs occluder mask tiers (per-light, global, SDF culling), shadow_ignore_mask, exclude_scene_occluders, y-sorted depth |
-| `ranges` | light z_index / CanvasLayer ranges on all three lights (0..0 = every layer), z_as_relative, runtime refresh and reparenting, LitTileMapLayer and LitAnimatedSprite2D, pooling untouched, shadows and masks composing, the luminance mirror, the packed rows |
+| `ranges` | light z_index / CanvasLayer ranges on all three lights (0..0 = every layer), z_as_relative, runtime refresh and reparenting, LitTileMapLayer and LitAnimatedSprite2D, pooling keyed by depth, shadows and masks composing, the luminance mirror, the packed rows |
 | `camera` | Camera2D zoom, roll and pan: point / spot / directional shading, normal maps, shadows, a cookie, shadow_ignore_mask and y-sorted depth read the same at the same world points |
 | `lighting_model` | Blinn-Phong vs PBR switched live; metallic / roughness / AO inputs; inspector gating of inert exports |
 | `luminance` | LitManager.sample_luminance and LitSprite2D.get_luminance against lights, cookies, masks, shadows, and the rendered frame |

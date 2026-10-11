@@ -108,14 +108,12 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 @export_range(-4096, 4096) var range_z_min: int = -4096:
 	set(value):
 		range_z_min = value
-		if value != -4096:
-			LitLightRegistry.light_ranges_seen = true
+		_update_ranged()
 ## Highest z_index this light reaches (see Range Z Min).
 @export_range(-4096, 4096) var range_z_max: int = 4096:
 	set(value):
 		range_z_max = value
-		if value != 4096:
-			LitLightRegistry.light_ranges_seen = true
+		_update_ranged()
 ## Lowest CanvasLayer this light reaches. Min and Max both 0 (the default) light EVERY
 ## layer, which is how Lit has always behaved; to light only the base canvas use a
 ## range such as -1..0. This differs from Godot's Light2D, where 0..0 means the base
@@ -123,14 +121,22 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 @export var range_layer_min: int = 0:
 	set(value):
 		range_layer_min = value
-		if value != 0:
-			LitLightRegistry.light_ranges_seen = true
+		_update_ranged()
 ## Highest CanvasLayer this light reaches (see Range Layer Min). 0..0 lights every layer.
 @export var range_layer_max: int = 0:
 	set(value):
 		range_layer_max = value
-		if value != 0:
-			LitLightRegistry.light_ranges_seen = true
+		_update_ranged()
+# True while any range is narrower than pass-all (kept by the setters), so the packer
+# and the luminance sampler read the four ranges only for ranged lights.
+var ranged: bool = false
+
+
+func _update_ranged() -> void:
+	ranged = range_z_min > -4096 or range_z_max < 4096 \
+			or range_layer_min != 0 or range_layer_max != 0
+	if ranged:
+		LitLightRegistry.light_ranges_seen = true
 
 
 func _validate_property(property: Dictionary) -> void:

@@ -154,16 +154,11 @@ uniform int receiver_mask = 1;
 
 // Light ranges: this receiver's final z_index (z_as_relative offsets summed up its
 // parents) and CanvasLayer index, tested against each ranged light's row (texel 9,
-// flags bit 19). The Lit sprite nodes write the per-item instance pair, which never
-// splits a pooled material; LitTileMapLayer (whose internal cell items take no
-// instance values), the editor live clones and hand-made receivers set the material
-// pair instead. A set instance value overrides the material one; the sentinel default
-// means unset.
+// flags bit 19). The Lit nodes derive the pair and proxy it through their pooled
+// material (receivers at different depths hold different pool entries); hand-made
+// receivers set it by hand.
 uniform int receiver_z = 0;
 uniform int receiver_layer = 0;
-instance uniform int receiver_z_inst = -1000000;
-instance uniform int receiver_layer_inst = -1000000;
-const int LIT_RANGE_UNSET = -1000000;
 
 // Self-shadow exclusion: when self_shadow is off, shadow-march hits inside the
 // receiver's own occluder bounds are ignored, so its own occluders cast behind it, not

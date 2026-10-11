@@ -50,7 +50,7 @@ var _pack_buf: PackedFloat32Array = PackedFloat32Array()
 var _pack_img: Image
 var _pack_img_count: int = -1
 # Per-frame mirrors of facade-owned frame state, assigned at pack_and_publish entry.
-var _tpl := 10
+var _tpl := 9
 var _excl_active := false
 var _read_ranges := false
 var _excl_info := {}
@@ -126,18 +126,17 @@ func publish_empty(vp_size: Vector2) -> void:
 	_publish_cookie_atlas()
 
 
-## Pack texel 9 (z and layer ranges) when narrower than pass-all; returns flags bit 19
-## or 0. A 0..0 layer range means every layer, so it packs as an unbounded range.
+## Pack texel 9 (z and layer ranges) for a ranged light (its setters keep `ranged`);
+## returns flags bit 19 or 0. A 0..0 layer range means every layer, so it packs as an
+## unbounded range.
 func _pack_ranges(o: int, light: Node2D) -> float:
-	var z_min: int = light.range_z_min
-	var z_max: int = light.range_z_max
+	if not light.ranged:
+		return 0.0
 	var l_min: int = light.range_layer_min
 	var l_max: int = light.range_layer_max
 	var all_layers := l_min == 0 and l_max == 0
-	if all_layers and z_min <= -4096 and z_max >= 4096:
-		return 0.0
-	_pack_buf[o + 36] = float(z_min)
-	_pack_buf[o + 37] = float(z_max)
+	_pack_buf[o + 36] = float(light.range_z_min)
+	_pack_buf[o + 37] = float(light.range_z_max)
 	_pack_buf[o + 38] = -1e9 if all_layers else float(l_min)
 	_pack_buf[o + 39] = 1e9 if all_layers else float(l_max)
 	return 524288.0

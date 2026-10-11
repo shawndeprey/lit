@@ -31,7 +31,7 @@ static func _authored_uniforms(sh: Shader) -> PackedStringArray:
 	if not _live_uniforms.has(key):
 		var names := PackedStringArray()
 		for u in sh.get_shader_uniform_list():
-			if not LIVE_PARAMS.has(u.name) and not LitLightRegistry.pool_is_instance_param(u.name):
+			if not LIVE_PARAMS.has(u.name):
 				names.append(u.name)
 		_live_uniforms[key] = names
 	return _live_uniforms[key]

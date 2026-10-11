@@ -167,7 +167,6 @@ func _lit_ready() -> void:
 		var stale = (material as ShaderMaterial).get_shader_parameter("rx_mask")
 		if stale != null and int(stale) != 0:
 			_set_param("rx_mask", 0)
-	refresh_light_ranges()
 	if not changed.is_connected(_on_map_changed):
 		changed.connect(_on_map_changed)
 	if not child_entered_tree.is_connected(_on_children_changed):
@@ -176,6 +175,7 @@ func _lit_ready() -> void:
 		child_exiting_tree.connect(_on_children_changed)
 	_refresh_occluder_cache()
 	_update_self_rect()
+	refresh_light_ranges()
 	set_process(true)
 
 
@@ -232,11 +232,10 @@ func _lit_node_flags() -> int:
 ## ranges. Runs by itself at ready and whenever the layer enters a canvas; call it
 ## after changing z_index, z_as_relative, an ancestor's z or its CanvasLayer at runtime
 ## (Godot reports none of those), or LitLightRegistry.refresh_light_ranges() for a
-## whole subtree. The pair proxies to `receiver_z` / `receiver_layer` (a tilemap's
-## internal cell items take no per-item instance values), so layers at different
-## depths hold different pool entries.
+## whole subtree. The pair proxies to `receiver_z` / `receiver_layer`, so layers at
+## different depths hold different pool entries.
 func refresh_light_ranges() -> void:
-	LitReceiverHelper.drive_ranges(self, _drive_state, true, _set_live_param)
+	LitReceiverHelper.drive_ranges(self, _drive_state, _set_live_param)
 
 
 ## Detach this layer's runtime material from the shared pool and return it, so raw

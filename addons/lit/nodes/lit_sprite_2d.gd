@@ -149,12 +149,13 @@ func get_luminance() -> float:
 
 
 ## Re-read this sprite's final z_index and canvas layer for the lights' z / layer
-## ranges. Runs by itself when the sprite enters a canvas; call it after changing
-## z_index, z_as_relative, an ancestor's z or its CanvasLayer at runtime (Godot reports
-## none of those), or LitLightRegistry.refresh_light_ranges() for a whole subtree. The
-## pair lands as per-item instance values, so pooled materials stay shared.
+## ranges. Runs by itself at ready and whenever the sprite enters a canvas; call it
+## after changing z_index, z_as_relative, an ancestor's z or its CanvasLayer at runtime
+## (Godot reports none of those), or LitLightRegistry.refresh_light_ranges() for a
+## whole subtree. The pair proxies to `receiver_z` / `receiver_layer`, so sprites at
+## different depths hold different pool entries.
 func refresh_light_ranges() -> void:
-	LitReceiverHelper.drive_ranges(self, _drive_state, false, _set_live_param)
+	LitReceiverHelper.drive_ranges(self, _drive_state, _set_live_param)
 
 
 # The CanvasTexture currently watched for specular-slot changes, so we can re-evaluate
@@ -244,6 +245,7 @@ func _lit_ready() -> void:
 		if not parent.child_exiting_tree.is_connected(_on_children_changed):
 			parent.child_exiting_tree.connect(_on_children_changed)
 	_refresh_occluder_cache()
+	refresh_light_ranges()
 
 
 # Per-frame driving only while something per-frame can change the drive inputs:
@@ -351,7 +353,7 @@ func _validate_property(property: Dictionary) -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_ENTER_CANVAS and not Engine.is_editor_hint():
+	if what == NOTIFICATION_ENTER_CANVAS and is_node_ready() and not Engine.is_editor_hint():
 		refresh_light_ranges()
 	if what == NOTIFICATION_PREDELETE and shadow_ignore_mask != 0:
 		LitLightRegistry.rx_set(self, 0)

@@ -33,8 +33,8 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	// canvas layer falls outside its row-9 ranges. Unranged lights never fetch it.
 	if ((flags & 524288) != 0) {
 		vec4 t9 = texelFetch(lit_light_data, ivec2(9, i), 0); // z_min | z_max | layer_min | layer_max
-		float rz = float(receiver_z_inst == LIT_RANGE_UNSET ? receiver_z : receiver_z_inst);
-		float rl = float(receiver_layer_inst == LIT_RANGE_UNSET ? receiver_layer : receiver_layer_inst);
+		float rz = float(receiver_z);
+		float rl = float(receiver_layer);
 		if (rz < t9.x || rz > t9.y || rl < t9.z || rl > t9.w) {
 			return vec3(0.0);
 		}

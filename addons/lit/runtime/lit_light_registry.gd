@@ -10,6 +10,7 @@ class_name LitLightRegistry
 ## (separate processes and RenderingServer state) never collide.
 
 const TEXELS_PER_LIGHT := 16
+const RANGED_TEXELS_PER_LIGHT := 10
 
 # Which shadow algorithms the shaders must support this frame, from the last refresh()
 # in this process (bit 0 = Cone Traced, bit 1 = Stochastic, among enabled shadow-casting
@@ -132,9 +133,6 @@ static func pool_snapshot() -> Dictionary:
 static func pool_is_key_param(name: String) -> bool:
 	return MaterialPoolScript.is_key_param(name)
 
-static func pool_is_instance_param(name: String) -> bool:
-	return MaterialPoolScript.is_instance_param(name)
-
 # --- Light ranges (z_index / CanvasLayer) --------------------------------------------
 ## Re-derive the light-range z / layer pair of every Lit receiver under `root` (root
 ## included). Call it after changing z_index, z_as_relative or a CanvasLayer's layer
@@ -143,8 +141,8 @@ static func pool_is_instance_param(name: String) -> bool:
 static func refresh_light_ranges(root: Node) -> void:
 	if root.has_method("refresh_light_ranges"):
 		root.refresh_light_ranges()
-	for child in root.get_children():
-		refresh_light_ranges(child)
+	for i in root.get_child_count():
+		refresh_light_ranges(root.get_child(i))
 
 # --- Per-receiver shadow exclusion (shadow_ignore_mask) ------------------------------
 # Node-facing static API; the node set and rx bounds driving live in
@@ -267,6 +265,8 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 		_occluder_tiles.restore_unculled(_exclusions.gx_masks(), sdf_cull)
 	_ctx.excl_active = _exclusions.has_exclusions()
 	_ctx.read_ranges = light_ranges_seen or Engine.is_editor_hint()
+	if _ctx.read_ranges and _ctx.texels_per_light < RANGED_TEXELS_PER_LIGHT:
+		_ctx.texels_per_light = RANGED_TEXELS_PER_LIGHT
 	if masks_active:
 		_ctx.texels_per_light = TEXELS_PER_LIGHT
 

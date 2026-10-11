@@ -41,7 +41,7 @@ class DriveState:
 	var range_layer := -1000000
 
 
-## Memo value meaning "no range pair landed yet" (the shader's sentinel as well).
+## Memo value meaning "no range pair landed yet".
 const RANGE_UNSET := -1000000
 
 
@@ -219,14 +219,10 @@ static func canvas_layer(ci: CanvasItem) -> int:
 	return layer.layer if layer != null else 0
 
 
-## Land the receiver's z / layer pair for the light ranges, deduped through `state`.
-## At runtime a sprite node writes it as instance values on its own canvas item (per
-## node, so pooled materials stay shared); `material` nodes (LitTileMapLayer, whose
-## internal cell items take no instance values) and every node in the editor write the
-## material uniforms through `set_param` (the node's pool-aware setter at runtime, its
-## live clone in the editor, where nothing derived ever reaches the saved scene).
-static func drive_ranges(ci: CanvasItem, state: DriveState, material: bool,
-		set_param: Callable) -> void:
+## Land the receiver's z / layer pair for the light ranges through `set_param` (the
+## node's pool-aware setter at runtime, its live clone in the editor, where nothing
+## derived ever reaches the saved scene), deduped through `state`.
+static func drive_ranges(ci: CanvasItem, state: DriveState, set_param: Callable) -> void:
 	if not ci.is_inside_tree():
 		return
 	var z := canvas_z(ci)
@@ -235,13 +231,8 @@ static func drive_ranges(ci: CanvasItem, state: DriveState, material: bool,
 		return
 	state.range_z = z
 	state.range_layer = layer
-	if material or Engine.is_editor_hint():
-		set_param.call("receiver_z", z)
-		set_param.call("receiver_layer", layer)
-		return
-	var item := ci.get_canvas_item()
-	RenderingServer.canvas_item_set_instance_shader_parameter(item, &"receiver_z_inst", z)
-	RenderingServer.canvas_item_set_instance_shader_parameter(item, &"receiver_layer_inst", layer)
+	set_param.call("receiver_z", z)
+	set_param.call("receiver_layer", layer)
 
 
 # --- Export gating --------------------------------------------------------------

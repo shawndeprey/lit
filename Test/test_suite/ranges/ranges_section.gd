@@ -6,7 +6,7 @@ extends LitSuiteSection
 ## (z_as_relative offsets summed up its parents) and its CanvasLayer index fall inside
 ## the light's ranges; a 0..0 layer range (the default) lights every layer. Also: the
 ## receiver nodes deriving the pair on entering a canvas and on refresh_light_ranges(),
-## LitTileMapLayer and LitAnimatedSprite2D, pooling untouched by z, the packed rows,
+## LitTileMapLayer and LitAnimatedSprite2D, pooling keyed by depth, the packed rows,
 ## sample_luminance / get_luminance mirroring the test, light masks composing with it,
 ## and shadows cast regardless of the caster's own z.
 
@@ -450,29 +450,37 @@ func _tilemap_and_animated() -> void:
 # --- pooling ----------------------------------------------------------------------------------
 
 func _pooling() -> void:
-	var case_name := "pooling_untouched"
+	var case_name := "pooling_by_depth"
 	var c := Vector2(1000, 760)
 	var a := _box(c + Vector2(-150, -70), 0)
 	var b := _box(c + Vector2(-150, 0), 7)
 	var d := _box(c + Vector2(-150, 70), -7, get_node("Layer5"))
+	var e := _box(c + Vector2(-80, 0), 7)
 	await frames(1)
-	check_true(case_name, "sprites at z 0, 7 and -7 (one on layer 5) share one pooled material",
-			is_same(a.material, b.material) and is_same(a.material, d.material))
-	check_true(case_name, "that material is pooled", LitLightRegistry.pool_is_pooled(a.material))
-	check(case_name, "the shared entry holds the declared default receiver_z (no per-node value on the material)",
-			0, int((a.material as ShaderMaterial).get_shader_parameter("receiver_z")))
+	check_true(case_name, "sprites at z 0, 7 and -7 (one on layer 5) hold three different pooled materials",
+			not is_same(a.material, b.material) and not is_same(a.material, d.material)
+			and not is_same(b.material, d.material))
+	check_true(case_name, "two sprites at z 7 share one pooled material", is_same(b.material, e.material))
+	check_true(case_name, "that material is pooled", LitLightRegistry.pool_is_pooled(b.material))
+	check(case_name, "the z 7 entry holds receiver_z 7", 7, int((b.material as ShaderMaterial).get_shader_parameter("receiver_z")))
+	check(case_name, "the layer 5 entry holds receiver_layer 5", 5, int((d.material as ShaderMaterial).get_shader_parameter("receiver_layer")))
+	check(case_name, "the z 0 entry holds the declared defaults", 0,
+			int((a.material as ShaderMaterial).get_shader_parameter("receiver_z")) + int((a.material as ShaderMaterial).get_shader_parameter("receiver_layer")))
 	var entries: int = LitLightRegistry.pool_stats().entries
 	b.z_index = 9
 	b.refresh_light_ranges()
 	await frames(1)
-	check(case_name, "a z change re-derives without a new pool entry", entries, LitLightRegistry.pool_stats().entries)
-	check_true(case_name, "still the shared material after the z change", is_same(a.material, b.material))
-	var ranged := point_light(c + Vector2(-150, 0), 60.0, 0.8, Color.WHITE, 200.0)
+	check(case_name, "a z change re-keys to one new pool entry", entries + 1, LitLightRegistry.pool_stats().entries)
+	check(case_name, "the re-keyed material holds receiver_z 9", 9, int((b.material as ShaderMaterial).get_shader_parameter("receiver_z")))
+	check_true(case_name, "the poolmate left at z 7 keeps the z 7 material", not is_same(b.material, e.material)
+			and int((e.material as ShaderMaterial).get_shader_parameter("receiver_z")) == 7)
+	var ranged := point_light(c + Vector2(-150, 0), 200.0, 0.8, Color.WHITE, 200.0)
 	ranged.range_z_min = 9
 	ranged.range_z_max = 9
 	var img := await capture()
-	_lit(case_name, "z 9..9 light: the z 9 sprite is lit through the shared material (instance value)", img, b.position)
-	_dark(case_name, "z 9..9 light: its z 0 poolmate 70 px away is ambient", img, a.position)
+	_lit(case_name, "z 9..9 light: the z 9 sprite is lit through its re-keyed material", img, b.position)
+	_dark(case_name, "z 9..9 light: the z 0 sprite 70 px away is ambient", img, a.position)
+	_dark(case_name, "z 9..9 light: the z 7 sprite 70 px away is ambient", img, e.position)
 	ranged.name = "PointPool"
 
 
@@ -587,17 +595,21 @@ func _packed_rows() -> void:
 	var ranged := point_light(c + Vector2(0, 230), 100.0, 0.5, Color.WHITE, 200.0)
 	await frames(2)
 	check(case_name, "a default light leaves light_ranges_seen off", false, LitLightRegistry.light_ranges_seen)
-	# The frame width is sticky once a section with exclusions widened it, so the two
-	# layout constants are checked, not the live width.
-	check(case_name, "base row width is 10 texels", 10, int(LitLightRegistry.FrameContextScript.new().texels_per_light))
+	# The frame width is sticky once a section widened it (ranges to 10, exclusions to
+	# 16), so the layout constants are checked, not the live width.
+	check(case_name, "base row width is 9 texels", 9, int(LitLightRegistry.FrameContextScript.new().texels_per_light))
+	check(case_name, "row width with ranges is 10 texels", 10, int(LitLightRegistry.RANGED_TEXELS_PER_LIGHT))
 	check(case_name, "row width with exclusions is 16 texels", 16, int(LitLightRegistry.TEXELS_PER_LIGHT))
-	check_true(case_name, "live row width is one of the two", int(packer._tpl) == 10 or int(packer._tpl) == 16)
+	check_true(case_name, "live row width is one of the three", int(packer._tpl) in [9, 10, 16])
 	check(case_name, "default light: flags bit 19 clear", 0, int(_packed(plain, 1)) & 524288)
+	check(case_name, "default light: not ranged", false, plain.ranged)
 	ranged.range_z_min = -1
 	ranged.range_z_max = 1
 	check(case_name, "a non-default range sets light_ranges_seen", true, LitLightRegistry.light_ranges_seen)
+	check(case_name, "a non-default range marks the light ranged", true, ranged.ranged)
 	await frames(2)
 	check(case_name, "ranged light: flags bit 19 set", 524288, int(_packed(ranged, 1)) & 524288)
+	check_true(case_name, "a ranged light widens the live rows to at least 10 texels", int(packer._tpl) >= 10)
 	check(case_name, "default light next to it: flags bit 19 still clear", 0, int(_packed(plain, 1)) & 524288)
 	check_approx(case_name, "texel 9.x = z_min", -1.0, _packed(ranged, 36), 0.001)
 	check_approx(case_name, "texel 9.y = z_max", 1.0, _packed(ranged, 37), 0.001)

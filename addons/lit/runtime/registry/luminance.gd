@@ -76,7 +76,7 @@ func sample(tree: SceneTree, lights: Array, occ_nodes: Array, occ_layers: Array,
 	for light in lights:
 		if (int(light.light_mask) & receiver_mask) == 0:
 			continue
-		if not _in_ranges(light, receiver_z, receiver_layer):
+		if light.ranged and not _in_ranges(light, receiver_z, receiver_layer):
 			continue
 		if light is LitDirectionalLight2D:
 			lum += _directional(light, occ_nodes, occ_layers, rx_mask, self_source,

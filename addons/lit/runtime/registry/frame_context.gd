@@ -21,7 +21,7 @@ var dir_count := 0
 # read_ranges; rx_registry computes rx_union; occluder_tiles fills the occ_* outputs.
 var excl_active := false
 var read_ranges := false
-var texels_per_light := 10
+var texels_per_light := 9
 var rx_union := 0
 var occ_rects: Array[Rect2] = []
 var occ_masks := PackedInt32Array()

@@ -77,6 +77,9 @@ const LIGHT_COUNT := 128
 #     frame over the same footprint occluder. Run kinds at the same count. Default 0.
 #   plain=on       pair-grid receivers as plain Sprite2D with no Lit material and no
 #     footprint occluder, so the layer grids show Godot's own per-canvas cost apart from Lit's
+#   rangecost=pass|miss|mask   every light ranged to a z band every receiver passes
+#     (pass), to z 4096 so every receiver rejects it (miss), or put on light_mask 2 so
+#     the mask test rejects it instead (mask): the range test's price against the mask test
 #   precompile=api   run the worker-backed shader precompile during the measure window
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
 # 3 (stochastic); switching restarts the warmup/measure cycle so the reported numbers
@@ -105,6 +108,7 @@ var _opt_rxnode := ""
 var _opt_post := ""
 var _opt_shadowlen := false
 var _opt_texoffset := false
+var _opt_rangecost := ""
 var _opt_plain := false
 var _opt_layers := "off"
 var _opt_skeleton := "skull"
@@ -140,6 +144,7 @@ var _frame_times: PackedFloat64Array = PackedFloat64Array()
 var _process_times: PackedFloat64Array = PackedFloat64Array()
 var _render_cpu: PackedFloat64Array = PackedFloat64Array()
 var _render_gpu: PackedFloat64Array = PackedFloat64Array()
+var _draw_calls: PackedFloat64Array = PackedFloat64Array()
 
 var _hud: Label
 
@@ -197,6 +202,8 @@ func _ready() -> void:
 				_opt_shadowlen = kv[1] == "on"
 			"texoffset":
 				_opt_texoffset = kv[1] == "on"
+			"rangecost":
+				_opt_rangecost = kv[1]
 			"plain":
 				_opt_plain = kv[1] == "on"
 			"layers":
@@ -322,6 +329,16 @@ func _setup() -> void:
 		_spawn_light(kind, Color.from_hsv(_rng.randf(), 0.85, 1.0))
 	if _opt_masks == "split" and not _lights.is_empty():
 		_lights[0].node.shadow_mask = 3
+	for d in _lights:
+		match _opt_rangecost:
+			"pass":
+				d.node.range_z_min = -4000
+				d.node.range_z_max = 4000
+			"miss":
+				d.node.range_z_min = 4096
+				d.node.range_z_max = 4096
+			"mask":
+				d.node.light_mask = 2
 	# Own RNG stream: the main _rng draws stay identical to shadowlen=off runs, so the
 	# fractions are the ONLY difference between the two configs.
 	if _opt_shadowlen:
@@ -837,6 +854,7 @@ func _process(dt: float) -> void:
 	_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS))
 	_render_cpu.append(RenderingServer.viewport_get_measured_render_time_cpu(vp_rid))
 	_render_gpu.append(RenderingServer.viewport_get_measured_render_time_gpu(vp_rid))
+	_draw_calls.append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	_hud.text = "MEASURE %.1f / %.1f s   lights %d   algo %s   fps %d" % [_state_time, _opt_measure, _lights.size(), _opt_shadow_algo, Engine.get_frames_per_second()]
 	if _state_time >= _opt_measure or _pre_elapsed >= 0.0:
 		_state = "done"
@@ -907,6 +925,8 @@ func _report() -> void:
 	print("LITBENCH layers=%s" % _opt_layers)
 	print("LITBENCH post=%s" % (_opt_post if _opt_post != "" else "off"))
 	print("LITBENCH skeleton=%s" % _opt_skeleton)
+	if _opt_rangecost != "":
+		print("LITBENCH rangecost=%s" % _opt_rangecost)
 	if _opt_plain:
 		print("LITBENCH plain=on")
 	if _opt_receiver_count > 0:
@@ -918,6 +938,7 @@ func _report() -> void:
 	print("LITBENCH main_process_ms=%.3f" % proc_ms)
 	print("LITBENCH render_cpu_ms=%.3f" % rcpu_ms)
 	print("LITBENCH render_gpu_ms=%.3f" % rgpu_ms)
+	print("LITBENCH draw_calls=%.0f" % _mean(_draw_calls))
 	print("LITBENCH viewport=%s screen=%s" % [get_viewport_rect().size, DisplayServer.screen_get_size()])
 
 
