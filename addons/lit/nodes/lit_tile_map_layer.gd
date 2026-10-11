@@ -167,6 +167,7 @@ func _lit_ready() -> void:
 		var stale = (material as ShaderMaterial).get_shader_parameter("rx_mask")
 		if stale != null and int(stale) != 0:
 			_set_param("rx_mask", 0)
+	refresh_light_ranges()
 	if not changed.is_connected(_on_map_changed):
 		changed.connect(_on_map_changed)
 	if not child_entered_tree.is_connected(_on_children_changed):
@@ -219,10 +220,23 @@ func _update_self_rect() -> void:
 	if LitReceiverHelper.drive(self, _live_mat(), _self_occluders, _tile_rects, false,
 			_lit_node_flags(), _drive_state) and shadow_ignore_mask != 0:
 		_set_live_param("rx_mask", shadow_ignore_mask)
+	if Engine.is_editor_hint():
+		refresh_light_ranges()
 
 
 func _lit_node_flags() -> int:
 	return LitShaderLibrary.F_RX if shadow_ignore_mask != 0 else 0
+
+
+## Re-read this layer's final z_index and canvas layer for the lights' z / layer
+## ranges. Runs by itself at ready and whenever the layer enters a canvas; call it
+## after changing z_index, z_as_relative, an ancestor's z or its CanvasLayer at runtime
+## (Godot reports none of those), or LitLightRegistry.refresh_light_ranges() for a
+## whole subtree. The pair proxies to `receiver_z` / `receiver_layer` (a tilemap's
+## internal cell items take no per-item instance values), so layers at different
+## depths hold different pool entries.
+func refresh_light_ranges() -> void:
+	LitReceiverHelper.drive_ranges(self, _drive_state, true, _set_live_param)
 
 
 ## Detach this layer's runtime material from the shared pool and return it, so raw
@@ -261,6 +275,8 @@ func _validate_property(property: Dictionary) -> void:
 
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_ENTER_CANVAS and is_node_ready() and not Engine.is_editor_hint():
+		refresh_light_ranges()
 	if what == NOTIFICATION_PREDELETE and shadow_ignore_mask != 0:
 		LitLightRegistry.rx_set(self, 0)
 	if what == NOTIFICATION_PREDELETE and _pool_held != null:
@@ -311,6 +327,7 @@ func _live_mat() -> ShaderMaterial:
 			# own through DriveState).
 			_live_last = mat
 			mat.set_shader_parameter("rx_mask", shadow_ignore_mask)
+			_drive_state.range_z = LitReceiverHelper.RANGE_UNSET
 	return mat
 
 

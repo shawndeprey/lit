@@ -36,6 +36,13 @@ class DriveState:
 	var occ_inside: Array = []
 	var occ_xfs: Array = []
 	var occ_polys: Array = []
+	# Light-range pair last landed (RANGE_UNSET until the first drive_ranges).
+	var range_z := -1000000
+	var range_layer := -1000000
+
+
+## Memo value meaning "no range pair landed yet" (the shader's sentinel as well).
+const RANGE_UNSET := -1000000
 
 
 static func drive(node: Node2D, mat: ShaderMaterial, occluders: Array,
@@ -182,7 +189,59 @@ static func luminance(node: Node2D, tex: Texture2D, src: Rect2, center: Vector2)
 			Vector2(0.0, -1.0 if node.flip_v else 1.0), center)
 	return manager.sample_receiver_luminance(node.global_position, node.receiver_mask,
 			node.shadow_ignore_mask, null if node.self_shadow else node,
-			node.directional_horizontal_scale, tex, src, to_world)
+			node.directional_horizontal_scale, tex, src, to_world,
+			canvas_z(node), canvas_layer(node))
+
+
+# --- Light ranges (z_index / CanvasLayer) ----------------------------------------
+#
+# The receiver side of the lights' range_z_* / range_layer_* filters: the pair the
+# shader tests is derived here from the node's place in the tree, the same way the
+# engine resolves a canvas item's final z and canvas layer.
+
+## The item's final z_index: its own plus, while z_as_relative, its parent items' up
+## the chain, clamped to the canvas range (what the engine draws it at).
+static func canvas_z(ci: CanvasItem) -> int:
+	var z := 0
+	var n: Node = ci
+	while n is CanvasItem:
+		var item := n as CanvasItem
+		z += item.z_index
+		if not item.z_as_relative or item.top_level:
+			break
+		n = item.get_parent()
+	return clampi(z, RenderingServer.CANVAS_ITEM_Z_MIN, RenderingServer.CANVAS_ITEM_Z_MAX)
+
+
+## The CanvasLayer index the item draws in; 0 on the viewport's base canvas.
+static func canvas_layer(ci: CanvasItem) -> int:
+	var layer := ci.get_canvas_layer_node()
+	return layer.layer if layer != null else 0
+
+
+## Land the receiver's z / layer pair for the light ranges, deduped through `state`.
+## At runtime a sprite node writes it as instance values on its own canvas item (per
+## node, so pooled materials stay shared); `material` nodes (LitTileMapLayer, whose
+## internal cell items take no instance values) and every node in the editor write the
+## material uniforms through `set_param` (the node's pool-aware setter at runtime, its
+## live clone in the editor, where nothing derived ever reaches the saved scene).
+static func drive_ranges(ci: CanvasItem, state: DriveState, material: bool,
+		set_param: Callable) -> void:
+	if not ci.is_inside_tree():
+		return
+	var z := canvas_z(ci)
+	var layer := canvas_layer(ci)
+	if z == state.range_z and layer == state.range_layer:
+		return
+	state.range_z = z
+	state.range_layer = layer
+	if material or Engine.is_editor_hint():
+		set_param.call("receiver_z", z)
+		set_param.call("receiver_layer", layer)
+		return
+	var item := ci.get_canvas_item()
+	RenderingServer.canvas_item_set_instance_shader_parameter(item, &"receiver_z_inst", z)
+	RenderingServer.canvas_item_set_instance_shader_parameter(item, &"receiver_layer_inst", layer)
 
 
 # --- Export gating --------------------------------------------------------------

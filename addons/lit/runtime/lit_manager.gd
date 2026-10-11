@@ -151,10 +151,12 @@ func _boot_self_check() -> void:
 ## `directional_horizontal_scale` mirrors a receiver's Directional Horizontal Scale.
 func sample_luminance(world_pos: Vector2, receiver_mask: int = 1,
 		shadow_ignore_mask: int = 0, exclude_occluders_of: Node = null,
-		directional_horizontal_scale: float = 32.0) -> float:
+		directional_horizontal_scale: float = 32.0, receiver_z: int = 0,
+		receiver_layer: int = 0) -> float:
 	return _registry.sample_luminance(get_tree(), get_tree().root, world_pos,
 			receiver_mask, shadow_ignore_mask, exclude_occluders_of,
-			directional_horizontal_scale, lighting_model == LightingModel.PBR)
+			directional_horizontal_scale, lighting_model == LightingModel.PBR, [],
+			receiver_z, receiver_layer)
 
 
 ## Backend of the receiver nodes' get_luminance(): sample_luminance over the surface a
@@ -165,11 +167,11 @@ func sample_luminance(world_pos: Vector2, receiver_mask: int = 1,
 func sample_receiver_luminance(world_pos: Vector2, receiver_mask: int,
 		shadow_ignore_mask: int, exclude_occluders_of: Node,
 		directional_horizontal_scale: float, texture: Texture2D, src: Rect2,
-		to_world: Transform2D) -> float:
+		to_world: Transform2D, receiver_z: int = 0, receiver_layer: int = 0) -> float:
 	return _registry.sample_luminance(get_tree(), get_tree().root, world_pos,
 			receiver_mask, shadow_ignore_mask, exclude_occluders_of,
 			directional_horizontal_scale, lighting_model == LightingModel.PBR,
-			_registry.luminance_surface(texture, src, to_world))
+			_registry.luminance_surface(texture, src, to_world), receiver_z, receiver_layer)
 
 
 func _process(_delta: float) -> void:

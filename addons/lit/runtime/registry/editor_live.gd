@@ -13,7 +13,7 @@ static var _live_mats := {}          # CanvasItem -> [clone, base]
 static var _live_uniforms := {}      # variant flags -> PackedStringArray of authored uniforms
 const LIVE_PARAMS := {"self_rects": true, "self_rect_count": true, "ysort_on": true,
 		"ysort_y": true, "rx_mask": true, "rx_bounds": true, "rx_bound_count": true,
-		"has_specular_map": true}
+		"has_specular_map": true, "receiver_z": true, "receiver_layer": true}
 
 
 static func live_material(ci: CanvasItem, base: ShaderMaterial) -> ShaderMaterial:
@@ -31,7 +31,7 @@ static func _authored_uniforms(sh: Shader) -> PackedStringArray:
 	if not _live_uniforms.has(key):
 		var names := PackedStringArray()
 		for u in sh.get_shader_uniform_list():
-			if not LIVE_PARAMS.has(u.name):
+			if not LIVE_PARAMS.has(u.name) and not LitLightRegistry.pool_is_instance_param(u.name):
 				names.append(u.name)
 		_live_uniforms[key] = names
 	return _live_uniforms[key]

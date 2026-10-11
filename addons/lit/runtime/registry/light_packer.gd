@@ -11,14 +11,16 @@ extends RefCounted
 ## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
 ## when flags bit 2 is set), t7 = shadow source size | samples | jitter | shadow_mask
 ## (mask packed only while rx receivers exist), t8.xy = cookie UV center (0.5 shifted by
-## texture_offset; read only when flags bit 18 is set), t9.x = exempt rect count,
-## t10 = exempt union bounds, t11-14 = the light's exempt-occluder canvas rects
-## (t9-t14 read only when flags bit 5 is set). type/flags/mask sit in texel 0 so the
-## shader can mask-reject after a single fetch. flags: bit 0 shadow_enabled, bit 1
-## subtractive, bit 2 textured, bits 3-4 shadow algorithm (ShadowAlgorithm order on the
-## light nodes), bit 5 shadow exclusions, bits 6-17 shadow_length fraction quantized to
-## 12 bits (point/spot: 0 = full march, uncapped; directional: plain fraction of
-## shadow_reach, 4095 = full reach), bit 18 cookie offset.
+## texture_offset; read only when flags bit 18 is set), t9 = z_min | z_max |
+## layer_min | layer_max (read only when flags bit 19 is set; a 0..0 layer range packs
+## as every layer), t10.x = exempt rect count, t11 = exempt union bounds, t12-15 = the
+## light's exempt-occluder canvas rects (t10-t15 read only when flags bit 5 is set).
+## type/flags/mask sit in texel 0 so the shader can mask-reject after a single fetch.
+## flags: bit 0 shadow_enabled, bit 1 subtractive, bit 2 textured, bits 3-4 shadow
+## algorithm (ShadowAlgorithm order on the light nodes), bit 5 shadow exclusions, bits
+## 6-17 shadow_length fraction quantized to 12 bits (point/spot: 0 = full march,
+## uncapped; directional: plain fraction of shadow_reach, 4095 = full reach), bit 18
+## cookie offset, bit 19 z / layer ranges narrower than pass-all.
 ##
 ## Node scale: range, source_radius and the FIT_RANGE cookie footprint pack multiplied
 ## by the node's global scale (larger basis axis, snapped to 1 for unscaled nodes);
@@ -48,8 +50,9 @@ var _pack_buf: PackedFloat32Array = PackedFloat32Array()
 var _pack_img: Image
 var _pack_img_count: int = -1
 # Per-frame mirrors of facade-owned frame state, assigned at pack_and_publish entry.
-var _tpl := 9
+var _tpl := 10
 var _excl_active := false
+var _read_ranges := false
 var _excl_info := {}
 var _excl_lists := {}
 var _rx_union_frame := 0
@@ -66,6 +69,7 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 	var vp_size: Vector2 = ctx.vp_size
 	_tpl = ctx.texels_per_light
 	_excl_active = ctx.excl_active
+	_read_ranges = ctx.read_ranges
 	_excl_info = excl_info
 	_excl_lists = excl_lists
 	_rx_union_frame = ctx.rx_union
@@ -122,24 +126,41 @@ func publish_empty(vp_size: Vector2) -> void:
 	_publish_cookie_atlas()
 
 
-## Pack texels 9-14 (exempt rect count, union bounds, up to 4 exempt rects) for a light
-## with exclusions; returns the flags bit. Lights without exclusions pay one has() here.
+## Pack texel 9 (z and layer ranges) when narrower than pass-all; returns flags bit 19
+## or 0. A 0..0 layer range means every layer, so it packs as an unbounded range.
+func _pack_ranges(o: int, light: Node2D) -> float:
+	var z_min: int = light.range_z_min
+	var z_max: int = light.range_z_max
+	var l_min: int = light.range_layer_min
+	var l_max: int = light.range_layer_max
+	var all_layers := l_min == 0 and l_max == 0
+	if all_layers and z_min <= -4096 and z_max >= 4096:
+		return 0.0
+	_pack_buf[o + 36] = float(z_min)
+	_pack_buf[o + 37] = float(z_max)
+	_pack_buf[o + 38] = -1e9 if all_layers else float(l_min)
+	_pack_buf[o + 39] = 1e9 if all_layers else float(l_max)
+	return 524288.0
+
+## Pack texels 10-15 (exempt rect count, union bounds, up to 4 exempt rects) for a
+## light with exclusions; returns the flags bit. Lights without exclusions pay one
+## has() here.
 func _pack_excl(o: int, light: Node2D) -> float:
 	if not _excl_info.has(light):
 		return 0.0
 	var entry = _excl_lists.get("%d_%d" % [light.shadow_mask, _excl_info[light]])
 	if entry == null:
 		return 0.0
-	_pack_buf[o + 36] = float(entry[0])
+	_pack_buf[o + 40] = float(entry[0])
 	var union: Rect2 = entry[1]
-	_pack_buf[o + 40] = union.position.x
-	_pack_buf[o + 41] = union.position.y
-	_pack_buf[o + 42] = union.end.x
-	_pack_buf[o + 43] = union.end.y
+	_pack_buf[o + 44] = union.position.x
+	_pack_buf[o + 45] = union.position.y
+	_pack_buf[o + 46] = union.end.x
+	_pack_buf[o + 47] = union.end.y
 	var rects: PackedVector4Array = entry[2]
 	for j in 4:
 		var v := rects[j]
-		var b := o + 44 + j * 4
+		var b := o + 48 + j * 4
 		_pack_buf[b] = v.x
 		_pack_buf[b + 1] = v.y
 		_pack_buf[b + 2] = v.z
@@ -172,7 +193,8 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 			+ _pack_cookie(o, light, canvas_xform, xf, s) \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
-			+ _pack_shadow_length(light.shadow_length)
+			+ _pack_shadow_length(light.shadow_length) \
+			+ (_pack_ranges(o, light) if _read_ranges else 0.0)
 	const TYPE_POINT := 0.0
 
 	# Texel 0: type | flags | light_mask | falloff
@@ -222,7 +244,8 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
-			+ 64.0 * roundf(clampf(light.shadow_length, 0.0, 1.0) * 4095.0)
+			+ 64.0 * roundf(clampf(light.shadow_length, 0.0, 1.0) * 4095.0) \
+			+ (_pack_ranges(o, light) if _read_ranges else 0.0)
 	const TYPE_DIRECTIONAL := 1.0
 
 	# Texel 0: type | flags | light_mask | (falloff unused)
@@ -289,7 +312,8 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 			+ _pack_cookie(o, light, canvas_xform, xf, s) \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
-			+ _pack_shadow_length(light.shadow_length)
+			+ _pack_shadow_length(light.shadow_length) \
+			+ (_pack_ranges(o, light) if _read_ranges else 0.0)
 	const TYPE_SPOT := 2.0
 
 	# Texel 0: type | flags | light_mask | falloff

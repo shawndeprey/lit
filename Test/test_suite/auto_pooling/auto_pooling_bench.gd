@@ -468,6 +468,15 @@ func _static_checks() -> void:
 	for n in POOL_DRIVEN:
 		check("key_coverage", "driven uniform '%s' is not in the key" % n, false,
 				LitLightRegistry.pool_is_key_param(n))
+	# Instance uniforms live on the canvas item, never on the material: the light-range
+	# pair the sprite nodes write per item must never key (or split) an entry.
+	for n in ["receiver_z_inst", "receiver_layer_inst"]:
+		check("key_coverage", "instance uniform '%s' is parsed as per-item" % n, true,
+				LitLightRegistry.pool_is_instance_param(n))
+		check("key_coverage", "instance uniform '%s' is not in the key" % n, false,
+				LitLightRegistry.pool_is_key_param(n))
+	check("key_coverage", "the material-side range pair is content (tilemaps at different depths key apart)",
+			true, LitLightRegistry.pool_is_key_param("receiver_z") and LitLightRegistry.pool_is_key_param("receiver_layer"))
 
 	_integrity("static")
 

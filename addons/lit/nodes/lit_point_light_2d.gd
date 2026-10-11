@@ -123,6 +123,38 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 
 @export_group("Advanced")
 @export var blend_mode: BlendMode = BlendMode.ADD
+## Lowest z_index this light reaches. A receiver is lit only while its final z_index
+## (z_as_relative offsets summed up its parents) lies between Range Z Min and Range Z
+## Max. The default spans the whole canvas range (Godot's Light2D defaults to
+## -1024..1024). Lit receiver nodes read their z when they enter the tree; after
+## changing z_index at runtime call refresh_light_ranges() on the receiver, or
+## LitLightRegistry.refresh_light_ranges() on a subtree.
+@export_range(-4096, 4096) var range_z_min: int = -4096:
+	set(value):
+		range_z_min = value
+		if value != -4096:
+			LitLightRegistry.light_ranges_seen = true
+## Highest z_index this light reaches (see Range Z Min).
+@export_range(-4096, 4096) var range_z_max: int = 4096:
+	set(value):
+		range_z_max = value
+		if value != 4096:
+			LitLightRegistry.light_ranges_seen = true
+## Lowest CanvasLayer this light reaches. Min and Max both 0 (the default) light EVERY
+## layer, which is how Lit has always behaved; to light only the base canvas use a
+## range such as -1..0. This differs from Godot's Light2D, where 0..0 means the base
+## canvas only.
+@export var range_layer_min: int = 0:
+	set(value):
+		range_layer_min = value
+		if value != 0:
+			LitLightRegistry.light_ranges_seen = true
+## Highest CanvasLayer this light reaches (see Range Layer Min). 0..0 lights every layer.
+@export var range_layer_max: int = 0:
+	set(value):
+		range_layer_max = value
+		if value != 0:
+			LitLightRegistry.light_ranges_seen = true
 
 
 func _validate_property(property: Dictionary) -> void:

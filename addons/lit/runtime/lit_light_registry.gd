@@ -9,7 +9,7 @@ class_name LitLightRegistry
 ## Each instance owns its own light-data texture, so the editor and a running game
 ## (separate processes and RenderingServer state) never collide.
 
-const TEXELS_PER_LIGHT := 15
+const TEXELS_PER_LIGHT := 16
 
 # Which shadow algorithms the shaders must support this frame, from the last refresh()
 # in this process (bit 0 = Cone Traced, bit 1 = Stochastic, among enabled shadow-casting
@@ -92,6 +92,9 @@ static var gx_active: bool = false
 # True once any light has shown a non-default shadow_mask or exclusion toggle (set by
 # the light setters, scene loads included); gates the per-light mask reads in refresh.
 static var light_masks_seen: bool = false
+# True once any light has shown a non-default z / layer range (set by the light
+# setters, scene loads included); gates the per-light range reads in the packer.
+static var light_ranges_seen: bool = false
 # Receiver shadow_ramp edits (the node setters): each registry instance re-resolves
 # its casters' receivers on the next refresh. Scene loads go through the tree hook.
 static var ramp_edit_version: int = 0
@@ -129,6 +132,20 @@ static func pool_snapshot() -> Dictionary:
 static func pool_is_key_param(name: String) -> bool:
 	return MaterialPoolScript.is_key_param(name)
 
+static func pool_is_instance_param(name: String) -> bool:
+	return MaterialPoolScript.is_instance_param(name)
+
+# --- Light ranges (z_index / CanvasLayer) --------------------------------------------
+## Re-derive the light-range z / layer pair of every Lit receiver under `root` (root
+## included). Call it after changing z_index, z_as_relative or a CanvasLayer's layer
+## at runtime: Godot reports none of those, so receivers only re-read them on entering
+## a canvas or through this call (refresh_light_ranges() on a single receiver).
+static func refresh_light_ranges(root: Node) -> void:
+	if root.has_method("refresh_light_ranges"):
+		root.refresh_light_ranges()
+	for child in root.get_children():
+		refresh_light_ranges(child)
+
 # --- Per-receiver shadow exclusion (shadow_ignore_mask) ------------------------------
 # Node-facing static API; the node set and rx bounds driving live in
 # registry/rx_registry.gd (its statics are shared by both editor registry instances
@@ -148,13 +165,15 @@ var _luminance := LuminanceScript.new()
 func sample_luminance(tree: SceneTree, root: Node, world_pos: Vector2,
 		receiver_mask: int = 1, shadow_ignore_mask: int = 0,
 		exclude_occluders_of: Node = null, directional_horizontal_scale: float = 32.0,
-		pbr: bool = false, surface: Array = []) -> float:
+		pbr: bool = false, surface: Array = [], receiver_z: int = 0,
+		receiver_layer: int = 0) -> float:
 	var lights := _light_cache.cull_visible(tree,
 			Rect2(world_pos - Vector2.ONE, Vector2(2.0, 2.0)))
 	_occluder_tiles.ensure_fresh(root, _light_cache.all(), false)
 	return _luminance.sample(tree, lights, _occluder_tiles.occ_nodes(),
 			_occluder_tiles.occ_layers(), world_pos, receiver_mask, shadow_ignore_mask,
-			exclude_occluders_of, directional_horizontal_scale, pbr, surface)
+			exclude_occluders_of, directional_horizontal_scale, pbr, surface,
+			receiver_z, receiver_layer)
 
 ## A receiver's drawn surface for sample_luminance (see luminance.gd surface()).
 func luminance_surface(texture: Texture2D, src: Rect2, to_world: Transform2D) -> Array:
@@ -247,6 +266,7 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 		_classify_exclusions(lights, receiver_root, mask_potential, smask_union)
 		_occluder_tiles.restore_unculled(_exclusions.gx_masks(), sdf_cull)
 	_ctx.excl_active = _exclusions.has_exclusions()
+	_ctx.read_ranges = light_ranges_seen or Engine.is_editor_hint()
 	if masks_active:
 		_ctx.texels_per_light = TEXELS_PER_LIGHT
 

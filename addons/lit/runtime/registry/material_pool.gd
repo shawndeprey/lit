@@ -24,6 +24,7 @@ const DRIVEN_PARAMS: Array[String] = [
 static var _entries := {}   # key String -> [ShaderMaterial, refcount]
 static var _by_mat := {}    # ShaderMaterial -> key String
 static var _content_names := PackedStringArray()   # parsed once from the receiver source
+static var _instance_names := PackedStringArray()  # `instance uniform`s: per canvas item, never keyed
 static var _defaults_by_shader := {}               # shader instance id -> {name: declared default}
 
 
@@ -31,23 +32,42 @@ static var _defaults_by_shader := {}               # shader instance id -> {name
 ## includes declare, minus DRIVEN_PARAMS. Parsed from the include source the shader
 ## library ships (not asked of the RenderingServer, which reports nothing under the
 ## headless dummy renderer), so a uniform added to the shader is keyed automatically.
+## `instance uniform`s (the light-range z / layer pair the Lit nodes write per canvas
+## item) live on the item, not the material, and are listed apart in instance_params().
 static func content_params() -> PackedStringArray:
 	if _content_names.is_empty():
-		var re := RegEx.create_from_string("^\\s*(global\\s+)?uniform\\s+\\w+\\s+(\\w+)")
-		var seen := {}
-		var units: Array = LitShaderLibrary.INCLUDE_UNITS.duplicate()
-		units.append(LitShaderLibrary.COMMON_INCLUDE)
-		for inc in units:
-			for line in (inc as ShaderInclude).code.split("\n"):
-				var m := re.search(line)
-				if m == null or not m.get_string(1).is_empty():
-					continue
-				var n := m.get_string(2)
-				if not DRIVEN_PARAMS.has(n) and not seen.has(n):
-					seen[n] = true
-					_content_names.append(n)
-		_content_names.sort()
+		_parse_uniforms()
 	return _content_names
+
+
+## The per-item `instance uniform`s the receiver includes declare.
+static func instance_params() -> PackedStringArray:
+	if _content_names.is_empty():
+		_parse_uniforms()
+	return _instance_names
+
+
+static func _parse_uniforms() -> void:
+	var re := RegEx.create_from_string("^\\s*(global\\s+|instance\\s+)?uniform\\s+\\w+\\s+(\\w+)")
+	var seen := {}
+	var units: Array = LitShaderLibrary.INCLUDE_UNITS.duplicate()
+	units.append(LitShaderLibrary.COMMON_INCLUDE)
+	for inc in units:
+		for line in (inc as ShaderInclude).code.split("\n"):
+			var m := re.search(line)
+			if m == null:
+				continue
+			var scope := m.get_string(1).strip_edges()
+			var n := m.get_string(2)
+			if scope == "instance":
+				if not _instance_names.has(n):
+					_instance_names.append(n)
+				continue
+			if scope.is_empty() and not DRIVEN_PARAMS.has(n) and not seen.has(n):
+				seen[n] = true
+				_content_names.append(n)
+	_content_names.sort()
+	_instance_names.sort()
 
 
 ## Declared defaults of the content uniforms on `shader`, read once per shader.
@@ -164,6 +184,12 @@ static func stats() -> Dictionary:
 ## uniform, or a uniform the receiver does not declare). Bench/diagnostic use.
 static func is_key_param(name: String) -> bool:
 	return content_params().has(name)
+
+
+## Whether `name` is a per-item `instance uniform` (set on the canvas item, never on
+## the material, so it can never split a pooled entry). Bench/diagnostic use.
+static func is_instance_param(name: String) -> bool:
+	return instance_params().has(name)
 
 
 ## Read-only view of the live entries: key -> {"material": ShaderMaterial, "refs": int}.

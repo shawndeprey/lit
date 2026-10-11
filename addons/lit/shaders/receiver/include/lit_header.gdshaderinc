@@ -152,6 +152,19 @@ uniform sampler2D emissive_mask : hint_default_white;   // white default lets st
 // 2D-render-layers control.
 uniform int receiver_mask = 1;
 
+// Light ranges: this receiver's final z_index (z_as_relative offsets summed up its
+// parents) and CanvasLayer index, tested against each ranged light's row (texel 9,
+// flags bit 19). The Lit sprite nodes write the per-item instance pair, which never
+// splits a pooled material; LitTileMapLayer (whose internal cell items take no
+// instance values), the editor live clones and hand-made receivers set the material
+// pair instead. A set instance value overrides the material one; the sentinel default
+// means unset.
+uniform int receiver_z = 0;
+uniform int receiver_layer = 0;
+instance uniform int receiver_z_inst = -1000000;
+instance uniform int receiver_layer_inst = -1000000;
+const int LIT_RANGE_UNSET = -1000000;
+
 // Self-shadow exclusion: when self_shadow is off, shadow-march hits inside the
 // receiver's own occluder bounds are ignored, so its own occluders cast behind it, not
 // onto it. LitSprite2D syncs one canvas-space box per owned occluder, unioning extras
@@ -246,7 +259,7 @@ uniform float directional_horizontal_scale = 32.0;
 #endif
 
 // Per-light shadow exclusion context (the _mask variants): the light's exempt-occluder
-// rects live in its own data row (texels 9-14), so the march carries only a row index
+// rects live in its own data row (texels 10-15), so the march carries only a row index
 // and the coarse union rect.
 #ifdef LIT_OCC_MASKS
 #define LIT_MK_PARAMS , bool mk_on, int mk_row, vec4 mk_rect

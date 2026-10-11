@@ -29,6 +29,17 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		return vec3(0.0);
 	}
 
+	// Light ranges (flags bit 19): skip the light when this receiver's z_index or
+	// canvas layer falls outside its row-9 ranges. Unranged lights never fetch it.
+	if ((flags & 524288) != 0) {
+		vec4 t9 = texelFetch(lit_light_data, ivec2(9, i), 0); // z_min | z_max | layer_min | layer_max
+		float rz = float(receiver_z_inst == LIT_RANGE_UNSET ? receiver_z : receiver_z_inst);
+		float rl = float(receiver_layer_inst == LIT_RANGE_UNSET ? receiver_layer : receiver_layer_inst);
+		if (rz < t9.x || rz > t9.y || rl < t9.z || rl > t9.w) {
+			return vec3(0.0);
+		}
+	}
+
 	vec4 t1 = texelFetch(lit_light_data, ivec2(1, i), 0); // uv.xy / dir.xy | range | energy
 	vec4 t2 = texelFetch(lit_light_data, ivec2(2, i), 0); // color.rgb | height
 
@@ -174,10 +185,10 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	if (shadow_enabled) {
 		vec4 t3 = texelFetch(lit_light_data, ivec2(3, i), 0); // shadow_color.rgb | shadow_hardness
 #ifdef LIT_OCC_MASKS
-		// Per-light exclusions (flags bit 5): t10 = union bounds of the exempt rects.
+		// Per-light exclusions (flags bit 5): t11 = union bounds of the exempt rects.
 		bool mk_on = (flags & 32) != 0;
 		int mk_row = i;
-		vec4 mk_rect = mk_on ? texelFetch(lit_light_data, ivec2(10, i), 0) : vec4(0.0);
+		vec4 mk_rect = mk_on ? texelFetch(lit_light_data, ivec2(11, i), 0) : vec4(0.0);
 #endif
 #ifdef LIT_OCC_RX
 		// The light's shadow mask (t7.w), for the effective-layer rx ignore test.
