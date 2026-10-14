@@ -19,6 +19,11 @@ sources/0 = SubResource("atlas")
 [node name="Light" parent="Child"]
 offset = Vector2(30, 30)
 color = Color(0, 0, 1, 1)
+range_z_max = 12
+
+[node name="NakedLight" parent="Child"]
+range_z_max = 12
+range_layer_max = 2
 
 [node name="Extra" type="Node2D" parent="Child"]
 
@@ -28,6 +33,10 @@ energy = 0.8
 height = 0.3
 shadow_enabled = true
 max_distance = 8000.0
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3
 
 [node name="Tiles" type="TileMapLayer" parent="."]
 light_mask = 4

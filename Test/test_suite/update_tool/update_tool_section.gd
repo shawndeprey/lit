@@ -28,6 +28,9 @@ const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
 const BIN_SCENE := "env_bin.scn"
 const ALL_KINDS := {"lights": true, "modulates": true, "sprites": true,
 	"animated_sprites": true, "tilemaps": true, "scripts": true}
+# Core light values authored on every converting bench light and asserted wherever the
+# section reaches one; a new light feature adds its property here and to those lights.
+const LIGHT_SIG := {"range_z_min": -2, "range_z_max": 7, "range_layer_min": 1, "range_layer_max": 3}
 
 var _lines: Array[String] = []
 
@@ -61,6 +64,18 @@ func run() -> void:
 
 func _note(text: String) -> void:
 	_lines.append(text)
+
+
+func _check_sig(c: String, node: Node, label: String, overrides: Dictionary = {}) -> void:
+	for p in LIGHT_SIG:
+		check(c, "%s: %s" % [label, p], overrides.get(p, LIGHT_SIG[p]), null if node == null else node.get(p))
+
+
+func _lit_defaults() -> Dictionary:
+	var out := {}
+	for p in LIGHT_SIG:
+		out[p] = Migrations.BASELINE_SCHEMA[&"LitPointLight2D"]["props"][StringName(p)]["default"]
+	return out
 
 
 func _prepare() -> void:
@@ -136,6 +151,7 @@ func _child() -> void:
 			is_equal_approx(float(light.get("range")), want_range) and is_equal_approx(float(light.get("falloff")), 0.0))
 	check_true(c, "shadow_enabled copied, shadow_filter dropped, light stamped",
 			bool(light.get("shadow_enabled")) and light.get("shadow_filter") == null and str(light.get("lit_version")) == ver)
+	_check_sig(c, light, "direct child light")
 
 	var sprite := root.get_node("BareSprite") as Sprite2D
 	check(c, "bare sprite swapped to LitSprite2D", String(Maps.SWAPS[&"Sprite2D"]), _script_path(sprite))
@@ -157,6 +173,7 @@ func _child() -> void:
 
 	var scripted := root.get_node("ScriptedLight")
 	check_true(c, "scripted core light skipped", scripted.get_class() == "PointLight2D" and _script_path(scripted).ends_with("fixture_light_script.gd"))
+	_check_sig(c, scripted, "scripted core light keeps its authored ranges")
 	var mat_sprite := root.get_node("MatSprite")
 	check_true(c, "blend-material sprite left unlit", mat_sprite.get_class() == "Sprite2D" and mat_sprite.get_script() == null and (mat_sprite as Sprite2D).material != null)
 	var def_mat := root.get_node("DefaultMatSprite") as Sprite2D
@@ -165,6 +182,7 @@ func _child() -> void:
 	var naked := root.get_node("NakedLight")
 	check_true(c, "textureless light converted with Lit's analytic defaults", _script_path(naked) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"])
 			and is_equal_approx(float(naked.get("range")), 256.0) and is_equal_approx(float(naked.get("falloff")), 1.0))
+	_check_sig(c, naked, "unset core ranges land on Lit's defaults", _lit_defaults())
 	var recv := root.get_node("ReceiverSprite") as Sprite2D
 	check_true(c, "already-receiver sprite gains the Lit script, keeps its material, syncs receiver_mask, no double wrap",
 			_script_path(recv) == String(Maps.SWAPS[&"Sprite2D"]) and recv.material is ShaderMaterial
@@ -208,9 +226,12 @@ func _child() -> void:
 	var named := root.get_node_or_null("Watcher/PointLight2D")
 	check_true(c, "class-default-named light keeps its name, converts, keeps %-unique", named != null
 			and _script_path(named) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]) and named.unique_name_in_owner)
+	_check_sig(c, named, "half-set ranges keep their core partner bound",
+			{"range_z_min": -1024, "range_z_max": 5, "range_layer_min": 0, "range_layer_max": 2})
 	var nested := root.get_node_or_null("Watcher/Props/PointLight2D")
 	check_true(c, "nested class-default-named light converted under its preserved path", nested != null
 			and _script_path(nested) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]))
+	_check_sig(c, nested, "nested class-default-named light")
 	var oneline := root.get_node("OnelineTile")
 	check_true(c, "one-line class_name script kept, receiver_mask from light_mask, stamped",
 			_script_path(oneline).ends_with("fixture_oneline_tile.gd") and oneline.get("receiver_mask") != null
@@ -225,10 +246,12 @@ func _child() -> void:
 			and menu_sprite.get_script() == null and menu_light.get_class() == "PointLight2D" and menu_light.get_script() == null)
 	var existing := root.get_node("ExistingLit")
 	check_true(c, "pre-existing Lit node stamped and its data kept", str(existing.get("lit_version")) == ver and is_equal_approx(float(existing.get("energy")), 0.5))
+	_check_sig(c, existing, "pre-existing Lit light keeps its ranges")
 	var anim := (root.get_node("Anim") as AnimationPlayer).get_animation("swing")
-	check_true(c, "animation tracks: offset renamed to texture_offset, kept custom sprite and height tracks untouched",
+	check_true(c, "animation tracks: offset renamed to texture_offset, kept custom sprite, height and range tracks untouched",
 			anim != null and anim.track_get_path(0) == NodePath("Light:texture_offset")
-			and anim.track_get_path(1) == NodePath("CustomFxSprite:offset") and anim.track_get_path(2) == NodePath("Light:height"))
+			and anim.track_get_path(1) == NodePath("CustomFxSprite:offset") and anim.track_get_path(2) == NodePath("Light:height")
+			and anim.track_get_path(3) == NodePath("Light:range_z_max"))
 	root.free()
 	_note("child scene: lights, modulate, sprites, scripts, connections, tracks converted")
 
@@ -242,10 +265,12 @@ func _env() -> void:
 				and root.name == "FixtureEnv" and (root.get("color") as Color).is_equal_approx(Color(0.15, 0.12, 0.24, 1))
 				and str(root.get("lit_version")) == Migrations.current_version()
 				and root.get_node_or_null("Marker") != null and (root.get_node("Marker") as Node2D).position == Vector2(5, 5))
+		_check_sig(c, root.get_node_or_null("EnvLamp"), "light under a converted scene root")
 		root.free()
 	var bin_root := _fresh(OUT + "/" + BIN_SCENE)
 	if check_true(c, "binary .scn scene loads after conversion", bin_root != null):
 		check(c, "binary .scn root converted and stays .scn", String(Maps.REPLACEMENTS[&"CanvasModulate"]["script"]), _script_path(bin_root))
+		_check_sig(c, bin_root.get_node_or_null("EnvLamp"), "light in a binary .scn")
 		bin_root.free()
 	var fx := _fresh(OUT + "/fixture_fx_root.tscn")
 	if check_true(c, "fx-root scene loads", fx != null):
@@ -259,6 +284,7 @@ func _env() -> void:
 				_script_path(inh) == String(Maps.REPLACEMENTS[&"CanvasModulate"]["script"])
 				and (inh.get("color") as Color).is_equal_approx(Color(0.3, 0.1, 0.1, 1))
 				and inh.get_node_or_null("OwnSprite") != null and _script_path(inh.get_node("OwnSprite")) == String(Maps.SWAPS[&"Sprite2D"]))
+		_check_sig(c, inh.get_node_or_null("EnvLamp"), "inherited light with a range override", {"range_layer_max": 5})
 		inh.free()
 	_note("scene roots: env, binary .scn, custom-material root, inherited scene")
 
@@ -273,18 +299,23 @@ func _parent() -> void:
 	if not check_true(c, "parent scene loads", packed != null):
 		return
 	var state := packed.get_state()
-	check(c, "parent stores 11 rows (deltas only)", 11, state.get_node_count())
+	check(c, "parent stores 12 rows (deltas only)", 12, state.get_node_count())
 	check_true(c, "env stays an instance, placeholder preserved", _row_is_instance(state, "Env") and "instance_placeholder=" in text)
 	var root := packed.instantiate()
 	var child_light := root.get_node("Child/Light")
 	check_true(c, "remapped and native overrides apply, user-added node survives",
 			child_light.get("texture_offset") == Vector2(30, 30) and (child_light.get("color") as Color).is_equal_approx(Color(0, 0, 1, 1))
 			and root.get_node_or_null("Child/Extra") != null)
+	_check_sig(c, child_light, "editable-instance light with a range_z_max override", {"range_z_max": 12})
+	_check_sig(c, root.get_node("Child/NakedLight"), "half-set overrides on a default-ranged child light keep core's partner bounds",
+			{"range_z_min": -1024, "range_z_max": 12, "range_layer_min": 0, "range_layer_max": 2})
+	check_true(c, "core partner bound stored as an override in the parent", "range_z_min = -1024" in text)
 	var sun := root.get_node("Sun")
 	check_true(c, "DirectionalLight2D -> LitDirectionalLight2D: max_distance -> shadow_reach, energy, rotation, height default",
 			_script_path(sun) == String(Maps.REPLACEMENTS[&"DirectionalLight2D"]["script"])
 			and is_equal_approx(float(sun.get("shadow_reach")), 8000.0) and is_equal_approx(float(sun.get("height")), 16.0)
 			and is_equal_approx(float(sun.get("energy")), 0.8) and is_equal_approx((sun as Node2D).rotation, 0.5))
+	_check_sig(c, sun, "directional light")
 	var tiles := root.get_node("Tiles")
 	check_true(c, "TileMapLayer swapped, light_mask -> receiver_mask, tile_set survives",
 			_script_path(tiles) == String(Maps.SWAPS[&"TileMapLayer"]) and int(tiles.get("receiver_mask")) == 4 and (tiles as TileMapLayer).tile_set != null)
@@ -303,6 +334,7 @@ func _parent() -> void:
 		check_true(c, "code-referenced scene converts despite menu-only instancing",
 				_script_path(preview.get_node("GlowLight")) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"])
 				and _script_path(preview.get_node("PreviewArt")) == String(Maps.SWAPS[&"Sprite2D"]))
+		_check_sig(c, preview.get_node("GlowLight"), "code-referenced scene's light")
 		preview.free()
 	_note("parent scene: overrides remapped, deltas preserved, menu/UI classification")
 
@@ -335,7 +367,7 @@ func _run_result(scan1: Dictionary, run1: Dictionary) -> void:
 	check(c, "seven scenes rewritten", 7, run1["changed_scenes"].size())
 	var cnt: Dictionary = scan1["counts"]
 	check_true(c, "scan counts lights, modulates, receivers, scripted, rebase roots, materials",
-			cnt["point_lights"] == 5 and cnt["directional_lights"] == 1 and cnt["modulates"] == 3
+			cnt["point_lights"] == 7 and cnt["directional_lights"] == 1 and cnt["modulates"] == 3
 			and cnt["sprites"] == 6 and cnt["animated_sprites"] == 1 and cnt["tilemaps"] == 1
 			and cnt["skipped_scripted"] == 1 and cnt["rebase_roots"] == 3 and cnt["unlit_mats"] == 2 and cnt["custom_mats"] == 2)
 	check_true(c, "scan counts menu candidates, menu core, menu scripts, retypes, @tool additions",
@@ -350,10 +382,15 @@ func _run_result(scan1: Dictionary, run1: Dictionary) -> void:
 			"rendered nothing", "fixture_fx_root", "external animation",
 			"inner class", "instance placeholder", "units differ", "RETYPED", "TOOLED",
 			"CAUTION", "string literals name core classes", "menu/UI core lights",
-			"MENU-SCRIPT", "MENU-SCENE", "converts for world use"]:
+			"MENU-SCRIPT", "MENU-SCENE", "converts for world use", "ignored its z range", "pinned to core's -1024"]:
 		if not (tag in joined):
 			missing.append(tag)
 	check(c, "report mentions every tag", "all present", "all present" if missing.is_empty() else "missing: " + ", ".join(missing))
+	var dropped_ranges: Array[String] = []
+	for line in run1["report"]:
+		if line.begins_with("DROPPED") and "range_" in line:
+			dropped_ranges.append(line)
+	check(c, "no range value reported dropped", "none", "none" if dropped_ranges.is_empty() else ", ".join(dropped_ranges))
 	var report_text := FileAccess.get_file_as_string(OUT + "/report.txt")
 	check_true(c, "report file leads with a fenced attention section above the per-scene log",
 			"NEEDS YOUR ATTENTION" in report_text and "=".repeat(72) in report_text
@@ -394,6 +431,7 @@ func _menus_on() -> void:
 		check_true(c, "menu sprite and light converted when menus checked",
 				_script_path(root.get_node("Menu/MenuSprite")) == String(Maps.SWAPS[&"Sprite2D"])
 				and _script_path(root.get_node("Menu/MenuLight")) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]))
+		_check_sig(c, root.get_node("Menu/MenuLight"), "menu light with menus checked")
 		root.free()
 	var menu_root := _fresh(OUT + "/fixture_menu.tscn")
 	if check_true(c, "menu scene loads after the menus-on run", menu_root != null):

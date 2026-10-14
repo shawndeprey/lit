@@ -15,6 +15,8 @@ const RxMats := preload("res://addons/lit/editor/lit_update_tool/receiver_materi
 # default transparent black means invisible shadows. Lit tints shadowed light by rgb
 # (alpha unused), so the behavior-preserving map is mix(WHITE, rgb, alpha).
 const CORE_SHADOW_DEFAULT := Color(0, 0, 0, 0)
+const CORE_RANGE_DEFAULTS := {"range_z_min": -1024, "range_z_max": 1024,
+	"range_layer_min": 0, "range_layer_max": 0}
 # Property hint_string prefix of a node-typed element (Array / Dictionary sides).
 const NODE_HINT_PREFIX := "%d/%d:" % [TYPE_OBJECT, PROPERTY_HINT_NODE_TYPE]
 
@@ -99,7 +101,7 @@ static func process_scene(scene_path: String, m: Dictionary, scan_result: Dictio
 		var node := root.get_node_or_null(row["path"])
 		if node == null:
 			continue
-		if _remap_overrides(node, row, report):
+		if _remap_overrides(node, row, m["rows"], scan_result["model"], report):
 			changed = true
 
 	if _restore_node_refs(root, m, report):
@@ -315,6 +317,14 @@ static func _apply_specials(core_class: String, new_node: Node, old: Node,
 		else:
 			report.append("HEURISTIC %s: no texture (the core light rendered nothing); "
 					% path + "Lit renders analytically at the default range")
+	if spec["special"].has(&"range_z_min"):
+		for pair in [["range_z_min", "range_z_max"], ["range_layer_min", "range_layer_max"]]:
+			if stored.has(pair[0]) or stored.has(pair[1]):
+				for p in pair:
+					new_node.set(p, old.get(p))
+		if core_class == "DirectionalLight2D" and (stored.has("range_z_min") or stored.has("range_z_max")):
+			report.append("APPROX %s: core DirectionalLight2D ignored its z range; Lit honors %d..%d"
+					% [path, int(old.get("range_z_min")), int(old.get("range_z_max"))])
 
 
 ## Behavior-preserving shadow_color: core mixes shadowed light toward rgb by alpha,
@@ -422,7 +432,8 @@ static func _receiver_fixups(node: Node, row: Dictionary, current: String,
 ## prior one): renamed properties are re-applied under their new names, same-name
 ## properties with changed semantics are corrected. Godot already dropped the stale
 ## stored values while loading, so everything is re-derived from the scan capture.
-static func _remap_overrides(node: Node, row: Dictionary, report: Array) -> bool:
+static func _remap_overrides(node: Node, row: Dictionary, rows: Array, model: Dictionary,
+		report: Array) -> bool:
 	var script := node.get_script() as Script
 	var script_path := "" if script == null else script.resource_path
 	var stored: Dictionary = row["props"]
@@ -457,6 +468,16 @@ static func _remap_overrides(node: Node, row: Dictionary, report: Array) -> bool
 				"height", Migrations.BASELINE_SCHEMA[spec["lit_class"]]["props"][&"height"]["default"]):
 			changed = true
 			report.append("KEPT-DEFAULT %s: core height override has no Lit equivalent; reset" % row["path"])
+		var src := _source_row(rows, model, String(row["path"]).trim_prefix("./"))
+		if spec["special"].has(&"range_z_min") and Maps.REPLACEMENTS.has(String(src.get("type", ""))):
+			for pair in [["range_z_min", "range_z_max"], ["range_layer_min", "range_layer_max"]]:
+				if not (stored.has(pair[0]) or stored.has(pair[1])):
+					continue
+				for p in pair:
+					if not stored.has(p) and _set_changed(node, p, src["props"].get(p, CORE_RANGE_DEFAULTS[p])):
+						changed = true
+						report.append("REMAPPED-OVERRIDE %s: %s pinned to core's %s beside the overridden partner"
+								% [row["path"], p, node.get(p)])
 	elif _is_receiver_script(script_path) and stored.has("light_mask"):
 		if _set_changed(node, &"receiver_mask", stored["light_mask"]):
 			changed = true
@@ -469,6 +490,28 @@ static func _set_changed(node: Node, prop: StringName, value: Variant) -> bool:
 		return false
 	node.set(prop, value)
 	return true
+
+
+## Scan row of the node an instance-provided row overrides, read from the instanced
+## scene's model as it stood before this run (nested instances recurse); empty when unknown.
+static func _source_row(rows: Array, model: Dictionary, path: String) -> Dictionary:
+	var best := ""
+	var inst := ""
+	for r in rows:
+		var rp := String(r["path"]).trim_prefix("./")
+		if String(r["instance"]).is_empty() or r["placeholder"]:
+			continue
+		if (rp == "." or path.begins_with(rp + "/")) and rp.length() >= best.length():
+			best = rp
+			inst = r["instance"]
+	if inst.is_empty() or not model.has(inst):
+		return {}
+	var rel := path if best == "." else path.trim_prefix(best + "/")
+	for r in model[inst]["rows"]:
+		if String(r["path"]).trim_prefix("./") != rel:
+			continue
+		return r if not String(r["type"]).is_empty() else _source_row(model[inst]["rows"], model, rel)
+	return {}
 
 
 static func _replacement_core_for(script_path: String) -> String:

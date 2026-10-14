@@ -98,6 +98,18 @@ tracks/2/keys = {
 "update": 0,
 "values": [0.5]
 }
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Light:range_z_max")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [7, 12]
+}
 
 [sub_resource type="AnimationLibrary" id="lib"]
 _data = {
@@ -122,6 +134,10 @@ offset = Vector2(4, -6)
 texture_scale = 2.0
 height = 0.7
 blend_mode = 2
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3
 
 [node name="BareSprite" type="Sprite2D" parent="."]
 unique_name_in_owner = true
@@ -144,6 +160,10 @@ bob = 2.5
 
 [node name="ScriptedLight" type="PointLight2D" parent="."]
 script = ExtResource("2_ls")
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3
 
 [node name="MatSprite" type="Sprite2D" parent="."]
 material = SubResource("mat")
@@ -200,15 +220,25 @@ script = ExtResource("5_ws")
 [node name="PointLight2D" type="PointLight2D" parent="Watcher"]
 unique_name_in_owner = true
 energy = 0.9
+range_z_max = 5
+range_layer_max = 2
 
 [node name="Props" type="Node2D" parent="Watcher"]
 
 [node name="PointLight2D" type="PointLight2D" parent="Watcher/Props"]
 energy = 0.8
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3
 
 [node name="ExistingLit" type="Node2D" parent="."]
 script = ExtResource("6_lp")
 energy = 0.5
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3
 
 [node name="OnelineTile" type="TileMapLayer" parent="."]
 light_mask = 8
@@ -221,6 +251,10 @@ texture = ExtResource("1_tex")
 
 [node name="MenuLight" type="PointLight2D" parent="Menu"]
 energy = 0.4
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3
 
 [node name="Anim" type="AnimationPlayer" parent="."]
 libraries = {

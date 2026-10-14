@@ -8,3 +8,6 @@ color = Color(0.3, 0.1, 0.1, 1)
 
 [node name="OwnSprite" type="Sprite2D" parent="."]
 texture = ExtResource("2_tex")
+
+[node name="EnvLamp" parent="."]
+range_layer_max = 5

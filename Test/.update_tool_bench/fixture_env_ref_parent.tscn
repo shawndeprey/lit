@@ -6,10 +6,17 @@
 
 [node name="ParentLamp" type="PointLight2D" parent="."]
 energy = 0.6
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3
 
 [node name="EnvRef" parent="." instance=ExtResource("1_env")]
 
 [node name="Holder" parent="EnvRef" node_paths=PackedStringArray("lamp")]
 lamp = NodePath("../../ParentLamp")
+
+[node name="GhostLamp" parent="." instance_placeholder="res://Test/.update_tool_bench/fixture_lamp.tscn"]
+range_z_max = 12
 
 [editable path="EnvRef"]

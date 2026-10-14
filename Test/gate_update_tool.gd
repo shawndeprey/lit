@@ -5,8 +5,8 @@ extends SceneTree
 ## conversion contract: property mapping, script rebasing + collision skip, override
 ## remap with delta preservation, connection/unique-name/occluder survival, animation
 ## track renames, material classification (custom materials are never auto-migrated;
-## they land in the report's attention section), and byte-identical idempotency on a
-## second run.
+## they land in the report's attention section), core light range copy at every light
+## placement (LIGHT_SIG), and byte-identical idempotency on a second run.
 ## Run both; the editor-mode run loads user scripts as placeholder instances, the way
 ## the editor does when the tool is used, and has caught divergence the game-mode run
 ## cannot (property usage flags, unvalidated placeholder set()):
@@ -30,7 +30,7 @@ const OUT := "res://Test/.update_tool_bench/.out"
 const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
 	"fixture_fx_root.tscn", "fixture_inherited.tscn", "fixture_anim_lib.tres",
 	"fixture_menu.tscn", "fixture_icon.tscn", "fixture_hud_bit.tscn", "fixture_mixed.tscn",
-	"fixture_preview.tscn",
+	"fixture_preview.tscn", "fixture_lamp.tscn",
 	"fixture_rebase_sprite.gd", "fixture_collide_sprite.gd", "fixture_light_script.gd",
 	"fixture_watcher.gd", "fixture_oneline_tile.gd", "fixture_lit_light.gd",
 	"fixture_icon_sprite.gd", "fixture_rebase_anim.gd",
@@ -40,6 +40,11 @@ const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
 const BIN_SCENE := "env_bin.scn"
 const ALL_KINDS := {"lights": true, "modulates": true, "sprites": true,
 	"animated_sprites": true, "tilemaps": true, "scripts": true}
+# Core light values authored on every converting bench light and asserted wherever a
+# gate reaches one (nested, inherited, binary, editable instance, menu, export references
+# in arrays and dictionaries). A new light feature adds its property here and to those
+# fixture lights.
+const LIGHT_SIG := {"range_z_min": -2, "range_z_max": 7, "range_layer_min": 1, "range_layer_max": 3}
 
 var _fails := 0
 
@@ -74,6 +79,20 @@ func _check(ok: bool, label: String) -> bool:
 		_fails += 1
 		print("  FAIL: " + label)
 	return ok
+
+
+func _check_sig(node: Node, label: String, overrides: Dictionary = {}) -> void:
+	for p in LIGHT_SIG:
+		var want: Variant = overrides.get(p, LIGHT_SIG[p])
+		var got: Variant = null if node == null else node.get(p)
+		_check(got == want, "%s: %s = %s, got %s" % [label, p, want, got])
+
+
+func _lit_defaults() -> Dictionary:
+	var out := {}
+	for p in LIGHT_SIG:
+		out[p] = Migrations.BASELINE_SCHEMA[&"LitPointLight2D"]["props"][StringName(p)]["default"]
+	return out
 
 
 func _prepare() -> void:
@@ -173,6 +192,7 @@ func _gate_child() -> void:
 	_check(bool(light.get("shadow_enabled")), "shadow_enabled copied")
 	_check(str(light.get("lit_version")) == Migrations.current_version(), "light stamped")
 	_check(light.get("shadow_filter") == null, "shadow_filter dropped")
+	_check_sig(light, "direct child light")
 
 	var sprite := root.get_node("BareSprite") as Sprite2D
 	_check(_script_path(sprite) == String(Maps.SWAPS[&"Sprite2D"]), "bare sprite swapped to LitSprite2D")
@@ -204,6 +224,7 @@ func _gate_child() -> void:
 	_check(scripted.get_class() == "PointLight2D" \
 			and _script_path(scripted).ends_with("fixture_light_script.gd"),
 			"scripted core light skipped")
+	_check_sig(scripted, "scripted core light keeps its authored ranges")
 	var mat_sprite := root.get_node("MatSprite")
 	_check(mat_sprite.get_class() == "Sprite2D" and mat_sprite.get_script() == null \
 			and (mat_sprite as Sprite2D).material != null, "blend-material sprite left unlit")
@@ -221,6 +242,7 @@ func _gate_child() -> void:
 	_check(is_equal_approx(float(naked.get("range")), 256.0) \
 			and is_equal_approx(float(naked.get("falloff")), 1.0),
 			"textureless light keeps Lit's analytic defaults")
+	_check_sig(naked, "unset core ranges land on Lit's defaults", _lit_defaults())
 
 	var recv := root.get_node("ReceiverSprite") as Sprite2D
 	_check(_script_path(recv) == String(Maps.SWAPS[&"Sprite2D"]),
@@ -301,10 +323,13 @@ func _gate_child() -> void:
 		_check(_script_path(named) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]),
 				"class-default-named light converted")
 		_check(named.unique_name_in_owner, "class-default-named light keeps %-unique flag")
+		_check_sig(named, "half-set ranges keep their core partner bound",
+				{"range_z_min": -1024, "range_z_max": 5, "range_layer_min": 0, "range_layer_max": 2})
 	var nested := root.get_node_or_null("Watcher/Props/PointLight2D")
 	_check(nested != null and _script_path(nested) == String(
 			Maps.REPLACEMENTS[&"PointLight2D"]["script"]),
 			"nested class-default-named light converted under its preserved path")
+	_check_sig(nested, "nested class-default-named light")
 
 	var oneline := root.get_node("OnelineTile")
 	_check(_script_path(oneline).ends_with("fixture_oneline_tile.gd"),
@@ -337,6 +362,7 @@ func _gate_child() -> void:
 	_check(str(existing.get("lit_version")) == Migrations.current_version(),
 			"pre-existing Lit node stamped")
 	_check(is_equal_approx(float(existing.get("energy")), 0.5), "pre-existing Lit node data kept")
+	_check_sig(existing, "pre-existing Lit light keeps its ranges")
 
 	var anim := (root.get_node("Anim") as AnimationPlayer).get_animation("swing")
 	_check(anim != null and anim.track_get_path(0) == NodePath("Light:texture_offset"),
@@ -345,6 +371,8 @@ func _gate_child() -> void:
 			"track on the kept custom-material sprite untouched")
 	_check(anim != null and anim.track_get_path(2) == NodePath("Light:height"),
 			"height track left for the manual note")
+	_check(anim != null and anim.track_get_path(3) == NodePath("Light:range_z_max"),
+			"range track kept under its unchanged name")
 	root.free()
 
 
@@ -363,13 +391,21 @@ func _gate_env() -> void:
 	var marker := root.get_node_or_null("Marker")
 	_check(marker != null and (marker as Node2D).position == Vector2(5, 5),
 			"root's child re-owned onto the new root")
+	_check_sig(root.get_node_or_null("EnvLamp"), "light under a converted scene root")
 	root.free()
 
 	var bin_root := _fresh(OUT + "/" + BIN_SCENE)
 	if _check(bin_root != null, "binary .scn scene loads after conversion"):
 		_check(_script_path(bin_root) == String(Maps.REPLACEMENTS[&"CanvasModulate"]["script"]),
 				"binary .scn root converted and stays .scn")
+		_check_sig(bin_root.get_node_or_null("EnvLamp"), "light in a binary .scn")
 		bin_root.free()
+	var lamp_root := _fresh(OUT + "/fixture_lamp.tscn")
+	if _check(lamp_root != null, "light-rooted scene loads"):
+		_check(_script_path(lamp_root) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]) \
+				and lamp_root.get_class() == "Node2D", "root PointLight2D replaced")
+		_check_sig(lamp_root, "light as a scene root")
+		lamp_root.free()
 
 
 func _gate_fx_root() -> void:
@@ -398,6 +434,7 @@ func _gate_inherited() -> void:
 	var own := root.get_node_or_null("OwnSprite")
 	_check(own != null and _script_path(own) == String(Maps.SWAPS[&"Sprite2D"]),
 			"own-added sprite in the inherited scene converted")
+	_check_sig(root.get_node_or_null("EnvLamp"), "inherited light with a range override", {"range_layer_max": 5})
 	root.free()
 
 
@@ -414,7 +451,7 @@ func _gate_parent() -> void:
 	if not _check(packed != null, "parent scene loads"):
 		return
 	var state := packed.get_state()
-	_check(state.get_node_count() == 11, "parent stores 11 rows (deltas only), got %d"
+	_check(state.get_node_count() == 12, "parent stores 12 rows (deltas only), got %d"
 			% state.get_node_count())
 	_check(_row_is_instance(state, "Env"), "env stays an instance in the parent")
 	_check("instance_placeholder=" in text, "instance placeholder preserved")
@@ -425,6 +462,11 @@ func _gate_parent() -> void:
 	_check((child_light.get("color") as Color).is_equal_approx(Color(0, 0, 1, 1)),
 			"native override still applies")
 	_check(root.get_node_or_null("Child/Extra") != null, "user-added node in editable instance survives")
+	_check_sig(child_light, "editable-instance light with a range_z_max override", {"range_z_max": 12})
+	_check_sig(root.get_node("Child/NakedLight"),
+			"half-set overrides on a default-ranged child light keep core's partner bounds",
+			{"range_z_min": -1024, "range_z_max": 12, "range_layer_min": 0, "range_layer_max": 2})
+	_check("range_z_min = -1024" in text, "core partner bound stored as an override in the parent")
 
 	var sun := root.get_node("Sun")
 	_check(_script_path(sun) == String(Maps.REPLACEMENTS[&"DirectionalLight2D"]["script"]),
@@ -433,6 +475,7 @@ func _gate_parent() -> void:
 	_check(is_equal_approx(float(sun.get("height")), 16.0), "core height not copied on sun")
 	_check(is_equal_approx(float(sun.get("energy")), 0.8), "sun energy copied")
 	_check(is_equal_approx((sun as Node2D).rotation, 0.5), "sun rotation copied")
+	_check_sig(sun, "directional light")
 
 	var tiles := root.get_node("Tiles")
 	_check(_script_path(tiles) == String(Maps.SWAPS[&"TileMapLayer"]), "tilemap swapped")
@@ -469,6 +512,7 @@ func _gate_ui_shared() -> void:
 				"code-referenced scene's light converts despite menu-only instancing")
 		_check(_script_path(preview.get_node("PreviewArt")) == String(Maps.SWAPS[&"Sprite2D"]),
 				"code-referenced scene's sprite converts despite menu-only instancing")
+		_check_sig(preview.get_node("GlowLight"), "code-referenced scene's light")
 		preview.free()
 
 
@@ -512,10 +556,10 @@ func _gate_scripts() -> void:
 
 func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 	print("[gate 4] run summary + report markers")
-	_check(run1["changed_scenes"].size() == 9, "nine scenes rewritten, got %d"
+	_check(run1["changed_scenes"].size() == 10, "ten scenes rewritten, got %d"
 			% run1["changed_scenes"].size())
 	var c: Dictionary = scan1["counts"]
-	_check(c["point_lights"] == 8 and c["directional_lights"] == 2 and c["modulates"] == 4,
+	_check(c["point_lights"] == 11 and c["directional_lights"] == 2 and c["modulates"] == 4,
 			"scan counts lights + modulates")
 	_check(c["sprites"] == 6 and c["animated_sprites"] == 1 and c["tilemaps"] == 1,
 			"scan counts convertible receivers")
@@ -540,8 +584,12 @@ func _gate_run_result(scan1: Dictionary, run1: Dictionary) -> void:
 			"rendered nothing", "fixture_fx_root", "external animation",
 			"inner class", "instance placeholder", "units differ", "RETYPED", "TOOLED", "RELINKED",
 			"CAUTION", "string literals name core classes", "menu/UI core lights",
-			"MENU-SCRIPT", "MENU-SCENE", "converts for world use"]:
+			"MENU-SCRIPT", "MENU-SCENE", "converts for world use", "pinned to core's -1024"]:
 		_check(marker in joined, "report mentions %s" % marker)
+	_check("APPROX ./Sun: core DirectionalLight2D ignored its z range" in joined,
+			"report flags the z range Lit honors on a converted directional light")
+	for line in run1["report"]:
+		_check(not (line.begins_with("DROPPED") and "range_" in line), "range value reported dropped: " + line)
 
 	var report_text := FileAccess.get_file_as_string(OUT + "/report.txt")
 	_check("NEEDS YOUR ATTENTION" in report_text, "report leads with the attention section")
@@ -584,9 +632,20 @@ func _gate_node_refs() -> void:
 		var holder := parent.get_node("EnvRef/Holder")
 		_check(holder.get("lamp") == parent.get_node("ParentLamp"),
 				"override reference resolves to the parent's converted light")
+		_check_sig(holder.get("lamp"), "override export reference to the parent's light")
 		_check(holder.get("env") == parent.get_node("EnvRef/Modulate"),
 				"non-overridden reference inside the instance still resolves")
 		parent.free()
+	_check("MANUAL ./GhostLamp: instance placeholder stores `range_z_max`" in joined,
+			"report flags a range override stored on an instance placeholder")
+	var ref_parent_packed := ResourceLoader.load(OUT + "/fixture_env_ref_parent.tscn", "PackedScene",
+			ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
+	if _check(ref_parent_packed != null, "env-ref parent loads for the placeholder row"):
+		_check(_row_prop(ref_parent_packed.get_state(), "GhostLamp", "range_z_max") == 12,
+				"placeholder's range override kept in the file")
+		_check("instance_placeholder=\"%s/fixture_lamp.tscn\"" % OUT
+				in FileAccess.get_file_as_string(OUT + "/fixture_env_ref_parent.tscn"),
+				"light placeholder stays a placeholder")
 	# Menu-only script (menus unchecked) keeps its core annotation: the Lit node cannot
 	# be re-linked, so the loss must be reported, never silent, and never a wrong node.
 	_check("MANUAL ./Hud/EnvReadout: `env: CanvasModulate`" in joined,
@@ -609,6 +668,7 @@ func _gate_node_refs() -> void:
 		var user_root := user_packed.instantiate()
 		_check(user_root.get_node("User").get("lamp") == user_root.get_node("EnvRef/Lamp"),
 				"cross-instance reference resolves to the converted light")
+		_check_sig(user_root.get_node("User").get("lamp"), "cross-instance export reference")
 		user_root.free()
 		_check("--- %s/fixture_env_ref_user.tscn\nUNCHANGED" % OUT in joined,
 				"cross-instance scene processed and left unchanged")
@@ -688,6 +748,14 @@ func _gate_node_refs() -> void:
 	_check(keyed.size() == 1 and keyed.has(root.get_node("Modulate")) \
 			and keyed[root.get_node("Modulate")] == 1,
 			"live typed dictionary key resolves to the Lit modulate")
+	_check_sig(holder.get("lamp"), "lamp export reference")
+	_check_sig(holder.get("sun"), "sun export reference")
+	_check_sig(holder.get("any_node"), "untyped Node export reference")
+	for i in lamps.size():
+		_check_sig(lamps[i], "lamps[%d] typed array element" % i)
+	for key in by_name:
+		_check_sig(by_name[key], "by_name[%s] typed dictionary value" % key)
+	_check_sig(root.get_node("ScriptedLamp"), "scripted core lamp keeps its authored ranges")
 	root.free()
 
 
@@ -705,6 +773,7 @@ func _gate_menus_on() -> void:
 		_check(_script_path(root.get_node("Menu/MenuLight"))
 				== String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]),
 				"menu light converted when menus checked")
+		_check_sig(root.get_node("Menu/MenuLight"), "menu light with menus checked")
 		root.free()
 	var menu_root := _fresh(OUT + "/fixture_menu.tscn")
 	if _check(menu_root != null, "menu scene loads after menus-on run"):
@@ -809,4 +878,5 @@ func _gate_scripts_off() -> void:
 	var root := packed.instantiate()
 	_check(root.get_node("Holder").get("any_node") == root.get_node("Lamp2"),
 			"untyped Node export resolves live after scripts-off run")
+	_check_sig(root.get_node("Holder").get("any_node"), "untyped export reference after the scripts-off run")
 	root.free()
