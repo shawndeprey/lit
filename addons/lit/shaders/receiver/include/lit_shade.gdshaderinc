@@ -23,33 +23,31 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	bool subtractive = (flags & 2) != 0;
 	float falloff = t0.w;
 
-	// Skip lights this receiver's mask doesn't share a bit with, before paying for
-	// any of the work below. The mask is the low 20 bits of t0.z.
+	// Skip lights this receiver's mask doesn't share a bit with, and ranged lights
+	// (flags bit 19 z, bit 22 layer) whose range misses it, before paying for any of the
+	// work below. The mask is the low 20 bits of t0.z. One exit for both: extra early
+	// returns here cost every light on every pixel, ranged or not.
 	int t0z = int(round(t0.z));
 	int light_mask = t0z & 1048575;
-	if ((light_mask & receiver_mask) == 0) {
+	bool reject = (light_mask & receiver_mask) == 0;
+	if ((flags & 4718592) != 0) {
+		// z range in texel 0: z_min + 4096 in the low 14 bits of t0.x, z_max + 4096 split
+		// between the bits above and t0.z bits 20-23, so it rejects without another fetch.
+		if ((flags & 524288) != 0) {
+			int zc = int(round(t0.x));
+			int z_min = zc & 16383;
+			int z_max = (zc >> 14) | ((t0z >> 20) << 10);
+			int rz = receiver_z + 4096;
+			reject = reject || rz < z_min || rz > z_max;
+		}
+		if ((flags & 4194304) != 0) {
+			vec4 t9 = texelFetch(lit_light_data, ivec2(9, i), 0); // z_min | z_max | layer_min | layer_max
+			float rl = float(receiver_layer);
+			reject = reject || rl < t9.z || rl > t9.w;
+		}
+	}
+	if (reject) {
 		return vec3(0.0);
-	}
-
-	// Light ranges. A z range (flags bit 19) rides in texel 0 (z_min + 4096 in the low 14
-	// bits of t0.x, z_max + 4096 split between the bits above and t0.z bits 20-23), so it
-	// rejects without another fetch; a layer range (bit 22) reads row 9. Lights without
-	// one skip it.
-	if ((flags & 524288) != 0) {
-		int zc = int(round(t0.x));
-		int z_min = zc & 16383;
-		int z_max = (zc >> 14) | ((t0z >> 20) << 10);
-		int rz = receiver_z + 4096;
-		if (rz < z_min || rz > z_max) {
-			return vec3(0.0);
-		}
-	}
-	if ((flags & 4194304) != 0) {
-		vec4 t9 = texelFetch(lit_light_data, ivec2(9, i), 0); // z_min | z_max | layer_min | layer_max
-		float rl = float(receiver_layer);
-		if (rl < t9.z || rl > t9.w) {
-			return vec3(0.0);
-		}
 	}
 
 	vec4 t1 = texelFetch(lit_light_data, ivec2(1, i), 0); // uv.xy / dir.xy | range | energy
