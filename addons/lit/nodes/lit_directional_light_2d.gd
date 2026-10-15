@@ -114,16 +114,16 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 	set(value):
 		range_z_max = value
 		_update_ranged()
-## Lowest CanvasLayer this light reaches. Min and Max both 0 (the default) light EVERY
-## layer, which is how Lit has always behaved; to light only the base canvas use a
-## range such as -1..0. This differs from Godot's Light2D, where 0..0 means the base
-## canvas only.
-@export var range_layer_min: int = 0:
+## Lowest CanvasLayer this light reaches. A receiver is lit only while the index of its
+## CanvasLayer (0 on the base canvas) lies between Range Layer Min and Range Layer Max.
+## The default spans every layer, which is how Lit has always behaved; 0..0 lights the
+## base canvas only, as Godot's Light2D does by default.
+@export_range(-4096, 4096) var range_layer_min: int = -4096:
 	set(value):
 		range_layer_min = value
 		_update_ranged()
-## Highest CanvasLayer this light reaches (see Range Layer Min). 0..0 lights every layer.
-@export var range_layer_max: int = 0:
+## Highest CanvasLayer this light reaches (see Range Layer Min).
+@export_range(-4096, 4096) var range_layer_max: int = 4096:
 	set(value):
 		range_layer_max = value
 		_update_ranged()

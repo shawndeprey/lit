@@ -587,7 +587,7 @@ func _randomize_layers(scene: Node) -> void:
 		n.range_z_max = rng.randi_range(n.range_z_min, Z_SPAN)
 		match rng.randi_range(0, 2):
 			1:
-				n.range_layer_min = -1
+				n.range_layer_min = 0
 				n.range_layer_max = 0
 			2:
 				var k: int = rng.randi_range(1, LAYER_COUNT)

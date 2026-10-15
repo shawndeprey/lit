@@ -4,7 +4,7 @@ extends LitSuiteSection
 ## LitPointLight2D, LitSpotLight2D and LitDirectionalLight2D, checked against the
 ## rendered frame. A receiver is lit by a ranged light only while its final z_index
 ## (z_as_relative offsets summed up its parents) and its CanvasLayer index fall inside
-## the light's ranges; a 0..0 layer range (the default) lights every layer. Also: the
+## the light's ranges (the defaults span everything; layer 0..0 is the base canvas). Also: the
 ## receiver nodes deriving the pair on entering a canvas and on refresh_light_ranges(),
 ## LitTileMapLayer and LitAnimatedSprite2D, pooling keyed by depth, the packed rows,
 ## sample_luminance / get_luminance mirroring the test, light masks composing with it,
@@ -196,10 +196,10 @@ func _layer_range_point() -> void:
 	var l := point_light(c, 140.0, 0.8, Color.WHITE, 200.0)
 	await frames(1)
 	var img := await capture()
-	_lit(case_name, "layer 0..0 (default): base canvas lit", img, base.position)
-	_lit(case_name, "layer 0..0 (default): layer 1 lit", img, on1.position)
-	_lit(case_name, "layer 0..0 (default): layer 2 lit", img, on2.position)
-	_lit(case_name, "layer 0..0 (default): layer 5 lit (0..0 means every layer)", img, on5.position)
+	_lit(case_name, "default -4096..4096: base canvas lit", img, base.position)
+	_lit(case_name, "default -4096..4096: layer 1 lit", img, on1.position)
+	_lit(case_name, "default -4096..4096: layer 2 lit", img, on2.position)
+	_lit(case_name, "default -4096..4096: layer 5 lit", img, on5.position)
 	l.range_layer_min = 1
 	l.range_layer_max = 1
 	img = await capture()
@@ -214,22 +214,27 @@ func _layer_range_point() -> void:
 	_dark(case_name, "layer 2..5: layer 1 ambient", img, on1.position)
 	_lit(case_name, "layer 2..5: layer 2 lit", img, on2.position)
 	_lit(case_name, "layer 2..5: layer 5 lit", img, on5.position)
+	l.range_layer_min = 0
+	l.range_layer_max = 0
+	img = await capture()
+	_lit(case_name, "layer 0..0: base canvas lit (Godot's base-only meaning)", img, base.position)
+	_dark(case_name, "layer 0..0: layer 1 ambient", img, on1.position)
+	_dark(case_name, "layer 0..0: layer 5 ambient", img, on5.position)
 	l.range_layer_min = -1
 	l.range_layer_max = 0
 	img = await capture()
-	_lit(case_name, "layer -1..0: base canvas lit (the base-only recipe)", img, base.position)
+	_lit(case_name, "layer -1..0: base canvas lit", img, base.position)
 	_dark(case_name, "layer -1..0: layer 1 ambient", img, on1.position)
-	_dark(case_name, "layer -1..0: layer 5 ambient", img, on5.position)
-	l.range_layer_min = 0
-	l.range_layer_max = 0
+	l.range_layer_min = -4096
+	l.range_layer_max = 4096
 	l.range_z_min = 0
 	l.range_z_max = 0
 	img = await capture()
-	_lit(case_name, "z 0..0 with layer 0..0: layer 5 box at z 0 still lit (z range alone)", img, on5.position)
+	_lit(case_name, "z 0..0 with the default layers: layer 5 box at z 0 still lit (z range alone)", img, on5.position)
 	on5.z_index = 1
 	on5.refresh_light_ranges()
 	img = await capture()
-	_dark(case_name, "z 0..0 with layer 0..0: layer 5 box moved to z 1 ambient", img, on5.position)
+	_dark(case_name, "z 0..0 with the default layers: layer 5 box moved to z 1 ambient", img, on5.position)
 	l.range_layer_min = 5
 	l.range_layer_max = 5
 	l.range_z_min = -4096
@@ -257,11 +262,11 @@ func _layer_range_spot() -> void:
 	_dark(case_name, "layer 3..3: base ambient", img, base.position)
 	_lit(case_name, "layer 3..3: layer 3 lit", img, on3.position)
 	_dark(case_name, "layer 3..3: layer 5 ambient", img, on5.position)
-	s.range_layer_min = -1
+	s.range_layer_min = 0
 	s.range_layer_max = 0
 	img = await capture()
-	_lit(case_name, "layer -1..0: base lit", img, base.position)
-	_dark(case_name, "layer -1..0: layer 3 ambient", img, on3.position)
+	_lit(case_name, "layer 0..0: base lit", img, base.position)
+	_dark(case_name, "layer 0..0: layer 3 ambient", img, on3.position)
 	s.name = "SpotLayer"
 
 
@@ -283,9 +288,15 @@ func _layer_range_directional() -> void:
 	sun.range_layer_min = 0
 	sun.range_layer_max = 0
 	img = await capture()
-	_lit(case_name, "layer 0..0: base lit", img, base.position)
-	_lit(case_name, "layer 0..0: layer 2 lit", img, on2.position)
-	_lit(case_name, "layer 0..0: layer 5 lit", img, on5.position)
+	_lit(case_name, "layer 0..0: base lit (a directional light on the base canvas only)", img, base.position)
+	_dark(case_name, "layer 0..0: layer 2 ambient", img, on2.position)
+	_dark(case_name, "layer 0..0: layer 5 ambient", img, on5.position)
+	sun.range_layer_min = -4096
+	sun.range_layer_max = 4096
+	img = await capture()
+	_lit(case_name, "default -4096..4096: base lit", img, base.position)
+	_lit(case_name, "default -4096..4096: layer 2 lit", img, on2.position)
+	_lit(case_name, "default -4096..4096: layer 5 lit", img, on5.position)
 	sun.range_layer_min = 4
 	sun.range_layer_max = 9
 	img = await capture()
@@ -412,8 +423,8 @@ func _tilemap_and_animated() -> void:
 	_lit(case_name, "layer 2..2: layer 2 tilemap lit", img, pb)
 	map_a.z_index = 0
 	map_a.refresh_light_ranges()
-	l.range_layer_min = 0
-	l.range_layer_max = 0
+	l.range_layer_min = -4096
+	l.range_layer_max = 4096
 	l.range_z_min = 1
 	l.range_z_max = 4096
 	img = await capture()
@@ -560,7 +571,12 @@ func _luminance() -> void:
 			_mgr.sample_luminance(at, 1, 0, null, 32.0, 0, 4), 0.005)
 	l.range_layer_min = 0
 	l.range_layer_max = 0
-	check_gt(case_name, "layer 0..0: sample_luminance on layer 4 lit", _mgr.sample_luminance(at, 1, 0, null, 32.0, 0, 4), AMBIENT, LIT)
+	check_gt(case_name, "layer 0..0: sample_luminance on the base canvas lit", _mgr.sample_luminance(at, 1, 0, null, 32.0, 0, 0), AMBIENT, LIT)
+	check_approx(case_name, "layer 0..0: sample_luminance on layer 4: ambient", AMBIENT,
+			_mgr.sample_luminance(at, 1, 0, null, 32.0, 0, 4), 0.005)
+	l.range_layer_min = -4096
+	l.range_layer_max = 4096
+	check_gt(case_name, "default layers: sample_luminance on layer 4 lit", _mgr.sample_luminance(at, 1, 0, null, 32.0, 0, 4), AMBIENT, LIT)
 	var spr := _box(at, 0, get_node("Layer5"))
 	var base_spr := _box(c + Vector2(-80, 0), 2)
 	l.range_z_min = 2
@@ -615,7 +631,7 @@ func _packed_rows() -> void:
 			absf(_packed(ranged, 36)) + absf(_packed(ranged, 37)) + absf(_packed(ranged, 38)) + absf(_packed(ranged, 39)), 0.001)
 	check(case_name, "z -1..1: t0.x holds z_min + 4096 and the low 10 bits of z_max + 4096 << 14", 20479, int(_packed(ranged, 0)))
 	check(case_name, "z -1..1: t0.z holds the mask plus the high 4 bits of z_max + 4096 << 20", 4194305, int(_packed(ranged, 2)))
-	check(case_name, "layer 0..0: flags bit 22 (layer range set) clear", 0, int(_packed(ranged, 1)) & 4194304)
+	check(case_name, "default layers: flags bit 22 (layer range set) clear", 0, int(_packed(ranged, 1)) & 4194304)
 	check(case_name, "point light: type bits (flags 20-21) are 0", 0, (int(_packed(plain, 1)) >> 20) & 3)
 	check(case_name, "default light: t0.x zero, t0.z the bare mask", 1, int(_packed(plain, 0)) + int(_packed(plain, 2)))
 	ranged.range_layer_min = 3
@@ -628,8 +644,8 @@ func _packed_rows() -> void:
 	check(case_name, "layer 3..4: flags bit 22 set", 4194304, int(_packed(ranged, 1)) & 4194304)
 	ranged.range_z_min = -4096
 	ranged.range_z_max = 4096
-	ranged.range_layer_min = 0
-	ranged.range_layer_max = 0
+	ranged.range_layer_min = -4096
+	ranged.range_layer_max = 4096
 	await frames(2)
 	check(case_name, "back to the defaults: flags bit 19 clear again", 0, int(_packed(ranged, 1)) & 524288)
 	check_approx(case_name, "back to the defaults: texel 9 zeroed", 0.0, _packed(ranged, 36), 0.001)

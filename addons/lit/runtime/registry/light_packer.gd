@@ -13,7 +13,7 @@ extends RefCounted
 ## (mask packed only while rx receivers exist), t8.xy = cookie UV center (0.5 shifted by
 ## texture_offset; read only when flags bit 18 is set), t9 = z_min | z_max |
 ## layer_min | layer_max (written and read only when flags bit 22 is set: a layer range
-## narrower than 0..0, every layer), t10.x = exempt rect count, t11 = exempt union bounds, t12-15 = the
+## narrower than +-4096), t10.x = exempt rect count, t11 = exempt union bounds, t12-15 = the
 ## light's exempt-occluder canvas rects (t10-t15 read only when flags bit 5 is set).
 ## flags/mask sit in texel 0 so the shader can mask-reject after a single fetch, and the
 ## z range rides there too (see range_pack: z_min + 4096 and the low 10 bits of z_max +
@@ -134,11 +134,11 @@ func publish_empty(vp_size: Vector2) -> void:
 ## (t0.x z code, t0.z high bits, flags bits), zero when every range is pass-all. With
 ## both z bounds offset by 4096 (0..8192), t0.x = z_min | low 10 bits of z_max << 14 and
 ## t0.z bits 20-23 (above the 20-bit mask) = high 4 bits of z_max; the flags carry bit
-## 19 when the z range is narrower than +-4096 and bit 22 when a layer range is set
-## (0..0 means every layer), each read by the shader on its own.
+## 19 when the z range is narrower than +-4096 and bit 22 when the layer range is,
+## each read by the shader on its own.
 static func range_pack(z_min: int, z_max: int, l_min: int, l_max: int) -> Vector3:
 	var z_set := z_min > -4096 or z_max < 4096
-	var layered := l_min != 0 or l_max != 0
+	var layered := l_min > -4096 or l_max < 4096
 	if not z_set and not layered:
 		return Vector3.ZERO
 	var a := clampi(z_min, -4096, 4096) + 4096

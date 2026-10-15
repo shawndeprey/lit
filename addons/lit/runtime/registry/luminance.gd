@@ -217,14 +217,10 @@ static func _pbr_diffuse(lz: float) -> float:
 	return 0.96 * (1.0 - pow(1.0 - sqrt((1.0 + lz) * 0.5), 5.0))
 
 
-# The shader's light range test: z inside the light's z range, layer inside its layer
-# range unless that is 0..0 (every layer).
+# The shader's light range test: z and layer inside the light's ranges.
 static func _in_ranges(light, z: int, layer: int) -> bool:
-	if z < int(light.range_z_min) or z > int(light.range_z_max):
-		return false
-	var l_min: int = light.range_layer_min
-	var l_max: int = light.range_layer_max
-	return (l_min == 0 and l_max == 0) or (layer >= l_min and layer <= l_max)
+	return z >= int(light.range_z_min) and z <= int(light.range_z_max) \
+			and layer >= int(light.range_layer_min) and layer <= int(light.range_layer_max)
 
 
 # Matches the shader's ambient base; without a LitCanvasModulate the globals default

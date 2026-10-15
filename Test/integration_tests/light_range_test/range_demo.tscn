@@ -83,7 +83,8 @@ lit_version = "1.1.6"
 color = Color(0.9999997, 0.04255242, 0.6208898, 1)
 energy = 1.25
 range = 1500.0
-range_layer_min = -1
+range_layer_min = 0
+range_layer_max = 0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="LitSpotLight2D2" type="Node2D" parent="Lights" unique_id=1095919232]
@@ -104,7 +105,8 @@ lit_version = "1.1.6"
 color = Color(0.9999997, 0.04255242, 0.6208898, 1)
 energy = 1.25
 range = 1500.0
-range_layer_min = -1
+range_layer_min = 0
+range_layer_max = 0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="UILayer" type="CanvasLayer" parent="." unique_id=702018006]
