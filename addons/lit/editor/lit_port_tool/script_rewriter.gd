@@ -1,13 +1,13 @@
 @tool
 extends RefCounted
 
-## The script pass of "Project Migration Tool": rebases user chains onto the Lit
+## The script pass of "Port Project to Lit": rebases user chains onto the Lit
 ## classes, adds @tool where the Lit base requires it, retypes core-class references,
 ## and force-reloads everything it rewrote. UI-only scripts are skipped by the
 ## caller's ui_roots/ui_scripts sets when menus are excluded.
 
-const Maps := preload("res://addons/lit/editor/lit_update_tool/conversion_maps.gd")
-const ScriptScan := preload("res://addons/lit/editor/lit_update_tool/script_scan.gd")
+const Maps := preload("res://addons/lit/editor/lit_port_tool/conversion_maps.gd")
+const ScriptScan := preload("res://addons/lit/editor/lit_port_tool/script_scan.gd")
 
 
 ## Rewrite the extends line of each collision-free chain root, then force-reload the

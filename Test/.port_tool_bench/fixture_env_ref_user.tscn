@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3]
 
-[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_env_ref.tscn" id="1_env"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_env_ref_user.gd" id="2_us"]
+[ext_resource type="PackedScene" path="res://Test/.port_tool_bench/fixture_env_ref.tscn" id="1_env"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_env_ref_user.gd" id="2_us"]
 
 [node name="FixtureEnvRefUser" type="Node2D"]
 

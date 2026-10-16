@@ -1,0 +1,233 @@
+[gd_scene load_steps=25 format=3]
+
+[ext_resource type="Texture2D" path="res://Test/base.png" id="1_tex"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="2_lp"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="3_ld"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="4_ls"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="5_lc"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="6_sp"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_tile_map_layer.gd" id="7_tm"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_animated_sprite_2d.gd" id="8_as"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_user_light.gd" id="9_ul"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_user_sprite.gd" id="10_us"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_watcher.gd" id="11_w"]
+[ext_resource type="AnimationLibrary" path="res://Test/.update_tool_bench/fixture_anim_lib.tres" id="12_al"]
+[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_user_light2.gd" id="13_ul2"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_post_process.gd" id="14_pp"]
+[ext_resource type="Script" path="res://addons/lit/nodes/post/lit_post_vignette.gd" id="15_pv"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_precompile_overlay.gd" id="16_ov"]
+
+[sub_resource type="OccluderPolygon2D" id="occ"]
+polygon = PackedVector2Array(0, 0, 32, 0, 32, 32, 0, 32)
+
+[sub_resource type="TileSetAtlasSource" id="atlas"]
+texture = ExtResource("1_tex")
+
+[sub_resource type="TileSet" id="tset"]
+sources/0 = SubResource("atlas")
+
+[sub_resource type="SpriteFrames" id="frames"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_tex")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}]
+
+[sub_resource type="Animation" id="anim"]
+resource_name = "swing"
+length = 1.0
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Lamp:legacy_glow")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [1.0, 2.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath("Lamp:color")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Color(1, 1, 1, 1), Color(1, 0.5, 0.5, 1)]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Hero:legacy_mask")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 1,
+"values": [1, 2]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("CoreLight:energy")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.5, 1.0]
+}
+tracks/4/type = "value"
+tracks/4/imported = false
+tracks/4/enabled = true
+tracks/4/path = NodePath("Spot:old_cone")
+tracks/4/interp = 1
+tracks/4/loop_wrap = true
+tracks/4/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [40.0, 45.0]
+}
+
+[sub_resource type="AnimationLibrary" id="lib"]
+_data = {
+&"swing": SubResource("anim")
+}
+
+[sub_resource type="Animation" id="anim2"]
+resource_name = "tree_swing"
+length = 1.0
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("Lamp:legacy_glow")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.2, 0.4]
+}
+
+[sub_resource type="AnimationLibrary" id="lib2"]
+_data = {
+&"tree_swing": SubResource("anim2")
+}
+
+[node name="FixtureLevel" type="Node2D"]
+
+[node name="Lamp" type="Node2D" parent="." groups=["torches"]]
+unique_name_in_owner = true
+position = Vector2(100, 50)
+script = ExtResource("2_lp")
+color = Color(1, 0.8, 0.6, 1)
+legacy_glow = 2.5
+range_z_max = 7
+
+[node name="Sun" type="Node2D" parent="."]
+script = ExtResource("3_ld")
+lit_version = "1.1.3"
+energy = 0.8
+
+[node name="Spot" type="Node2D" parent="."]
+script = ExtResource("4_ls")
+lit_version = "1.1.3"
+old_cone = 45.0
+
+[node name="Spot2" type="Node2D" parent="."]
+script = ExtResource("4_ls")
+lit_version = "1.1.4"
+mid_cone = 50.0
+
+[node name="Env" type="Node2D" parent="."]
+script = ExtResource("5_lc")
+lit_version = "__CURRENT__"
+color = Color(0.2, 0.2, 0.3, 1)
+
+[node name="Hero" type="Sprite2D" parent="."]
+light_mask = 2
+texture = ExtResource("1_tex")
+script = ExtResource("6_sp")
+legacy_mask = 4
+legacy_emit = 0.5
+
+[node name="Tiles" type="TileMapLayer" parent="."]
+tile_set = SubResource("tset")
+script = ExtResource("7_tm")
+metadata/lit_version = "1.1.3"
+receiver_mask = 8
+
+[node name="Walker" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("frames")
+script = ExtResource("8_as")
+
+[node name="Scripted" type="Node2D" parent="."]
+script = ExtResource("9_ul")
+legacy_glow = 3.5
+intensity = 2.0
+
+[node name="Scripted2" type="Node2D" parent="."]
+script = ExtResource("13_ul2")
+legacy_glow = 4.5
+
+[node name="Legacy" type="Sprite2D" parent="."]
+light_mask = 2
+texture = ExtResource("1_tex")
+script = ExtResource("10_us")
+speed = 3.0
+
+[node name="CoreLight" type="PointLight2D" parent="."]
+energy = 0.7
+
+[node name="CoreSprite" type="Sprite2D" parent="."]
+light_mask = 2
+texture = ExtResource("1_tex")
+
+[node name="Occluder" type="LightOccluder2D" parent="."]
+occluder = SubResource("occ")
+occluder_light_mask = 5
+
+[node name="Watcher" type="Node" parent="." node_paths=PackedStringArray("lamp")]
+script = ExtResource("11_w")
+lamp = NodePath("../CoreLight")
+
+[node name="Blocker" type="Timer" parent="."]
+
+[node name="Anim" type="AnimationPlayer" parent="."]
+libraries = {
+&"": SubResource("lib"),
+&"ext": ExtResource("12_al")
+}
+
+[node name="Tree" type="AnimationTree" parent="."]
+libraries = {
+&"": SubResource("lib2")
+}
+
+[node name="Post" type="CanvasLayer" parent="."]
+script = ExtResource("14_pp")
+lit_version = "1.1.3"
+
+[node name="Vignette" type="Node2D" parent="Post"]
+script = ExtResource("15_pv")
+lit_version = "1.1.3"
+
+[node name="Overlay" type="CanvasLayer" parent="."]
+process_mode = 3
+layer = 128
+script = ExtResource("16_ov")
+
+[connection signal="timeout" from="Blocker" to="Lamp" method="hide"]

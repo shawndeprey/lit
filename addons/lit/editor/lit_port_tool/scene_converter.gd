@@ -1,15 +1,15 @@
 @tool
 extends RefCounted
 
-## The scene pass of "Project Migration Tool": loads one scene off-tree, converts its
+## The scene pass of "Port Project to Lit": loads one scene off-tree, converts its
 ## candidate rows (node replacement for lights/modulates, in-place script swaps for
-## receivers, fixups for rebased-script nodes, migrations + stamping for Lit nodes),
-## remaps instance overrides and animation tracks, then packs and saves - only when
-## something changed.
+## receivers, fixups for rebased-script nodes), remaps instance overrides and
+## animation tracks, then packs and saves - only when something changed. Nodes that
+## were already Lit keep their `lit_version` stamp.
 
-const Maps := preload("res://addons/lit/editor/lit_update_tool/conversion_maps.gd")
+const Maps := preload("res://addons/lit/editor/lit_port_tool/conversion_maps.gd")
 const Migrations := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
-const RxMats := preload("res://addons/lit/editor/lit_update_tool/receiver_materials.gd")
+const RxMats := preload("res://addons/lit/editor/lit_port_tool/receiver_materials.gd")
 
 # Core shadow_color semantics: shadowed light = mix(light, shadow_rgb, alpha), so the
 # default transparent black means invisible shadows. Lit tints shadowed light by rgb
@@ -38,11 +38,9 @@ static func process_scene(scene_path: String, m: Dictionary, scan_result: Dictio
 
 	var changed := false
 	_global_class_paths.clear()
-	var lit_by_script := Migrations.lit_scripts_by_path()
 	var core_names := Maps.core_mapped_names()
 	var current: String = scan_result["current"]
 	var converted_paths: Array[NodePath] = []
-	var stamped := 0
 
 	for row in m["rows"]:
 		if row["placeholder"]:
@@ -84,16 +82,9 @@ static func process_scene(scene_path: String, m: Dictionary, scan_result: Dictio
 				converted_paths.append(row["path"])
 				changed = true
 		elif rebased.has(row_script):
-			if _receiver_fixups(node, row, current, report, ctx):
+			if _receiver_fixups(node, row, current, report, ctx, bool(rebased[row_script])):
 				changed = true
 			converted_paths.append(row["path"])
-		elif lit_by_script.has(row_script):
-			if Migrations.apply_chain(node, lit_by_script[row_script], row["props"], report):
-				changed = true
-			if str(node.get(&"lit_version")) != current:
-				node.set(&"lit_version", current)
-				stamped += 1
-				changed = true
 
 	for row in m["rows"]:
 		if not String(row["type"]).is_empty() or row["placeholder"]:
@@ -109,9 +100,6 @@ static func process_scene(scene_path: String, m: Dictionary, scan_result: Dictio
 
 	if _remap_animation_tracks(root, report):
 		changed = true
-
-	if stamped > 0:
-		report.append("STAMPED %d Lit nodes at v%s" % [stamped, current])
 
 	var ok := true
 	if changed:
@@ -389,12 +377,14 @@ static func _note_custom(ctx: Dictionary, shader_path: String, path: NodePath) -
 ## Node whose user script chain roots in a Lit base (rebased this run, or already
 ## Lit-based from an earlier one). Never relies on the Lit _init having run: in the
 ## editor, non-@tool user scripts get placeholder script instances whose lifecycle
-## callbacks never fire, so the receiver material must land explicitly.
+## callbacks never fire, so the receiver material must land explicitly. Only a node
+## rebased this run is stamped: its data was core-shaped, so it is current by
+## construction; an already-Lit node's stamp is the update tool's business.
 static func _receiver_fixups(node: Node, row: Dictionary, current: String,
-		report: Array, ctx: Dictionary) -> bool:
+		report: Array, ctx: Dictionary, stamp: bool) -> bool:
 	if node.get(&"receiver_mask") == null:
 		report.append("ERROR %s: rebased script not yet compiled against the Lit base; "
-				% row["path"] + "restart the editor and run the migration again")
+				% row["path"] + "restart the editor and run the port again")
 		return false
 	var changed := false
 	var cls := RxMats.classify(row["props"].get("material"))
@@ -418,7 +408,7 @@ static func _receiver_fixups(node: Node, row: Dictionary, current: String,
 				changed = true
 			if RxMats.wrap_texture(node):
 				changed = true
-	if str(node.get(&"lit_version")) != current:
+	if stamp and str(node.get(&"lit_version")).is_empty():
 		node.set(&"lit_version", current)
 		changed = true
 	if changed:

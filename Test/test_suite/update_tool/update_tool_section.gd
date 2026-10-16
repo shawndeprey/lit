@@ -1,56 +1,55 @@
 extends LitSuiteSection
 
-## "Project Migration Tool" (Project > Tools): the fixtures under Test/.update_tool_bench
-## are copied to a scratch folder and the full update runs rooted there. Checks the
-## conversion contracts the tool ships: core light / modulate replacement with property
-## mapping, receiver script swaps with CanvasTexture wrapping, user-script rebasing
-## (plus the collision skip, @tool insertion and reference retyping), instance override
-## remaps with delta preservation, connection / unique-name / occluder survival,
-## animation track renames, custom materials left for the report's attention section,
-## menu/UI classification, the report file, and byte-identical idempotency.
+## "Update Project to Lit" (Project > Tools): the fixtures under Test/.update_tool_bench
+## are copied to a scratch folder and the update runs rooted there against the bench's
+## synthetic migrations. Checks the safe-update contract: Lit nodes migrated through
+## their chain and stamped, renamed properties re-applied from instance overrides and
+## embedded animation tracks, external animations reported, scenes skipped whole when
+## saving would lose data, every script byte-identical and every node type unchanged,
+## the report file, byte-identical idempotency, and the registered chain refusing what
+## it cannot account for.
 ##
 ## The same contracts are locked headlessly by Test/gate_update_tool.gd; this section
 ## keeps them in the one-window pass.
 
 const Tool := preload("res://addons/lit/editor/lit_update_tool.gd")
-const Maps := preload("res://addons/lit/editor/lit_update_tool/conversion_maps.gd")
 const Migrations := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
 
 const SRC := "res://Test/.update_tool_bench"
 const OUT := "res://Test/.update_tool_bench/.suite_out"
-const FILES := ["fixture_child.tscn", "fixture_parent.tscn", "fixture_env.tscn",
-	"fixture_fx_root.tscn", "fixture_inherited.tscn", "fixture_anim_lib.tres",
-	"fixture_menu.tscn", "fixture_icon.tscn", "fixture_hud_bit.tscn", "fixture_mixed.tscn",
-	"fixture_preview.tscn",
-	"fixture_rebase_sprite.gd", "fixture_collide_sprite.gd", "fixture_light_script.gd",
-	"fixture_watcher.gd", "fixture_oneline_tile.gd", "fixture_lit_light.gd",
-	"fixture_icon_sprite.gd", "fixture_rebase_anim.gd", "fixture_env_ref_user.gd"]
-const BIN_SCENE := "env_bin.scn"
-const ALL_KINDS := {"lights": true, "modulates": true, "sprites": true,
-	"animated_sprites": true, "tilemaps": true, "scripts": true}
-# Core light values authored on every converting bench light and asserted wherever the
-# section reaches one; a new light feature adds its property here and to those lights.
-const LIGHT_SIG := {"range_z_min": -2, "range_z_max": 7, "range_layer_min": 1, "range_layer_max": 3}
+const FILES := ["fixture_level.tscn", "fixture_parent.tscn", "fixture_lamp.tscn",
+	"fixture_inherited.tscn", "fixture_newer.tscn", "fixture_current.tscn", "fixture_stale.tscn",
+	"fixture_outer.tscn", "fixture_newer_user.tscn", "fixture_plain.tscn",
+	"fixture_anim_lib.tres", "fixture_user_light.gd", "fixture_user_light2.gd",
+	"fixture_user_sprite.gd", "fixture_watcher.gd"]
+const UNTOUCHED := ["fixture_user_light.gd", "fixture_user_light2.gd", "fixture_user_sprite.gd",
+	"fixture_watcher.gd", "fixture_anim_lib.tres", "fixture_newer.tscn", "fixture_current.tscn",
+	"fixture_newer_user.tscn"]
+const MIGRATION_FILES := ["fixture_spot_a_migration.gd", "fixture_light_migration.gd",
+	"fixture_sprite_migration.gd", "fixture_spot_b_migration.gd"]
 
 var _lines: Array[String] = []
+var _rows_before := {}
+var _hashes := {}
 
 
 func run() -> void:
-	label("Project Migration Tool: fixtures converted in a scratch copy of Test/.update_tool_bench",
+	label("Update Project to Lit: fixtures updated in a scratch copy of Test/.update_tool_bench",
 			Vector2(24, 74))
 	if not DirAccess.dir_exists_absolute(SRC):
 		check_true("update_tool", "fixture folder %s present" % SRC, false)
 		return
+	var migs := _migrations()
 	_prepare()
-	var scan1: Dictionary = Tool.scan([OUT])
-	var run1: Dictionary = Tool.run(scan1, ALL_KINDS, OUT + "/report.txt")
-	_child()
-	_env()
-	_parent()
-	_scripts()
-	_run_result(scan1, run1)
-	_idempotency()
-	_menus_on()
+	var scan1: Dictionary = Tool.scan([OUT], migs)
+	_scan(scan1)
+	var run1: Dictionary = Tool.run(scan1, OUT + "/report.txt", migs)
+	_nodes()
+	_overrides()
+	_untouched("update_safety", UNTOUCHED)
+	_report(scan1, run1)
+	_idempotency(migs)
+	_registered()
 	if failed_count() == 0:
 		_cleanup()
 	else:
@@ -66,28 +65,30 @@ func _note(text: String) -> void:
 	_lines.append(text)
 
 
-func _check_sig(c: String, node: Node, label: String, overrides: Dictionary = {}) -> void:
-	for p in LIGHT_SIG:
-		check(c, "%s: %s" % [label, p], overrides.get(p, LIGHT_SIG[p]), null if node == null else node.get(p))
-
-
-func _lit_defaults() -> Dictionary:
-	var out := {}
-	for p in LIGHT_SIG:
-		out[p] = Migrations.BASELINE_SCHEMA[&"LitPointLight2D"]["props"][StringName(p)]["default"]
+func _migrations() -> Array:
+	var out := []
+	for f in MIGRATION_FILES:
+		out.append((load(SRC + "/" + f) as GDScript).new())
 	return out
+
+
+func _expected(f: String) -> String:
+	return FileAccess.get_file_as_string(SRC + "/" + f).replace(SRC + "/", OUT + "/") \
+			.replace("__CURRENT__", Migrations.current_version())
 
 
 func _prepare() -> void:
 	_cleanup()
 	DirAccess.make_dir_recursive_absolute(OUT)
 	for f in FILES:
-		var text := FileAccess.get_file_as_string(SRC + "/" + f)
 		var w := FileAccess.open(OUT + "/" + f, FileAccess.WRITE)
-		w.store_string(text.replace(SRC + "/", OUT + "/"))
-	var env_scene := ResourceLoader.load(OUT + "/fixture_env.tscn", "PackedScene",
-			ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
-	ResourceSaver.save(env_scene, OUT + "/" + BIN_SCENE)
+		w.store_string(_expected(f))
+	_rows_before.clear()
+	_hashes.clear()
+	for f in FILES:
+		_hashes[f] = FileAccess.get_md5(OUT + "/" + f)
+		if f.ends_with(".tscn"):
+			_rows_before[f] = _rows(OUT + "/" + f)
 
 
 func _cleanup() -> void:
@@ -103,353 +104,230 @@ func _fresh(path: String) -> Node:
 	return null if packed == null else packed.instantiate()
 
 
+func _rows(path: String) -> Dictionary:
+	var out := {}
+	var packed := ResourceLoader.load(path, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
+	if packed == null:
+		return out
+	var state := packed.get_state()
+	for i in state.get_node_count():
+		var script_path := ""
+		for p in state.get_node_property_count(i):
+			if String(state.get_node_property_name(i, p)) == "script":
+				var s = state.get_node_property_value(i, p)
+				script_path = (s as Script).resource_path if s is Script else "<non-script>"
+		var inst := state.get_node_instance(i)
+		var inst_path := inst.resource_path if inst != null else state.get_node_instance_placeholder(i)
+		out[String(state.get_node_path(i))] = "%s|%s|%s" % [state.get_node_type(i), script_path, inst_path]
+	return out
+
+
 func _script_path(node: Node) -> String:
 	var s := node.get_script() as Script
 	return "" if s == null else s.resource_path
 
 
-func _row_has_prop(state: SceneState, node_path: String, prop: String) -> bool:
-	for i in state.get_node_count():
-		if String(state.get_node_path(i)).trim_prefix("./") == node_path:
-			for p in state.get_node_property_count(i):
-				if String(state.get_node_property_name(i, p)) == prop:
-					return true
-	return false
+func _scan(scan: Dictionary) -> void:
+	var c := "update_scan"
+	var cnt: Dictionary = scan["counts"]
+	check(c, "scenes scanned", 10, cnt["scenes"])
+	check(c, "Lit nodes on older versions (skipped scene excluded)", 15, cnt["lit_nodes"])
+	check(c, "Lit nodes already current", 2, cnt["lit_current"])
+	check(c, "nodes stamped newer than the plugin", 1, cnt["newer"])
+	check(c, "unscripted core nodes counted for the port hint", 2, cnt["core_nodes"])
+	check(c, "instance overrides storing names their Lit class retires", 7, cnt["override_rows"])
+	check(c, "animation mixers driving retired names on Lit nodes", 3, cnt["track_rows"])
+	check(c, "scenes to process", 8, cnt["scenes_to_process"])
+	check(c, "scenes skipped for newer data", 1, cnt["scenes_skipped"])
+	check(c, "user script two levels below a Lit class resolves to that class", &"LitPointLight2D",
+			Tool.lit_class_of(scan, OUT + "/fixture_user_light2.gd"))
+	check(c, "user script extending a core class resolves to none", &"",
+			Tool.lit_class_of(scan, OUT + "/fixture_user_sprite.gd"))
+	check(c, "an unversioned Lit class is not an update target", &"",
+			Tool.lit_class_of(scan, "res://addons/lit/nodes/lit_precompile_overlay.gd"))
+	_note("scan: 10 scenes, 15 older Lit nodes, 1 newer, 7 overrides, 3 mixers")
 
 
-func _row_is_instance(state: SceneState, node_path: String) -> bool:
-	for i in state.get_node_count():
-		if String(state.get_node_path(i)).trim_prefix("./") == node_path:
-			return state.get_node_instance(i) != null
-	return false
-
-
-func _child() -> void:
-	var c := "update_child_scene"
-	var root := _fresh(OUT + "/fixture_child.tscn")
-	if not check_true(c, "converted child scene loads", root != null):
-		return
+func _nodes() -> void:
+	var c := "update_nodes"
 	var ver := Migrations.current_version()
-	var light := root.get_node("Light")
-	check(c, "light carries the LitPointLight2D script", String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]), _script_path(light))
-	check(c, "light native base is Node2D", "Node2D", light.get_class())
-	check_true(c, "light transform, z_index, group and metadata survive", light.position == Vector2(100, 50)
-			and (light as Node2D).z_index == 3 and light.is_in_group("torches")
-			and light.has_meta("_edit_lock_") and bool(light.get_meta("_edit_lock_")))
-	check(c, "offset -> texture_offset", Vector2(4, -6), light.get("texture_offset"))
-	check(c, "shadow_item_cull_mask -> shadow_mask", 5, int(light.get("shadow_mask")))
-	check(c, "range_item_cull_mask -> light_mask", 3, light.light_mask)
-	check(c, "blend_mode MIX clamped to ADD", 0, int(light.get("blend_mode")))
-	check_true(c, "shadow_color premultiplied toward white", (light.get("shadow_color") as Color).is_equal_approx(Color(0.75, 0.5, 0.5, 1)))
-	check_true(c, "core height not copied, energy and colour copied", is_equal_approx(float(light.get("height")), 16.0)
-			and is_equal_approx(float(light.get("energy")), 1.5) and (light.get("color") as Color).is_equal_approx(Color(1, 0.8, 0.6, 1)))
-	var cookie := light.get("texture") as Texture2D
-	check_true(c, "cookie texture copied", cookie != null and cookie.resource_path == "res://Test/base.png")
-	var base_tex := load("res://Test/base.png") as Texture2D
-	var want_range := maxf(base_tex.get_size().x, base_tex.get_size().y) * 0.5 * 2.0
-	check_true(c, "range from the cookie footprint, falloff 0 with a cookie",
-			is_equal_approx(float(light.get("range")), want_range) and is_equal_approx(float(light.get("falloff")), 0.0))
-	check_true(c, "shadow_enabled copied, shadow_filter dropped, light stamped",
-			bool(light.get("shadow_enabled")) and light.get("shadow_filter") == null and str(light.get("lit_version")) == ver)
-	_check_sig(c, light, "direct child light")
-
-	var sprite := root.get_node("BareSprite") as Sprite2D
-	check(c, "bare sprite swapped to LitSprite2D", String(Maps.SWAPS[&"Sprite2D"]), _script_path(sprite))
-	check_true(c, "unique name survives", sprite.unique_name_in_owner)
-	check_true(c, "sprite texture wrapped in a CanvasTexture", sprite.texture is CanvasTexture
-			and (sprite.texture as CanvasTexture).diffuse_texture != null
-			and (sprite.texture as CanvasTexture).diffuse_texture.resource_path == "res://Test/base.png")
-	check_true(c, "light_mask -> receiver_mask, sprite light_mask and offset untouched, stamped",
-			int(sprite.get("receiver_mask")) == 2 and sprite.light_mask == 2 and sprite.offset == Vector2(10, 5)
-			and str(sprite.get("lit_version")) == ver)
-
-	var anim_sprite := root.get_node("BareAnimSprite") as AnimatedSprite2D
-	check(c, "bare animated sprite swapped to LitAnimatedSprite2D", String(Maps.SWAPS[&"AnimatedSprite2D"]), _script_path(anim_sprite))
-	check_true(c, "animated sprite keeps its SpriteFrames as authored", anim_sprite.sprite_frames != null
-			and anim_sprite.sprite_frames.has_animation(&"default") and anim_sprite.sprite_frames.get_frame_count(&"default") == 1
-			and anim_sprite.sprite_frames.get_frame_texture(&"default", 0).resource_path == "res://Test/base.png")
-	check_true(c, "animated light_mask -> receiver_mask, offset untouched, stamped",
-			int(anim_sprite.get("receiver_mask")) == 2 and anim_sprite.offset == Vector2(3, 2) and str(anim_sprite.get("lit_version")) == ver)
-
-	var scripted := root.get_node("ScriptedLight")
-	check_true(c, "scripted core light skipped", scripted.get_class() == "PointLight2D" and _script_path(scripted).ends_with("fixture_light_script.gd"))
-	_check_sig(c, scripted, "scripted core light keeps its authored ranges")
-	var mat_sprite := root.get_node("MatSprite")
-	check_true(c, "blend-material sprite left unlit", mat_sprite.get_class() == "Sprite2D" and mat_sprite.get_script() == null and (mat_sprite as Sprite2D).material != null)
-	var def_mat := root.get_node("DefaultMatSprite") as Sprite2D
-	check_true(c, "default-material sprite converted onto the receiver material", _script_path(def_mat) == String(Maps.SWAPS[&"Sprite2D"])
-			and def_mat.material is ShaderMaterial and LitShaderLibrary.flags_of((def_mat.material as ShaderMaterial).shader) >= 0)
-	var naked := root.get_node("NakedLight")
-	check_true(c, "textureless light converted with Lit's analytic defaults", _script_path(naked) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"])
-			and is_equal_approx(float(naked.get("range")), 256.0) and is_equal_approx(float(naked.get("falloff")), 1.0))
-	_check_sig(c, naked, "unset core ranges land on Lit's defaults", _lit_defaults())
-	var recv := root.get_node("ReceiverSprite") as Sprite2D
-	check_true(c, "already-receiver sprite gains the Lit script, keeps its material, syncs receiver_mask, no double wrap",
-			_script_path(recv) == String(Maps.SWAPS[&"Sprite2D"]) and recv.material is ShaderMaterial
-			and (recv.material as ShaderMaterial).shader != null
-			and (recv.material as ShaderMaterial).shader.resource_path.ends_with("lit_receiver_fast.gdshader")
-			and int(recv.get("receiver_mask")) == 4 and recv.texture is CanvasTexture
-			and not ((recv.texture as CanvasTexture).diffuse_texture is CanvasTexture))
-	var fx_rebased := root.get_node("RebasedFxSprite")
-	check_true(c, "rebased custom-material node keeps node, script and custom material, stamped",
-			fx_rebased.get_class() == "Sprite2D" and _script_path(fx_rebased).ends_with("fixture_rebase_sprite.gd")
-			and (fx_rebased as Sprite2D).material is ShaderMaterial
-			and LitShaderLibrary.flags_of(((fx_rebased as Sprite2D).material as ShaderMaterial).shader) < 0
-			and str(fx_rebased.get("lit_version")) == ver)
-	var unshaded_vfx := root.get_node("UnshadedVfxSprite") as Sprite2D
-	check_true(c, "unshaded-shader sprite left unlit", unshaded_vfx.get_script() == null and unshaded_vfx.material is ShaderMaterial)
-	var fx_sprite := root.get_node("CustomFxSprite") as Sprite2D
-	check_true(c, "custom-material sprite kept as-is (attention section, not auto-migrated)",
-			fx_sprite.get_class() == "Sprite2D" and fx_sprite.get_script() == null and fx_sprite.material is ShaderMaterial and fx_sprite.position == Vector2(50, 60))
-	var rebased := root.get_node("RebasedSprite")
-	check_true(c, "rebased sprite keeps its script, receiver_mask from light_mask, texture wrapped, export preserved",
-			_script_path(rebased).ends_with("fixture_rebase_sprite.gd") and rebased.get("receiver_mask") != null
-			and int(rebased.get("receiver_mask")) == 4 and rebased.get("texture") is CanvasTexture
-			and is_equal_approx(float(rebased.get("speed")), 3.5))
-	var anim_rebased := root.get_node("RebasedAnimSprite")
-	check_true(c, "rebased animated sprite keeps node and script, gains the receiver material, export preserved, stamped",
-			anim_rebased.get_class() == "AnimatedSprite2D" and _script_path(anim_rebased).ends_with("fixture_rebase_anim.gd")
-			and anim_rebased.get("receiver_mask") != null and int(anim_rebased.get("receiver_mask")) == 4
-			and (anim_rebased as CanvasItem).material is ShaderMaterial
-			and LitShaderLibrary.flags_of(((anim_rebased as CanvasItem).material as ShaderMaterial).shader) >= 0
-			and is_equal_approx(float(anim_rebased.get("bob")), 2.5) and str(anim_rebased.get("lit_version")) == ver)
-	check_true(c, "colliding script not rebased", root.get_node("CollideSprite").get("receiver_mask") == null)
-	var mod_node := root.get_node("Modulate")
-	check_true(c, "CanvasModulate replaced by LitCanvasModulate with its colour", _script_path(mod_node) == String(Maps.REPLACEMENTS[&"CanvasModulate"]["script"])
-			and mod_node.get_class() == "Node2D" and (mod_node.get("color") as Color).is_equal_approx(Color(0.2, 0.2, 0.3, 1)))
-	var occ := root.get_node("Occluder")
-	check_true(c, "occluder untouched", occ is LightOccluder2D and (occ as LightOccluder2D).occluder_light_mask == 5)
-	var timer := root.get_node("Blocker") as Timer
-	check_true(c, "incoming connection rewired", timer.timeout.is_connected(Callable(light, "hide")))
-	var watcher := root.get_node("Watcher")
-	check_true(c, "outgoing connection rewired", (light as Node2D).visibility_changed.is_connected(Callable(watcher, "_on_light_vis")))
-	var named := root.get_node_or_null("Watcher/PointLight2D")
-	check_true(c, "class-default-named light keeps its name, converts, keeps %-unique", named != null
-			and _script_path(named) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]) and named.unique_name_in_owner)
-	_check_sig(c, named, "half-set ranges keep their core partner bound",
-			{"range_z_min": -1024, "range_z_max": 5, "range_layer_min": 0, "range_layer_max": 2})
-	var nested := root.get_node_or_null("Watcher/Props/PointLight2D")
-	check_true(c, "nested class-default-named light converted under its preserved path", nested != null
-			and _script_path(nested) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]))
-	_check_sig(c, nested, "nested class-default-named light")
-	var oneline := root.get_node("OnelineTile")
-	check_true(c, "one-line class_name script kept, receiver_mask from light_mask, stamped",
-			_script_path(oneline).ends_with("fixture_oneline_tile.gd") and oneline.get("receiver_mask") != null
-			and int(oneline.get("receiver_mask")) == 8 and str(oneline.get("lit_version")) == ver)
-	var child_state := (ResourceLoader.load(OUT + "/fixture_child.tscn", "PackedScene", ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene).get_state()
-	check_true(c, "receiver materials stored in the file for rebased and swapped nodes",
-			_row_has_prop(child_state, "OnelineTile", "material") and _row_has_prop(child_state, "BareSprite", "material")
-			and _row_has_prop(child_state, "BareAnimSprite", "material") and _row_has_prop(child_state, "RebasedAnimSprite", "material"))
-	var menu_sprite := root.get_node("Menu/MenuSprite")
-	var menu_light := root.get_node("Menu/MenuLight")
-	check_true(c, "menu sprite and light under a Control left alone by default", menu_sprite.get_class() == "Sprite2D"
-			and menu_sprite.get_script() == null and menu_light.get_class() == "PointLight2D" and menu_light.get_script() == null)
-	var existing := root.get_node("ExistingLit")
-	check_true(c, "pre-existing Lit node stamped and its data kept", str(existing.get("lit_version")) == ver and is_equal_approx(float(existing.get("energy")), 0.5))
-	_check_sig(c, existing, "pre-existing Lit light keeps its ranges")
+	var text := FileAccess.get_file_as_string(OUT + "/fixture_level.tscn")
+	var leftover: Array[String] = []
+	for retired in ["legacy_glow", "legacy_mask", "legacy_emit", "old_cone", "mid_cone"]:
+		if retired in text:
+			leftover.append(retired)
+	check(c, "retired names gone from the level file", "none", "none" if leftover.is_empty() else ", ".join(leftover))
+	var root := _fresh(OUT + "/fixture_level.tscn")
+	if not check_true(c, "level scene loads", root != null):
+		return
+	var lamp := root.get_node("Lamp")
+	check_true(c, "legacy_glow -> energy on the point light, stamped, authored data kept",
+			is_equal_approx(float(lamp.get("energy")), 2.5) and str(lamp.get("lit_version")) == ver
+			and lamp.unique_name_in_owner and lamp.is_in_group("torches") and int(lamp.get("range_z_max")) == 7)
+	check_true(c, "directional light stamped from 1.1.3 with its data kept",
+			str(root.get_node("Sun").get("lit_version")) == ver and is_equal_approx(float(root.get_node("Sun").get("energy")), 0.8))
+	check_true(c, "two-step rename old_cone -> mid_cone -> spot_angle lands on spot_angle",
+			is_equal_approx(float(root.get_node("Spot").get("spot_angle")), 45.0) and str(root.get_node("Spot").get("lit_version")) == ver)
+	check_true(c, "1.1.4 spot light only runs the second rename",
+			is_equal_approx(float(root.get_node("Spot2").get("spot_angle")), 50.0))
+	var hero := root.get_node("Hero")
+	check_true(c, "LitSprite2D keeps node type and script, legacy_mask -> receiver_mask, apply() fills emissive_strength, stamped",
+			hero.get_class() == "Sprite2D" and _script_path(hero) == "res://addons/lit/nodes/lit_sprite_2d.gd"
+			and int(hero.get("receiver_mask")) == 4 and is_equal_approx(float(hero.get("emissive_strength")), 0.25)
+			and str(hero.get("lit_version")) == ver)
+	check_true(c, "tilemap (legacy metadata stamp), animated sprite, post host and effect stamped",
+			str(root.get_node("Tiles").get("lit_version")) == ver and str(root.get_node("Walker").get("lit_version")) == ver
+			and str(root.get_node("Post").get("lit_version")) == ver and str(root.get_node("Post/Vignette").get("lit_version")) == ver)
+	check_true(c, "unversioned overlay left alone", root.get_node("Overlay").get("lit_version") == null)
+	var scripted := root.get_node("Scripted")
+	check_true(c, "user script extending a Lit class stays attached, its node migrated and stamped, export kept",
+			_script_path(scripted).ends_with("fixture_user_light.gd") and is_equal_approx(float(scripted.get("energy")), 3.5)
+			and is_equal_approx(float(scripted.get("intensity")), 2.0) and str(scripted.get("lit_version")) == ver)
+	check_true(c, "two-level user subclass migrated and stamped",
+			is_equal_approx(float(root.get_node("Scripted2").get("energy")), 4.5) and str(root.get_node("Scripted2").get("lit_version")) == ver)
+	var legacy := root.get_node("Legacy")
+	check_true(c, "core-extending user script node left exactly as authored",
+			legacy.get_class() == "Sprite2D" and _script_path(legacy).ends_with("fixture_user_sprite.gd")
+			and is_equal_approx(float(legacy.get("speed")), 3.0) and legacy.get("lit_version") == null)
+	var core_light := root.get_node("CoreLight")
+	check_true(c, "core light and sprite left native", core_light.get_class() == "PointLight2D" and core_light.get_script() == null
+			and root.get_node("CoreSprite").get_class() == "Sprite2D" and root.get_node("CoreSprite").get_script() == null)
+	check_true(c, "occluder, exported core reference and persisted connection survive",
+			root.get_node("Occluder") is LightOccluder2D and root.get_node("Watcher").get("lamp") == core_light
+			and (root.get_node("Blocker") as Timer).timeout.is_connected(Callable(lamp, "hide")))
 	var anim := (root.get_node("Anim") as AnimationPlayer).get_animation("swing")
-	check_true(c, "animation tracks: offset renamed to texture_offset, kept custom sprite, height and range tracks untouched",
-			anim != null and anim.track_get_path(0) == NodePath("Light:texture_offset")
-			and anim.track_get_path(1) == NodePath("CustomFxSprite:offset") and anim.track_get_path(2) == NodePath("Light:height")
-			and anim.track_get_path(3) == NodePath("Light:range_z_max"))
+	check_true(c, "embedded tracks follow renames (two-step included), live and core tracks untouched",
+			anim != null and anim.track_get_path(0) == NodePath("Lamp:energy") and anim.track_get_path(1) == NodePath("Lamp:color")
+			and anim.track_get_path(2) == NodePath("Hero:receiver_mask") and anim.track_get_path(3) == NodePath("CoreLight:energy")
+			and anim.track_get_path(4) == NodePath("Spot:spot_angle"))
+	var ext := (root.get_node("Anim") as AnimationPlayer).get_animation("ext/ext_swing")
+	check_true(c, "external animation track left as authored", ext != null and ext.track_get_path(0) == NodePath("Lamp:legacy_glow"))
+	var tree := (root.get_node("Tree") as AnimationTree).get_animation("tree_swing")
+	check_true(c, "AnimationTree track follows the rename", tree != null and tree.track_get_path(0) == NodePath("Lamp:energy"))
 	root.free()
-	_note("child scene: lights, modulate, sprites, scripts, connections, tracks converted")
+	var lamp_root := _fresh(OUT + "/fixture_lamp.tscn")
+	if check_true(c, "light-rooted scene loads", lamp_root != null):
+		check_true(c, "scene root migrated and stamped", is_equal_approx(float(lamp_root.get("energy")), 1.5)
+				and str(lamp_root.get("lit_version")) == ver)
+		lamp_root.free()
+	_note("nodes: chain + stamp on every Lit class, user subclasses included; core nodes untouched")
 
 
-func _env() -> void:
-	var c := "update_scene_roots"
-	var root := _fresh(OUT + "/fixture_env.tscn")
-	if check_true(c, "env scene (CanvasModulate root) loads", root != null):
-		check_true(c, "root CanvasModulate replaced, keeps its name, colour, stamp, and re-owns its child",
-				root.get_class() == "Node2D" and _script_path(root) == String(Maps.REPLACEMENTS[&"CanvasModulate"]["script"])
-				and root.name == "FixtureEnv" and (root.get("color") as Color).is_equal_approx(Color(0.15, 0.12, 0.24, 1))
-				and str(root.get("lit_version")) == Migrations.current_version()
-				and root.get_node_or_null("Marker") != null and (root.get_node("Marker") as Node2D).position == Vector2(5, 5))
-		_check_sig(c, root.get_node_or_null("EnvLamp"), "light under a converted scene root")
+func _overrides() -> void:
+	var c := "update_overrides"
+	var ver := Migrations.current_version()
+	var text := FileAccess.get_file_as_string(OUT + "/fixture_parent.tscn")
+	check_true(c, "editable override re-applied under the live name, native override kept",
+			"[editable path=\"Level\"]" in text and "energy = 4.0" in text and not ("legacy_glow = 4.0" in text)
+			and "color = Color(0, 0, 1, 1)" in text)
+	check_true(c, "placeholder and instance-root overrides re-applied, placeholder stays one", "energy = 9.0" in text
+			and "energy = 5.5" in text and not ("legacy_glow" in text)
+			and "instance_placeholder=\"%s/fixture_lamp.tscn\"" % OUT in text)
+	check_true(c, "core node override keeps a name only a Lit class retires", "shadow_filter = 2" in text)
+	check_true(c, "instanced scene's nodes not baked into the parent", not ("Hero" in text))
+	var root := _fresh(OUT + "/fixture_parent.tscn")
+	if check_true(c, "parent scene loads", root != null):
+		var lamp := root.get_node("Level/Lamp")
+		check_true(c, "override wins over the child's migrated value, same-name override and user-added node survive",
+				is_equal_approx(float(lamp.get("energy")), 4.0) and (lamp.get("color") as Color).is_equal_approx(Color(0, 0, 1, 1))
+				and is_equal_approx(float(root.get_node("Level/Sun").get("energy")), 0.3) and root.get_node_or_null("Level/Extra") != null)
+		check_true(c, "parent's own Lit node stamped, instance-root override wins",
+				str(root.get_node("Torch").get("lit_version")) == ver and is_equal_approx(float(root.get_node("Lantern").get("energy")), 5.5))
+		var anim := (root.get_node("Anim") as AnimationPlayer).get_animation("walk")
+		check_true(c, "parent track through a non-root root_node follows the rename",
+				anim != null and anim.track_get_path(0) == NodePath("Lamp:energy"))
 		root.free()
-	var bin_root := _fresh(OUT + "/" + BIN_SCENE)
-	if check_true(c, "binary .scn scene loads after conversion", bin_root != null):
-		check(c, "binary .scn root converted and stays .scn", String(Maps.REPLACEMENTS[&"CanvasModulate"]["script"]), _script_path(bin_root))
-		_check_sig(c, bin_root.get_node_or_null("EnvLamp"), "light in a binary .scn")
-		bin_root.free()
-	var fx := _fresh(OUT + "/fixture_fx_root.tscn")
-	if check_true(c, "fx-root scene loads", fx != null):
-		check_true(c, "custom-material root left untouched", fx.get_class() == "Sprite2D" and fx.get_script() == null and (fx as Sprite2D).material is ShaderMaterial)
-		fx.free()
-	var text := FileAccess.get_file_as_string(OUT + "/fixture_inherited.tscn")
-	check_true(c, "inherited scene still inherits its base, base nodes not baked in", "instance=ExtResource" in text and not ("Marker" in text))
+	var inh_text := FileAccess.get_file_as_string(OUT + "/fixture_inherited.tscn")
+	check_true(c, "inherited scene still inherits, root override re-applied", "instance=ExtResource" in inh_text
+			and "energy = 6.0" in inh_text and not ("legacy_glow" in inh_text))
 	var inh := _fresh(OUT + "/fixture_inherited.tscn")
 	if check_true(c, "inherited scene loads", inh != null):
-		check_true(c, "inherited root follows its converted base with its colour override, own sprite converted",
-				_script_path(inh) == String(Maps.REPLACEMENTS[&"CanvasModulate"]["script"])
-				and (inh.get("color") as Color).is_equal_approx(Color(0.3, 0.1, 0.1, 1))
-				and inh.get_node_or_null("OwnSprite") != null and _script_path(inh.get_node("OwnSprite")) == String(Maps.SWAPS[&"Sprite2D"]))
-		_check_sig(c, inh.get_node_or_null("EnvLamp"), "inherited light with a range override", {"range_layer_max": 5})
+		check_true(c, "inherited root override wins, own node stamped", is_equal_approx(float(inh.get("energy")), 6.0)
+				and str(inh.get_node("OwnLamp").get("lit_version")) == ver)
 		inh.free()
-	_note("scene roots: env, binary .scn, custom-material root, inherited scene")
+	var outer := FileAccess.get_file_as_string(OUT + "/fixture_outer.tscn")
+	check_true(c, "override two instance levels deep re-applied", "spot_angle = 60.0" in outer and not ("old_cone" in outer))
+	var stale := FileAccess.get_file_as_string(OUT + "/fixture_stale.tscn")
+	check_true(c, "override on an already-current instanced node re-applied", "energy = 7.0" in stale and not ("legacy_glow" in stale))
+	_note("overrides: editable, placeholder, instance root, inherited root, nested and stale overrides follow renames")
 
 
-func _parent() -> void:
-	var c := "update_parent_overrides"
-	var text := FileAccess.get_file_as_string(OUT + "/fixture_parent.tscn")
-	check_true(c, "editable-instance marker survives", "[editable path=\"Child\"]" in text)
-	check_true(c, "offset override remapped in place, old one gone", "texture_offset = Vector2(30, 30)" in text and not ("\noffset = Vector2(30, 30)" in text))
-	check_true(c, "child nodes not baked into the parent", not ("BareSprite" in text))
-	var packed := ResourceLoader.load(OUT + "/fixture_parent.tscn", "PackedScene", ResourceLoader.CACHE_MODE_IGNORE_DEEP) as PackedScene
-	if not check_true(c, "parent scene loads", packed != null):
-		return
-	var state := packed.get_state()
-	check(c, "parent stores 12 rows (deltas only)", 12, state.get_node_count())
-	check_true(c, "env stays an instance, placeholder preserved", _row_is_instance(state, "Env") and "instance_placeholder=" in text)
-	var root := packed.instantiate()
-	var child_light := root.get_node("Child/Light")
-	check_true(c, "remapped and native overrides apply, user-added node survives",
-			child_light.get("texture_offset") == Vector2(30, 30) and (child_light.get("color") as Color).is_equal_approx(Color(0, 0, 1, 1))
-			and root.get_node_or_null("Child/Extra") != null)
-	_check_sig(c, child_light, "editable-instance light with a range_z_max override", {"range_z_max": 12})
-	_check_sig(c, root.get_node("Child/NakedLight"), "half-set overrides on a default-ranged child light keep core's partner bounds",
-			{"range_z_min": -1024, "range_z_max": 12, "range_layer_min": 0, "range_layer_max": 2})
-	check_true(c, "core partner bound stored as an override in the parent", "range_z_min = -1024" in text)
-	var sun := root.get_node("Sun")
-	check_true(c, "DirectionalLight2D -> LitDirectionalLight2D: max_distance -> shadow_reach, energy, rotation, height default",
-			_script_path(sun) == String(Maps.REPLACEMENTS[&"DirectionalLight2D"]["script"])
-			and is_equal_approx(float(sun.get("shadow_reach")), 8000.0) and is_equal_approx(float(sun.get("height")), 16.0)
-			and is_equal_approx(float(sun.get("energy")), 0.8) and is_equal_approx((sun as Node2D).rotation, 0.5))
-	_check_sig(c, sun, "directional light")
-	var tiles := root.get_node("Tiles")
-	check_true(c, "TileMapLayer swapped, light_mask -> receiver_mask, tile_set survives",
-			_script_path(tiles) == String(Maps.SWAPS[&"TileMapLayer"]) and int(tiles.get("receiver_mask")) == 4 and (tiles as TileMapLayer).tile_set != null)
-	var hud := root.get_node("MenuBox/HudArt")
-	check_true(c, "sprite under an instanced menu scene left alone by default", hud.get_class() == "Sprite2D" and hud.get_script() == null)
-	root.free()
-	for f in ["fixture_icon.tscn", "fixture_hud_bit.tscn", "fixture_icon_sprite.gd"]:
-		var want := FileAccess.get_file_as_string(SRC + "/" + f).replace(SRC + "/", OUT + "/")
-		check_true(c, "%s byte-identical (UI-only usage, menus off)" % f, FileAccess.get_file_as_string(OUT + "/" + f) == want)
-	var mixed := _fresh(OUT + "/fixture_mixed.tscn")
-	if check_true(c, "mixed-usage scene loads", mixed != null):
-		check(c, "mixed-usage scene still converts (world use wins)", String(Maps.SWAPS[&"Sprite2D"]), _script_path(mixed))
-		mixed.free()
-	var preview := _fresh(OUT + "/fixture_preview.tscn")
-	if check_true(c, "code-referenced preview scene loads", preview != null):
-		check_true(c, "code-referenced scene converts despite menu-only instancing",
-				_script_path(preview.get_node("GlowLight")) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"])
-				and _script_path(preview.get_node("PreviewArt")) == String(Maps.SWAPS[&"Sprite2D"]))
-		_check_sig(c, preview.get_node("GlowLight"), "code-referenced scene's light")
-		preview.free()
-	_note("parent scene: overrides remapped, deltas preserved, menu/UI classification")
+func _untouched(c: String, files: Array) -> void:
+	for f in files:
+		check_true(c, "%s byte-identical" % f, FileAccess.get_md5(OUT + "/" + f) == _hashes[f])
+	var drift: Array[String] = []
+	for f in _rows_before:
+		var after := _rows(OUT + "/" + f)
+		var before: Dictionary = _rows_before[f]
+		if after.size() != before.size():
+			drift.append("%s rows %d -> %d" % [f, before.size(), after.size()])
+		for p in before:
+			if after.get(p) != before[p]:
+				drift.append("%s %s: %s -> %s" % [f, p, before[p], after.get(p)])
+	check(c, "every row keeps its type, script and instance in every scene", "no drift",
+			"no drift" if drift.is_empty() else "; ".join(drift))
 
 
-func _scripts() -> void:
-	var c := "update_scripts"
-	var rebased := FileAccess.get_file_as_string(OUT + "/fixture_rebase_sprite.gd")
-	check_true(c, "rebased root gains @tool and extends LitSprite2D", rebased.begins_with("@tool") and "\nextends LitSprite2D" in rebased)
-	var rebased_anim := FileAccess.get_file_as_string(OUT + "/fixture_rebase_anim.gd")
-	check_true(c, "rebased animated root gains @tool and extends LitAnimatedSprite2D", rebased_anim.begins_with("@tool") and "\nextends LitAnimatedSprite2D" in rebased_anim)
-	var oneline := FileAccess.get_file_as_string(OUT + "/fixture_oneline_tile.gd")
-	check_true(c, "one-line class_name form rebased with @tool", oneline.begins_with("@tool") and "class_name FixtureOnelineTile extends LitTileMapLayer" in oneline)
-	check_true(c, "colliding script left untouched", FileAccess.get_file_as_string(OUT + "/fixture_collide_sprite.gd").begins_with("extends Sprite2D"))
-	check_true(c, "hand-authored Lit-based script gains @tool", FileAccess.get_file_as_string(OUT + "/fixture_lit_light.gd").begins_with("@tool"))
-	var watcher := FileAccess.get_file_as_string(OUT + "/fixture_watcher.gd")
-	check_true(c, "non-Lit-based script gets no @tool", not watcher.begins_with("@tool"))
-	check_true(c, "annotations, constructors, is-checks, returns and casts retyped",
-			": LitPointLight2D" in watcher and "LitPointLight2D.new()" in watcher and "is LitCanvasModulate" in watcher
-			and "-> LitDirectionalLight2D" in watcher and "as LitDirectionalLight2D" in watcher)
-	check_true(c, "string literals and comments left untouched", "\"PointLight2D\"" in watcher and "# A PointLight2D mention in a comment" in watcher)
-	check_true(c, "node-path tokens untouched, their annotations retyped",
-			"named_child: LitPointLight2D = $PointLight2D" in watcher and "nested_light: LitPointLight2D = $Props/PointLight2D" in watcher
-			and "unique_light: LitPointLight2D = %PointLight2D" in watcher)
-	check_true(c, "scripted-light extends stays core", FileAccess.get_file_as_string(OUT + "/fixture_light_script.gd").begins_with("extends PointLight2D"))
-	_note("scripts: rebased, @tool added, references retyped, collisions skipped")
-
-
-func _run_result(scan1: Dictionary, run1: Dictionary) -> void:
+func _report(scan1: Dictionary, run1: Dictionary) -> void:
 	var c := "update_report"
-	check(c, "seven scenes rewritten", 7, run1["changed_scenes"].size())
-	var cnt: Dictionary = scan1["counts"]
-	check_true(c, "scan counts lights, modulates, receivers, scripted, rebase roots, materials",
-			cnt["point_lights"] == 7 and cnt["directional_lights"] == 1 and cnt["modulates"] == 3
-			and cnt["sprites"] == 6 and cnt["animated_sprites"] == 1 and cnt["tilemaps"] == 1
-			and cnt["skipped_scripted"] == 1 and cnt["rebase_roots"] == 3 and cnt["unlit_mats"] == 2 and cnt["custom_mats"] == 2)
-	check_true(c, "scan counts menu candidates, menu core, menu scripts, retypes, @tool additions",
-			cnt["menu_nodes"] == 6 and cnt["menu_core"] == 1 and cnt["menu_scripts"] == 1 and cnt["retype_scripts"] == 2 and cnt["tool_add"] == 4)
-	check_true(c, "UI-only chain root classified via usage", scan1["scripts"]["ui_roots"].has(OUT + "/fixture_icon_sprite.gd"))
-	check_true(c, "two scripts retyped, four gained @tool", run1["retyped_scripts"].size() == 2 and run1["tooled_scripts"].size() == 4)
+	check(c, "scenes rewritten", 7, run1["changed_scenes"].size())
+	check(c, "Lit nodes updated", 15, run1["updated"])
 	var joined := "\n".join(run1["report"])
 	var missing: Array[String] = []
-	for tag in ["SKIPPED-COLLISION", "CLAMPED", "REMAPPED-TRACK", "REMAPPED-OVERRIDE",
-			"custom script", "REBASED", "STAMPED", "UNLIT", "MatSprite", "UnshadedVfxSprite",
-			"MANUAL custom material", "CustomFxSprite", "Custom Shaders docs page",
-			"rendered nothing", "fixture_fx_root", "external animation",
-			"inner class", "instance placeholder", "units differ", "RETYPED", "TOOLED",
-			"CAUTION", "string literals name core classes", "menu/UI core lights",
-			"MENU-SCRIPT", "MENU-SCENE", "converts for world use", "ignored its z range", "pinned to core's -1024"]:
+	for tag in ["MIGRATED Lamp: legacy_glow -> energy", "MIGRATED Spot: mid_cone -> spot_angle",
+			"MIGRATED Hero: legacy_emit 0.5 -> emissive_strength 0.25", "STAMPED 11 Lit nodes",
+			"REMAPPED-OVERRIDE ./Level/Lamp: legacy_glow -> energy", "REMAPPED-OVERRIDE ./Ghost: legacy_glow -> energy",
+			"REMAPPED-OVERRIDE ./Inner/Level/Spot: old_cone -> spot_angle",
+			"REMAPPED-TRACK Anim/swing: old_cone -> spot_angle", "REMAPPED-TRACK Anim/walk: legacy_glow -> energy",
+			"REMAPPED-TRACK Tree/tree_swing: legacy_glow -> energy",
+			"MANUAL Anim/ext_swing: external animation drives `legacy_glow`",
+			"SKIPPED ./Future: LitPointLight2D saved with Lit 9.9.9, newer than this plugin",
+			"SKIPPED ./New/Future: stores `future_prop` = 1, which this plugin does not know",
+			"SKIPPED scene left untouched: saving would drop the stored values above", "SAVED", "UNCHANGED"]:
 		if not (tag in joined):
 			missing.append(tag)
 	check(c, "report mentions every tag", "all present", "all present" if missing.is_empty() else "missing: " + ", ".join(missing))
-	var dropped_ranges: Array[String] = []
-	for line in run1["report"]:
-		if line.begins_with("DROPPED") and "range_" in line:
-			dropped_ranges.append(line)
-	check(c, "no range value reported dropped", "none", "none" if dropped_ranges.is_empty() else ", ".join(dropped_ranges))
+	check_true(c, "core node override with a Lit-retired name is neither remapped nor flagged", not ("./Level/CoreLight" in joined))
 	var report_text := FileAccess.get_file_as_string(OUT + "/report.txt")
-	check_true(c, "report file leads with a fenced attention section above the per-scene log",
-			"NEEDS YOUR ATTENTION" in report_text and "=".repeat(72) in report_text
-			and report_text.find("NEEDS YOUR ATTENTION") < report_text.find("--- "))
-	check_true(c, "flagged lines carry their scene", "custom script; convert manually  (%s/fixture_child.tscn)" % OUT in report_text)
+	check_true(c, "report file names the tool, leads with a fenced attention section above the log",
+			report_text.begins_with("Update Project to Lit %s - 10 scenes scanned, 15 Lit nodes updated in 7 scenes" % scan1["current"])
+			and "NEEDS YOUR ATTENTION - 4 items" in report_text and report_text.find("NEEDS YOUR ATTENTION") < report_text.find("--- "))
 	_note("report: %d scenes rewritten, attention section written" % run1["changed_scenes"].size())
 
 
-func _idempotency() -> void:
+func _idempotency(migs: Array) -> void:
 	var c := "update_idempotency"
-	var tracked: Array = FILES.duplicate()
-	tracked.append(BIN_SCENE)
 	var hashes := {}
-	for f in tracked:
+	for f in FILES:
 		hashes[f] = FileAccess.get_md5(OUT + "/" + f)
-	var scan2: Dictionary = Tool.scan([OUT])
-	check(c, "already-rebased scripts detected for every-run fixups", 3, scan2["scripts"]["lit_based"].size())
-	var run2: Dictionary = Tool.run(scan2, ALL_KINDS, OUT + "/report2.txt")
-	check_true(c, "second run rewrites, rebases, tools and retypes nothing",
-			run2["changed_scenes"].is_empty() and run2["rebased_scripts"].is_empty()
-			and run2["tooled_scripts"].is_empty() and run2["retyped_scripts"].is_empty())
+	var scan2: Dictionary = Tool.scan([OUT], migs)
+	var cnt: Dictionary = scan2["counts"]
+	check_true(c, "second scan finds no older nodes or tracks, only the refused scene's override",
+			cnt["lit_nodes"] == 0 and cnt["track_rows"] == 0 and cnt["override_rows"] == 1)
+	var run2: Dictionary = Tool.run(scan2, OUT + "/report2.txt", migs)
+	check_true(c, "second run rewrites and stamps nothing", run2["changed_scenes"].is_empty() and run2["updated"] == 0)
 	var same := true
-	for f in tracked:
+	for f in FILES:
 		same = same and FileAccess.get_md5(OUT + "/" + f) == hashes[f]
 	check_true(c, "every file byte-identical after the second run", same)
 	_note("idempotency: second run is a no-op")
 
 
-func _menus_on() -> void:
-	var c := "update_menus_on"
+func _registered() -> void:
+	var c := "update_registered"
 	_prepare()
-	var kinds := ALL_KINDS.duplicate()
-	kinds["menus"] = true
-	var scan4: Dictionary = Tool.scan([OUT])
-	var run4: Dictionary = Tool.run(scan4, kinds, OUT + "/report4.txt")
-	var root := _fresh(OUT + "/fixture_child.tscn")
-	if check_true(c, "child loads after the menus-on run", root != null):
-		check_true(c, "menu sprite and light converted when menus checked",
-				_script_path(root.get_node("Menu/MenuSprite")) == String(Maps.SWAPS[&"Sprite2D"])
-				and _script_path(root.get_node("Menu/MenuLight")) == String(Maps.REPLACEMENTS[&"PointLight2D"]["script"]))
-		_check_sig(c, root.get_node("Menu/MenuLight"), "menu light with menus checked")
-		root.free()
-	var menu_root := _fresh(OUT + "/fixture_menu.tscn")
-	if check_true(c, "menu scene loads after the menus-on run", menu_root != null):
-		check(c, "Control-rooted menu scene's art converted", String(Maps.SWAPS[&"Sprite2D"]), _script_path(menu_root.get_node("MenuArt")))
-		menu_root.free()
-	var parent_root := _fresh(OUT + "/fixture_parent.tscn")
-	if check_true(c, "parent loads after the menus-on run", parent_root != null):
-		check(c, "sprite under an instanced menu converted", String(Maps.SWAPS[&"Sprite2D"]), _script_path(parent_root.get_node("MenuBox/HudArt")))
-		parent_root.free()
-	check_true(c, "menu scene rewritten", run4["changed_scenes"].has(OUT + "/fixture_menu.tscn"))
-	var icon_script := FileAccess.get_file_as_string(OUT + "/fixture_icon_sprite.gd")
-	check_true(c, "menu-only script rebased and retyped", icon_script.begins_with("@tool") and "extends LitSprite2D" in icon_script
-			and "linked_light: LitPointLight2D" in icon_script)
-	var icon_root := _fresh(OUT + "/fixture_icon.tscn")
-	if check_true(c, "icon scene loads after the menus-on run", icon_root != null):
-		check_true(c, "usage-classified icon root and child converted",
-				(icon_root as Sprite2D).material is ShaderMaterial
-				and LitShaderLibrary.flags_of(((icon_root as Sprite2D).material as ShaderMaterial).shader) >= 0
-				and _script_path(icon_root.get_node("IconArt")) == String(Maps.SWAPS[&"Sprite2D"]))
-		icon_root.free()
-	_note("menus on: UI candidates convert")
+	var scan: Dictionary = Tool.scan([OUT])
+	var cnt: Dictionary = scan["counts"]
+	check_true(c, "no retired names without registered renames", cnt["override_rows"] == 0 and cnt["track_rows"] == 0)
+	var run: Dictionary = Tool.run(scan, OUT + "/report8.txt")
+	check(c, "only the scene without unknown stored values is rewritten", [OUT + "/fixture_plain.tscn"], run["changed_scenes"])
+	check(c, "one Lit node stamped", 1, run["updated"])
+	var joined := "\n".join(run["report"])
+	check_true(c, "unknown stored values reported before each refusal",
+			"SKIPPED ./Lamp: stores `legacy_glow` = 2.5, which this plugin does not know" in joined
+			and joined.count("SKIPPED scene left untouched") == 4)
+	var kept: Array = UNTOUCHED.duplicate()
+	kept += ["fixture_level.tscn", "fixture_parent.tscn", "fixture_lamp.tscn", "fixture_inherited.tscn",
+			"fixture_stale.tscn", "fixture_outer.tscn"]
+	_untouched(c, kept)
+	_note("registered chain: stamps the plain scene, refuses the five it would damage")

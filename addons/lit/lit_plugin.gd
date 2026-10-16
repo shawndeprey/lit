@@ -9,8 +9,9 @@ extends EditorPlugin
 ##  - Add the runtime `LitManager` autoload that drives the per-frame gather.
 ##  - Persist the `lit/*` project settings (the `lit/render/lighting_model` selector and the
 ##    `lit/quality/*` adaptive shadow march knobs) that the receiver shader reads.
-##  - Provide the "Make Selected Nodes Lit" tool and editor-live preview, driving the
-##    shared gather against the 2D editor viewport (see _process).
+##  - Provide the Project > Tools entries ("Port Project to Lit", "Make Selected Nodes
+##    Lit", "Generate Lit Precompile Config", "Update Project to Lit X.Y.Z") and the
+##    editor-live preview, driving the shared gather against the 2D editor viewport.
 ##
 ## Node registration is implicit: every Lit node script uses `class_name`, so they
 ## already appear in the Create Node dialog.
@@ -18,6 +19,7 @@ extends EditorPlugin
 const AUTOLOAD_NAME := "LitManager"
 const AUTOLOAD_PATH := "res://addons/lit/runtime/lit_manager.gd"
 
+const TOOL_MENU_PORT := "Port Project to Lit..."
 const TOOL_MENU_ITEM := "Make Selected Nodes Lit"
 const TOOL_MENU_PRECOMPILE := "Generate Lit Precompile Config"
 
@@ -26,6 +28,7 @@ const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspec
 const LitReceiverInspectorScript := preload("res://addons/lit/editor/lit_receiver_inspector.gd")
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
+const LitPortToolScript := preload("res://addons/lit/editor/lit_port_tool.gd")
 const LitUpdateToolScript := preload("res://addons/lit/editor/lit_update_tool.gd")
 const LitMigrationsScript := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
 
@@ -66,10 +69,11 @@ func _enter_tree() -> void:
 	_persist_project_settings() # guarded: same, for the lit/* settings
 	_ensure_autoload()          # guarded: adds only if not already registered
 	get_tree().node_added.connect(_on_editor_node_added)
+	add_tool_menu_item(TOOL_MENU_PORT, _port_gate)
 	add_tool_menu_item(TOOL_MENU_ITEM, _make_selected_nodes_lit)
 	add_tool_menu_item(TOOL_MENU_PRECOMPILE, _generate_precompile_config)
-	_update_menu_label = "Project Migration Tool (Lit %s)..." % LitMigrationsScript.current_version()
-	add_tool_menu_item(_update_menu_label, _update_gate)
+	_update_menu_label = "Update Project to Lit %s..." % LitMigrationsScript.current_version()
+	add_tool_menu_item(_update_menu_label, _update_project)
 	# The "Add Effect" button on the LitPostProcess inspector.
 	_post_inspector = LitPostInspectorScript.new()
 	_post_inspector.undo_redo = get_undo_redo()
@@ -91,6 +95,7 @@ func _exit_tree() -> void:
 	set_process(false)
 	_registry = null
 	LitLightRegistryScript.editor_release_live()
+	remove_tool_menu_item(TOOL_MENU_PORT)
 	remove_tool_menu_item(TOOL_MENU_ITEM)
 	remove_tool_menu_item(TOOL_MENU_PRECOMPILE)
 	remove_tool_menu_item(_update_menu_label)
@@ -255,24 +260,24 @@ func _generate_precompile_config() -> void:
 				% [result.scenes, variants.size(), result.full, shaders.size()]
 	_popup_tool_dialog("Lit Precompile Config", text)
 
-# --- Project Migration tool ------------------------------------------------------
+# --- Port Project to Lit --------------------------------------------------------
 #
-# "Project Migration Tool (Lit X.Y.Z)" converts core nodes project-wide, rebases user
-# scripts extending Sprite2D / AnimatedSprite2D / TileMapLayer onto the Lit classes,
-# and brings every Lit
-# node to the current version. The engine lives in editor/lit_update_tool.gd; this
-# is the dialog flow around it. Open scenes are saved first so the SceneState scan
-# reads current data, and changed open scenes reload afterwards. A version-control
-# gate runs first; nothing is saved or scanned until the user answers yes.
+# "Port Project to Lit" converts core nodes project-wide, rebases user scripts
+# extending Sprite2D / AnimatedSprite2D / TileMapLayer onto the Lit classes, and
+# retypes references: the one-time, experimental conversion. The engine lives in
+# editor/lit_port_tool.gd; this is the dialog flow around it. Open scenes are saved
+# first so the SceneState scan reads current data, and the project reloads afterwards.
+# A version-control gate runs first; nothing is saved or scanned until the user
+# answers yes.
 
-func _update_gate() -> void:
+func _port_gate() -> void:
 	var editor_theme := EditorInterface.get_editor_theme()
 	var ui_scale := EditorInterface.get_editor_scale()
 	var bold := editor_theme.get_font("bold", "EditorFonts")
 	var red := editor_theme.get_color("error_color", "Editor")
 	var yellow := editor_theme.get_color("warning_color", "Editor")
 	var dlg := ConfirmationDialog.new()
-	dlg.title = _update_menu_label.trim_suffix("...")
+	dlg.title = TOOL_MENU_PORT.trim_suffix("...")
 	dlg.ok_button_text = "Yes, it is"
 	dlg.cancel_button_text = "No"
 	var vb := VBoxContainer.new()
@@ -284,7 +289,7 @@ func _update_gate() -> void:
 					+ "It can change more or less than you expect, and some of its results\n"
 					+ "will need finishing by hand. Treat every change it makes as a draft to review.",
 					0, red, true],
-			["This tool migrates your whole project to Lit %s." % LitMigrationsScript.current_version(),
+			["This tool ports your whole project to Lit %s, once." % LitMigrationsScript.current_version(),
 					20, null, true],
 			["-  Lights, sprites and tilemaps in every scene become Lit nodes.\n"
 					+ "-  Scripts that use them are rewritten.\n"
@@ -304,17 +309,17 @@ func _update_gate() -> void:
 		vb.add_child(label)
 	dlg.add_child(vb)
 	EditorInterface.get_base_control().add_child(dlg)
-	dlg.confirmed.connect(_update_project)
-	dlg.get_cancel_button().pressed.connect(_update_refused, CONNECT_DEFERRED)
+	dlg.confirmed.connect(_port_project)
+	dlg.get_cancel_button().pressed.connect(_port_refused, CONNECT_DEFERRED)
 	dlg.visibility_changed.connect(func() -> void:
 		if not dlg.visible:
 			dlg.queue_free())
 	dlg.popup_centered()
 	dlg.get_cancel_button().grab_focus()
 
-func _update_refused() -> void:
+func _port_refused() -> void:
 	var dlg := AcceptDialog.new()
-	dlg.title = _update_menu_label.trim_suffix("...")
+	dlg.title = TOOL_MENU_PORT.trim_suffix("...")
 	dlg.ok_button_text = "Okay"
 	dlg.dialog_text = "This tool cannot be used without version control.\n\nPut the project in version control (Git, jj, etc.), commit everything,\nthen run the tool again."
 	EditorInterface.get_base_control().add_child(dlg)
@@ -323,31 +328,30 @@ func _update_refused() -> void:
 			dlg.queue_free())
 	dlg.popup_centered()
 
-func _update_project() -> void:
+func _port_project() -> void:
 	EditorInterface.save_all_scenes()
-	var title: String = _update_menu_label.trim_suffix("...")
+	var title: String = TOOL_MENU_PORT.trim_suffix("...")
 	_progress_open(title, "Scanning scripts...")
 	await get_tree().process_frame
-	var acc: Dictionary = LitUpdateToolScript.scan_begin()
+	var acc: Dictionary = LitPortToolScript.scan_begin()
 	var scene_paths: Array = acc["scene_paths"]
 	for i in scene_paths.size():
-		LitUpdateToolScript.scan_scene(acc, scene_paths[i])
+		LitPortToolScript.scan_scene(acc, scene_paths[i])
 		if (i + 1) % 4 == 0 or i + 1 == scene_paths.size():
 			_progress_set("Scanning scenes... %d / %d" % [i + 1, scene_paths.size()],
 					float(i + 1) / maxf(scene_paths.size(), 1.0))
 			await get_tree().process_frame
-	var scan: Dictionary = LitUpdateToolScript.scan_finish(acc)
+	var scan: Dictionary = LitPortToolScript.scan_finish(acc)
 	_progress_close()
 	var c: Dictionary = scan["counts"]
 	if c["scenes_to_process"] == 0 and c["rebase_roots"] == 0 and c["rebase_skipped"] == 0 \
 			and c["retype_scripts"] == 0 and c["tool_add"] == 0:
-		_popup_tool_dialog(title, "Scanned %d scenes: everything is already on Lit %s."
-				% [c["scenes"], scan["current"]])
+		_popup_tool_dialog(title, "Scanned %d scenes: nothing left to port." % c["scenes"])
 		return
 
 	var dlg := ConfirmationDialog.new()
 	dlg.title = title
-	dlg.ok_button_text = "Migrate"
+	dlg.ok_button_text = "Port"
 	var vb := VBoxContainer.new()
 	var head := Label.new()
 	head.text = "Scanned %d scenes; %d need changes. Converting:" \
@@ -378,9 +382,6 @@ func _update_project() -> void:
 		vb.add_child(cb)
 	var info := Label.new()
 	var info_lines := PackedStringArray()
-	if c["lit_stamp"] > 0:
-		info_lines.append("%d Lit nodes will be stamped or migrated to %s."
-				% [c["lit_stamp"], scan["current"]])
 	if c["skipped_scripted"] > 0:
 		info_lines.append("%d core nodes have custom scripts and will be skipped." % c["skipped_scripted"])
 	if c["rebase_skipped"] > 0:
@@ -394,9 +395,11 @@ func _update_project() -> void:
 	if c["custom_mats"] > 0:
 		info_lines.append("%d custom-material nodes are not auto-migratable; the report's attention section groups them by shader." % c["custom_mats"])
 	info_lines.append("")
+	info_lines.append("Nodes that are already Lit are left as they are; %s brings them to the current version."
+			% _update_menu_label.trim_suffix("..."))
 	info_lines.append("Scene files and scripts are rewritten in place. Commit or back up first.")
 	info_lines.append("@tool scripts in affected scenes run during processing.")
-	info_lines.append("The editor reloads the project when the migration finishes.")
+	info_lines.append("The editor reloads the project when the port finishes.")
 	info.text = "\n".join(info_lines)
 	vb.add_child(info)
 	dlg.add_child(vb)
@@ -405,27 +408,28 @@ func _update_project() -> void:
 		var kinds := {}
 		for key in boxes:
 			kinds[key] = (boxes[key] as CheckBox).button_pressed
-		_run_update(scan, kinds))
+		_run_port(scan, kinds))
 	dlg.visibility_changed.connect(func() -> void:
 		if not dlg.visible:
 			dlg.queue_free())
 	dlg.popup_centered()
 
-func _run_update(scan: Dictionary, kinds: Dictionary) -> void:
+func _run_port(scan: Dictionary, kinds: Dictionary) -> void:
 	# Off-tree LitCanvasModulate setters push the live ambient globals; snapshot and
 	# restore so the editor preview keeps the currently open scene's ambient.
 	var ambient_color: Variant = RenderingServer.global_shader_parameter_get("lit_ambient_color")
 	var ambient_energy: Variant = RenderingServer.global_shader_parameter_get("lit_ambient_energy")
-	_progress_open(_update_menu_label.trim_suffix("..."), "Migrating scripts...")
+	var title: String = TOOL_MENU_PORT.trim_suffix("...")
+	_progress_open(title, "Porting scripts...")
 	await get_tree().process_frame
-	var rctx: Dictionary = LitUpdateToolScript.run_begin(scan, kinds)
+	var rctx: Dictionary = LitPortToolScript.run_begin(scan, kinds)
 	var scenes: Array = rctx["scenes"]
 	for i in scenes.size():
-		_progress_set("Migrating scenes... %d / %d" % [i + 1, scenes.size()],
+		_progress_set("Porting scenes... %d / %d" % [i + 1, scenes.size()],
 				float(i) / maxf(scenes.size(), 1.0))
 		await get_tree().process_frame
-		LitUpdateToolScript.run_scene(rctx, scenes[i])
-	var result: Dictionary = LitUpdateToolScript.run_finish(rctx)
+		LitPortToolScript.run_scene(rctx, scenes[i])
+	var result: Dictionary = LitPortToolScript.run_finish(rctx)
 	_progress_close()
 	if ambient_color != null:
 		RenderingServer.global_shader_parameter_set("lit_ambient_color", ambient_color)
@@ -447,16 +451,16 @@ func _run_update(scan: Dictionary, kinds: Dictionary) -> void:
 		text += "\nAdded @tool to %d scripts (their Lit base requires it)." % result["tooled_scripts"].size()
 	if flagged > 0:
 		text += "\n%d items were not auto-migratable - see the attention section at the top of the report." % flagged
-	text += "\n\nFull details: res://lit_update_report.txt\nRun the tool again any time; it only rewrites what changed."
+	text += "\n\nFull details: res://lit_port_report.txt\nRun the tool again any time; it only rewrites what changed."
 	if not did_work:
-		_popup_tool_dialog(_update_menu_label.trim_suffix("..."), text)
+		_popup_tool_dialog(title, text)
 		return
 	# Rewritten scripts and scenes only fully take after a project reload (in-editor
 	# script reloads leave stale compiled state and class caches). Disk is authoritative
 	# here - everything was saved before the run - so restart without re-saving.
 	text += "\n\nClosing this dialog reloads the project so every change takes effect."
 	var dlg := AcceptDialog.new()
-	dlg.title = _update_menu_label.trim_suffix("...")
+	dlg.title = title
 	dlg.dialog_text = text
 	EditorInterface.get_base_control().add_child(dlg)
 	dlg.visibility_changed.connect(func() -> void:
@@ -464,6 +468,126 @@ func _run_update(scan: Dictionary, kinds: Dictionary) -> void:
 			dlg.queue_free()
 			EditorInterface.restart_editor(false))
 	dlg.popup_centered()
+
+# --- Update Project to Lit -------------------------------------------------------
+#
+# "Update Project to Lit X.Y.Z" brings every Lit node to the installed version through
+# the migration chain and stamps it. Lit node data only: scripts and node types are
+# never touched. The engine lives in editor/lit_update_tool.gd; open scenes are saved
+# first so the scan reads current data, and changed open scenes reload in place.
+
+func _update_project() -> void:
+	EditorInterface.save_all_scenes()
+	var title: String = _update_menu_label.trim_suffix("...")
+	_progress_open(title, "Scanning scenes...")
+	await get_tree().process_frame
+	var acc: Dictionary = LitUpdateToolScript.scan_begin()
+	var scene_paths: Array = acc["scene_paths"]
+	for i in scene_paths.size():
+		LitUpdateToolScript.scan_scene(acc, scene_paths[i])
+		if (i + 1) % 4 == 0 or i + 1 == scene_paths.size():
+			_progress_set("Scanning scenes... %d / %d" % [i + 1, scene_paths.size()],
+					float(i + 1) / maxf(scene_paths.size(), 1.0))
+			await get_tree().process_frame
+	var scan: Dictionary = LitUpdateToolScript.scan_finish(acc)
+	_progress_close()
+	var c: Dictionary = scan["counts"]
+	var to_do: int = c["scenes_to_process"]
+	var skipped: int = c["scenes_skipped"]
+	if to_do == 0:
+		var text := "Nothing to update.\n\n"
+		var found: int = c["lit_current"]
+		if skipped == 0:
+			if found == 0:
+				text += "No Lit nodes were found in your %d scenes." % c["scenes"]
+			else:
+				text += "Every Lit node in your %d scenes is already on Lit %s." % [c["scenes"], scan["current"]]
+		else:
+			if found == 0:
+				text += "No Lit nodes this plugin can read were found.\n"
+			else:
+				text += "Every Lit node this plugin can read is already on Lit %s.\n" % scan["current"]
+			text += "%d %s saved by a newer Lit than you have installed and left alone. Install that Lit version to update %s." \
+					% [skipped, "scene was" if skipped == 1 else "scenes were", "it" if skipped == 1 else "them"]
+		_popup_tool_dialog(title, text)
+		return
+	var editor_theme := EditorInterface.get_editor_theme()
+	var ui_scale := EditorInterface.get_editor_scale()
+	var scope := "They hold %s saved by an older version of Lit." % _count(c["lit_nodes"], "Lit node", "Lit nodes")
+	if skipped > 0:
+		scope += "\n%d other %s saved by a newer Lit than you have installed and will be left alone." \
+				% [skipped, "scene was" if skipped == 1 else "scenes were"]
+	var dlg := ConfirmationDialog.new()
+	dlg.title = title
+	dlg.ok_button_text = "Update %s" % _count(to_do, "scene", "scenes")
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", int(10 * ui_scale))
+	for entry in [
+			["%d of your %d scenes %s updating." % [to_do, c["scenes"], "needs" if to_do == 1 else "need"], 18, null],
+			[scope, 0, null],
+			["Update will:\n-  Bring those nodes up to date and save %s.\n"
+					% ("that scene" if to_do == 1 else "the %d scenes" % to_do)
+					+ "-  Leave your scripts, node types and every other node as they are.\n"
+					+ "-  Skip any scene it cannot update without losing anything,
+   and list it in the report.", 0, null],
+			["The scene files are rewritten on disk, so commit your work first.", 0,
+					editor_theme.get_color("warning_color", "Editor")]]:
+		var label := Label.new()
+		label.text = entry[0]
+		if entry[1] > 0:
+			label.add_theme_font_override("font", editor_theme.get_font("bold", "EditorFonts"))
+			label.add_theme_font_size_override("font_size", int(entry[1] * ui_scale))
+		if entry[2] != null:
+			label.add_theme_color_override("font_color", entry[2])
+		vb.add_child(label)
+	dlg.add_child(vb)
+	EditorInterface.get_base_control().add_child(dlg)
+	dlg.confirmed.connect(func() -> void: _run_update(scan))
+	dlg.visibility_changed.connect(func() -> void:
+		if not dlg.visible:
+			dlg.queue_free())
+	dlg.popup_centered()
+
+static func _count(n: int, one: String, many: String) -> String:
+	return "%d %s" % [n, one if n == 1 else many]
+
+func _run_update(scan: Dictionary) -> void:
+	var ambient_color: Variant = RenderingServer.global_shader_parameter_get("lit_ambient_color")
+	var ambient_energy: Variant = RenderingServer.global_shader_parameter_get("lit_ambient_energy")
+	var title: String = _update_menu_label.trim_suffix("...")
+	_progress_open(title, "Updating scenes...")
+	await get_tree().process_frame
+	var rctx: Dictionary = LitUpdateToolScript.run_begin(scan)
+	var scenes: Array = rctx["scenes"]
+	for i in scenes.size():
+		_progress_set("Updating scenes... %d / %d" % [i + 1, scenes.size()],
+				float(i) / maxf(scenes.size(), 1.0))
+		await get_tree().process_frame
+		LitUpdateToolScript.run_scene(rctx, scenes[i])
+	var result: Dictionary = LitUpdateToolScript.run_finish(rctx)
+	_progress_close()
+	if ambient_color != null:
+		RenderingServer.global_shader_parameter_set("lit_ambient_color", ambient_color)
+	if ambient_energy != null:
+		RenderingServer.global_shader_parameter_set("lit_ambient_energy", ambient_energy)
+	var changed: Array = result["changed_scenes"]
+	for path in EditorInterface.get_open_scenes():
+		if changed.has(path):
+			EditorInterface.reload_scene_from_path(path)
+	var flagged := 0
+	for line in result["report"]:
+		if String(line).begins_with("SKIPPED") or String(line).begins_with("MANUAL") \
+				or String(line).begins_with("ERROR"):
+			flagged += 1
+	var text := "No scenes were updated."
+	if result["updated"] > 0:
+		text = "Updated %s in %s to Lit %s." % [_count(result["updated"], "Lit node", "Lit nodes"),
+				_count(changed.size(), "scene", "scenes"), scan["current"]]
+	if flagged > 0:
+		text += "\n%s your attention. %s listed at the top of the report." \
+				% [_count(flagged, "item needs", "items need"), "It is" if flagged == 1 else "They are"]
+	text += "\n\nReport: res://lit_update_report.txt"
+	_popup_tool_dialog(title, text)
 
 # --- Progress dialog -----------------------------------------------------------
 #

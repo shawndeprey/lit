@@ -1,13 +1,12 @@
 [gd_scene load_steps=3 format=3]
 
-[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_env.tscn" id="1_env"]
-[ext_resource type="Texture2D" path="res://Test/base.png" id="2_tex"]
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_lamp.tscn" id="1_lamp"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="2_lp"]
 
-[node name="FixtureInherited" instance=ExtResource("1_env")]
-color = Color(0.3, 0.1, 0.1, 1)
+[node name="FixtureInherited" instance=ExtResource("1_lamp")]
+legacy_glow = 6.0
 
-[node name="OwnSprite" type="Sprite2D" parent="."]
-texture = ExtResource("2_tex")
-
-[node name="EnvLamp" parent="."]
-range_layer_max = 5
+[node name="OwnLamp" type="Node2D" parent="."]
+script = ExtResource("2_lp")
+lit_version = "1.1.3"
+energy = 0.4

@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_env_ref.tscn" id="1_env"]
+[ext_resource type="PackedScene" path="res://Test/.port_tool_bench/fixture_env_ref.tscn" id="1_env"]
 
 [node name="FixtureEnvRefParent" type="Node2D"]
 
@@ -16,7 +16,7 @@ range_layer_max = 3
 [node name="Holder" parent="EnvRef" node_paths=PackedStringArray("lamp")]
 lamp = NodePath("../../ParentLamp")
 
-[node name="GhostLamp" parent="." instance_placeholder="res://Test/.update_tool_bench/fixture_lamp.tscn"]
+[node name="GhostLamp" parent="." instance_placeholder="res://Test/.port_tool_bench/fixture_lamp.tscn"]
 range_z_max = 12
 
 [editable path="EnvRef"]

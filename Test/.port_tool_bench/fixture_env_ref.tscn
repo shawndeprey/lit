@@ -1,8 +1,8 @@
 [gd_scene load_steps=4 format=3]
 
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_env_ref.gd" id="1_er"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_hud_env.gd" id="2_he"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_light_script.gd" id="3_ls"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_env_ref.gd" id="1_er"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_hud_env.gd" id="2_he"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_light_script.gd" id="3_ls"]
 
 [node name="FixtureEnvRef" type="Node2D"]
 
