@@ -148,6 +148,16 @@ func get_luminance() -> float:
 	return LitReceiverHelper.luminance(self, texture, src, get_rect().get_center())
 
 
+## Re-read this sprite's final z_index and canvas layer for the lights' z / layer
+## ranges. Runs by itself at ready and whenever the sprite enters a canvas; call it
+## after changing z_index, z_as_relative, an ancestor's z or its CanvasLayer at runtime
+## (Godot reports none of those), or LitLightRegistry.refresh_light_ranges() for a
+## whole subtree. The pair proxies to `receiver_z` / `receiver_layer`, so sprites at
+## different depths hold different pool entries.
+func refresh_light_ranges() -> void:
+	LitReceiverHelper.drive_ranges(self, _drive_state, _set_live_param)
+
+
 # The CanvasTexture currently watched for specular-slot changes, so we can re-evaluate
 # has_specular_map live when the user assigns or clears a specular map in the inspector.
 var _watched_texture: CanvasTexture = null
@@ -235,6 +245,7 @@ func _lit_ready() -> void:
 		if not parent.child_exiting_tree.is_connected(_on_children_changed):
 			parent.child_exiting_tree.connect(_on_children_changed)
 	_refresh_occluder_cache()
+	refresh_light_ranges()
 
 
 # Per-frame driving only while something per-frame can change the drive inputs:
@@ -298,6 +309,8 @@ func _update_self_rect() -> void:
 			LitReceiverHelper.NO_TILE_RECTS, true, _lit_node_flags(), _drive_state) \
 			and shadow_ignore_mask != 0:
 		_set_live_param("rx_mask", shadow_ignore_mask)
+	if Engine.is_editor_hint():
+		refresh_light_ranges()
 
 
 func _lit_node_flags() -> int:
@@ -340,6 +353,8 @@ func _validate_property(property: Dictionary) -> void:
 
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_ENTER_CANVAS and is_node_ready() and not Engine.is_editor_hint():
+		refresh_light_ranges()
 	if what == NOTIFICATION_PREDELETE and shadow_ignore_mask != 0:
 		LitLightRegistry.rx_set(self, 0)
 	if what == NOTIFICATION_PREDELETE and _pool_held != null:
@@ -390,6 +405,7 @@ func _live_mat() -> ShaderMaterial:
 			# own through DriveState).
 			_live_last = mat
 			mat.set_shader_parameter("rx_mask", shadow_ignore_mask)
+			_drive_state.range_z = LitReceiverHelper.RANGE_UNSET
 			_update_specular_flag()
 	return mat
 

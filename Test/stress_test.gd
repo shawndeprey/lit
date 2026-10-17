@@ -14,6 +14,9 @@ const SHADOW_ALGO_NAMES := ["raymarch", "cone", "stochastic"]
 
 enum ReceiverKind { SKULL, ANIMATED, STILL, SPRITE }
 const RECEIVER_KIND_NAMES := ["skull", "animated", "still", "sprite"]
+enum LayerMode { OFF, RANDOM, Z_PAIRS, Z_GRID, LAYER_PAIRS, LAYER_GRID }
+const LAYER_MODE_NAMES := ["off", "random", "z_pairs", "z_grid", "layer_pairs", "layer_grid"]
+const PAIR_MODES := ["z_pairs", "z_grid", "layer_pairs", "layer_grid"]
 
 # Launch-time settings, editable on the scene's root node in the inspector. CLI args
 # (after "--") override them, so scripted benchmark runs keep working. Future
@@ -25,6 +28,15 @@ const RECEIVER_KIND_NAMES := ["skull", "animated", "still", "sprite"]
 ## Give every spawned light a random (seeded) shadow_length fraction, exercising the
 ## march cap + tip closure. Off by default so standing benchmarks stay comparable.
 @export var randomize_shadow_length: bool = false
+## Light-range filters at scale. Random: every occluder prop and scene receiver takes a
+## random (seeded) z_index and canvas layer and every spawned light a random z / layer
+## range. Z pairs: receiver_count receivers (the light count when unset) on a grid
+## scaled to fit, each on its own z_index, and one light orbiting each receiver ranged
+## to that z alone, so every light shades exactly one object. Layer pairs: the same with
+## a CanvasLayer per receiver and layer ranges instead. Z grid and layer grid: those
+## layouts with the filters off, their baselines. Off by default so standing benchmarks
+## stay comparable.
+@export var layer_mode: LayerMode = LayerMode.OFF
 ## What stands at the Test scene's Skeleton prop: the skull (LitSprite2D, as authored),
 ## the animated skeleton playing its turnaround, the same node with the turnaround
 ## stopped, or a LitSprite2D showing one frame of it over the same footprint occluder.
@@ -48,6 +60,13 @@ const LIGHT_COUNT := 128
 #     mixed cycles the three algorithms across the spawned lights (launch only)
 #   shadowlen=on   random (seeded) shadow_length fraction per light
 #   texoffset=on   random (seeded) texture_offset on every cookie light
+#   layers=random  random (seeded) z_index + canvas layer per occluder prop and scene
+#     receiver, random z / layer range per light (the light-range filters at scale)
+#   layers=z_pairs   receiver_count receivers (128 when unset) on a grid scaled to fit,
+#     each on its own z_index; one light orbits each receiver ranged to that z alone,
+#     so every light shades exactly one object (lights= follows receiver_count)
+#   layers=layer_pairs   the same with a CanvasLayer per receiver and layer ranges
+#   layers=z_grid | layer_grid   those layouts with the filters off (their baselines)
 #   capture=PATH  render one deterministic frame after measuring, for pixel-diffing builds
 #   post=Name,Name  add fresh default-state post effects (e.g. post=Bloom,AutoExposure)
 #   skeleton=skull|animated|still|sprite   what stands at the Test scene's Skeleton prop
@@ -56,6 +75,12 @@ const LIGHT_COUNT := 128
 #     animated = skeleton_animated.tscn playing its turnaround; still = the same node
 #     with the turnaround stopped; sprite = that scene with a LitSprite2D showing one
 #     frame over the same footprint occluder. Run kinds at the same count. Default 0.
+#   plain=on       pair-grid receivers as plain Sprite2D with no Lit material and no
+#     footprint occluder, so the layer grids show Godot's own per-canvas cost apart from Lit's
+#   rangecost=pass|layer|miss|mask   every light ranged to a z band every receiver passes
+#     (pass), to a layer band every receiver passes (layer), to z 4096 so every receiver
+#     rejects it (miss), or put on light_mask 2 so the mask test rejects it instead
+#     (mask): the range tests' price against the mask test
 #   precompile=api   run the worker-backed shader precompile during the measure window
 # The shadow algorithm can also be switched live with keys 1 (raymarch), 2 (cone),
 # 3 (stochastic); switching restarts the warmup/measure cycle so the reported numbers
@@ -84,6 +109,9 @@ var _opt_rxnode := ""
 var _opt_post := ""
 var _opt_shadowlen := false
 var _opt_texoffset := false
+var _opt_rangecost := ""
+var _opt_plain := false
+var _opt_layers := "off"
 var _opt_skeleton := "skull"
 var _opt_receivers := "skull"
 var _opt_receiver_count := 0
@@ -117,6 +145,7 @@ var _frame_times: PackedFloat64Array = PackedFloat64Array()
 var _process_times: PackedFloat64Array = PackedFloat64Array()
 var _render_cpu: PackedFloat64Array = PackedFloat64Array()
 var _render_gpu: PackedFloat64Array = PackedFloat64Array()
+var _draw_calls: PackedFloat64Array = PackedFloat64Array()
 
 var _hud: Label
 
@@ -124,6 +153,7 @@ var _hud: Label
 func _ready() -> void:
 	_opt_shadow_algo = SHADOW_ALGO_NAMES[shadow_algorithm]
 	_opt_shadowlen = randomize_shadow_length
+	_opt_layers = LAYER_MODE_NAMES[layer_mode]
 	_opt_skeleton = RECEIVER_KIND_NAMES[skeleton]
 	_opt_receivers = RECEIVER_KIND_NAMES[receivers]
 	_opt_receiver_count = receiver_count
@@ -173,6 +203,12 @@ func _ready() -> void:
 				_opt_shadowlen = kv[1] == "on"
 			"texoffset":
 				_opt_texoffset = kv[1] == "on"
+			"rangecost":
+				_opt_rangecost = kv[1]
+			"plain":
+				_opt_plain = kv[1] == "on"
+			"layers":
+				_opt_layers = "random" if kv[1] == "on" else kv[1]
 			"receivers":
 				_opt_receivers = kv[1]
 			"receiver_count":
@@ -256,9 +292,18 @@ func _setup() -> void:
 		get_tree().quit(1)
 		return
 	_compute_area()
+	if not LAYER_MODE_NAMES.has(_opt_layers):
+		print("LITBENCH error layers must be one of %s, got '%s'" % [", ".join(LAYER_MODE_NAMES), _opt_layers])
+		get_tree().quit(1)
+		return
+	var paired := PAIR_MODES.has(_opt_layers)
+	if paired:
+		if _opt_receiver_count == 0:
+			_opt_receiver_count = LIGHT_COUNT
+		_opt_light_count = _opt_receiver_count
 	_rng.seed = RNG_SEED
 	_spawn_props()
-	if _opt_receiver_count > 0 and not _spawn_receivers():
+	if _opt_receiver_count > 0 and not (_spawn_pair_grid() if paired else _spawn_receivers()):
 		get_tree().quit(1)
 		return
 	if _opt_masks == "one" or _opt_masks == "split":
@@ -285,6 +330,19 @@ func _setup() -> void:
 		_spawn_light(kind, Color.from_hsv(_rng.randf(), 0.85, 1.0))
 	if _opt_masks == "split" and not _lights.is_empty():
 		_lights[0].node.shadow_mask = 3
+	for d in _lights:
+		match _opt_rangecost:
+			"pass":
+				d.node.range_z_min = -4000
+				d.node.range_z_max = 4000
+			"layer":
+				d.node.range_layer_min = -4000
+				d.node.range_layer_max = 4000
+			"miss":
+				d.node.range_z_min = 4096
+				d.node.range_z_max = 4096
+			"mask":
+				d.node.light_mask = 2
 	# Own RNG stream: the main _rng draws stay identical to shadowlen=off runs, so the
 	# fractions are the ONLY difference between the two configs.
 	if _opt_shadowlen:
@@ -300,6 +358,11 @@ func _setup() -> void:
 			if d.kind == "cookie":
 				d.node.texture_offset = Vector2(
 						torng.randf_range(-0.35, 0.35), torng.randf_range(-0.35, 0.35)) * d.node.range
+	# Own RNG stream, same reasoning as shadowlen above.
+	if _opt_layers == "random":
+		_randomize_layers(scene)
+	elif paired:
+		_pair_lights(_opt_layers.ends_with("pairs"), _opt_layers.begins_with("layer_"))
 
 	_state = "warmup"
 	_state_time = 0.0
@@ -441,6 +504,7 @@ func _add_receiver(kind: String, pos: Vector2, stagger: int, parent: Node) -> vo
 	var packed := load(SKULL_SCENE if kind == "skull" else ANIMATED_SCENE) as PackedScene
 	var node := packed.instantiate() as Node2D
 	node.position = pos
+	_added_receivers.append(node)
 	# The scene's own lights stay off, like the Test scene's.
 	for l in _find_all(node, LitPointLight2D):
 		l.enabled = false
@@ -466,6 +530,174 @@ func _add_receiver(kind: String, pos: Vector2, stagger: int, parent: Node) -> vo
 	if kind == "still":
 		spr.stop()
 	spr.frame = frame
+
+
+# --- layers: layers=random. Floor tilemaps take a z below everything else and stay on the
+# base canvas; props and sprite receivers take a z at or above it plus a canvas layer
+# (base or one of LAYER_COUNT viewport-following CanvasLayers), so draw order stays
+# coherent while every light's random z / layer ranges reach a different subset. Prop
+# receivers are hand-made (plain Sprite2D + the fast shader), so their pair is set on
+# their own materials; the scene's Lit receivers derive theirs once refreshed. -------
+
+const LAYER_COUNT := 3
+const Z_SPAN := 3
+const PAIR_FILL := 0.85
+var _added_receivers: Array = []
+var _pair_nodes: Array = []
+var _pair_cell := Vector2.ZERO
+
+
+func _randomize_layers(scene: Node) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = RNG_SEED + 3
+	var layers: Array = []
+	for i in LAYER_COUNT:
+		var cl := CanvasLayer.new()
+		cl.layer = i + 1
+		cl.follow_viewport_enabled = true
+		add_child(cl)
+		layers.append(cl)
+	for p in _props:
+		var z: int = rng.randi_range(0, Z_SPAN)
+		var layer: int = rng.randi_range(0, LAYER_COUNT)
+		p.root.z_index = z
+		if layer > 0:
+			p.root.reparent(layers[layer - 1])
+		p.mat.set_shader_parameter("receiver_z", z)
+		p.mat.set_shader_parameter("receiver_layer", layer)
+	var targets: Array = []
+	for node in scene.get_children():
+		if node is TileMapLayer:
+			node.z_index = rng.randi_range(-Z_SPAN, -1)
+			LitLightRegistry.refresh_light_ranges(node)
+		elif node is Node2D and _has_lit_receiver(node):
+			targets.append(node)
+	for node in _added_receivers:
+		if is_instance_valid(node) and not targets.has(node):
+			targets.append(node)
+	for node in targets:
+		node.z_index = rng.randi_range(0, Z_SPAN)
+		var layer: int = rng.randi_range(0, LAYER_COUNT)
+		if layer > 0:
+			node.reparent(layers[layer - 1])
+		LitLightRegistry.refresh_light_ranges(node)
+	for d in _lights:
+		var n = d.node
+		n.range_z_min = rng.randi_range(-Z_SPAN, Z_SPAN)
+		n.range_z_max = rng.randi_range(n.range_z_min, Z_SPAN)
+		match rng.randi_range(0, 2):
+			1:
+				n.range_layer_min = 0
+				n.range_layer_max = 0
+			2:
+				var k: int = rng.randi_range(1, LAYER_COUNT)
+				n.range_layer_min = k
+				n.range_layer_max = k
+
+
+func _has_lit_receiver(node: Node) -> bool:
+	if node is LitSprite2D or node is LitAnimatedSprite2D or node is LitTileMapLayer:
+		return true
+	for c in node.get_children():
+		if _has_lit_receiver(c):
+			return true
+	return false
+
+
+# layers=z_pairs / layer_pairs and their grids: receiver_count receivers on an
+# edge-to-edge grid over the area, each scaled to PAIR_FILL of its cell, and light i
+# orbiting receiver i. z_pairs puts receiver i on z_index i + 1 and ranges light i to
+# that z alone; layer_pairs parents receiver i to its own viewport-following
+# CanvasLayer i + 1 and ranges light i to that layer. Either way every light shades
+# exactly one object and every receiver pixel rejects all other lights in the shader.
+# The grids keep the same layout with the filters off as the matched baselines: the
+# layer ones carry Godot's per-canvas cost and their footprint occluders sit outside
+# the world SDF, so compare layer_pairs with layer_grid and z_pairs with z_grid. The
+# standing scene stays on z 0 / the base canvas, below every band.
+func _spawn_pair_grid() -> bool:
+	if not RECEIVER_KIND_NAMES.has(_opt_receivers):
+		print("LITBENCH error receivers must be one of %s, got '%s'" % [", ".join(RECEIVER_KIND_NAMES), _opt_receivers])
+		return false
+	var n := _opt_receiver_count
+	var cols := int(ceil(sqrt(float(n) * _area_half.x / _area_half.y)))
+	var rows := int(ceil(float(n) / float(cols)))
+	_pair_cell = _area_half * 2.0 / Vector2(float(cols), float(rows))
+	for i in n:
+		@warning_ignore("integer_division")
+		var pos := _area_center - _area_half \
+				+ _pair_cell * (Vector2(float(i % cols), float(i / cols)) + Vector2(0.5, 0.5))
+		var parent: Node = self
+		if _opt_layers.begins_with("layer_"):
+			var cl := CanvasLayer.new()
+			cl.layer = i + 1
+			cl.follow_viewport_enabled = true
+			add_child(cl)
+			parent = cl
+		var before := _added_receivers.size()
+		_add_receiver(_opt_receivers, pos, i, parent)
+		var node: Node2D = _added_receivers[before]
+		if _opt_plain:
+			_strip_lit(node)
+		node.scale *= minf(_pair_cell.x, _pair_cell.y) * PAIR_FILL / _footprint(node)
+		_pair_nodes.append(node)
+	return true
+
+
+## plain=on: swap a receiver's Lit sprite for a plain Sprite2D with the same texture and
+## placement and drop its footprint occluder, so the node draws through Godot's default
+## canvas material and leaves the SDF alone.
+func _strip_lit(node: Node2D) -> void:
+	var spr := _find_first(node, Sprite2D) as Sprite2D
+	if spr == null:
+		return
+	var plain := Sprite2D.new()
+	plain.texture = spr.texture
+	plain.position = spr.position
+	plain.scale = spr.scale
+	plain.offset = spr.offset
+	for c in spr.get_children():
+		spr.remove_child(c)
+		if c is LightOccluder2D:
+			c.free()
+		else:
+			plain.add_child(c)
+	spr.get_parent().add_child(plain)
+	spr.free()
+
+
+## Largest side of a receiver's sprite in its parent's units, scale included.
+func _footprint(node: Node2D) -> float:
+	var size := Vector2.ONE * 32.0
+	var spr := _find_first(node, Sprite2D) as Sprite2D
+	var anim := _find_first(node, AnimatedSprite2D) as AnimatedSprite2D
+	if spr != null:
+		size = spr.get_rect().size * spr.scale
+	elif anim != null:
+		size = anim.sprite_frames.get_frame_texture(anim.animation, 0).get_size() * anim.scale
+	return maxf(size.x, size.y) * maxf(node.scale.x, node.scale.y)
+
+
+func _pair_lights(filter: bool, by_layer: bool) -> void:
+	if filter and not by_layer:
+		for i in _pair_nodes.size():
+			_pair_nodes[i].z_index = i + 1
+			LitLightRegistry.refresh_light_ranges(_pair_nodes[i])
+	for i in _lights.size():
+		var d: Dictionary = _lights[i]
+		var slot := i % _pair_nodes.size()
+		var node: Node2D = _pair_nodes[slot]
+		d.center = node.position
+		d.target = node.position
+		d.rx = _pair_cell.x * 0.5
+		d.ry = _pair_cell.y * 0.5
+		if not filter:
+			continue
+		if by_layer:
+			d.node.range_layer_min = slot + 1
+			d.node.range_layer_max = slot + 1
+		else:
+			d.node.range_z_min = slot + 1
+			d.node.range_z_max = slot + 1
 
 
 # --- lights: identical construction/motion to lit_demo.gd ---------------------------
@@ -515,6 +747,7 @@ func _spawn_light(kind: String, col: Color) -> void:
 	_lights.append({
 		"node": n, "kind": kind, "base_energy": n.energy,
 		"center": _area_center + Vector2(_rng.randf_range(-_area_half.x * 0.18, _area_half.x * 0.18), _rng.randf_range(-_area_half.y * 0.18, _area_half.y * 0.18)),
+		"target": _area_center,
 		"rx": _rng.randf_range(_area_half.x * 0.30, _area_half.x * 0.88),
 		"ry": _rng.randf_range(_area_half.y * 0.30, _area_half.y * 0.88),
 		"speed": _rng.randf_range(0.25, 0.9) * (1.0 if _rng.randf() > 0.5 else -1.0),
@@ -534,7 +767,7 @@ func _update_lights() -> void:
 			var p: Vector2 = d.center + Vector2(cos(_clock * d.speed + d.phase) * d.rx, sin(_clock * d.speed + d.phase) * d.ry)
 			n.position = p
 			if d.kind == "spot":
-				n.rotation = (_area_center - p).angle()
+				n.rotation = (d.target - p).angle()
 		if d.pulse_speed > 0.0:
 			n.energy = d.base_energy * (0.72 + 0.28 * sin(_clock * d.pulse_speed + d.phase))
 		if d.hue >= 0.0:
@@ -625,6 +858,7 @@ func _process(dt: float) -> void:
 	_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS))
 	_render_cpu.append(RenderingServer.viewport_get_measured_render_time_cpu(vp_rid))
 	_render_gpu.append(RenderingServer.viewport_get_measured_render_time_gpu(vp_rid))
+	_draw_calls.append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	_hud.text = "MEASURE %.1f / %.1f s   lights %d   algo %s   fps %d" % [_state_time, _opt_measure, _lights.size(), _opt_shadow_algo, Engine.get_frames_per_second()]
 	if _state_time >= _opt_measure or _pre_elapsed >= 0.0:
 		_state = "done"
@@ -692,8 +926,13 @@ func _report() -> void:
 				"yes" if _pre_elapsed >= 0.0 else "no", _pre_elapsed if _pre_elapsed >= 0.0 else total])
 	print("LITBENCH shadow_algo=%s" % _opt_shadow_algo)
 	print("LITBENCH shadowlen=%s" % ("on" if _opt_shadowlen else "off"))
+	print("LITBENCH layers=%s" % _opt_layers)
 	print("LITBENCH post=%s" % (_opt_post if _opt_post != "" else "off"))
 	print("LITBENCH skeleton=%s" % _opt_skeleton)
+	if _opt_rangecost != "":
+		print("LITBENCH rangecost=%s" % _opt_rangecost)
+	if _opt_plain:
+		print("LITBENCH plain=on")
 	if _opt_receiver_count > 0:
 		print("LITBENCH receivers=%s receiver_count=%d" % [_opt_receivers, _opt_receiver_count])
 	print("LITBENCH frames=%d" % n)
@@ -703,6 +942,7 @@ func _report() -> void:
 	print("LITBENCH main_process_ms=%.3f" % proc_ms)
 	print("LITBENCH render_cpu_ms=%.3f" % rcpu_ms)
 	print("LITBENCH render_gpu_ms=%.3f" % rgpu_ms)
+	print("LITBENCH draw_calls=%.0f" % _mean(_draw_calls))
 	print("LITBENCH viewport=%s screen=%s" % [get_viewport_rect().size, DisplayServer.screen_get_size()])
 
 

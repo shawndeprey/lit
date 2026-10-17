@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[node name="FixtureLamp" type="PointLight2D"]
+energy = 1.1
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3

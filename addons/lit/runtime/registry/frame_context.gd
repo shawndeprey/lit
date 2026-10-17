@@ -17,9 +17,10 @@ var visible: Array = []
 var positional: Array = []
 var dir_count := 0
 
-# One writer each: facade widens texels_per_light (sticky) and derives excl_active;
-# rx_registry computes rx_union; occluder_tiles fills the occ_* frame outputs.
+# One writer each: facade widens texels_per_light (sticky), derives excl_active and
+# read_ranges; rx_registry computes rx_union; occluder_tiles fills the occ_* outputs.
 var excl_active := false
+var read_ranges := false
 var texels_per_light := 9
 var rx_union := 0
 var occ_rects: Array[Rect2] = []

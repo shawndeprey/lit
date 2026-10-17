@@ -468,6 +468,8 @@ func _static_checks() -> void:
 	for n in POOL_DRIVEN:
 		check("key_coverage", "driven uniform '%s' is not in the key" % n, false,
 				LitLightRegistry.pool_is_key_param(n))
+	check("key_coverage", "the light-range pair is content (receivers at different depths key apart)",
+			true, LitLightRegistry.pool_is_key_param("receiver_z") and LitLightRegistry.pool_is_key_param("receiver_layer"))
 
 	_integrity("static")
 

@@ -4,7 +4,7 @@ extends RefCounted
 ## Conversion tables for "Project Migration Tool": which core Godot classes convert to
 ## which Lit scripts and how their properties map across. Pure data plus derived
 ## views; transforms that need logic (blend clamp, shadow_color premultiply, range
-## heuristic) live in scene_converter.gd, keyed by the `special` lists here.
+## heuristic, z/layer range defaults) live in scene_converter.gd, keyed by the `special` lists here.
 
 const LIT_NODES := "res://addons/lit/nodes/"
 
@@ -37,7 +37,8 @@ const REPLACEMENTS := {
 			&"shadow_item_cull_mask": &"shadow_mask",
 			&"range_item_cull_mask": &"light_mask",
 		},
-		"special": [&"blend_mode", &"shadow_color", &"height", &"range"],
+		"special": [&"blend_mode", &"shadow_color", &"height", &"range",
+			&"range_z_min", &"range_z_max", &"range_layer_min", &"range_layer_max"],
 	},
 	&"DirectionalLight2D": {
 		"script": LIT_NODES + "lit_directional_light_2d.gd",
@@ -51,7 +52,8 @@ const REPLACEMENTS := {
 			&"range_item_cull_mask": &"light_mask",
 			&"max_distance": &"shadow_reach",
 		},
-		"special": [&"blend_mode", &"shadow_color", &"height"],
+		"special": [&"blend_mode", &"shadow_color", &"height",
+			&"range_z_min", &"range_z_max", &"range_layer_min", &"range_layer_max"],
 	},
 	&"CanvasModulate": {
 		"script": LIT_NODES + "lit_canvas_modulate.gd",

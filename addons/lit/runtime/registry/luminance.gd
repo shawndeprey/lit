@@ -45,7 +45,7 @@ var _profiles := {}
 func sample(tree: SceneTree, lights: Array, occ_nodes: Array, occ_layers: Array,
 		world_pos: Vector2, receiver_mask: int, rx_mask: int,
 		self_source: Node = null, dir_scale: float = 32.0, pbr: bool = false,
-		surface: Array = []) -> float:
+		surface: Array = [], receiver_z: int = 0, receiver_layer: int = 0) -> float:
 	var surf: Array
 	if surface.is_empty():
 		var point := PackedVector2Array([world_pos])
@@ -74,7 +74,9 @@ func sample(tree: SceneTree, lights: Array, occ_nodes: Array, occ_layers: Array,
 
 	var lum := _ambient(tree)
 	for light in lights:
-		if (int(light.light_mask) & receiver_mask) == 0:
+		if (int(light.light_mask) & receiver_mask & 1048575) == 0:
+			continue
+		if light.ranged and not _in_ranges(light, receiver_z, receiver_layer):
 			continue
 		if light is LitDirectionalLight2D:
 			lum += _directional(light, occ_nodes, occ_layers, rx_mask, self_source,
@@ -213,6 +215,12 @@ static func _readable_image(tex: Texture2D) -> Image:
 # elevation component `lz`: V.H = sqrt((1 + lz) / 2) against the fixed view.
 static func _pbr_diffuse(lz: float) -> float:
 	return 0.96 * (1.0 - pow(1.0 - sqrt((1.0 + lz) * 0.5), 5.0))
+
+
+# The shader's light range test: z and layer inside the light's ranges.
+static func _in_ranges(light, z: int, layer: int) -> bool:
+	return z >= int(light.range_z_min) and z <= int(light.range_z_max) \
+			and layer >= int(light.range_layer_min) and layer <= int(light.range_layer_max)
 
 
 # Matches the shader's ambient base; without a LitCanvasModulate the globals default

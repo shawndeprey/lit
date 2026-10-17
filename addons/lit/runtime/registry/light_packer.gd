@@ -1,24 +1,30 @@
 extends RefCounted
 
-## Packs a per-light record into one row of an RGBAF texture. Texel 0.r is the type:
+## Packs a per-light record into one row of an RGBAF texture. Flags bits 20-21 are the type:
 ##  0 point:       texel 1 is a screen-UV position.
 ##  1 directional: texel 1 is a screen-space direction toward the light.
 ##  2 spot:        texel 1 is a position (as a point); texel 4 adds the cone
 ##                 (aim direction plus the cosines of the inner and outer angles).
-## Layout per row: t0 = type | flags | mask | falloff, t1 = uv/dir | range (directional:
+## Layout per row: t0 = z code | flags | mask + z code high bits | falloff, t1 = uv/dir | range (directional:
 ## shadow_reach, world px) | energy, t2 = color.rgb | height,
 ## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
 ## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
 ## when flags bit 2 is set), t7 = shadow source size | samples | jitter | shadow_mask
 ## (mask packed only while rx receivers exist), t8.xy = cookie UV center (0.5 shifted by
-## texture_offset; read only when flags bit 18 is set), t9.x = exempt rect count,
-## t10 = exempt union bounds, t11-14 = the light's exempt-occluder canvas rects
-## (t9-t14 read only when flags bit 5 is set). type/flags/mask sit in texel 0 so the
-## shader can mask-reject after a single fetch. flags: bit 0 shadow_enabled, bit 1
-## subtractive, bit 2 textured, bits 3-4 shadow algorithm (ShadowAlgorithm order on the
-## light nodes), bit 5 shadow exclusions, bits 6-17 shadow_length fraction quantized to
-## 12 bits (point/spot: 0 = full march, uncapped; directional: plain fraction of
-## shadow_reach, 4095 = full reach), bit 18 cookie offset.
+## texture_offset; read only when flags bit 18 is set), t9 = z_min | z_max |
+## layer_min | layer_max (written and read only when flags bit 22 is set: a layer range
+## narrower than +-4096), t10.x = exempt rect count, t11 = exempt union bounds, t12-15 = the
+## light's exempt-occluder canvas rects (t10-t15 read only when flags bit 5 is set).
+## flags/mask sit in texel 0 so the shader can mask-reject after a single fetch, and the
+## z range rides there too (see range_pack: z_min + 4096 and the low 10 bits of z_max +
+## 4096 in t0.x, its high 4 bits in t0.z above the 20-bit mask) so a z-ranged light
+## rejects without a second fetch.
+## flags: bit 0 shadow_enabled, bit 1 subtractive, bit 2 textured, bits 3-4 shadow
+## algorithm (ShadowAlgorithm order on the light nodes), bit 5 shadow exclusions, bits
+## 6-17 shadow_length fraction quantized to 12 bits (point/spot: 0 = full march,
+## uncapped; directional: plain fraction of shadow_reach, 4095 = full reach), bit 18
+## cookie offset, bit 19 z range narrower than +-4096 (texel 0 code), bits 20-21 type,
+## bit 22 layer range set (texel 9 written and read).
 ##
 ## Node scale: range, source_radius and the FIT_RANGE cookie footprint pack multiplied
 ## by the node's global scale (larger basis axis, snapped to 1 for unscaled nodes);
@@ -50,6 +56,7 @@ var _pack_img_count: int = -1
 # Per-frame mirrors of facade-owned frame state, assigned at pack_and_publish entry.
 var _tpl := 9
 var _excl_active := false
+var _read_ranges := false
 var _excl_info := {}
 var _excl_lists := {}
 var _rx_union_frame := 0
@@ -66,6 +73,7 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 	var vp_size: Vector2 = ctx.vp_size
 	_tpl = ctx.texels_per_light
 	_excl_active = ctx.excl_active
+	_read_ranges = ctx.read_ranges
 	_excl_info = excl_info
 	_excl_lists = excl_lists
 	_rx_union_frame = ctx.rx_union
@@ -122,24 +130,50 @@ func publish_empty(vp_size: Vector2) -> void:
 	_publish_cookie_atlas()
 
 
-## Pack texels 9-14 (exempt rect count, union bounds, up to 4 exempt rects) for a light
-## with exclusions; returns the flags bit. Lights without exclusions pay one has() here.
+## The texel 0 part of a light's ranges, kept by the light's setters in `range_pack`:
+## (t0.x z code, t0.z high bits, flags bits), zero when every range is pass-all. With
+## both z bounds offset by 4096 (0..8192), t0.x = z_min | low 10 bits of z_max << 14 and
+## t0.z bits 20-23 (above the 20-bit mask) = high 4 bits of z_max; the flags carry bit
+## 19 when the z range is narrower than +-4096 and bit 22 when the layer range is,
+## each read by the shader on its own.
+static func range_pack(z_min: int, z_max: int, l_min: int, l_max: int) -> Vector3:
+	var z_set := z_min > -4096 or z_max < 4096
+	var layered := l_min > -4096 or l_max < 4096
+	if not z_set and not layered:
+		return Vector3.ZERO
+	var a := clampi(z_min, -4096, 4096) + 4096
+	var b := clampi(z_max, -4096, 4096) + 4096
+	return Vector3(float(a | ((b & 1023) << 14)), float((b >> 10) << 20),
+			(524288.0 if z_set else 0.0) + (4194304.0 if layered else 0.0))
+
+
+## Pack texel 9 (the four ranges) for a light whose `range_pack` carries a layer range
+## (flags bit 22); the texel 0 part is written inline by the per-type packers.
+func _pack_layer_range(o: int, light: Node2D) -> void:
+	_pack_buf[o + 36] = float(light.range_z_min)
+	_pack_buf[o + 37] = float(light.range_z_max)
+	_pack_buf[o + 38] = float(light.range_layer_min)
+	_pack_buf[o + 39] = float(light.range_layer_max)
+
+## Pack texels 10-15 (exempt rect count, union bounds, up to 4 exempt rects) for a
+## light with exclusions; returns the flags bit. Lights without exclusions pay one
+## has() here.
 func _pack_excl(o: int, light: Node2D) -> float:
 	if not _excl_info.has(light):
 		return 0.0
 	var entry = _excl_lists.get("%d_%d" % [light.shadow_mask, _excl_info[light]])
 	if entry == null:
 		return 0.0
-	_pack_buf[o + 36] = float(entry[0])
+	_pack_buf[o + 40] = float(entry[0])
 	var union: Rect2 = entry[1]
-	_pack_buf[o + 40] = union.position.x
-	_pack_buf[o + 41] = union.position.y
-	_pack_buf[o + 42] = union.end.x
-	_pack_buf[o + 43] = union.end.y
+	_pack_buf[o + 44] = union.position.x
+	_pack_buf[o + 45] = union.position.y
+	_pack_buf[o + 46] = union.end.x
+	_pack_buf[o + 47] = union.end.y
 	var rects: PackedVector4Array = entry[2]
 	for j in 4:
 		var v := rects[j]
-		var b := o + 44 + j * 4
+		var b := o + 48 + j * 4
 		_pack_buf[b] = v.x
 		_pack_buf[b + 1] = v.y
 		_pack_buf[b + 2] = v.z
@@ -168,17 +202,19 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 
 	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
 	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
+	# Texel 0: z code | flags + type | light_mask + z code high bits | falloff
+	var rp: Vector3 = light.range_pack
+	_pack_buf[o + 0] = rp.x
+	_pack_buf[o + 2] = float(light.light_mask & 1048575) + rp.y
+	if rp.z >= 4194304.0 and _read_ranges:
+		_pack_layer_range(o, light)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + rp.z \
 			+ _pack_cookie(o, light, canvas_xform, xf, s) \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
 			+ _pack_shadow_length(light.shadow_length)
 	const TYPE_POINT := 0.0
-
-	# Texel 0: type | flags | light_mask | falloff
-	_pack_buf[o + 0] = TYPE_POINT
-	_pack_buf[o + 1] = flags
-	_pack_buf[o + 2] = float(light.light_mask)
+	_pack_buf[o + 1] = flags + TYPE_POINT
 	_pack_buf[o + 3] = light.falloff
 
 	# Texel 1: uv.x | uv.y | range | energy
@@ -219,16 +255,18 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 
 	var subtractive := 1.0 if light.blend_mode == LitDirectionalLight2D.BlendMode.SUBTRACT else 0.0
 	var o := row * _tpl * 4
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
+	# Texel 0: z code | flags + type | light_mask + z code high bits | (falloff unused)
+	var rp: Vector3 = light.range_pack
+	_pack_buf[o + 0] = rp.x
+	_pack_buf[o + 2] = float(light.light_mask & 1048575) + rp.y
+	if rp.z >= 4194304.0 and _read_ranges:
+		_pack_layer_range(o, light)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + rp.z \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
 			+ 64.0 * roundf(clampf(light.shadow_length, 0.0, 1.0) * 4095.0)
-	const TYPE_DIRECTIONAL := 1.0
-
-	# Texel 0: type | flags | light_mask | (falloff unused)
-	_pack_buf[o + 0] = TYPE_DIRECTIONAL
-	_pack_buf[o + 1] = flags
-	_pack_buf[o + 2] = float(light.light_mask)
+	const TYPE_DIRECTIONAL := 1048576.0
+	_pack_buf[o + 1] = flags + TYPE_DIRECTIONAL
 	_pack_buf[o + 3] = 1.0
 
 	# Texel 1: dir.x | dir.y | shadow_reach (world px) | energy
@@ -285,17 +323,19 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	var o := row * _tpl * 4
 
 	var subtractive := 1.0 if light.blend_mode == LitSpotLight2D.BlendMode.SUBTRACT else 0.0
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive \
+	# Texel 0: z code | flags + type | light_mask + z code high bits | falloff
+	var rp: Vector3 = light.range_pack
+	_pack_buf[o + 0] = rp.x
+	_pack_buf[o + 2] = float(light.light_mask & 1048575) + rp.y
+	if rp.z >= 4194304.0 and _read_ranges:
+		_pack_layer_range(o, light)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + rp.z \
 			+ _pack_cookie(o, light, canvas_xform, xf, s) \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
 			+ _pack_shadow_length(light.shadow_length)
-	const TYPE_SPOT := 2.0
-
-	# Texel 0: type | flags | light_mask | falloff
-	_pack_buf[o + 0] = TYPE_SPOT
-	_pack_buf[o + 1] = flags
-	_pack_buf[o + 2] = float(light.light_mask)
+	const TYPE_SPOT := 2097152.0
+	_pack_buf[o + 1] = flags + TYPE_SPOT
 	_pack_buf[o + 3] = light.falloff
 
 	# Texel 1: uv.x | uv.y | range | energy

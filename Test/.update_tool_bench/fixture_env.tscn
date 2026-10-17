@@ -5,3 +5,10 @@ color = Color(0.15, 0.12, 0.24, 1)
 
 [node name="Marker" type="Node2D" parent="."]
 position = Vector2(5, 5)
+
+[node name="EnvLamp" type="PointLight2D" parent="."]
+energy = 0.9
+range_z_min = -2
+range_z_max = 7
+range_layer_min = 1
+range_layer_max = 3

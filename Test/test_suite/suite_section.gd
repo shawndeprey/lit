@@ -117,6 +117,7 @@ func run_section() -> void:
 	# Fresh-launch registry state for every run: the light-mask "seen" latch is a
 	# process-wide static that an earlier section's light setters would leave on.
 	LitLightRegistry.light_masks_seen = false
+	LitLightRegistry.light_ranges_seen = false
 	await _await_world_sdf_warmup()
 	set_setting("lit/render/lighting_model", model)
 	set_setting("lit/quality/shadow_step_scaling", false)

@@ -123,6 +123,46 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 
 @export_group("Advanced")
 @export var blend_mode: BlendMode = BlendMode.ADD
+## Lowest z_index this light reaches. A receiver is lit only while its final z_index
+## (z_as_relative offsets summed up its parents) lies between Range Z Min and Range Z
+## Max. The default spans the whole canvas range (Godot's Light2D defaults to
+## -1024..1024). Lit receiver nodes read their z when they enter the tree; after
+## changing z_index at runtime call refresh_light_ranges() on the receiver, or
+## LitLightRegistry.refresh_light_ranges() on a subtree.
+@export_range(-4096, 4096) var range_z_min: int = -4096:
+	set(value):
+		range_z_min = value
+		_update_ranged()
+## Highest z_index this light reaches (see Range Z Min).
+@export_range(-4096, 4096) var range_z_max: int = 4096:
+	set(value):
+		range_z_max = value
+		_update_ranged()
+## Lowest CanvasLayer this light reaches. A receiver is lit only while the index of its
+## CanvasLayer (0 on the base canvas) lies between Range Layer Min and Range Layer Max.
+## The default spans every layer, which is how Lit has always behaved; 0..0 lights the
+## base canvas only, as Godot's Light2D does by default.
+@export_range(-4096, 4096) var range_layer_min: int = -4096:
+	set(value):
+		range_layer_min = value
+		_update_ranged()
+## Highest CanvasLayer this light reaches (see Range Layer Min).
+@export_range(-4096, 4096) var range_layer_max: int = 4096:
+	set(value):
+		range_layer_max = value
+		_update_ranged()
+# True while any range is narrower than pass-all (kept by the setters), so the packer
+# and the luminance sampler read the four ranges only for ranged lights.
+var ranged: bool = false
+var range_pack := Vector3.ZERO
+
+
+func _update_ranged() -> void:
+	range_pack = LitLightRegistry.LightPackerScript.range_pack(range_z_min, range_z_max,
+			range_layer_min, range_layer_max)
+	ranged = range_pack.z != 0.0
+	if ranged:
+		LitLightRegistry.light_ranges_seen = true
 
 
 func _validate_property(property: Dictionary) -> void:

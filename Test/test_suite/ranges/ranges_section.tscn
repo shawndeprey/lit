@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" path="res://Test/test_suite/ranges/ranges_section.gd" id="1_sec"]
+
+[node name="RangesSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "ranges"
+section_title = "Light Ranges (z_index / CanvasLayer)"
