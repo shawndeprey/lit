@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="2_lp"]
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_precompile_overlay.gd" id="3_ov"]
+
+[node name="FixtureCurrent" type="Node2D"]
+
+[node name="Lamp" type="Node2D" parent="."]
+script = ExtResource("2_lp")
+lit_version = "__CURRENT__"
+energy = 0.5
+
+[node name="Overlay" type="CanvasLayer" parent="."]
+process_mode = 3
+layer = 128
+script = ExtResource("3_ov")

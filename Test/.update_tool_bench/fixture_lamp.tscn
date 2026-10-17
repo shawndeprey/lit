@@ -1,8 +1,7 @@
-[gd_scene format=3]
+[gd_scene load_steps=2 format=3]
 
-[node name="FixtureLamp" type="PointLight2D"]
-energy = 1.1
-range_z_min = -2
-range_z_max = 7
-range_layer_min = 1
-range_layer_max = 3
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="1_lp"]
+
+[node name="FixtureLamp" type="Node2D"]
+script = ExtResource("1_lp")
+legacy_glow = 1.5

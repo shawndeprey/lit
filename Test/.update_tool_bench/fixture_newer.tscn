@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="1_lp"]
+
+[node name="FixtureNewer" type="Node2D"]
+
+[node name="Future" type="Node2D" parent="."]
+script = ExtResource("1_lp")
+lit_version = "9.9.9"
+energy = 0.9
+
+[node name="OldLamp" type="Node2D" parent="."]
+script = ExtResource("1_lp")
+legacy_glow = 1.0

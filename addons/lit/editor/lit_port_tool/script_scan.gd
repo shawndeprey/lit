@@ -1,13 +1,13 @@
 @tool
 extends RefCounted
 
-## Read-only analysis of every project .gd file for "Project Migration Tool":
+## Read-only analysis of every project .gd file for "Port Project to Lit":
 ## inheritance chains rooting in rebasable core classes (with member-collision
 ## checks against the Lit classes), core-class references for the retype pass,
 ## @tool presence, and scene-path string literals (code-usage evidence for the
 ## menu/UI classifier). Also owns the line-parsing primitives the rewriter reuses.
 
-const Maps := preload("res://addons/lit/editor/lit_update_tool/conversion_maps.gd")
+const Maps := preload("res://addons/lit/editor/lit_port_tool/conversion_maps.gd")
 
 
 ## User .gd files whose inheritance chain roots in a rebasable core class. Chain roots

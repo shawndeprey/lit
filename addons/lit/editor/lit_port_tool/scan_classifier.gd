@@ -1,16 +1,16 @@
 @tool
 extends RefCounted
 
-## Candidate classification for "Project Migration Tool", run after every scene is
+## Candidate classification for "Port Project to Lit", run after every scene is
 ## modeled so UI ancestry can resolve through instanced menu scenes: splits candidates
 ## into world converts vs menu/UI exclusions (in-scene Control/CanvasLayer ancestry,
 ## plus usage - a scene or script used only from menus classifies as UI unless code
 ## references it), classifies material slots, finalizes counts, and assembles the
 ## scan result.
 
-const Maps := preload("res://addons/lit/editor/lit_update_tool/conversion_maps.gd")
-const RxMats := preload("res://addons/lit/editor/lit_update_tool/receiver_materials.gd")
-const SceneScan := preload("res://addons/lit/editor/lit_update_tool/scene_scan.gd")
+const Maps := preload("res://addons/lit/editor/lit_port_tool/conversion_maps.gd")
+const RxMats := preload("res://addons/lit/editor/lit_port_tool/receiver_materials.gd")
+const SceneScan := preload("res://addons/lit/editor/lit_port_tool/scene_scan.gd")
 
 
 static func finish(acc: Dictionary) -> Dictionary:

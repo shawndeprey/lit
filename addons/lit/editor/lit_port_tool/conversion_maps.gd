@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Conversion tables for "Project Migration Tool": which core Godot classes convert to
+## Conversion tables for "Port Project to Lit": which core Godot classes convert to
 ## which Lit scripts and how their properties map across. Pure data plus derived
 ## views; transforms that need logic (blend clamp, shadow_color premultiply, range
 ## heuristic, z/layer range defaults) live in scene_converter.gd, keyed by the `special` lists here.

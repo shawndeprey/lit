@@ -1,16 +1,17 @@
 [gd_scene load_steps=24 format=3]
 
 [ext_resource type="Texture2D" path="res://Test/base.png" id="1_tex"]
-[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_mixed.tscn" id="10_mx"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_light_script.gd" id="2_ls"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_rebase_sprite.gd" id="3_rs"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_collide_sprite.gd" id="4_cs"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_watcher.gd" id="5_ws"]
+[ext_resource type="PackedScene" path="res://Test/.port_tool_bench/fixture_mixed.tscn" id="10_mx"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_light_script.gd" id="2_ls"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_rebase_sprite.gd" id="3_rs"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_collide_sprite.gd" id="4_cs"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_watcher.gd" id="5_ws"]
 [ext_resource type="Script" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="6_lp"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_oneline_tile.gd" id="7_ot"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_oneline_tile.gd" id="7_ot"]
 [ext_resource type="Shader" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="8_rs"]
-[ext_resource type="AnimationLibrary" path="res://Test/.update_tool_bench/fixture_anim_lib.tres" id="9_al"]
-[ext_resource type="Script" path="res://Test/.update_tool_bench/fixture_rebase_anim.gd" id="11_ra"]
+[ext_resource type="AnimationLibrary" path="res://Test/.port_tool_bench/fixture_anim_lib.tres" id="9_al"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_rebase_anim.gd" id="11_ra"]
+[ext_resource type="Script" path="res://Test/.port_tool_bench/fixture_prelit_sprite.gd" id="12_pl"]
 
 [sub_resource type="OccluderPolygon2D" id="occ"]
 polygon = PackedVector2Array(0, 0, 32, 0, 32, 32, 0, 32)
@@ -234,11 +235,17 @@ range_layer_max = 3
 
 [node name="ExistingLit" type="Node2D" parent="."]
 script = ExtResource("6_lp")
+lit_version = "1.1.3"
 energy = 0.5
 range_z_min = -2
 range_z_max = 7
 range_layer_min = 1
 range_layer_max = 3
+
+[node name="PreLitSprite" type="Sprite2D" parent="."]
+texture = ExtResource("1_tex")
+script = ExtResource("12_pl")
+lit_version = "1.1.3"
 
 [node name="OnelineTile" type="TileMapLayer" parent="."]
 light_mask = 8

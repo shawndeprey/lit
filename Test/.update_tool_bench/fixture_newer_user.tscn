@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://Test/.update_tool_bench/fixture_newer.tscn" id="1_new"]
+
+[node name="FixtureNewerUser" type="Node2D"]
+
+[node name="New" parent="." instance=ExtResource("1_new")]
+
+[node name="Future" parent="New"]
+future_prop = 1
+
+[node name="OldLamp" parent="New"]
+legacy_glow = 2.0
+
+[editable path="New"]

@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" uid="uid://b2ufk7mn5qtct" path="res://Test/test_suite/port_tool/port_tool_section.gd" id="1_sec"]
+
+[node name="PortToolSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "port_tool"
+section_title = "Port Project to Lit"

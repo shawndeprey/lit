@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 
-## Version framework for "Project Migration Tool".
+## Version framework for "Update Project to Lit".
 ##
 ## baseline_schema.gd locks the stored property surface of every Lit node class as
 ## of BASELINE_VERSION; it only advances through the migration files registered in
@@ -12,7 +12,9 @@ extends RefCounted
 ## the matching migration file (or, pre-release, a baseline update) to go green.
 ##
 ## The update tool chains a node's migrations oldest-to-newest from its stamped
-## `lit_version` (unstamped nodes are assumed BASELINE_VERSION).
+## `lit_version` (unstamped nodes are assumed BASELINE_VERSION). Every chain helper
+## takes an optional `migs` list in place of the registered one (tests inject
+## synthetic chains).
 
 const Schema := preload("res://addons/lit/editor/lit_update_tool/migrations/baseline_schema.gd")
 
@@ -60,36 +62,60 @@ static func node_version(node: Node) -> String:
 
 ## Migrations that still apply to a node of `klass` whose data is at `from_version`,
 ## oldest first.
-static func chain_for(klass: StringName, from_version: String) -> Array:
+static func chain_for(klass: StringName, from_version: String, migs: Variant = null) -> Array:
 	var out := []
-	for m in migrations():
+	for m in (migrations() if migs == null else migs):
 		if m.target_class == klass and semver_cmp(from_version, m.to_version) < 0:
 			out.append(m)
 	return out
 
 
-## Merged old -> new property renames across a node's remaining chain; drives both the
-## live-node migration and the instance-override remap in parent scenes.
-static func rename_map_for(klass: StringName, from_version: String) -> Dictionary:
+## Retired name -> live name after every rename in a node's remaining chain (a name
+## renamed twice maps straight to its final name, as does the intermediate one); drives
+## the instance-override and animation-track remaps.
+static func rename_chain(klass: StringName, from_version: String, migs: Variant = null) -> Dictionary:
 	var out := {}
-	for m in chain_for(klass, from_version):
-		out.merge(m.renames, true)
+	for m in chain_for(klass, from_version, migs):
+		for old_name in m.renames:
+			var new_name: StringName = m.renames[old_name]
+			for k in out:
+				if out[k] == old_name:
+					out[k] = new_name
+			out[String(old_name)] = new_name
+	return out
+
+
+## {class: {stored name: true}} for every name a rename retires.
+static func retired_names(migs: Variant = null) -> Dictionary:
+	var out := {}
+	for m in (migrations() if migs == null else migs):
+		for old_name in m.renames:
+			if not out.has(m.target_class):
+				out[m.target_class] = {}
+			out[m.target_class][String(old_name)] = true
 	return out
 
 
 ## Run a node's remaining chain against its live self plus its as-saved property
-## capture. Returns true when anything changed.
-static func apply_chain(node: Node, klass: StringName, stored: Dictionary, report: Array) -> bool:
-	var from := node_version(node)
+## capture; the capture is re-shaped step by step so later migrations read renamed
+## data under its new name. Returns true when anything changed.
+static func apply_chain(node: Node, klass: StringName, stored: Dictionary, report: Array,
+		migs: Variant = null) -> bool:
+	var data := stored.duplicate()
 	var changed := false
-	for m in chain_for(klass, from):
+	for m in chain_for(klass, node_version(node), migs):
 		for old_name in m.renames:
-			if stored.has(old_name):
-				node.set(m.renames[old_name], stored[old_name])
-				changed = true
-				report.append("MIGRATED %s: %s -> %s (to v%s)"
-						% [klass, old_name, m.renames[old_name], m.to_version])
-		if m.apply(node, stored, report):
+			var key := String(old_name)
+			if not data.has(key):
+				continue
+			var new_name: StringName = m.renames[old_name]
+			node.set(new_name, data[key])
+			data[String(new_name)] = data[key]
+			data.erase(key)
+			changed = true
+			report.append("MIGRATED %s: %s -> %s (to v%s)"
+					% [node.name, old_name, new_name, m.to_version])
+		if m.apply(node, data, report):
 			changed = true
 	return changed
 

@@ -15,8 +15,12 @@ extends RefCounted
 ##
 ## Godot drops stored values for renamed/removed script properties at load, so
 ## apply() reads old values from `stored` (the update tool's SceneState capture of
-## the node's saved properties), never off the live node. apply() must be
-## idempotent: guard on the old stored name or the node's stamped version.
+## the node's saved properties, with this and earlier renames already applied),
+## never off the live node. apply() must be idempotent: guard on the old stored
+## name or the node's stamped version, and list every stored name it consumes in
+## `removes` - the update tool refuses to save a scene whose stored names no live
+## property and no migration accounts for. Never reuse a retired property name later:
+## renames are also re-applied to instance overrides and animation tracks by name.
 
 ## Version whose release ships this change; nodes stamped older get migrated.
 var to_version := ""
