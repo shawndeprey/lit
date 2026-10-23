@@ -9,7 +9,7 @@ class_name LitPointLight2D
 ## frame and packs it into the light-data texture. Shading properties are read live at
 ## pack time and stay fully animatable; the cull/scan-relevant ones (enabled, range,
 ## the shadow gates) additionally notify the registry's packed light mirror, so the
-## per-frame cull never has to walk every light.
+## per-frame cull never has to walk every light.[br][br]
 ##
 ## `light_mask` reuses the inherited CanvasItem property (int, default 1, shown under
 ## "Visibility" in the inspector) rather than redeclaring it, which would collide with
@@ -49,8 +49,7 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 @export var texture: Texture2D
 ## Multiplier on the cookie's footprint.
 @export var texture_scale: float = 1.0
-## NATIVE: the cookie spans the texture's pixel size under the node's full transform.
-## FIT_RANGE: it spans the scaled `range` footprint, uniform, rotating with the node.
+## How the cookie's footprint is sized.
 @export var texture_size_mode: TextureSizeMode = TextureSizeMode.NATIVE
 ## Slides the cookie off the node's center, in the texture's local pixels: it rotates
 ## with the node (and in NATIVE mode scales with it). Falloff, shadows, and shading
@@ -83,14 +82,9 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 		if value:
 			LitLightRegistry.light_masks_seen = true
 		LitLightRegistry.light_state_changed(self)
-## CONE_TRACED (the default): a single signed-coverage cone march - penumbras widen
-## with distance, umbras taper closed, and an antumbra re-brightens, all driven
-## physically by `source_radius`. RAYMARCHED: the classic estimated-penumbra march -
-## fastest, stylized, hardness-driven. STOCHASTIC: splits the source into
-## `shadow_samples` sub-cones for ground-truth area shadows (correct even with several
-## occluders sharing one penumbra) - the most expensive option. Every Lit receiver in
-## the scene is swapped to a shader variant compiled for the algorithms in use
-## automatically (by the registry each frame).
+## How this light marches its shadows; the penumbra shape follows `source_radius`.
+## Every Lit receiver in the scene is swapped to a shader variant compiled for the
+## algorithms in use automatically (by the registry each frame).
 @export var shadow_algorithm: ShadowAlgorithm = ShadowAlgorithm.CONE_TRACED:
 	set(value):
 		shadow_algorithm = value

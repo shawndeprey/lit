@@ -7,11 +7,11 @@ class_name LitCanvasModulate
 ##
 ## Feeds ambient color and energy to receivers through the `lit_ambient_color` and
 ## `lit_ambient_energy` global shader uniforms. Lights resolve together with ambient
-## inside the receiver, so they always punch through the darkness.
+## inside the receiver, so they always punch through the darkness.[br][br]
 ##
 ## This replaces the native CanvasModulate rather than accompanying it. A live native
 ## CanvasModulate would multiply our already-correct output and double-darken, so we
-## warn at edit time and runtime if one is present.
+## warn at edit time and runtime if one is present.[br][br]
 ##
 ## Only one active LitCanvasModulate is expected; if several exist, the last one to
 ## enter the tree wins (each writes the globals on enter and on change). The globals

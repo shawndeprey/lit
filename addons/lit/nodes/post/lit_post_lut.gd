@@ -8,7 +8,24 @@ class_name LitPostLut
 const SHADER := preload("res://addons/lit/shaders/post/lit_post_lut.gdshader")
 
 ## Baked-in LUT presets. The PRESET_LUTS entries are parallel to this enum order.
-enum LutPreset { NEUTRAL, WARM, COOL, SEPIA, NOIR, TEAL_ORANGE, VINTAGE, VIBRANT }
+enum LutPreset {
+	## Identity grade: colors pass through unchanged.
+	NEUTRAL,
+	## Pushes the image toward orange, like late-afternoon light.
+	WARM,
+	## Pushes the image toward blue, like overcast or moonlight.
+	COOL,
+	## Brown-tinted monochrome, the old-photograph look.
+	SEPIA,
+	## High-contrast black and white.
+	NOIR,
+	## Teal shadows against orange highlights, the blockbuster grade.
+	TEAL_ORANGE,
+	## Lifted blacks and muted colors, like faded film stock.
+	VINTAGE,
+	## Boosted saturation and contrast.
+	VIBRANT,
+}
 const PRESET_LUTS := [
 	preload("res://addons/lit/luts/lit_lut_neutral.png"),
 	preload("res://addons/lit/luts/lit_lut_warm.png"),

@@ -12,14 +12,14 @@ class_name LitAnimatedSprite2D
 ##
 ## Normal and specular maps come from the frames themselves: Lit reads them off a
 ## CanvasTexture, exactly as it does for LitSprite2D, and re-checks the specular slot
-## every time the frame changes. Two frame shapes work:
-##  - a CanvasTexture per frame, with diffuse / normal / specular set on each; or
+## every time the frame changes. Two frame shapes work:[br]
+##  - a CanvasTexture per frame, with diffuse / normal / specular set on each; or[br]
 ##  - for sprite sheets, ONE CanvasTexture carrying the diffuse, normal and specular
 ##    sheets, with an AtlasTexture per frame whose `atlas` is that CanvasTexture. The
 ##    SpriteFrames panel's "Create Frames from Sprite Sheet" builds exactly this when
-##    pointed at a saved CanvasTexture resource.
+##    pointed at a saved CanvasTexture resource.[br]
 ## A CanvasTexture whose own slots are AtlasTextures does NOT work: Godot samples the
-## whole sheet instead of the region (on Sprite2D too), so avoid that shape.
+## whole sheet instead of the region (on Sprite2D too), so avoid that shape.[br][br]
 ##
 ## Exposes the receiver shader's per-instance parameters as @exports that proxy to
 ## this node's material, so every LitAnimatedSprite2D can be tuned and masked

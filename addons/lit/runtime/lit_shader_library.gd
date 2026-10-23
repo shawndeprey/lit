@@ -9,13 +9,28 @@ class_name LitShaderLibrary
 enum BlendMode { ADD, SUBTRACT }
 
 ## Sizing mode for a light's cookie texture.
-enum TextureSizeMode { NATIVE, FIT_RANGE }
+enum TextureSizeMode {
+	## The cookie spans the texture's pixel size under the node's full transform.
+	NATIVE,
+	## The cookie spans the scaled `range` footprint, uniform, rotating with the node.
+	FIT_RANGE,
+}
 
 ## Per-light shadow algorithm. The order is a wire format: light_packer.gd packs it
 ## into flags bits 3-4 of the light's data row and the shader decodes it there, and
 ## the registry derives active_algos (bit 0 = CONE_TRACED, bit 1 = STOCHASTIC) from
 ## it for the variant swap. Append new algorithms; never reorder.
-enum ShadowAlgorithm { RAYMARCHED, CONE_TRACED, STOCHASTIC }
+enum ShadowAlgorithm {
+	## The classic estimated-penumbra march: fastest, stylized, hardness-driven.
+	RAYMARCHED,
+	## The default. A single signed-coverage cone march: penumbras widen with distance,
+	## umbras taper closed and an antumbra re-brightens, all driven physically by the
+	## light's source size (`source_radius`, or `source_angle` on directional lights).
+	CONE_TRACED,
+	## Splits the source into `shadow_samples` sub-cones for ground-truth area shadows
+	## (correct even with several occluders sharing one penumbra). The most expensive option.
+	STOCHASTIC,
+}
 
 const F_SELF_EXCL := 1
 const F_YSORT := 2
