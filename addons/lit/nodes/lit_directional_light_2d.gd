@@ -9,7 +9,7 @@ class_name LitDirectionalLight2D
 ## the direction the light travels (its local +X: at rotation 0 the light comes from the
 ## left), so every receiver is lit from the same angle. `height` still tilts the shading
 ## vector out of the plane; lower is more grazing, higher more head-on. There is no
-## `range`, `falloff` or cookie, and directional lights are never positionally culled.
+## `range`, `falloff` or cookie, and directional lights are never positionally culled.[br][br]
 ##
 ## Shares the receiver and shadow code path with point lights via the type flag in the
 ## light-data texture. As with point lights, `light_mask` reuses the inherited CanvasItem
@@ -56,13 +56,9 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 		if value:
 			LitLightRegistry.light_masks_seen = true
 		LitLightRegistry.light_state_changed(self)
-## CONE_TRACED (the default): a single signed-coverage cone march - penumbras widen
-## with distance, umbras taper closed, and an antumbra re-brightens, all driven
-## physically by `source_angle`. RAYMARCHED: the classic estimated-penumbra march -
-## fastest, stylized, hardness-driven. STOCHASTIC: splits the source's angular extent
-## into `shadow_samples` sub-cones for ground-truth area shadows - the most expensive
-## option. Every Lit receiver in the scene is swapped to a shader variant compiled for
-## the algorithms in use automatically (by the registry each frame).
+## How this light marches its shadows; the penumbra shape follows `source_angle`.
+## Every Lit receiver in the scene is swapped to a shader variant compiled for the
+## algorithms in use automatically (by the registry each frame).
 @export var shadow_algorithm: ShadowAlgorithm = ShadowAlgorithm.CONE_TRACED:
 	set(value):
 		shadow_algorithm = value
