@@ -1,6 +1,6 @@
 @tool
 @icon("res://addons/lit/icons/lit_directional_light_2d.svg")
-extends Node2D
+extends LitLight2D
 class_name LitDirectionalLight2D
 
 ## A directional light for the Lit system.
@@ -12,62 +12,10 @@ class_name LitDirectionalLight2D
 ## `range`, `falloff` or cookie, and directional lights are never positionally culled.[br][br]
 ##
 ## Shares the receiver and shadow code path with point lights via the type flag in the
-## light-data texture. As with point lights, `light_mask` reuses the inherited CanvasItem
-## property ("Visibility" in the inspector) and is matched against each receiver's
-## `receiver_mask`.
-
-# Shared contracts, aliased so LitDirectionalLight2D.BlendMode etc. remain the
-# public names; the definitions (and the wire-format rules) live in LitShaderLibrary.
-const BlendMode = LitShaderLibrary.BlendMode
-const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
-
-# Plugin version this node's saved data was authored under; see LitVersionStamp.
-@export_storage var lit_version := ""
-
-@export var enabled: bool = true:
-	set(value):
-		enabled = value
-		LitLightRegistry.light_state_changed(self)
-@export var color: Color = Color.WHITE
-@export var energy: float = 1.0
-
-@export_group("Shading")
-## Tilts the light out of the plane; drives normal-mapped shading. Lower values
-## graze the surface (direction reads strongly), higher values face it head-on.
-@export var height: float = 16.0
+## light-data texture. The shared surface (color, energy, height, the shadow gates,
+## blend mode, z/layer ranges and the Light2D-style methods) lives on LitLight2D.
 
 @export_group("Shadow")
-@export var shadow_enabled: bool = false:
-	set(value):
-		shadow_enabled = value
-		LitLightRegistry.light_state_changed(self)
-## Occluders cast this light's shadows only if their Occluder Light Mask (tileset
-## occlusion layers: Light Mask) shares a bit with this mask.
-@export_flags_2d_render var shadow_mask: int = 1:
-	set(value):
-		shadow_mask = value
-		if value != 1:
-			LitLightRegistry.light_masks_seen = true
-		LitLightRegistry.light_state_changed(self)
-## Occluders in this light's own scene (its owner's subtree) never cast its shadows.
-@export var exclude_scene_occluders: bool = false:
-	set(value):
-		exclude_scene_occluders = value
-		if value:
-			LitLightRegistry.light_masks_seen = true
-		LitLightRegistry.light_state_changed(self)
-## How this light marches its shadows; the penumbra shape follows `source_angle`.
-## Every Lit receiver in the scene is swapped to a shader variant compiled for the
-## algorithms in use automatically (by the registry each frame).
-@export var shadow_algorithm: ShadowAlgorithm = ShadowAlgorithm.CONE_TRACED:
-	set(value):
-		shadow_algorithm = value
-		notify_property_list_changed()
-		LitLightRegistry.light_state_changed(self)
-@export var shadow_color: Color = Color.BLACK
-## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
-## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
-@export_range(0.0, 1.0) var shadow_hardness: float = 0.5
 ## Length of cast shadows as a fraction of `shadow_reach`: every occluder's shadow
 ## closes exactly at that distance through a natural penumbral tip, so a low sun reads
 ## as long evening shadows and a high sun as short noon ones (0 = none at all). Animate
@@ -84,72 +32,16 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## with distance from the occluder; the default is deliberately sun x ~11 so the
 ## softness is visible at game scale.
 @export_range(0.0, 60.0, 0.05) var source_angle: float = 6.0
-## Shadow marches per fragment across the source (STOCHASTIC): more is smoother and
-## slower. Clamped by lit/quality/shadow_samples_max.
-@export_range(1, 32) var shadow_samples: int = 8
-## STOCHASTIC dither inside each stratum. Samples are fractional sub-cone coverages,
-## so any setting is smooth (no binary noise); the default is just enough dither to
-## erase the faint per-stratum wedges a very wide/near source can show. 0 = fully
-## deterministic, 1 = maximum per-pixel dither (fine grain).
-@export_range(0.0, 1.0) var shadow_jitter: float = 0.35
-
-@export_group("Advanced")
-@export var blend_mode: BlendMode = BlendMode.ADD
-## Lowest z_index this light reaches. A receiver is lit only while its final z_index
-## (z_as_relative offsets summed up its parents) lies between Range Z Min and Range Z
-## Max. The default spans the whole canvas range (Godot's Light2D defaults to
-## -1024..1024). Lit receiver nodes read their z when they enter the tree; after
-## changing z_index at runtime call refresh_light_ranges() on the receiver, or
-## LitLightRegistry.refresh_light_ranges() on a subtree.
-@export_range(-4096, 4096) var range_z_min: int = -4096:
-	set(value):
-		range_z_min = value
-		_update_ranged()
-## Highest z_index this light reaches (see Range Z Min).
-@export_range(-4096, 4096) var range_z_max: int = 4096:
-	set(value):
-		range_z_max = value
-		_update_ranged()
-## Lowest CanvasLayer this light reaches. A receiver is lit only while the index of its
-## CanvasLayer (0 on the base canvas) lies between Range Layer Min and Range Layer Max.
-## The default spans every layer, which is how Lit has always behaved; 0..0 lights the
-## base canvas only, as Godot's Light2D does by default.
-@export_range(-4096, 4096) var range_layer_min: int = -4096:
-	set(value):
-		range_layer_min = value
-		_update_ranged()
-## Highest CanvasLayer this light reaches (see Range Layer Min).
-@export_range(-4096, 4096) var range_layer_max: int = 4096:
-	set(value):
-		range_layer_max = value
-		_update_ranged()
-# True while any range is narrower than pass-all (kept by the setters), so the packer
-# and the luminance sampler read the four ranges only for ranged lights.
-var ranged: bool = false
-var range_pack := Vector3.ZERO
-
-
-func _update_ranged() -> void:
-	range_pack = LitLightRegistry.LightPackerScript.range_pack(range_z_min, range_z_max,
-			range_layer_min, range_layer_max)
-	ranged = range_pack.z != 0.0
-	if ranged:
-		LitLightRegistry.light_ranges_seen = true
 
 
 func _validate_property(property: Dictionary) -> void:
 	LitShaderLibrary.validate_light_property(property, shadow_algorithm, "source_angle")
 
 
-func _enter_tree() -> void:
-	add_to_group("lit_lights")
-	LitVersionStamp.stamp(self)
+# DirectionalLight2D's method names over `shadow_reach`.
+func set_max_distance(value: float) -> void:
+	shadow_reach = value
 
 
-func _exit_tree() -> void:
-	remove_from_group("lit_lights")
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_VISIBILITY_CHANGED:
-		LitLightRegistry.light_state_changed(self)
+func get_max_distance() -> float:
+	return shadow_reach

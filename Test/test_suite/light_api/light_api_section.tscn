@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" path="res://Test/test_suite/light_api/light_api_section.gd" id="1_sec"]
+
+[node name="LightApiSection" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "light_api"
+section_title = "Light Node API (Light2D parity)"

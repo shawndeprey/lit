@@ -12,6 +12,8 @@ extends SceneTree
 const Migrations := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
 
 const NODES_DIR := "res://addons/lit/nodes/"
+# Base classes never saved as a node's script: nothing of theirs is stored.
+const SCHEMA_EXEMPT: Array[StringName] = [&"LitLight2D", &"LitPositionalLight2D"]
 # Code-built only, never saved in scenes; exempt from the lit_version requirement.
 const STAMP_EXEMPT: Array[StringName] = [&"LitPrecompileOverlay"]
 
@@ -53,7 +55,7 @@ func _live_schema() -> Dictionary:
 	var out := {}
 	for entry in ProjectSettings.get_global_class_list():
 		var path := String(entry["path"])
-		if not path.begins_with(NODES_DIR):
+		if not path.begins_with(NODES_DIR) or entry["class"] in SCHEMA_EXEMPT:
 			continue
 		var script := load(path) as GDScript
 		if script == null:
