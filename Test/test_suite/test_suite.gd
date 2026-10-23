@@ -67,6 +67,7 @@ const SECTIONS := [
 	{"id": "shadows", "title": "Shadows", "script": "res://Test/test_suite/shadows/shadows_section.gd", "pbr": true},
 	{"id": "shadow_masks", "title": "Shadow Masks & Exclusions", "script": "res://Test/test_suite/shadow_masks/shadow_masks_section.gd", "pbr": true},
 	{"id": "ranges", "title": "Light Ranges (z_index / CanvasLayer)", "script": "res://Test/test_suite/ranges/ranges_section.gd"},
+	{"id": "light_api", "title": "Light Node API (Light2D parity)", "script": "res://Test/test_suite/light_api/light_api_section.gd"},
 	{"id": "camera", "title": "Camera Transforms", "script": "res://Test/test_suite/camera/camera_section.gd", "pbr": true},
 	{"id": "lighting_model", "title": "Lighting Model (Phong / PBR)", "script": "res://Test/test_suite/lighting_model/lighting_model_section.gd"},
 	{"id": "luminance", "title": "Luminance Query", "script": "res://Test/test_suite/luminance/luminance_section.gd", "pbr": true},

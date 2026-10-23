@@ -63,6 +63,7 @@ func _initialize() -> void:
 	_gate_menus_on()
 	_gate_node_refs()
 	_gate_scripts_off()
+	_gate_light_api()
 	print("GATE RESULT: " + ("PASS" if _fails == 0 else "FAIL (%d failures)" % _fails))
 	if _fails == 0:
 		_cleanup()
@@ -885,3 +886,220 @@ func _gate_scripts_off() -> void:
 			"untyped Node export resolves live after scripts-off run")
 	_check_sig(root.get_node("Holder").get("any_node"), "untyped export reference after the scripts-off run")
 	root.free()
+
+
+# Light2D's method surface (set_energy(), set_item_cull_mask(), set_z_range_min()...)
+# on every light a port produces, reached through every chain the bench has: the
+# converted scenes (nested, inherited, binary, editable instance, scene root), the
+# exported references (single, array, dictionary, override, cross-instance), the retyped
+# user scripts (onready paths, constructor, cast, typed parameters), the hand-authored
+# Lit-based script, and the scripted light that stays core as the parity reference.
+# Rows: setter, getter, Lit property, probe value (bool rows toggle the stored value).
+const API_SHARED := [
+	["set_enabled", "is_enabled", "enabled", false],
+	["set_color", "get_color", "color", Color(0.2, 0.4, 0.6, 1.0)],
+	["set_energy", "get_energy", "energy", 2.5],
+	["set_height", "get_height", "height", 0.75],
+	["set_blend_mode", "get_blend_mode", "blend_mode", 1],
+	["set_shadow_enabled", "is_shadow_enabled", "shadow_enabled", true],
+	["set_shadow_color", "get_shadow_color", "shadow_color", Color(0.1, 0.2, 0.3, 0.4)],
+	["set_item_cull_mask", "get_item_cull_mask", "light_mask", 5],
+	["set_item_shadow_cull_mask", "get_item_shadow_cull_mask", "shadow_mask", 6],
+	["set_z_range_min", "get_z_range_min", "range_z_min", -7],
+	["set_z_range_max", "get_z_range_max", "range_z_max", 9],
+	["set_layer_range_min", "get_layer_range_min", "range_layer_min", -3],
+	["set_layer_range_max", "get_layer_range_max", "range_layer_max", 4],
+]
+const API_POINT := [
+	["set_texture_offset", "get_texture_offset", "texture_offset", Vector2(3, -5)],
+	["set_texture_scale", "get_texture_scale", "texture_scale", 1.75],
+]
+const API_DIRECTIONAL := [["set_max_distance", "get_max_distance", "shadow_reach", 2048.0]]
+# Converted lights every scene must contain after the port (menus unchecked); the walk
+# drives these and any other Lit light it finds.
+const API_LIGHTS := {
+	"fixture_child.tscn": ["Light", "NakedLight", "Watcher/PointLight2D",
+		"Watcher/Props/PointLight2D", "ExistingLit"],
+	"fixture_parent.tscn": ["Child/Light", "Child/NakedLight", "Child/Watcher/PointLight2D",
+		"Child/Watcher/Props/PointLight2D", "Child/ExistingLit", "Sun", "Env/EnvLamp"],
+	"fixture_env.tscn": ["EnvLamp"],
+	"env_bin.scn": ["EnvLamp"],
+	"fixture_env_ref.tscn": ["Lamp", "Lamp2", "Sun"],
+	"fixture_env_ref_user.tscn": ["EnvRef/Lamp", "EnvRef/Lamp2", "EnvRef/Sun"],
+	"fixture_env_ref_parent.tscn": ["ParentLamp", "EnvRef/Lamp", "EnvRef/Lamp2", "EnvRef/Sun"],
+	"fixture_lamp.tscn": ["."],
+	"fixture_preview.tscn": ["GlowLight"],
+	"fixture_inherited.tscn": ["EnvLamp"],
+}
+
+var _cookie: Texture2D = null
+
+
+func _api_cookie() -> Texture2D:
+	if _cookie == null:
+		_cookie = ImageTexture.create_from_image(Image.create(4, 4, false, Image.FORMAT_RGBA8))
+	return _cookie
+
+
+func _api_same(a: Variant, b: Variant) -> bool:
+	if a is Object or b is Object:
+		return is_same(a, b)
+	if a is float or b is float:
+		return typeof(a) == typeof(b) and is_equal_approx(float(a), float(b))
+	return typeof(a) == typeof(b) and a == b
+
+
+## Core (lit=false): every method exists and the getter reads the value back. Lit:
+## the same, plus the aliased property holds the value and follows a direct write.
+func _drive_row(light: Object, row: Array, label: String, lit: bool) -> void:
+	var setter: String = row[0]
+	var getter: String = row[1]
+	var prop: String = row[2]
+	var value: Variant = row[3]
+	if not _check(light.has_method(setter) and light.has_method(getter),
+			"%s: has %s() and %s()" % [label, setter, getter]):
+		return
+	var before: Variant = light.get(prop) if lit else null
+	if lit:
+		if value is bool:
+			value = not before
+		_check(not _api_same(before, value), "%s: %s probe value differs from the stored %s" % [label, prop, str(before)])
+	light.call(setter, value)
+	_check(_api_same(light.call(getter), value), "%s: %s() reads back %s, got %s" % [label, getter, str(value), str(light.call(getter))])
+	if lit:
+		_check(_api_same(light.get(prop), value), "%s: %s() writes %s" % [label, setter, prop])
+		light.set(prop, before)
+		_check(_api_same(light.call(getter), before), "%s: %s() follows a direct %s write" % [label, getter, prop])
+
+
+func _drive_lit(light: Node, label: String) -> void:
+	if not _check(light is LitLight2D, "%s: resolves to a Lit light, got %s" % [label, str(light)]):
+		return
+	var rows: Array = API_SHARED.duplicate()
+	if light is LitDirectionalLight2D:
+		rows += API_DIRECTIONAL
+	else:
+		rows += API_POINT
+		rows.append(["set_texture", "get_texture", "texture", _api_cookie()])
+	for row in rows:
+		_drive_row(light, row, label, true)
+	for name in ["set_editor_only", "is_editor_only", "set_shadow_filter", "get_shadow_filter",
+			"set_shadow_smooth", "get_shadow_smooth"]:
+		_check(not light.has_method(name), "%s: dropped %s() stays absent" % [label, name])
+
+
+func _drive_core(light: Node, label: String) -> void:
+	if not _check(light is Light2D, "%s: stays a core light, got %s" % [label, str(light)]):
+		return
+	var rows: Array = API_SHARED.duplicate()
+	if light is DirectionalLight2D:
+		rows += API_DIRECTIONAL
+	else:
+		rows += API_POINT
+		rows.append(["set_texture", "get_texture", "texture", _api_cookie()])
+	for row in rows:
+		_drive_row(light, row, label, false)
+
+
+func _collect_lights(node: Node, root: Node, out: Dictionary) -> void:
+	if node is LitLight2D:
+		out[String(root.get_path_to(node))] = node
+	for child in node.get_children():
+		_collect_lights(child, root, out)
+
+
+func _gate_light_api() -> void:
+	print("[gate 9] Light2D method surface through every ported chain")
+	_prepare()
+	var scan9: Dictionary = Tool.scan([OUT])
+	Tool.run(scan9, ALL_KINDS, OUT + "/report9.txt")
+	# Every converted light in every scene, wherever the port placed it.
+	for scene in API_LIGHTS:
+		var root := _fresh(OUT + "/" + scene)
+		if not _check(root != null, "%s loads for the API walk" % scene):
+			continue
+		var found := {}
+		_collect_lights(root, root, found)
+		for path in API_LIGHTS[scene]:
+			_check(found.has(path), "%s: converted light at %s found by the walk" % [scene, path])
+		for path in found:
+			_drive_lit(found[path], "%s %s" % [scene, path])
+		root.free()
+	# Exported references (single, array, dictionary, instance override, cross-instance).
+	var env_root := _fresh(OUT + "/fixture_env_ref.tscn")
+	if _check(env_root != null, "env-ref scene loads for the reference chains"):
+		var holder := env_root.get_node("Holder")
+		_drive_lit(holder.get("lamp"), "env-ref export `lamp`")
+		_drive_lit(holder.get("sun"), "env-ref export `sun`")
+		var lamps: Variant = holder.get("lamps")
+		if _check(lamps is Array and lamps.size() == 2, "env-ref export `lamps` holds two lights"):
+			for i in lamps.size():
+				_drive_lit(lamps[i], "env-ref export `lamps[%d]`" % i)
+		var by_name: Variant = holder.get("by_name")
+		if _check(by_name is Dictionary and by_name.size() == 2, "env-ref export `by_name` holds two lights"):
+			for key in by_name:
+				_drive_lit(by_name[key], "env-ref export `by_name[%s]`" % key)
+		_check(holder.get("scripted") == null, "env-ref `scripted` cleared: the scripted light stays core")
+		_drive_core(env_root.get_node("ScriptedLamp"), "env-ref scripted core light (parity reference)")
+		env_root.free()
+	var user_root := _fresh(OUT + "/fixture_env_ref_user.tscn")
+	if _check(user_root != null, "env-ref user scene loads for the reference chains"):
+		_drive_lit(user_root.get_node("User").get("lamp"), "cross-instance export `lamp`")
+		user_root.free()
+	var ref_parent := _fresh(OUT + "/fixture_env_ref_parent.tscn")
+	if _check(ref_parent != null, "env-ref parent scene loads for the reference chains"):
+		_drive_lit(ref_parent.get_node("EnvRef/Holder").get("lamp"), "instance-override export `lamp`")
+		ref_parent.free()
+	# The hand-authored Lit-based chain inherits the surface through LitPointLight2D.
+	var chain := Node2D.new()
+	chain.set_script(load(OUT + "/fixture_lit_light.gd"))
+	_drive_lit(chain, "Lit-based user script chain")
+	if chain.has_method("pulse"):
+		chain.call("pulse")
+		_check(is_equal_approx(float(chain.get("energy")), 2.0), "Lit-based chain's own method still runs")
+	chain.free()
+	# Retyped user scripts calling the surface need real script instances (game mode).
+	if Engine.is_editor_hint():
+		print("  (editor mode: retyped user-script calls skipped, placeholder instances)")
+		return
+	var child_root := _fresh(OUT + "/fixture_child.tscn")
+	if not _check(child_root != null, "child scene loads for the user-script chains"):
+		return
+	var watcher := child_root.get_node("Watcher")
+	# Ready the watcher alone: its @onready assignments run through the retyped annotations.
+	watcher.notification(Node.NOTIFICATION_READY)
+	_drive_lit(watcher.get("named_child"), "watcher onready `$PointLight2D`")
+	_drive_lit(watcher.get("nested_light"), "watcher onready `$Props/PointLight2D`")
+	_drive_lit(watcher.get("unique_light"), "watcher onready `%PointLight2D`")
+	var spawned: Node = watcher.call("spawn_light")
+	_drive_lit(spawned, "watcher retyped constructor")
+	spawned.free()
+	var parent_root := _fresh(OUT + "/fixture_parent.tscn")
+	if _check(parent_root != null, "parent scene loads for the cast chain"):
+		_drive_lit(watcher.call("sun_of", parent_root), "watcher retyped cast")
+		parent_root.free()
+	_drive_core(child_root.get_node("ScriptedLight"), "child scripted core light (parity reference)")
+	# User code written against core lights: the ported script on the Lit light returns
+	# exactly what the original script returns on a core light.
+	var core_watcher := Node.new()
+	core_watcher.set_script(load(SRC + "/fixture_watcher.gd"))
+	var core_point := PointLight2D.new()
+	var want: Dictionary = core_watcher.call("drive_all", core_point, _api_cookie())
+	var got: Dictionary = watcher.call("drive_all", child_root.get_node("Light"), _api_cookie())
+	_check(want.size() == 16, "original drive_all() covers 16 getters, got %d" % want.size())
+	_check(got == want, "ported drive_all() on the Lit light matches the original on a core light:\n    want %s\n    got  %s" % [str(want), str(got)])
+	core_point.free()
+	core_watcher.free()
+	var env_live := _fresh(OUT + "/fixture_env_ref.tscn")
+	if _check(env_live != null, "env-ref scene loads for the directional user-script chain"):
+		var core_holder := Node.new()
+		core_holder.set_script(load(SRC + "/fixture_env_ref.gd"))
+		var core_sun := DirectionalLight2D.new()
+		var want_sun: Dictionary = core_holder.call("drive_sun", core_sun)
+		var got_sun: Dictionary = env_live.get_node("Holder").call("drive_sun", env_live.get_node("Sun"))
+		_check(want_sun.size() == 14, "original drive_sun() covers 14 getters, got %d" % want_sun.size())
+		_check(got_sun == want_sun, "ported drive_sun() on the Lit sun matches the original on a core sun:\n    want %s\n    got  %s" % [str(want_sun), str(got_sun)])
+		core_sun.free()
+		core_holder.free()
+		env_live.free()
+	child_root.free()

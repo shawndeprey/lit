@@ -245,6 +245,8 @@ static func _lit_class_members(script_path: String) -> Dictionary:
 			out[String(p.name)] = true
 	for s in script.get_script_signal_list():
 		out[String(s.name)] = true
-	for c in script.get_script_constant_map():
-		out[String(c)] = true
+	while script != null:
+		for c in script.get_script_constant_map():
+			out[String(c)] = true
+		script = script.get_base_script()
 	return out
