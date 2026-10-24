@@ -1,4 +1,5 @@
 @tool
+@abstract
 extends Node2D
 class_name LitLight2D
 
@@ -120,12 +121,6 @@ func _exit_tree() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_VISIBILITY_CHANGED:
 		LitLightRegistry.light_state_changed(self)
-
-func _get_configuration_warnings() -> PackedStringArray:
-	if get_script() == LitLight2D:
-		return ["LitLight2D is the base of LitPointLight2D, LitSpotLight2D and LitDirectionalLight2D "
-				+ "and emits no light itself. Use one of those nodes."]
-	return []
 
 # Light2D method names.
 func set_enabled(value: bool) -> void:

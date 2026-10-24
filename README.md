@@ -5,7 +5,7 @@
 <p align="center"><b>Drop-in 2D lighting for Godot 4 - with no light limit.</b></p>
 
 <p align="center">
-  <img alt="Godot 4.4+" src="https://img.shields.io/badge/Godot-4.4%2B-478CBF?logo=godotengine&logoColor=white">
+  <img alt="Godot 4.5+" src="https://img.shields.io/badge/Godot-4.5%2B-478CBF?logo=godotengine&logoColor=white">
   <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-ffca60">
   <a href="https://fadinglantern.com/docs/lit"><img alt="Docs" src="https://img.shields.io/badge/Docs-read-d9a441"></a>
   <a href="https://www.youtube.com/@FadingLanternGames"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-subscribe-FF0000?logo=youtube&logoColor=white"></a>
@@ -28,7 +28,7 @@ shadows, and stack on a pile of post-processing - all without leaving the node w
   <a href="https://www.youtube.com/watch?v=mWrhQRTlI8w"><em>▶ Watch the tech demo</em></a>
 </p>
 
-> **Requires Godot 4.4+ on the Forward+ renderer.** (Mobile/Compatibility aren't supported.)
+> **Requires Godot 4.5+ on the Forward+ renderer.** (Mobile/Compatibility aren't supported.)
 
 ---
 

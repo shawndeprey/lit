@@ -1,4 +1,5 @@
 @tool
+@abstract
 extends LitLight2D
 class_name LitPositionalLight2D
 
@@ -49,12 +50,6 @@ const TextureSizeMode = LitShaderLibrary.TextureSizeMode
 
 func _validate_property(property: Dictionary) -> void:
 	LitShaderLibrary.validate_light_property(property, shadow_algorithm, "source_radius")
-
-func _get_configuration_warnings() -> PackedStringArray:
-	if get_script() == LitPositionalLight2D:
-		return ["LitPositionalLight2D is the base of LitPointLight2D and LitSpotLight2D and emits "
-				+ "no light itself. Use one of those nodes."]
-	return super()
 
 # PointLight2D method names.
 func set_texture(value: Texture2D) -> void:

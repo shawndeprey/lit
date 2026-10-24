@@ -8,8 +8,8 @@ extends LitSuiteSection
 ## alias (light_mask, shadow_mask, shadow_reach, texture_offset); setters keep their side
 ## effects (light-cache notification, range packing, the mask latch); the rendered frame
 ## follows values set only through the methods; and the three nodes share the LitLight2D
-## base, point and spot through LitPositionalLight2D (enums, group wiring, visibility
-## notification, bare-base warnings).
+## base, point and spot through LitPositionalLight2D (abstract, enums, group wiring,
+## visibility notification).
 
 const AMBIENT := 0.1
 const TOL := 0.03
@@ -185,9 +185,8 @@ func _base_class() -> void:
 	check_true(c, "LitLight2D is a registered global class on Node2D", registered)
 	var positional := load("res://addons/lit/nodes/lit_positional_light_2d.gd") as GDScript
 	check(c, "LitPositionalLight2D extends the base script", base, positional.get_base_script())
-	for bare in [LitLight2D.new(), LitPositionalLight2D.new()]:
-		check(c, "a bare %s node carries one configuration warning" % bare.get_script().get_global_name(), 1, bare._get_configuration_warnings().size())
-		bare.free()
+	check_true(c, "LitLight2D is abstract", base.is_abstract())
+	check_true(c, "LitPositionalLight2D is abstract", positional.is_abstract())
 	for pair in PAIRS:
 		var lit_name: String = pair[1]
 		var node := _new_light(lit_name)
