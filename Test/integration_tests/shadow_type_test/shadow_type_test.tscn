@@ -1,0 +1,150 @@
+[gd_scene format=4 uid="uid://cdcsrfrpe0tfa"]
+
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="1_gf0sx"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="2_q5itq"]
+[ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="3_q5itq"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_av7tb"]
+shader = ExtResource("1_gf0sx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_5ujhg"]
+polygon = PackedVector2Array(-110, -110, 110, -110, 110, 110, -110, 110)
+
+[node name="ShadowTypeTest" type="Node2D" unique_id=831832681]
+
+[node name="Floor" type="Polygon2D" parent="." unique_id=832005646]
+material = SubResource("ShaderMaterial_av7tb")
+polygon = PackedVector2Array(0, 0, 1920, 0, 1920, 1080, 0, 1080)
+
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=493152882]
+script = ExtResource("2_q5itq")
+lit_version = "1.1.6"
+color = Color(0.3362675, 0.34295553, 0.33292162, 1)
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="Occluder" type="LightOccluder2D" parent="." unique_id=1532473041]
+position = Vector2(394, 618)
+scale = Vector2(0.3, 0.3)
+occluder = SubResource("OccluderPolygon2D_5ujhg")
+
+[node name="Occluder2" type="LightOccluder2D" parent="." unique_id=1981099851]
+position = Vector2(962, 618)
+scale = Vector2(0.3, 0.3)
+occluder = SubResource("OccluderPolygon2D_5ujhg")
+
+[node name="Occluder3" type="LightOccluder2D" parent="." unique_id=1584535028]
+position = Vector2(1530, 618)
+scale = Vector2(0.3, 0.3)
+occluder = SubResource("OccluderPolygon2D_5ujhg")
+
+[node name="LitSpotLight2D" type="Node2D" parent="." unique_id=995225959]
+position = Vector2(394, 884)
+rotation = -1.5707964
+script = ExtResource("3_q5itq")
+spot_angle = 22.78
+spot_softness = 1.0
+range = 2048.0
+lit_version = "1.1.7"
+color = Color(0.76074815, 0.44727528, 3.85046e-07, 1)
+energy = 5.0
+shadow_enabled = true
+shadow_algorithm = 0
+shadow_hardness = 0.142
+metadata/_custom_type_script = "uid://blronx1n8oliq"
+
+[node name="LitSpotLight2D2" type="Node2D" parent="." unique_id=1256196182]
+position = Vector2(962, 884)
+rotation = -1.5707964
+script = ExtResource("3_q5itq")
+spot_angle = 22.78
+spot_softness = 1.0
+range = 2048.0
+lit_version = "1.1.7"
+color = Color(0.76074815, 0.44727528, 3.85046e-07, 1)
+energy = 5.0
+shadow_enabled = true
+metadata/_custom_type_script = "uid://blronx1n8oliq"
+
+[node name="LitSpotLight2D3" type="Node2D" parent="." unique_id=1101817547]
+position = Vector2(1533, 884)
+rotation = -1.5707964
+script = ExtResource("3_q5itq")
+spot_angle = 22.78
+spot_softness = 1.0
+range = 2048.0
+lit_version = "1.1.7"
+color = Color(0.76074815, 0.44727528, 3.85046e-07, 1)
+energy = 5.0
+shadow_enabled = true
+shadow_algorithm = 2
+metadata/_custom_type_script = "uid://blronx1n8oliq"
+
+[node name="Label" type="Label" parent="." unique_id=917615177]
+offset_left = 271.0
+offset_top = 899.0
+offset_right = 525.0
+offset_bottom = 957.0
+theme_override_constants/outline_size = 27
+theme_override_font_sizes/font_size = 42
+text = "Raymarched"
+
+[node name="Label2" type="Label" parent="." unique_id=730178594]
+offset_left = 839.0
+offset_top = 899.0
+offset_right = 1093.0
+offset_bottom = 957.0
+theme_override_constants/outline_size = 27
+theme_override_font_sizes/font_size = 42
+text = "Cone Traced"
+
+[node name="Label3" type="Label" parent="." unique_id=1930743826]
+offset_left = 1424.0
+offset_top = 899.0
+offset_right = 1678.0
+offset_bottom = 957.0
+theme_override_constants/outline_size = 27
+theme_override_font_sizes/font_size = 42
+text = "Stochastic"
+
+[node name="Label4" type="Label" parent="." unique_id=806409837]
+offset_left = 248.0
+offset_top = 965.0
+offset_right = 558.0
+offset_bottom = 999.0
+theme_override_constants/outline_size = 16
+theme_override_font_sizes/font_size = 24
+text = "Cheap, Fast, Godot Default"
+
+[node name="Label5" type="Label" parent="." unique_id=1292320118]
+offset_left = 719.0
+offset_top = 965.0
+offset_right = 1220.0
+offset_bottom = 999.0
+theme_override_constants/outline_size = 16
+theme_override_font_sizes/font_size = 24
+text = "Balanced, Semi-Realistic, Lit/Unreal Default"
+
+[node name="Label6" type="Label" parent="." unique_id=133908994]
+offset_left = 1297.0
+offset_top = 965.0
+offset_right = 1798.0
+offset_bottom = 999.0
+theme_override_constants/outline_size = 16
+theme_override_font_sizes/font_size = 24
+text = "Expensive, Realistic, Use for Cutscenes"
