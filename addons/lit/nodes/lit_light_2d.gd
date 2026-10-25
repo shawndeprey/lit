@@ -5,9 +5,17 @@ extends Node2D
 class_name LitLight2D
 
 ## Base of every Lit light: shared properties, registry wiring and Godot's Light2D
-## method names. set_item_cull_mask() writes CanvasItem's `light_mask` (a receiver is
-## lit when its `receiver_mask` shares a bit), set_item_shadow_cull_mask() writes
-## `shadow_mask`. Lights draw nothing; the registry packs the `lit_lights` group each frame.
+## method names.
+##
+## Lights draw nothing; the registry packs the `lit_lights` group each frame.[br][br]
+##
+## `light_mask` is the inherited CanvasItem property (Visibility > Light Mask in the
+## inspector): a receiver is lit by this light only if its `receiver_mask` shares a bit
+## with it.[br][br]
+##
+## The set_/get_/is_ methods carry Light2D's names so ported scripts keep working; each
+## reads or writes the matching property. set_item_cull_mask() writes `light_mask` and
+## set_item_shadow_cull_mask() writes `shadow_mask`.
 
 # Definitions live in LitShaderLibrary.
 const BlendMode = LitShaderLibrary.BlendMode

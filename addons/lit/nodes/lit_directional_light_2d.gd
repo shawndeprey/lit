@@ -12,8 +12,8 @@ class_name LitDirectionalLight2D
 ## `range`, `falloff` or cookie, and directional lights are never positionally culled.[br][br]
 ##
 ## Shares the receiver and shadow code path with point lights via the type flag in the
-## light-data texture. The shared surface (color, energy, height, the shadow gates,
-## blend mode, z/layer ranges and the Light2D-style methods) lives on LitLight2D.
+## light-data texture. The settings it shares with every Lit light are inherited from
+## LitLight2D.
 
 @export_group("Shadow Shape")
 ## Maximum distance shadows can extend, in world pixels; `shadow_length` scales within

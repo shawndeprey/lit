@@ -9,9 +9,8 @@ class_name LitSpotLight2D
 ## points, set by rotation) is the direction the cone shines. `range` and `falloff`
 ## give the same radial attenuation as a point light, and `spot_angle` / `spot_softness`
 ## shape the cone. It reuses the point light's radial shadow march, so shadows come for
-## free. The shared surface lives on LitPositionalLight2D (falloff, texture, shadow
-## length and source) and LitLight2D (color, energy, height, the shadow gates, blend
-## mode, z/layer ranges and the Light2D-style methods).
+## free. Everything except the cone is inherited from LitPositionalLight2D and
+## LitLight2D.
 
 @export_group("Cone")
 ## Half-angle from the aim direction to the cone edge, in degrees.
