@@ -122,6 +122,14 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_VISIBILITY_CHANGED:
 		LitLightRegistry.light_state_changed(self)
 
+# Godot runs only the most-derived _validate_property(), so subclasses supply their
+# source property through _shadow_source_property() rather than overriding this.
+func _validate_property(property: Dictionary) -> void:
+	LitShaderLibrary.validate_light_property(property, shadow_algorithm, _shadow_source_property())
+
+# The property sizing the shadow source, hidden under RAYMARCHED.
+@abstract func _shadow_source_property() -> StringName
+
 # Light2D method names.
 func set_enabled(value: bool) -> void:
 	enabled = value

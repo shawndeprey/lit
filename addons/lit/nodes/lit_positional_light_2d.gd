@@ -48,8 +48,8 @@ const TextureSizeMode = LitShaderLibrary.TextureSizeMode
 ## which is how far the light reaches.
 @export_range(0.0, 256.0, 0.5, "or_greater") var source_radius: float = 32.0
 
-func _validate_property(property: Dictionary) -> void:
-	LitShaderLibrary.validate_light_property(property, shadow_algorithm, "source_radius")
+func _shadow_source_property() -> StringName:
+	return &"source_radius"
 
 # PointLight2D method names.
 func set_texture(value: Texture2D) -> void:

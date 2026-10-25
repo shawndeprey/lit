@@ -34,8 +34,8 @@ class_name LitDirectionalLight2D
 @export_range(0.0, 60.0, 0.05) var source_angle: float = 6.0
 
 
-func _validate_property(property: Dictionary) -> void:
-	LitShaderLibrary.validate_light_property(property, shadow_algorithm, "source_angle")
+func _shadow_source_property() -> StringName:
+	return &"source_angle"
 
 
 # DirectionalLight2D's method names over `shadow_reach`.
