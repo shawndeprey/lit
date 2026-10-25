@@ -73,7 +73,7 @@ position = Vector2(960, 540)
 [node name="Lights" type="Node2D" parent="." unique_id=26516173]
 
 [node name="LightSaber" type="Node2D" parent="Lights" unique_id=1799641673]
-position = Vector2(1120, 567)
+position = Vector2(1163, 535)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 range = 1024.0

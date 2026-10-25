@@ -264,6 +264,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		float march_len;
 #ifdef LIT_SHADOW_STOCH
 		vec2 line_seg = vec2(0.0);               // a line light's strata half-vector (SDF units)
+		float line_frac = 1.0;                   // the window's share of the tube
 #endif
 		if (is_directional) {
 			// March a fixed direction across the SDF. screen_uv_to_sdf is affine, so
@@ -286,6 +287,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 				vec4 win = lit_line_window(t4, light_uv, frag_uv, range);
 				target_uv = win.xy;
 				line_seg = win.zw * px_to_sdf;
+				line_frac = sqrt(dot(win.zw, win.zw) / max(dot(t4.xy, t4.xy), 1e-6));
 			}
 #endif
 			vec2 delta = screen_uv_to_sdf(target_uv) - frag_sdf;
@@ -360,13 +362,18 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 				// cone is exact there.
 				bool stoch = algo == 2;
 				bool strata = stoch || is_line;
+				int n = max(int(round(t7.y)), 1);
 				if (is_line) {
 					src += abs(line_seg.x * march_dir.y - line_seg.y * march_dir.x);
 					strata = stoch || dot(line_seg, line_seg) > px_to_sdf * px_to_sdf;
+					// Samples are per tube: a window that is part of the tube marches
+					// that part's share of them, so no pixel's strata are wider than the
+					// tube's middle gets, and none narrower.
+					n = clamp(int(ceil(float(n) * line_frac)), 1, n);
 				}
 				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
 						march_len, t_cap, strata ? t_cap < march_len : capped, src, is_directional,
-						strata ? max(int(round(t7.y)), 1) : 0, stoch ? t7.z : 0.0,
+						strata ? n : 0, stoch ? t7.z : 0.0,
 						frag_uv * lit_viewport_size, steps, frag_d, line_seg, src_r,
 						self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 				s = lit_shadow_contrast(s, t3.w);

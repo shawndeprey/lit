@@ -424,6 +424,30 @@ func _shadows() -> void:
 	_tube_b.length = 300.0
 	pt.queue_free()
 	await frames(2)
+	# Samples are per tube: a pixel that sees part of a tube marches that part's share
+	# of them, so its strata are as wide as the tube's middle gets, never narrower. On
+	# the column below the wall a 500 px tube at 8 samples and a 1000 px tube at 16
+	# have the same strata width and, past the point where the window is shorter than
+	# both tubes, the same window, so they must read alike behind the thin wall.
+	var cols: Array[Vector2] = [P_UM, Vector2(1040, 400), Vector2(1040, 450)]
+	_tube_b.length = 500.0
+	_tube_b.shadow_samples = 8
+	await frames(2)
+	img = await capture()
+	var short8: Array[float] = []
+	for p in cols:
+		short8.append(lum(img, p))
+	_tube_b.length = 1000.0
+	_tube_b.shadow_samples = 16
+	await frames(2)
+	img = await capture()
+	for i in cols.size():
+		check_approx(c, "a 1000 px tube at 16 samples reads as 500 px at 8 behind the thin wall, %d px down" % int(cols[i].y - CB.y),
+				short8[i], lum(img, cols[i]), 0.01)
+	check_gt(c, "and with 58 px strata that umbra is partly open", lum(img, P_UM), AMBIENT, 0.03)
+	_tube_b.length = 300.0
+	_tube_b.shadow_samples = 16
+	await frames(2)
 	_tube_b.name = "TubeB"
 	wall.name = "WallB"
 
