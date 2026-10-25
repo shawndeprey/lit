@@ -355,11 +355,14 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 				// Cone Traced is the stochastic gate alone (0 samples) for a point, spot
 				// or directional source. One cone cannot stand for a tube (its wide cross
 				// section reads occluders beside the tube from every direction), so a line
-				// light marches its strata as Stochastic does, without the dither.
+				// light marches its strata as Stochastic does, without the dither, unless
+				// its window is under a pixel long: that is a point, and the point's single
+				// cone is exact there.
 				bool stoch = algo == 2;
 				bool strata = stoch || is_line;
 				if (is_line) {
 					src += abs(line_seg.x * march_dir.y - line_seg.y * march_dir.x);
+					strata = stoch || dot(line_seg, line_seg) > px_to_sdf * px_to_sdf;
 				}
 				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
 						march_len, t_cap, strata ? t_cap < march_len : capped, src, is_directional,

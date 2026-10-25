@@ -73,17 +73,16 @@ position = Vector2(960, 540)
 [node name="Lights" type="Node2D" parent="." unique_id=26516173]
 
 [node name="LightSaber" type="Node2D" parent="Lights" unique_id=1799641673]
-position = Vector2(1138, 538)
+position = Vector2(1120, 567)
 rotation = -1.5707964
 script = ExtResource("4_saber")
-length = 457.0
 range = 1024.0
 lit_version = "1.1.7"
 shadow_enabled = true
 
 [node name="LitPointLight2D" type="Node2D" parent="Lights" unique_id=1577877993]
 visible = false
-position = Vector2(1083, 551)
+position = Vector2(1120, 560)
 script = ExtResource("6_aiw8a")
 range = 1024.0
 lit_version = "1.1.7"

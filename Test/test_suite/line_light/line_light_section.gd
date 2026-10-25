@@ -388,6 +388,42 @@ func _shadows() -> void:
 	check_true(c, "a Cone Traced line light publishes F_STOCH (its cone is marched as strata)",
 			LitLightRegistry.activity_flags & LitShaderLibrary.F_STOCH != 0)
 	check_true(c, "and not F_CONE", LitLightRegistry.activity_flags & LitShaderLibrary.F_CONE == 0)
+	# A window under a pixel long is a point: a Cone Traced tube of length 0 (or 2 px)
+	# marches the point light's single cone, so it reads exactly as a Cone Traced point
+	# light with the same source, where its strata would run the point's stochastic
+	# estimate instead.
+	var pts := {"um": P_UM, "pen": P_PEN, "ref": P_REF, "near": P_NEAR}
+	var pt := point_light(CB, 300.0, 0.8, Color.WHITE, 300.0)
+	pt.falloff = 0.3
+	pt.source_radius = 2.0
+	pt.shadow_enabled = true
+	_tube_b.enabled = false
+	await frames(2)
+	img = await capture()
+	# The point's umbra edge past the wall's corner, found on the row so the probe
+	# straddles the penumbra, where one cone and sixteen strata would differ most.
+	var edge := Vector2(1380, 300)
+	for x in range(1100, 1380, 2):
+		if lum(img, Vector2(x, 300), 1) > AMBIENT + 0.05:
+			edge = Vector2(x, 300)
+			break
+	check_true(c, "the point light's umbra edge lies on the floor", edge.x < 1380.0)
+	pts["edge"] = edge
+	var pt_ref := {}
+	for k in pts:
+		pt_ref[k] = lum(img, pts[k])
+	pt.enabled = false
+	_tube_b.enabled = true
+	for len in [0.0, 2.0]:
+		_tube_b.length = len
+		await frames(2)
+		img = await capture()
+		for k in pts:
+			check_approx(c, "Cone Traced, length %d: %s reads as the Cone Traced point light" % [int(len), k],
+					pt_ref[k], lum(img, pts[k]), 0.004 if len == 0.0 else 0.01)
+	_tube_b.length = 300.0
+	pt.queue_free()
+	await frames(2)
 	_tube_b.name = "TubeB"
 	wall.name = "WallB"
 
