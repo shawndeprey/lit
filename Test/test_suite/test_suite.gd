@@ -60,6 +60,7 @@ extends Node2D
 const SECTIONS := [
 	{"id": "harness", "title": "Harness & Ambient", "script": "res://Test/test_suite/harness/harness_section.gd"},
 	{"id": "lights", "title": "Lights", "script": "res://Test/test_suite/lights/lights_section.gd", "pbr": true},
+	{"id": "line_light", "title": "LitLineLight2D", "script": "res://Test/test_suite/line_light/line_light_section.gd", "pbr": true},
 	{"id": "cookies", "title": "Light Textures (Cookies)", "script": "res://Test/test_suite/cookies/cookies_section.gd", "pbr": true},
 	{"id": "receivers", "title": "Receivers", "script": "res://Test/test_suite/receivers/receivers_section.gd", "pbr": true},
 	{"id": "animated_sprite", "title": "LitAnimatedSprite2D", "script": "res://Test/test_suite/animated_sprite/animated_sprite_section.gd", "pbr": true},

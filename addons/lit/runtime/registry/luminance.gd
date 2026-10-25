@@ -283,9 +283,10 @@ func _shadow_masks(surf: Array, casters: Array, shadow_color: Color,
 	return cell_mask
 
 
-# Point and spot share the radial path, exactly like the shader. `light` is accessed
-# dynamically: the shared properties live on both LitPointLight2D and LitSpotLight2D.
-# Falloff and N.L go per lobe; cone, cookie and shadow per mask point.
+# Point, spot and line share the radial path, exactly like the shader: a line light
+# measures from the nearest point of its segment (_nearest). `light` is accessed
+# dynamically: the shared properties live on LitPositionalLight2D. Falloff and N.L go
+# per lobe; cone, cookie and shadow per mask point.
 func _positional(light, pos: Vector2,
 		occ_nodes: Array, occ_layers: Array, rx_mask: int, self_source: Node,
 		pbr: bool, surf: Array) -> float:
@@ -295,7 +296,15 @@ func _positional(light, pos: Vector2,
 		s = 1.0
 	var range_px: float = light.range * s
 	var energy: float = light.energy
-	if range_px <= 0.0 or energy <= 0.0 or xf.origin.distance_to(pos) > range_px:
+	var half := Vector2.ZERO
+	var len2 := 0.0
+	var half_w := 0.0
+	if light is LitLineLight2D:
+		half = xf.basis_xform(Vector2(light.length * 0.5, 0.0))
+		len2 = half.length_squared()
+		half_w = minf(light.width * 0.5, light.range * 0.9) * s
+	if range_px <= 0.0 or energy <= 0.0 \
+			or _nearest(xf.origin, half, len2, pos).distance_to(pos) > range_px:
 		return 0.0
 	# Height is world px and, unlike range, not scaled by the node.
 	var height := maxf(light.height, 0.0)
@@ -314,8 +323,8 @@ func _positional(light, pos: Vector2,
 	var textured: bool = light.texture != null
 	var casters: Array = []
 	if light.shadow_enabled:
-		casters = _casters(light, surf[S_CENTER], xf.origin, surf[S_REACH], occ_nodes, occ_layers,
-				rx_mask, self_source)
+		casters = _casters(light, surf[S_CENTER], _nearest(xf.origin, half, len2, surf[S_CENTER]),
+				surf[S_REACH], occ_nodes, occ_layers, rx_mask, self_source)
 	var masked := spot or textured or not casters.is_empty()
 	var cell_mask: Array[Color] = []
 	if masked:
@@ -328,14 +337,14 @@ func _positional(light, pos: Vector2,
 		var cap := clampf(light.shadow_length, 0.01, 1.0)
 		for k in mask_points.size():
 			var p := mask_points[k]
-			var tl: Vector2 = xf.origin - p
+			var tl: Vector2 = _nearest(xf.origin, half, len2, p) - p
 			var d := tl.length()
 			var m := Color.WHITE
 			if spot and d > 0.0001:
 				var cone := smoothstep(cos_outer, cos_inner, aim.dot(-tl / d))
 				m = Color(cone, cone, cone)
 			if textured:
-				var ck := _cookie(light, -tl, xf, range_px)
+				var ck := _cookie(light, p - xf.origin, xf, range_px, sqrt(len2))
 				m = Color(m.r * ck.r, m.g * ck.g, m.b * ck.b) * ck.a
 			if d > 0.0001 and not casters.is_empty() and _blocked(p, p + tl * cap, casters):
 				m = Color(m.r * shadow_color.r, m.g * shadow_color.g, m.b * shadow_color.b)
@@ -347,10 +356,14 @@ func _positional(light, pos: Vector2,
 	var lit := Color(0.0, 0.0, 0.0)
 	var factor := 0.0
 	for i in normals.size():
-		var tl: Vector2 = xf.origin - points[i]
+		var tl: Vector2 = _nearest(xf.origin, half, len2, points[i]) - points[i]
 		var d := tl.length()
 		if d > range_px:
 			continue
+		if half_w > 0.0:
+			var skin := maxf(d - half_w, 0.0)
+			tl *= skin / maxf(d, 1e-4)
+			d = skin
 		var slant := sqrt(d * d + height * height)
 		if slant <= 0.0:
 			continue
@@ -358,7 +371,7 @@ func _positional(light, pos: Vector2,
 		var ndotl := (n.x * tl.x + n.y * tl.y + n.z * height) / slant
 		if ndotl <= 0.0:
 			continue
-		var f := pow(1.0 - d / range_px, falloff) * ndotl
+		var f := pow(1.0 - d / (range_px - half_w), falloff) * ndotl
 		if pbr:
 			f *= _pbr_diffuse(height / slant)
 		if masked:
@@ -372,17 +385,27 @@ func _positional(light, pos: Vector2,
 	return -lum if light.blend_mode == LitShaderLibrary.BlendMode.SUBTRACT else lum
 
 
+## The point of the segment `origin` +- `half` (`len2` = |half|^2) nearest `p`; the
+## origin itself for a point or spot light.
+static func _nearest(origin: Vector2, half: Vector2, len2: float, p: Vector2) -> Vector2:
+	if len2 <= 0.0:
+		return origin
+	return origin + half * clampf((p - origin).dot(half) / len2, -1.0, 1.0)
+
+
 ## Cookie modulation at `world_offset` from the light's center: WHITE when the light
 ## has no readable cookie, TRANSPARENT outside the footprint (the cookie masks the
-## light to zero there).
-func _cookie(light, world_offset: Vector2, xf: Transform2D, range_px: float) -> Color:
+## light to zero there). `fit_extra` widens a FIT_RANGE footprint along the node's
+## local x (a line light's world half-length).
+func _cookie(light, world_offset: Vector2, xf: Transform2D, range_px: float,
+		fit_extra := 0.0) -> Color:
 	var tex: Texture2D = light.texture
 	if tex == null:
 		return Color.WHITE
 	var half: Vector2
 	var local: Vector2
 	if int(light.texture_size_mode) == LitShaderLibrary.TextureSizeMode.FIT_RANGE:
-		half = Vector2(range_px, range_px) * light.texture_scale
+		half = Vector2(range_px + fit_extra, range_px) * light.texture_scale
 		local = world_offset.rotated(-light.global_rotation)
 	else:
 		half = Vector2(tex.get_size()) * 0.5 * light.texture_scale

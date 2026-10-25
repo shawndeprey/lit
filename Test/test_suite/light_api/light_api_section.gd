@@ -21,6 +21,7 @@ const CORE_COUNTS := {"Light2D": 32, "PointLight2D": 6, "DirectionalLight2D": 2}
 const PAIRS := [
 	["PointLight2D", "LitPointLight2D"],
 	["PointLight2D", "LitSpotLight2D"],
+	["PointLight2D", "LitLineLight2D"],
 	["DirectionalLight2D", "LitDirectionalLight2D"],
 ]
 # setter, getter, Lit property, probe value (must differ from the default).
@@ -65,6 +66,8 @@ func _new_light(lit_name: String) -> LitLight2D:
 			return LitPointLight2D.new()
 		"LitSpotLight2D":
 			return LitSpotLight2D.new()
+		"LitLineLight2D":
+			return LitLineLight2D.new()
 	return LitDirectionalLight2D.new()
 
 
@@ -197,7 +200,7 @@ func _base_class() -> void:
 		else:
 			check_true(c, "%s is LitPositionalLight2D" % lit_name, node is LitPositionalLight2D)
 			check(c, "%s extends the positional script" % lit_name, positional, (node.get_script() as GDScript).get_base_script())
-		check(c, "%s carries no configuration warning" % lit_name, 0, node._get_configuration_warnings().size())
+		check_true(c, "%s defines no configuration warning hook" % lit_name, not node.has_method("_get_configuration_warnings"))
 		check(c, "%s.BlendMode is the shared enum" % lit_name, LitShaderLibrary.BlendMode, node.get_script().get("BlendMode"))
 		check(c, "%s.ShadowAlgorithm is the shared enum" % lit_name, LitShaderLibrary.ShadowAlgorithm, node.get_script().get("ShadowAlgorithm"))
 		if node is LitDirectionalLight2D:

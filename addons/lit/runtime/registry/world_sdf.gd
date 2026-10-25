@@ -121,6 +121,9 @@ func update(host: Node, viewport: Viewport, visible: Array,
 					* clampf(light.shadow_length, 0.0, 1.0)
 			var toward := -Vector2.from_angle(light.global_rotation) * reach
 			rect = rect.expand(world_rect.position + toward).expand(world_rect.end + toward)
+		elif light is LitLineLight2D:
+			var half: Vector2 = light.global_transform.basis_xform(Vector2(light.length * 0.5, 0.0))
+			rect = rect.expand(light.global_position - half).expand(light.global_position + half)
 		else:
 			rect = rect.expand(light.global_position)
 	rect = rect.grow(8.0)

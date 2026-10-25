@@ -91,21 +91,81 @@ func build_and_publish(ctx: FrameContext) -> void:
 					n_minus = Vector2.from_angle(phi - half_angle + PI * 0.5)
 					cone_valid = true
 
+		# A line light's footprint is its segment grown by range (a capsule): per tile
+		# row its span is the union of the two end discs (the circle formula below) and
+		# the straight part, the segment clipped to the band grown by r|n.y| and widened
+		# by r|n.x| (n the segment's unit normal): exact, like the circle.
+		var line := visible[i] as LitLineLight2D
+		var ext_y := 0.0
+		var ax := 0.0
+		var ay := 0.0
+		var bx := 0.0
+		var by := 0.0
+		var grow_y := 0.0
+		var grow_x := 0.0
+		if line != null:
+			var half_px := canvas_xform.basis_xform(xf.basis_xform(Vector2(line.length * 0.5, 0.0)))
+			ext_y = absf(half_px.y)
+			ax = center.x - half_px.x
+			ay = center.y - half_px.y
+			bx = center.x + half_px.x
+			by = center.y + half_px.y
+			var len := half_px.length()
+			if len > 0.0:
+				grow_y = light_range * absf(half_px.x) / len
+				grow_x = light_range * absf(half_px.y) / len
+
 		# Per tile row, the circle's horizontal reach (sqrt(r^2 - dy^2), dy = the row
 		# band's closest approach) gives the exact tile span; no per-tile distance test.
-		var ty0 := clampi(int(floor((center.y - light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
-		var ty1 := clampi(int(floor((center.y + light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
+		var ty0 := clampi(int(floor((center.y - ext_y - light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
+		var ty1 := clampi(int(floor((center.y + ext_y + light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
 
 		for ty in range(ty0, ty1 + 1):
 			var y0 := float(ty * TILE_SIZE)
 			var y1 := y0 + float(TILE_SIZE)
-			var dy := center.y - clampf(center.y, y0, y1)
-			var rem := range_sq - dy * dy
-			if rem < 0.0:
-				continue
-			var half := sqrt(rem)
-			var tx0 := clampi(int(floor((center.x - half) / float(TILE_SIZE))), 0, tiles_x - 1)
-			var tx1 := clampi(int(floor((center.x + half) / float(TILE_SIZE))), 0, tiles_x - 1)
+			var x_lo: float
+			var x_hi: float
+			if line != null:
+				x_lo = 1e20
+				x_hi = -1e20
+				var dy_a := ay - clampf(ay, y0, y1)
+				var rem_a := range_sq - dy_a * dy_a
+				if rem_a >= 0.0:
+					var ha := sqrt(rem_a)
+					x_lo = ax - ha
+					x_hi = ax + ha
+				var dy_b := by - clampf(by, y0, y1)
+				var rem_b := range_sq - dy_b * dy_b
+				if rem_b >= 0.0:
+					var hb := sqrt(rem_b)
+					x_lo = minf(x_lo, bx - hb)
+					x_hi = maxf(x_hi, bx + hb)
+				var sdy := by - ay
+				if absf(sdy) >= 1e-6:
+					var t0 := (y0 - grow_y - ay) / sdy
+					var t1 := (y1 + grow_y - ay) / sdy
+					var t_min := minf(t0, t1)
+					var t_max := maxf(t0, t1)
+					if t_max >= 0.0 and t_min <= 1.0:
+						var xa := ax + (bx - ax) * clampf(t_min, 0.0, 1.0)
+						var xb := ax + (bx - ax) * clampf(t_max, 0.0, 1.0)
+						x_lo = minf(x_lo, minf(xa, xb) - grow_x)
+						x_hi = maxf(x_hi, maxf(xa, xb) + grow_x)
+				elif ay >= y0 - grow_y and ay <= y1 + grow_y:
+					x_lo = minf(x_lo, minf(ax, bx) - grow_x)
+					x_hi = maxf(x_hi, maxf(ax, bx) + grow_x)
+				if x_lo > x_hi:
+					continue
+			else:
+				var dy := center.y - clampf(center.y, y0, y1)
+				var rem := range_sq - dy * dy
+				if rem < 0.0:
+					continue
+				var half := sqrt(rem)
+				x_lo = center.x - half
+				x_hi = center.x + half
+			var tx0 := clampi(int(floor(x_lo / float(TILE_SIZE))), 0, tiles_x - 1)
+			var tx1 := clampi(int(floor(x_hi / float(TILE_SIZE))), 0, tiles_x - 1)
 			var row_base := ty * tiles_x
 			for tx in range(tx0, tx1 + 1):
 				# Cone vs tile rect: dot() is linear over the rect, so its maximum sits

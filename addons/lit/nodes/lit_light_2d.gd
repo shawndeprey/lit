@@ -61,8 +61,8 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
-## Shadow marches per fragment across the source (STOCHASTIC): more is smoother and
-## slower. Clamped by lit/quality/shadow_samples_max.
+## Shadow marches per fragment across the source (STOCHASTIC, and a line light's
+## CONE_TRACED): more is smoother and slower. Clamped by lit/quality/shadow_samples_max.
 @export_range(1, 32) var shadow_samples: int = 8
 ## STOCHASTIC dither inside each stratum. Samples are fractional sub-cone coverages,
 ## so any setting is smooth (no binary noise); the default is just enough dither to

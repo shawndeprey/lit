@@ -36,6 +36,7 @@ var _on_changed := Callable()
 var _nodes: Array = []
 var _kinds := PackedByteArray()
 var _ranges := PackedFloat32Array()
+var _lengths := PackedFloat32Array()
 var _flags := PackedInt32Array()
 var _smasks := PackedInt32Array()
 var _index := {}
@@ -77,7 +78,14 @@ func cull_visible(tree: SceneTree, world_rect: Rect2) -> Array:
 		var xf := node.global_transform
 		var p := xf.origin
 		var r := _ranges[i] * maxf(xf.x.length(), xf.y.length())
-		if p.x + r < min_x or p.x - r > max_x or p.y + r < min_y or p.y - r > max_y:
+		var rx := r
+		var ry := r
+		if _kinds[i] == 3:
+			# Line light: the segment's bounds grown by range.
+			var h := xf.basis_xform(Vector2(_lengths[i] * 0.5, 0.0))
+			rx += absf(h.x)
+			ry += absf(h.y)
+		if p.x + rx < min_x or p.x - rx > max_x or p.y + ry < min_y or p.y - ry > max_y:
 			continue
 		visible.append(node)
 	return visible
@@ -100,7 +108,7 @@ func shadow_scan(tree: SceneTree, read_masks: bool) -> Array:
 			continue
 		var algo := f >> ALGO_SHIFT
 		if algo != 0:
-			algos |= 1 << (algo - 1)
+			algos |= 2 if _kinds[i] == 3 else 1 << (algo - 1)
 		if read_masks:
 			var smask := _smasks[i]
 			smask_union |= smask
@@ -127,6 +135,10 @@ func _cull_visible_walk(lights: Array, world_rect: Rect2) -> Array:
 			var point := node as LitPointLight2D
 			if point.enabled and point.is_visible_in_tree() and _aabb_visible(point.global_transform, point.range, world_rect):
 				visible.append(point)
+		elif kind == 3:
+			var line := node as LitLineLight2D
+			if line.enabled and line.is_visible_in_tree() and _aabb_visible(line.global_transform, line.range, world_rect, line.length):
+				visible.append(line)
 		else:
 			var spot := node as LitSpotLight2D
 			if spot.enabled and spot.is_visible_in_tree() and _aabb_visible(spot.global_transform, spot.range, world_rect):
@@ -145,7 +157,8 @@ func _shadow_scan_walk(lights: Array, read_masks: bool) -> Array:
 		if not is_instance_valid(node) or not node.enabled or not node.shadow_enabled:
 			continue
 		if node.shadow_algorithm != 0:
-			algos |= 1 << (node.shadow_algorithm - 1)
+			# A line light's Cone Traced marches strata: the stochastic variant.
+			algos |= 2 if entry[1] == 3 else 1 << (node.shadow_algorithm - 1)
 		if read_masks:
 			var smask: int = node.shadow_mask
 			smask_union |= smask
@@ -192,8 +205,8 @@ func _on_tree_changed(node: Node) -> void:
 
 
 ## Rescan the lit_lights group and store [node, kind] (kind: 0 point, 1 directional,
-## 2 spot) so refresh() avoids the group scan and per-node type dispatch each frame.
-## The packed mirror is rebuilt from the same pass.
+## 2 spot, 3 line) so refresh() avoids the group scan and per-node type dispatch each
+## frame. The packed mirror is rebuilt from the same pass.
 func _rebuild_light_cache(tree: SceneTree) -> void:
 	_light_cache.clear()
 	_index.clear()
@@ -205,12 +218,15 @@ func _rebuild_light_cache(tree: SceneTree) -> void:
 			kind = 0
 		elif node is LitSpotLight2D:
 			kind = 2
+		elif node is LitLineLight2D:
+			kind = 3
 		if kind >= 0:
 			_light_cache.append([node, kind])
 	var n := _light_cache.size()
 	_nodes.resize(n)
 	_kinds.resize(n)
 	_ranges.resize(n)
+	_lengths.resize(n)
 	_flags.resize(n)
 	_smasks.resize(n)
 	for i in n:
@@ -242,6 +258,16 @@ func _write_mirror(i: int, node: Node, kind: int) -> void:
 		f |= point.shadow_algorithm << ALGO_SHIFT
 		_ranges[i] = point.range
 		_smasks[i] = point.shadow_mask
+	elif kind == 3:
+		var line := node as LitLineLight2D
+		if line.enabled: f |= F_ENABLED
+		if line.is_visible_in_tree(): f |= F_VISIBLE
+		if line.shadow_enabled: f |= F_SHADOW
+		if line.exclude_scene_occluders: f |= F_EXCLUDE
+		f |= line.shadow_algorithm << ALGO_SHIFT
+		_ranges[i] = line.range
+		_lengths[i] = line.length
+		_smasks[i] = line.shadow_mask
 	else:
 		var spot := node as LitSpotLight2D
 		if spot.enabled: f |= F_ENABLED
@@ -253,8 +279,10 @@ func _write_mirror(i: int, node: Node, kind: int) -> void:
 		_smasks[i] = spot.shadow_mask
 	_flags[i] = f
 
-## True if a light's node-scaled `range` AABB intersects the visible world rect.
-func _aabb_visible(xf: Transform2D, light_range: float, world_rect: Rect2) -> bool:
+## True if a light's node-scaled `range` AABB (grown by a line light's segment)
+## intersects the visible world rect.
+func _aabb_visible(xf: Transform2D, light_range: float, world_rect: Rect2, length := 0.0) -> bool:
 	var r := light_range * maxf(xf.x.length(), xf.y.length())
-	var aabb := Rect2(xf.origin - Vector2(r, r), Vector2(r * 2.0, r * 2.0))
+	var e := Vector2(r, r) + xf.basis_xform(Vector2(length * 0.5, 0.0)).abs()
+	var aabb := Rect2(xf.origin - e, e * 2.0)
 	return world_rect.intersects(aabb)

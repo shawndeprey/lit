@@ -119,6 +119,7 @@ config naming a missing shader or unknown variant (entries skipped).
 |---|---|
 | `harness` | probe calibration; LitCanvasModulate ambient colour / energy / last-wins / native-modulate conflict |
 | `lights` | point, spot and directional lights against the shading formula; light masks on all three; negative lights; 70 lights at once |
+| `line_light` | LitLineLight2D: the capsule footprint around the segment (Q), end caps, length / rotation / scale, shading and gates, width (flat core, falloff from the tube surface), shadows soft along the tube and sharp across it (Cone Traced strata vs the Stochastic reference, Raymarched hard, nothing cast across the tube by an occluder beside it), cookies over the capsule, kind / mirror / packed row / capsule culling, the luminance mirror, z ranges, camera zoom |
 | `cookies` | light textures: alpha shaping, tint, NATIVE / FIT_RANGE, scale, offset, rotation, spot composition, atlas |
 | `receivers` | LitSprite2D pre-wiring and proxies, emissive + mask, receiver mask, normal maps (and their rotation), specular, bare Sprite2D / Polygon2D receivers, make_material_unique |
 | `animated_sprite` | LitAnimatedSprite2D: lighting per frame (CanvasTexture and AtlasTexture-over-sheet frames), playback, specular-flag tracking, owned occluders, shadow_ignore_mask |

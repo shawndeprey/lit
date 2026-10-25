@@ -15,6 +15,7 @@ const WorldSdfScript := preload("res://addons/lit/runtime/registry/world_sdf.gd"
 const LIGHT_SCRIPTS := {
 	"res://addons/lit/nodes/lit_point_light_2d.gd": true,
 	"res://addons/lit/nodes/lit_spot_light_2d.gd": true,
+	"res://addons/lit/nodes/lit_line_light_2d.gd": true,
 	"res://addons/lit/nodes/lit_directional_light_2d.gd": true,
 }
 const RECEIVER_SCRIPTS := {

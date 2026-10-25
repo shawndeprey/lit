@@ -50,7 +50,7 @@ func _ready() -> void:
 	win.content_scale_factor = 1.0
 	var root: Node = load(_scene).instantiate()
 	add_child(root)
-	for n in root.find_children("*", "LitPointLight2D", true, false):
+	for n in root.find_children("*", "LitPositionalLight2D", true, false):
 		if _algo >= 0:
 			n.shadow_algorithm = _algo
 		if _shadows_off:

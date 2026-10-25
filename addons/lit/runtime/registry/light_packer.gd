@@ -5,9 +5,13 @@ extends RefCounted
 ##  1 directional: texel 1 is a screen-space direction toward the light.
 ##  2 spot:        texel 1 is a position (as a point); texel 4 adds the cone
 ##                 (aim direction plus the cosines of the inner and outer angles).
+##  3 line:        texel 1 is the node's position (as a point: the cookie's center);
+##                 texel 4 adds the segment's half-vector from the node to one end in
+##                 screen px, 1 / its squared length and the tube's half width (see
+##                 _pack_line).
 ## Layout per row: t0 = z code | flags | mask + z code high bits | falloff, t1 = uv/dir | range (directional:
 ## shadow_reach, world px) | energy, t2 = color.rgb | height,
-## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone,
+## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone / line segment,
 ## t5 = cookie atlas UV rect, t6 = cookie screen-px-to-UV matrix (texels 5-6 valid only
 ## when flags bit 2 is set), t7 = shadow source size | samples | jitter | shadow_mask
 ## (mask packed only while rx receivers exist), t8.xy = cookie UV center (0.5 shifted by
@@ -26,7 +30,7 @@ extends RefCounted
 ## cookie offset, bit 19 z range narrower than +-4096 (texel 0 code), bits 20-21 type,
 ## bit 22 layer range set (texel 9 written and read).
 ##
-## Node scale: range, source_radius and the FIT_RANGE cookie footprint pack multiplied
+## Node scale: range, source_radius, width and the FIT_RANGE cookie footprint pack multiplied
 ## by the node's global scale (larger basis axis, snapped to 1 for unscaled nodes);
 ## height does not, matching Godot's Light2D.
 
@@ -103,6 +107,10 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 		var spot := visible[i] as LitSpotLight2D
 		if spot != null:
 			_pack_spot(i, spot, canvas_xform, vp_size)
+			continue
+		var line := visible[i] as LitLineLight2D
+		if line != null:
+			_pack_line(i, line, canvas_xform, vp_size)
 			continue
 		_pack_point(i, visible[i] as LitPointLight2D, canvas_xform, vp_size)
 	_upload_pack_buffer(count)
@@ -369,14 +377,81 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	if _rx_union_frame != 0:
 		_pack_buf[o + 31] = float(light.shadow_mask)
 
+## Pack one line light: a point light (texels 0 to 3, 7) at the node plus its segment
+## (texel 4). The segment is centered on the node along its local +X and takes the full
+## node transform, so a non-uniform scale stretches it; range and source_radius keep
+## the larger-axis rule.
+func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
+	var xf := light.global_transform
+	var screen_px: Vector2 = canvas_xform * xf.origin
+	var uv := screen_px / vp_size
+	var s := maxf(xf.x.length(), xf.y.length())
+	if absf(s - 1.0) < 1e-5:
+		s = 1.0
+	var half_world := xf.basis_xform(Vector2(light.length * 0.5, 0.0))
+	var half_px := canvas_xform.basis_xform(half_world)
+	var len2 := half_px.length_squared()
+
+	var o := row * _tpl * 4
+
+	var subtractive := 1.0 if light.blend_mode == LitLineLight2D.BlendMode.SUBTRACT else 0.0
+	# Texel 0: z code | flags + type | light_mask + z code high bits | falloff
+	var rp: Vector3 = light.range_pack
+	_pack_buf[o + 0] = rp.x
+	_pack_buf[o + 2] = float(light.light_mask & 1048575) + rp.y
+	if rp.z >= 4194304.0 and _read_ranges:
+		_pack_layer_range(o, light)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + rp.z \
+			+ _pack_cookie(o, light, canvas_xform, xf, s, half_world.length()) \
+			+ 8.0 * float(light.shadow_algorithm) \
+			+ (_pack_excl(o, light) if _excl_active else 0.0) \
+			+ _pack_shadow_length(light.shadow_length)
+	const TYPE_LINE := 3145728.0
+	_pack_buf[o + 1] = flags + TYPE_LINE
+	_pack_buf[o + 3] = light.falloff
+
+	# Texel 1: uv.x | uv.y | range | energy
+	_pack_buf[o + 4] = uv.x
+	_pack_buf[o + 5] = uv.y
+	_pack_buf[o + 6] = light.range * s
+	_pack_buf[o + 7] = light.energy
+
+	# Texel 2: color.rgb | height
+	_pack_buf[o + 8] = light.color.r
+	_pack_buf[o + 9] = light.color.g
+	_pack_buf[o + 10] = light.color.b
+	_pack_buf[o + 11] = light.height
+
+	# Texel 3: shadow_color.rgb | shadow_hardness
+	_pack_buf[o + 12] = light.shadow_color.r
+	_pack_buf[o + 13] = light.shadow_color.g
+	_pack_buf[o + 14] = light.shadow_color.b
+	_pack_buf[o + 15] = light.shadow_hardness
+
+	# Texel 4: the half-vector (screen px), 1 / its squared length (0 at zero length) and
+	# the tube's half width (world px, scaled like range and kept inside it).
+	_pack_buf[o + 16] = half_px.x
+	_pack_buf[o + 17] = half_px.y
+	_pack_buf[o + 18] = 1.0 / len2 if len2 > 0.0 else 0.0
+	_pack_buf[o + 19] = minf(light.width * 0.5, light.range * 0.9) * s
+
+	# Texel 7: source_radius | samples | jitter (read only by cone/stochastic shaders)
+	_pack_buf[o + 28] = light.source_radius * s
+	_pack_buf[o + 29] = float(mini(light.shadow_samples, shadow_samples_max))
+	_pack_buf[o + 30] = light.shadow_jitter
+	if _rx_union_frame != 0:
+		_pack_buf[o + 31] = float(light.shadow_mask)
+
 ## Pack the cookie fields (texels 5-6, plus t8.xy under a nonzero texture_offset) for
-## the point/spot light whose row starts at float offset `o`. Returns the flags
+## the point/spot/line light whose row starts at float offset `o`. Returns the flags
 ## contribution: 0 untextured, bit 2 for a packed cookie, plus bit 18 when t8.xy
 ## carries an offset cookie-UV center. Texel 5 is the atlas UV rect. Texel 6 is the
 ## 2x2 matrix taking a screen-pixel offset from the light's center to a cookie-UV
 ## offset around that center. `light` is accessed dynamically: the cookie properties
-## live on both LitPointLight2D and LitSpotLight2D.
-func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transform2D, s: float) -> float:
+## live on LitPositionalLight2D. `fit_extra` widens a FIT_RANGE footprint along the
+## node's local x (a line light's world half-length), so it spans the capsule's box.
+func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transform2D, s: float,
+		fit_extra := 0.0) -> float:
 	if not _cookies_active:
 		return 0.0
 	var tex: Texture2D = light.get("texture")
@@ -391,7 +466,7 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transfor
 	var basis: Transform2D
 	if int(light.get("texture_size_mode")) == 1:
 		var r: float = float(light.get("range")) * s
-		half = Vector2(r, r) * float(light.get("texture_scale"))
+		half = Vector2(r + fit_extra, r) * float(light.get("texture_scale"))
 		basis = canvas_xform * Transform2D(xf.get_rotation(), Vector2.ZERO)
 	else:
 		half = Vector2(tex.get_size()) * 0.5 * float(light.get("texture_scale"))

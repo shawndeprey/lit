@@ -1,10 +1,40 @@
 // Unit: per-light shading core: lit_shade().
 
+// Whether this variant marches a light's algorithm (flags bits 3-4) as an area source
+// (lit_shadow_stoch). A line light's Cone Traced is marched there too, as strata along
+// the tube, so it takes the stochastic variant; a cone-only variant hard-marches it to Q.
+#if defined(LIT_SHADOW_CONE) && defined(LIT_SHADOW_STOCH)
+#define LIT_PHYS_ALGO(flags, line) (((flags) & 24) != 0)
+#elif defined(LIT_SHADOW_CONE)
+#define LIT_PHYS_ALGO(flags, line) (((flags) & 24) == 8 && !(line))
+#elif defined(LIT_SHADOW_STOCH)
+#define LIT_PHYS_ALGO(flags, line) (((flags) & 24) == 16 || ((line) && ((flags) & 24) != 0))
+#else
+#define LIT_PHYS_ALGO(flags, line) false
+#endif
+
+// The source a line light's strata tile: the part of the segment within range of the
+// fragment, as its middle (screen UV, xy) and half-vector (screen px, zw), so no stratum
+// stands for light that never reaches the fragment. t4 = half.xy | 1 / |half|^2 | half width.
+#ifdef LIT_SHADOW_STOCH
+vec4 lit_line_window(vec4 t4, vec2 light_uv, vec2 frag_uv, float range) {
+	vec2 d = (light_uv - frag_uv) * lit_viewport_size;
+	float r_px = range * lit_canvas_scale;
+	float b = dot(d, t4.xy) * t4.z;
+	float e = sqrt(max((r_px * r_px - dot(d, d)) * t4.z + b * b, 0.0));
+	float u0 = max(-b - e, -1.0);
+	float u1 = min(-b + e, 1.0);
+	return vec4(light_uv + t4.xy * (0.5 * (u0 + u1)) / lit_viewport_size, t4.xy * (0.5 * (u1 - u0)));
+}
+#endif
+
 // Shade this fragment by light row `i` and return its contribution (negative for a
 // subtractive light). Called once per light affecting the fragment, from the directional
 // sweep and the per-tile loop in fragment(). metallic/roughness are sampled once per
-// fragment by the caller and used only in PBR mode.
-vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
+// fragment by the caller and used only in PBR mode. `positional` is a call-site
+// constant: the directional sweep passes false, so its inlined copy folds the line
+// light's blocks away instead of carrying them for every full-screen light.
+vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float metallic, float roughness,
 		vec2 frag_uv, vec2 frag_sdf, float sdf_diag, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS) {
@@ -14,11 +44,12 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 	vec4 t0 = texelFetch(lit_light_data, ivec2(0, i), 0);
 
 	// flags bit 0 = shadow_enabled, bit 1 = subtractive, bits 20-21 = type (0 = point,
-	// 1 = directional, 2 = spot).
+	// 1 = directional, 2 = spot, 3 = line).
 	int flags = int(round(t0.y));
 	int type = (flags >> 20) & 3;
 	bool is_directional = type == 1;
 	bool is_spot = type == 2;
+	bool is_line = positional && type == 3;
 	bool shadow_enabled = (flags & 1) != 0;
 	bool subtractive = (flags & 2) != 0;
 	float falloff = t0.w;
@@ -78,9 +109,29 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 		float range_px = range * lit_canvas_scale;
 		float height_px = height * lit_canvas_scale;
 		vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
+		// A line light lights from Q, the nearest point of its segment: texel 4 holds the
+		// half-vector from the node to one end with the inverse of its squared length
+		// (see _pack_line). Q is the foot of the perpendicular clamped to the end caps, so
+		// past an end the light is a point light at that endpoint. The cookie stays on
+		// the node.
+		float half_w = 0.0;
+		if (is_line) {
+			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | 1 / |half|^2 | half width
+			float u = clamp(-dot(to_light_px, t4.xy) * t4.z, -1.0, 1.0);
+			to_light_px += t4.xy * u;
+			half_w = t4.w * lit_canvas_scale;
+		}
 		float dist = length(to_light_px);
 		if (dist > range_px) {
 			return vec3(0.0);                // beyond range
+		}
+		if (is_line) {
+			// The tube's width: under it the light comes from overhead, and the falloff
+			// runs from its surface out to the range.
+			float surf = max(dist - half_w, 0.0);
+			to_light_px *= surf / max(dist, 1e-4);
+			range_px -= half_w;
+			dist = surf;
 		}
 		Ldir = normalize(vec3(to_light_px, height_px));
 		atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
@@ -209,6 +260,9 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 
 		vec2 march_dir;
 		float march_len;
+#ifdef LIT_SHADOW_STOCH
+		vec2 line_seg = vec2(0.0);               // a line light's strata half-vector (SDF units)
+#endif
 		if (is_directional) {
 			// March a fixed direction across the SDF. screen_uv_to_sdf is affine, so
 			// the SDF-space direction comes from offsetting the fragment UV along the
@@ -216,6 +270,24 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			// march length is zoom-invariant - never a screen-derived distance.
 			march_dir = normalize(screen_uv_to_sdf(frag_uv + shadow_dir_uv) - frag_sdf);
 			march_len = t1.z * lit_canvas_scale * px_to_sdf;
+		} else if (is_line) {
+			// A line light marches toward Q (its nearest point) when raymarched, and as
+			// an area source toward the middle of the part of its segment within range of
+			// the fragment, the source its strata tile. Its own branch, so point and spot
+			// keep the branch below unchanged.
+			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | 1 / |half|^2 | half width
+			vec2 d = (light_uv - frag_uv) * lit_viewport_size;
+			vec2 target_uv = light_uv + t4.xy * clamp(-dot(d, t4.xy) * t4.z, -1.0, 1.0) / lit_viewport_size;
+#ifdef LIT_SHADOW_STOCH
+			if (LIT_PHYS_ALGO(flags, true)) {
+				vec4 win = lit_line_window(t4, light_uv, frag_uv, range);
+				target_uv = win.xy;
+				line_seg = win.zw * px_to_sdf;
+			}
+#endif
+			vec2 delta = screen_uv_to_sdf(target_uv) - frag_sdf;
+			march_len = length(delta);
+			march_dir = delta / max(march_len, 0.0001);
 		} else {
 			// Point and spot both march toward the light's screen position.
 			vec2 delta = screen_uv_to_sdf(light_uv) - frag_sdf;
@@ -269,27 +341,32 @@ vec3 lit_shade(int i, vec3 albedo, vec3 N, vec3 spec_shin, float shininess,
 			// physical algorithms pay nothing for them.
 			int algo = (flags >> 3) & 3;
 #ifdef LIT_SHADOW_STOCH
-#ifdef LIT_SHADOW_CONE
-			if (algo != 0) {
-#else
-			if (algo == 2) {
-#endif
+			if (LIT_PHYS_ALGO(flags, is_line)) {
 				vec4 t7 = texelFetch(lit_light_data, ivec2(7, i), 0); // source | samples | jitter
 				// Point/spot: t7.x is the source disc's radius in world px. Directional:
 				// t7.x is tan(source half-angle), used as an angular extent directly.
-				float src = is_directional ? t7.x : t7.x * lit_canvas_scale * px_to_sdf;
-				// Cone Traced is the stochastic gate alone (0 samples); a stochastic
-				// light always marches at least one stratum.
+				// Line: the radius plus its strata source's apparent half-width across
+				// the march, for the gate; line_seg spreads the strata.
+				float src_r = is_directional ? t7.x : t7.x * lit_canvas_scale * px_to_sdf;
+				float src = src_r;
+				// Cone Traced is the stochastic gate alone (0 samples) for a point, spot
+				// or directional source. One cone cannot stand for a tube (its wide cross
+				// section reads occluders beside the tube from every direction), so a line
+				// light marches its strata as Stochastic does, without the dither.
 				bool stoch = algo == 2;
+				bool strata = stoch || is_line;
+				if (is_line) {
+					src += abs(line_seg.x * march_dir.y - line_seg.y * march_dir.x);
+				}
 				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
-						march_len, t_cap, stoch ? t_cap < march_len : capped, src, is_directional,
-						stoch ? max(int(round(t7.y)), 1) : 0, t7.z,
-						frag_uv * lit_viewport_size, steps, frag_d,
+						march_len, t_cap, strata ? t_cap < march_len : capped, src, is_directional,
+						strata ? max(int(round(t7.y)), 1) : 0, stoch ? t7.z : 0.0,
+						frag_uv * lit_viewport_size, steps, frag_d, line_seg, src_r,
 						self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 				s = lit_shadow_contrast(s, t3.w);
 			} else
 #elif defined(LIT_SHADOW_CONE)
-			if (algo == 1) {
+			if (LIT_PHYS_ALGO(flags, is_line)) {
 				vec4 t7 = texelFetch(lit_light_data, ivec2(7, i), 0); // source | samples | jitter
 				// Cone half-angle tangent: source size over source distance (directional
 				// packs the tangent directly).

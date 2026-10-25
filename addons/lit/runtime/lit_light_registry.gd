@@ -386,7 +386,7 @@ func _on_tree_changed(node: Node) -> void:
 				if ts.get_occlusion_layer_light_mask(l) != 1:
 					_occluder_tiles.note_mask_seen()
 					break
-	elif node is LitPointLight2D or node is LitSpotLight2D or node is LitDirectionalLight2D:
+	elif node is LitLight2D:
 		# Scope roots follow the light set.
 		_occluder_tiles.mark_dirty()
 

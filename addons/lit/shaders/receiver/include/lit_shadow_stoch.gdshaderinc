@@ -17,8 +17,11 @@ const int LIT_MAX_SHADOW_SAMPLES = 32;
 // the Cone Traced algorithm. Multi-occluder accumulation across strata is preserved
 // (the single-blocker minimum applies only within one narrow sub-wedge, where it is
 // nearly exact). Point/spot: strata span the emitting disc's diameter perpendicular to
-// the light direction, src is its half-extent in SDF units. Directional: the march
-// direction deflects across the source's angular extent, src is tan(half-angle).
+// the light direction, src is its half-extent in SDF units. Line: strata tile the
+// source segment, light_sdf its middle and seg its half-vector (SDF units), each
+// sub-cone covering its piece of the tube as seen from the fragment plus the tube's
+// radius src_r; src is the whole part's apparent half-width, for the gate. Directional:
+// the march direction deflects across the source's angular extent, src is tan(half-angle).
 // jitter blends stratum centers toward per-pixel randomized positions inside each
 // stratum; with fractional samples it adds only faint residual grain either way.
 //
@@ -40,11 +43,13 @@ const int LIT_MAX_SHADOW_SAMPLES = 32;
 // alone, which is the Cone Traced algorithm.
 float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float t_cap, bool capped, float src,
 		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
+		vec2 seg, float src_r,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
 	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
 	float band = capped ? w_gate * t_cap : 0.0;
 	n = min(n, LIT_MAX_SHADOW_SAMPLES);
 	vec2 perp = vec2(-dir.y, dir.x);
+	bool line = dot(seg, seg) > 0.0;
 	// Interleaved gradient noise gives the per-pixel base; the golden-ratio sequence
 	// decorrelates it across samples.
 	float ign = fract(52.9829189 * fract(dot(noise_px, vec2(0.06711056, 0.00583715))));
@@ -66,6 +71,12 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 				sdir = normalize(dir + perp * (u * src));
 				smaxd = maxd * cap_frac;
 				w_sub = max(half_stratum, 1e-4);
+			} else if (line) {
+				vec2 delta = (light_sdf + seg * u) - frag_sdf;
+				float len = length(delta);
+				sdir = delta / max(len, 1e-4);
+				smaxd = len * cap_frac;
+				w_sub = max((abs(seg.x * sdir.y - seg.y * sdir.x) / float(n) + src_r) / max(len, 1e-4), 1e-4);
 			} else {
 				vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
 				float len = length(delta);

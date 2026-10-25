@@ -93,6 +93,7 @@ That's it - everything updates live in the editor as you build.
 | `LitPointLight2D` | A light that shines in all directions from a point. |
 | `LitDirectionalLight2D` | A sun - parallel light across the whole scene. |
 | `LitSpotLight2D` | A cone of light you can aim. |
+| `LitLineLight2D` | A segment of light: lasers, tube lights, light sabers. |
 | `LitCanvasModulate` | Sets the scene's darkness/ambient color. |
 | `LitSprite2D` | A `Sprite2D` that's already set up to receive light. |
 | `LitAnimatedSprite2D` | An `AnimatedSprite2D` that's already set up to receive light, normal maps and all, frame by frame. |
