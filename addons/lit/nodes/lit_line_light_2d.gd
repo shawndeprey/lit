@@ -10,7 +10,8 @@ class_name LitLineLight2D
 ## transform (rotation, scale and skew). Every distance a point light measures from its
 ## position this light measures from the nearest point of the segment, so it lights a
 ## capsule around the segment and past an end cap it behaves as a point light at that
-## end; `width` gives the tube a body, lit from overhead across it. Shadows follow:
+## end; `width` gives the tube a body, lit from overhead across it, and `glow` dims the
+## halo around it against the beam. Shadows follow:
 ## Raymarched casts one hard march from that nearest point, while Cone Traced and
 ## Stochastic march `shadow_samples` narrow cones spread along the part of the segment
 ## within `range` of the receiver (Stochastic dithers them), so shadows are soft along
@@ -37,6 +38,15 @@ class_name LitLineLight2D
 @export_range(0.0, 1024.0, 0.5, "or_greater") var width: float = 0.0:
 	set(value):
 		width = maxf(value, 0.0)
+		LitLightRegistry.light_state_changed(self)
+## Brightness of the glow around the beam, at the beam's edge, as a fraction of
+## `energy`. 1 runs the glow straight into the beam (the default); lower values keep the
+## beam a crisp bar inside a dimmer halo, so a bright laser does not spread into a wide
+## saturated band on a pale floor. The beam itself is `energy`: 1 and above is solid,
+## below 1 the floor shows through it. At `width` 0 there is no beam, only the glow.
+@export_range(0.0, 1.0, 0.01) var glow: float = 1.0:
+	set(value):
+		glow = clampf(value, 0.0, 1.0)
 		LitLightRegistry.light_state_changed(self)
 
 func _validate_property(property: Dictionary) -> void:

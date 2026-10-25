@@ -4,7 +4,8 @@ extends LitSuiteSection
 ## measured from Q, the nearest point of the segment, so the light is constant along
 ## the tube and a point light past each end cap), length / rotation / node scale, the
 ## point-light shading contract (range, falloff, energy, colour, height, gates, blend,
-## light masks), width (a flat core under the tube, the falloff from its surface),
+## light masks), width and glow (a flat beam under the tube, a halo at a fraction of its
+## brightness falling off from its surface),
 ## shadows (umbra, colour, length, soft along the tube and sharp across it on Cone
 ## Traced and Stochastic with the stochastic as the reference, Raymarched hard, and an
 ## occluder beside the tube darkening nothing but its own shadow), cookies
@@ -259,6 +260,34 @@ func _width() -> void:
 			mgr.sample_luminance(CA + Vector2(0, 60)), TOL)
 	check_approx(c, "width 40: sample_luminance under the tube matches the render", lum(img, CA + Vector2(0, 10)),
 			mgr.sample_luminance(CA + Vector2(0, 10)), TOL)
+	l.glow = 0.5
+	await frames(1)
+	img = await capture()
+	check_approx(c, "glow 0.5, width 40: under the tube the beam keeps its brightness", on, lum(img, CA + Vector2(0, 10)), TOL)
+	var halo := AMBIENT + 0.5 * (_exp(40.0, 130.0, 0.5, 1.0, 100.0) - AMBIENT)
+	check_approx(c, "glow 0.5: 60 px beside, the halo is half the beam's energy", halo, lum(img, CA + Vector2(0, 60)), TOL)
+	check_approx(c, "glow 0.5: 100 px past the end cap, the halo too", AMBIENT + 0.5 * (_exp(80.0, 130.0, 0.5, 1.0, 100.0) - AMBIENT),
+			lum(img, CA + Vector2(200, 0)), TOL)
+	check_approx(c, "glow 0.5: sample_luminance 60 px beside matches the render", lum(img, CA + Vector2(0, 60)),
+			mgr.sample_luminance(CA + Vector2(0, 60)), TOL)
+	l.glow = 0.0
+	await frames(1)
+	img = await capture()
+	check_approx(c, "glow 0: the beam alone, 60 px beside is ambient", AMBIENT, lum(img, CA + Vector2(0, 60)), TOL)
+	check_approx(c, "glow 0: under the tube still the beam", on, lum(img, CA + Vector2(0, 10)), TOL)
+	l.glow = 0.5
+	l.width = 0.0
+	await frames(1)
+	img = await capture()
+	var halo_on := AMBIENT + 0.5 * (on - AMBIENT)
+	check_approx(c, "width 0, glow 0.5: no beam, the pixel on the segment is halo (no hairline)", halo_on, lum(img, CA), TOL)
+	check_approx(c, "width 0, glow 0.5: one pixel beside the segment is halo too", halo_on, lum(img, CA + Vector2(0, 1)), TOL)
+	check_approx(c, "width 0, glow 0.5: sample_luminance on the segment matches", lum(img, CA), mgr.sample_luminance(CA), TOL)
+	l.width = 12.0
+	await frames(1)
+	img = await capture()
+	check_approx(c, "width 12, glow 0.5: the beam is back on the segment", on, lum(img, CA), TOL)
+	l.glow = 1.0
 	l.width = 400.0
 	await frames(1)
 	img = await capture()
@@ -496,6 +525,9 @@ func _api() -> void:
 	check_true(c, "LitLineLight2D is not a LitPointLight2D or LitSpotLight2D", not (any is LitPointLight2D) and not (any is LitSpotLight2D))
 	check(c, "fresh length 128", 128.0, fresh.length)
 	check(c, "fresh width 0 (an ideal line)", 0.0, fresh.width)
+	check(c, "fresh glow 1 (the halo runs into the beam)", 1.0, fresh.glow)
+	fresh.glow = 2.0
+	check(c, "glow clamps to 1", 1.0, fresh.glow)
 	check(c, "fresh range 256 (point-light defaults)", 256.0, fresh.range)
 	fresh.length = -5.0
 	check(c, "a negative length clamps to 0", 0.0, fresh.length)
@@ -526,7 +558,11 @@ func _api() -> void:
 		check(c, "packed type bits = 3 (flags bits 20-21)", 3, (int(round(packer._pack_buf[o + 1])) >> 20) & 3)
 		check_approx(c, "texel 4.x: half-vector along +x = length / 2 in screen px", 75.0, packer._pack_buf[o + 16], 0.01)
 		check_approx(c, "texel 4.y: no y component unrotated", 0.0, packer._pack_buf[o + 17], 0.01)
-		check_approx(c, "texel 4.z: 1 / |half|^2", 1.0 / (75.0 * 75.0), packer._pack_buf[o + 18], 1e-7)
+		check_approx(c, "texel 4.z: glow 1", 1.0, packer._pack_buf[o + 18], 0.001)
+		l.glow = 0.4
+		await frames(1)
+		check_approx(c, "texel 4.z: glow 0.4", 0.4, packer._pack_buf[o + 18], 0.001)
+		l.glow = 1.0
 		check_approx(c, "texel 1.z: range", 100.0, packer._pack_buf[o + 6], 0.01)
 		check_approx(c, "texel 4.w: half width 0", 0.0, packer._pack_buf[o + 19], 0.01)
 		l.width = 30.0
@@ -550,7 +586,7 @@ func _api() -> void:
 		l.rotation = 0.0
 		l.length = 0.0
 		await frames(1)
-		check(c, "length 0 packs 1 / |half|^2 as 0 (no division)", 0.0, packer._pack_buf[o + 18])
+		check_approx(c, "length 0 packs a zero half-vector", 0.0, packer._pack_buf[o + 16], 0.001)
 	l.length = 160.0
 
 	# Capsule culling: a line whose node sits off screen but whose segment reaches the

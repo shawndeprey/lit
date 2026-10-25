@@ -757,6 +757,7 @@ func _spawn_light(kind: String, col: Color) -> void:
 			n.height = _rng.randf_range(12, 26)
 			n.length = _rng.randf_range(60, 420)
 			n.width = _rng.randf_range(0, 24)
+			n.glow = _rng.randf_range(0.2, 1.0)
 			if _opt_linelen >= 0.0:
 				n.length = _opt_linelen
 		_:

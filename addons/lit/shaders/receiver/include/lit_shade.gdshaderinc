@@ -15,13 +15,14 @@
 
 // The source a line light's strata tile: the part of the segment within range of the
 // fragment, as its middle (screen UV, xy) and half-vector (screen px, zw), so no stratum
-// stands for light that never reaches the fragment. t4 = half.xy | 1 / |half|^2 | half width.
+// stands for light that never reaches the fragment. t4 = half.xy | glow | half width.
 #ifdef LIT_SHADOW_STOCH
 vec4 lit_line_window(vec4 t4, vec2 light_uv, vec2 frag_uv, float range) {
 	vec2 d = (light_uv - frag_uv) * lit_viewport_size;
 	float r_px = range * lit_canvas_scale;
-	float b = dot(d, t4.xy) * t4.z;
-	float e = sqrt(max((r_px * r_px - dot(d, d)) * t4.z + b * b, 0.0));
+	float inv2 = 1.0 / max(dot(t4.xy, t4.xy), 1e-6);
+	float b = dot(d, t4.xy) * inv2;
+	float e = sqrt(max((r_px * r_px - dot(d, d)) * inv2 + b * b, 0.0));
 	float u0 = max(-b - e, -1.0);
 	float u1 = min(-b + e, 1.0);
 	return vec4(light_uv + t4.xy * (0.5 * (u0 + u1)) / lit_viewport_size, t4.xy * (0.5 * (u1 - u0)));
@@ -110,24 +111,28 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		float height_px = height * lit_canvas_scale;
 		vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
 		// A line light lights from Q, the nearest point of its segment: texel 4 holds the
-		// half-vector from the node to one end with the inverse of its squared length
-		// (see _pack_line). Q is the foot of the perpendicular clamped to the end caps, so
-		// past an end the light is a point light at that endpoint. The cookie stays on
-		// the node.
+		// half-vector from the node to one end, the glow and the half width (see
+		// _pack_line). Q is the foot of the perpendicular clamped to the end caps, so past
+		// an end the light is a point light at that endpoint. The cookie stays on the node.
 		float half_w = 0.0;
+		float glow = 1.0;
 		if (is_line) {
-			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | 1 / |half|^2 | half width
-			float u = clamp(-dot(to_light_px, t4.xy) * t4.z, -1.0, 1.0);
+			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
+			float u = clamp(-dot(to_light_px, t4.xy) / max(dot(t4.xy, t4.xy), 1e-6), -1.0, 1.0);
 			to_light_px += t4.xy * u;
 			half_w = t4.w * lit_canvas_scale;
+			glow = t4.z;
 		}
 		float dist = length(to_light_px);
 		if (dist > range_px) {
 			return vec3(0.0);                // beyond range
 		}
+		float beam = 0.0;
 		if (is_line) {
 			// The tube's width: under it the light comes from overhead, and the falloff
-			// runs from its surface out to the range.
+			// runs from its surface out to the range. `beam` is this pixel's coverage by
+			// the tube (a 1 px box filter on its edge; 0 everywhere at zero width).
+			beam = clamp(min(dist + 0.5, half_w) - max(dist - 0.5, -half_w), 0.0, 1.0);
 			float surf = max(dist - half_w, 0.0);
 			to_light_px *= surf / max(dist, 1e-4);
 			range_px -= half_w;
@@ -135,6 +140,10 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		}
 		Ldir = normalize(vec3(to_light_px, height_px));
 		atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
+		if (is_line) {
+			// Outside the beam the glow is `glow` of the beam's brightness.
+			atten *= mix(glow, 1.0, beam);
+		}
 
 		// A spot is a point light masked to a cone (texel 4): aim.xy is the
 		// screen-space direction it points. The fragment is lit if it falls inside
@@ -275,9 +284,10 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			// an area source toward the middle of the part of its segment within range of
 			// the fragment, the source its strata tile. Its own branch, so point and spot
 			// keep the branch below unchanged.
-			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | 1 / |half|^2 | half width
+			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
 			vec2 d = (light_uv - frag_uv) * lit_viewport_size;
-			vec2 target_uv = light_uv + t4.xy * clamp(-dot(d, t4.xy) * t4.z, -1.0, 1.0) / lit_viewport_size;
+			vec2 target_uv = light_uv + t4.xy * clamp(-dot(d, t4.xy) / max(dot(t4.xy, t4.xy), 1e-6), -1.0, 1.0)
+					/ lit_viewport_size;
 #ifdef LIT_SHADOW_STOCH
 			if (LIT_PHYS_ALGO(flags, true)) {
 				vec4 win = lit_line_window(t4, light_uv, frag_uv, range);

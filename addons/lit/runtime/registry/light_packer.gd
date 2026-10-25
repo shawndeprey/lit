@@ -7,8 +7,7 @@ extends RefCounted
 ##                 (aim direction plus the cosines of the inner and outer angles).
 ##  3 line:        texel 1 is the node's position (as a point: the cookie's center);
 ##                 texel 4 adds the segment's half-vector from the node to one end in
-##                 screen px, 1 / its squared length and the tube's half width (see
-##                 _pack_line).
+##                 screen px, the glow and the tube's half width (see _pack_line).
 ## Layout per row: t0 = z code | flags | mask + z code high bits | falloff, t1 = uv/dir | range (directional:
 ## shadow_reach, world px) | energy, t2 = color.rgb | height,
 ## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone / line segment,
@@ -390,7 +389,6 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 		s = 1.0
 	var half_world := xf.basis_xform(Vector2(light.length * 0.5, 0.0))
 	var half_px := canvas_xform.basis_xform(half_world)
-	var len2 := half_px.length_squared()
 
 	var o := row * _tpl * 4
 
@@ -428,11 +426,11 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 14] = light.shadow_color.b
 	_pack_buf[o + 15] = light.shadow_hardness
 
-	# Texel 4: the half-vector (screen px), 1 / its squared length (0 at zero length) and
-	# the tube's half width (world px, scaled like range and kept inside it).
+	# Texel 4: the half-vector (screen px), the glow and the tube's half width (world px,
+	# scaled like range and kept inside it).
 	_pack_buf[o + 16] = half_px.x
 	_pack_buf[o + 17] = half_px.y
-	_pack_buf[o + 18] = 1.0 / len2 if len2 > 0.0 else 0.0
+	_pack_buf[o + 18] = light.glow
 	_pack_buf[o + 19] = minf(light.width * 0.5, light.range * 0.9) * s
 
 	# Texel 7: source_radius | samples | jitter (read only by cone/stochastic shaders)

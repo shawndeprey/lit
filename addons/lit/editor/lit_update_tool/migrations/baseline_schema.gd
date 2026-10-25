@@ -72,6 +72,7 @@ const BASELINE_SCHEMA := {
 			&"energy": {"type": TYPE_FLOAT, "default": 1.0},
 			&"exclude_scene_occluders": {"type": TYPE_BOOL, "default": false},
 			&"falloff": {"type": TYPE_FLOAT, "default": 1.0},
+			&"glow": {"type": TYPE_FLOAT, "default": 1.0},
 			&"height": {"type": TYPE_FLOAT, "default": 16.0},
 			&"length": {"type": TYPE_FLOAT, "default": 128.0},
 			&"lit_version": {"type": TYPE_STRING, "default": ""},

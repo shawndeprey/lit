@@ -299,10 +299,12 @@ func _positional(light, pos: Vector2,
 	var half := Vector2.ZERO
 	var len2 := 0.0
 	var half_w := 0.0
+	var glow := 1.0
 	if light is LitLineLight2D:
 		half = xf.basis_xform(Vector2(light.length * 0.5, 0.0))
 		len2 = half.length_squared()
 		half_w = minf(light.width * 0.5, light.range * 0.9) * s
+		glow = light.glow
 	if range_px <= 0.0 or energy <= 0.0 \
 			or _nearest(xf.origin, half, len2, pos).distance_to(pos) > range_px:
 		return 0.0
@@ -360,6 +362,7 @@ func _positional(light, pos: Vector2,
 		var d := tl.length()
 		if d > range_px:
 			continue
+		var beam := clampf(minf(d + 0.5, half_w) - maxf(d - 0.5, -half_w), 0.0, 1.0)
 		if half_w > 0.0:
 			var skin := maxf(d - half_w, 0.0)
 			tl *= skin / maxf(d, 1e-4)
@@ -371,7 +374,7 @@ func _positional(light, pos: Vector2,
 		var ndotl := (n.x * tl.x + n.y * tl.y + n.z * height) / slant
 		if ndotl <= 0.0:
 			continue
-		var f := pow(1.0 - d / (range_px - half_w), falloff) * ndotl
+		var f := pow(1.0 - d / (range_px - half_w), falloff) * ndotl * lerpf(glow, 1.0, beam)
 		if pbr:
 			f *= _pbr_diffuse(height / slant)
 		if masked:
