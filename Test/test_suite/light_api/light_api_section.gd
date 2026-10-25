@@ -199,7 +199,11 @@ func _base_class() -> void:
 		else:
 			check_true(c, "%s is LitPositionalLight2D" % lit_name, node is LitPositionalLight2D)
 			check(c, "%s extends the positional script" % lit_name, positional, (node.get_script() as GDScript).get_base_script())
-		check(c, "%s carries no configuration warning" % lit_name, 0, node._get_configuration_warnings().size())
+		# Calling the virtual directly errors when the script doesn't override it, which
+		# would abort the rest of this loop.
+		var warnings: PackedStringArray = node._get_configuration_warnings() \
+				if node.has_method("_get_configuration_warnings") else PackedStringArray()
+		check(c, "%s carries no configuration warning" % lit_name, 0, warnings.size())
 		check(c, "%s.BlendMode is the shared enum" % lit_name, LitShaderLibrary.BlendMode, node.get_script().get("BlendMode"))
 		check(c, "%s.ShadowAlgorithm is the shared enum" % lit_name, LitShaderLibrary.ShadowAlgorithm, node.get_script().get("ShadowAlgorithm"))
 		if node is LitDirectionalLight2D:
