@@ -98,20 +98,17 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 	if _pack_buf.size() != floats_needed:
 		_pack_buf.resize(floats_needed)
 	_pack_buf.fill(0.0)
+	var kinds: PackedByteArray = ctx.kinds
 	for i in count:
-		var directional := visible[i] as LitDirectionalLight2D
-		if directional != null:
-			_pack_directional(i, directional, canvas_xform)
-			continue
-		var spot := visible[i] as LitSpotLight2D
-		if spot != null:
-			_pack_spot(i, spot, canvas_xform, vp_size)
-			continue
-		var line := visible[i] as LitLineLight2D
-		if line != null:
-			_pack_line(i, line, canvas_xform, vp_size)
-			continue
-		_pack_point(i, visible[i] as LitPointLight2D, canvas_xform, vp_size)
+		var kind := kinds[i]
+		if kind == 0:
+			_pack_point(i, visible[i] as LitPointLight2D, canvas_xform, vp_size)
+		elif kind == 1:
+			_pack_directional(i, visible[i] as LitDirectionalLight2D, canvas_xform)
+		elif kind == 2:
+			_pack_spot(i, visible[i] as LitSpotLight2D, canvas_xform, vp_size)
+		else:
+			_pack_line(i, visible[i] as LitLineLight2D, canvas_xform, vp_size)
 	_upload_pack_buffer(count)
 
 	# Publish globals.

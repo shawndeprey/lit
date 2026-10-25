@@ -60,12 +60,18 @@ static func generate() -> Dictionary:
 				receivers = true
 			# Properties are checked by name, not just by script: overrides on instanced
 			# sub-scene nodes carry the property without the script.
+			# A line light marches Cone Traced as strata: the stochastic variant.
+			var line := script_path.ends_with("lit_line_light_2d.gd")
 			if props.has("shadow_algorithm"):
 				var algo := int(props["shadow_algorithm"])
-				cone = cone or algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED
-				stoch = stoch or algo == LitShaderLibrary.ShadowAlgorithm.STOCHASTIC
+				cone = cone or (algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED and not line)
+				stoch = stoch or algo == LitShaderLibrary.ShadowAlgorithm.STOCHASTIC \
+						or (line and algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED)
 			elif LIGHT_SCRIPTS.has(script_path):
-				cone = true  # absent export = the CONE_TRACED default
+				if line:
+					stoch = true
+				else:
+					cone = true  # absent export = the CONE_TRACED default
 			if int(props.get("shadow_mask", 1)) != 1 \
 					or bool(props.get("exclude_scene_occluders", false)) \
 					or int(props.get("occluder_light_mask", 1)) != 1:

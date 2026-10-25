@@ -62,9 +62,11 @@ func build_and_publish(ctx: FrameContext) -> void:
 	# Slack in screen px for CPU/GPU float disagreement at a footprint's exact boundary.
 	const CULL_PAD := 2.0
 
+	var kinds: PackedByteArray = ctx.kinds
 	for i in visible.size():
 		# Directionals aren't tiled; the shader sweeps them for every fragment.
-		if visible[i] is LitDirectionalLight2D:
+		var kind := kinds[i]
+		if kind == 1:
 			continue
 
 		# range lives on each positional light type; fetch it dynamically.
@@ -77,11 +79,11 @@ func build_and_publish(ctx: FrameContext) -> void:
 		# A spot's cone (half-angle under 90 degrees) is the intersection of two
 		# half-planes through the light; a tile fully outside either can't intersect it.
 		# The angle is padded so the CPU never culls a fragment the GPU would light.
-		var spot := visible[i] as LitSpotLight2D
 		var cone_valid := false
 		var n_plus := Vector2.ZERO
 		var n_minus := Vector2.ZERO
-		if spot != null:
+		if kind == 2:
+			var spot := visible[i] as LitSpotLight2D
 			var half_angle := deg_to_rad(spot.spot_angle) + 0.002
 			if half_angle < PI * 0.5 - 0.001:
 				var aim_px := canvas_xform.basis_xform(Vector2.from_angle(spot.global_rotation))
@@ -91,43 +93,32 @@ func build_and_publish(ctx: FrameContext) -> void:
 					n_minus = Vector2.from_angle(phi - half_angle + PI * 0.5)
 					cone_valid = true
 
-		# A line light's footprint is its segment grown by range (a capsule): per tile
-		# row its span is the union of the two end discs (the circle formula below) and
-		# the straight part, the segment clipped to the band grown by r|n.y| and widened
-		# by r|n.x| (n the segment's unit normal): exact, like the circle.
-		var line := visible[i] as LitLineLight2D
-		var ext_y := 0.0
-		var ax := 0.0
-		var ay := 0.0
-		var bx := 0.0
-		var by := 0.0
-		var grow_y := 0.0
-		var grow_x := 0.0
-		if line != null:
+		if kind == 3:
+			# A line light's footprint is its segment grown by range (a capsule): per tile
+			# row its span is the union of the two end discs (the circle formula below) and
+			# the straight part, the segment clipped to the band grown by r|n.y| and widened
+			# by r|n.x| (n the segment's unit normal): exact, like the circle. Its own
+			# loop, so the point loop below stays as lean as it was.
+			var line: LitLineLight2D = visible[i]
 			var half_px := canvas_xform.basis_xform(xf.basis_xform(Vector2(line.length * 0.5, 0.0)))
-			ext_y = absf(half_px.y)
-			ax = center.x - half_px.x
-			ay = center.y - half_px.y
-			bx = center.x + half_px.x
-			by = center.y + half_px.y
+			var ax := center.x - half_px.x
+			var ay := center.y - half_px.y
+			var bx := center.x + half_px.x
+			var by := center.y + half_px.y
+			var grow_y := 0.0
+			var grow_x := 0.0
 			var len := half_px.length()
 			if len > 0.0:
 				grow_y = light_range * absf(half_px.x) / len
 				grow_x = light_range * absf(half_px.y) / len
-
-		# Per tile row, the circle's horizontal reach (sqrt(r^2 - dy^2), dy = the row
-		# band's closest approach) gives the exact tile span; no per-tile distance test.
-		var ty0 := clampi(int(floor((center.y - ext_y - light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
-		var ty1 := clampi(int(floor((center.y + ext_y + light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
-
-		for ty in range(ty0, ty1 + 1):
-			var y0 := float(ty * TILE_SIZE)
-			var y1 := y0 + float(TILE_SIZE)
-			var x_lo: float
-			var x_hi: float
-			if line != null:
-				x_lo = 1e20
-				x_hi = -1e20
+			var ext_y := absf(half_px.y)
+			var ly0 := clampi(int(floor((center.y - ext_y - light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
+			var ly1 := clampi(int(floor((center.y + ext_y + light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
+			for ty in range(ly0, ly1 + 1):
+				var y0 := float(ty * TILE_SIZE)
+				var y1 := y0 + float(TILE_SIZE)
+				var x_lo := 1e20
+				var x_hi := -1e20
 				var dy_a := ay - clampf(ay, y0, y1)
 				var rem_a := range_sq - dy_a * dy_a
 				if rem_a >= 0.0:
@@ -156,16 +147,30 @@ func build_and_publish(ctx: FrameContext) -> void:
 					x_hi = maxf(x_hi, maxf(ax, bx) + grow_x)
 				if x_lo > x_hi:
 					continue
-			else:
-				var dy := center.y - clampf(center.y, y0, y1)
-				var rem := range_sq - dy * dy
-				if rem < 0.0:
-					continue
-				var half := sqrt(rem)
-				x_lo = center.x - half
-				x_hi = center.x + half
-			var tx0 := clampi(int(floor(x_lo / float(TILE_SIZE))), 0, tiles_x - 1)
-			var tx1 := clampi(int(floor(x_hi / float(TILE_SIZE))), 0, tiles_x - 1)
+				var tx0 := clampi(int(floor(x_lo / float(TILE_SIZE))), 0, tiles_x - 1)
+				var tx1 := clampi(int(floor(x_hi / float(TILE_SIZE))), 0, tiles_x - 1)
+				var row_base := ty * tiles_x
+				for tx in range(tx0, tx1 + 1):
+					_pair_tiles.push_back(row_base + tx)
+					_pair_rows.push_back(i)
+					_tile_counts[row_base + tx] += 1
+			continue
+
+		# Per tile row, the circle's horizontal reach (sqrt(r^2 - dy^2), dy = the row
+		# band's closest approach) gives the exact tile span; no per-tile distance test.
+		var ty0 := clampi(int(floor((center.y - light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
+		var ty1 := clampi(int(floor((center.y + light_range) / float(TILE_SIZE))), 0, tiles_y - 1)
+
+		for ty in range(ty0, ty1 + 1):
+			var y0 := float(ty * TILE_SIZE)
+			var y1 := y0 + float(TILE_SIZE)
+			var dy := center.y - clampf(center.y, y0, y1)
+			var rem := range_sq - dy * dy
+			if rem < 0.0:
+				continue
+			var half := sqrt(rem)
+			var tx0 := clampi(int(floor((center.x - half) / float(TILE_SIZE))), 0, tiles_x - 1)
+			var tx1 := clampi(int(floor((center.x + half) / float(TILE_SIZE))), 0, tiles_x - 1)
 			var row_base := ty * tiles_x
 			for tx in range(tx0, tx1 + 1):
 				# Cone vs tile rect: dot() is linear over the rect, so its maximum sits

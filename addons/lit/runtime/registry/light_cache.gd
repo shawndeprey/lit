@@ -37,6 +37,7 @@ var _nodes: Array = []
 var _kinds := PackedByteArray()
 var _ranges := PackedFloat32Array()
 var _lengths := PackedFloat32Array()
+var _visible_kinds := PackedByteArray()
 var _flags := PackedInt32Array()
 var _smasks := PackedInt32Array()
 var _index := {}
@@ -63,6 +64,7 @@ func cull_visible(tree: SceneTree, world_rect: Rect2) -> Array:
 	if Engine.is_editor_hint():
 		return _cull_visible_walk(lights, world_rect)
 	var visible: Array = []
+	_visible_kinds.clear()
 	var min_x := world_rect.position.x
 	var min_y := world_rect.position.y
 	var max_x := world_rect.position.x + world_rect.size.x
@@ -74,6 +76,7 @@ func cull_visible(tree: SceneTree, world_rect: Rect2) -> Array:
 		var node: Node2D = _nodes[i]
 		if _kinds[i] == 1:
 			visible.append(node)
+			_visible_kinds.append(1)
 			continue
 		var xf := node.global_transform
 		var p := xf.origin
@@ -88,7 +91,13 @@ func cull_visible(tree: SceneTree, world_rect: Rect2) -> Array:
 		if p.x + rx < min_x or p.x - rx > max_x or p.y + ry < min_y or p.y - ry > max_y:
 			continue
 		visible.append(node)
+		_visible_kinds.append(_kinds[i])
 	return visible
+
+
+## The kinds of the lights the last cull_visible returned, in its order.
+func visible_kinds() -> PackedByteArray:
+	return _visible_kinds
 
 
 ## Tree-wide shadow state for the algo/mask gates in refresh(): [active algo bits,
@@ -121,6 +130,7 @@ func shadow_scan(tree: SceneTree, read_masks: bool) -> Array:
 ## the cache dirty so it rebuilds next frame.
 func _cull_visible_walk(lights: Array, world_rect: Rect2) -> Array:
 	var visible: Array = []
+	_visible_kinds.clear()
 	for entry in lights:
 		var node: Node = entry[0]
 		if not is_instance_valid(node):
@@ -131,18 +141,22 @@ func _cull_visible_walk(lights: Array, world_rect: Rect2) -> Array:
 			var directional := node as LitDirectionalLight2D
 			if directional.enabled and directional.is_visible_in_tree():
 				visible.append(directional)
+				_visible_kinds.append(1)
 		elif kind == 0:
 			var point := node as LitPointLight2D
 			if point.enabled and point.is_visible_in_tree() and _aabb_visible(point.global_transform, point.range, world_rect):
 				visible.append(point)
+				_visible_kinds.append(0)
 		elif kind == 3:
 			var line := node as LitLineLight2D
 			if line.enabled and line.is_visible_in_tree() and _aabb_visible(line.global_transform, line.range, world_rect, line.length):
 				visible.append(line)
+				_visible_kinds.append(3)
 		else:
 			var spot := node as LitSpotLight2D
 			if spot.enabled and spot.is_visible_in_tree() and _aabb_visible(spot.global_transform, spot.range, world_rect):
 				visible.append(spot)
+				_visible_kinds.append(2)
 	return visible
 
 

@@ -110,40 +110,33 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		float range_px = range * lit_canvas_scale;
 		float height_px = height * lit_canvas_scale;
 		vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
-		// A line light lights from Q, the nearest point of its segment: texel 4 holds the
-		// half-vector from the node to one end, the glow and the half width (see
-		// _pack_line). Q is the foot of the perpendicular clamped to the end caps, so past
-		// an end the light is a point light at that endpoint. The cookie stays on the node.
-		float half_w = 0.0;
-		float glow = 1.0;
+		float dist = length(to_light_px);
 		if (is_line) {
+			// A line light lights from Q, the nearest point of its segment: texel 4 holds
+			// the half-vector from the node to one end, the glow and the half width (see
+			// _pack_line). Q is the foot of the perpendicular clamped to the end caps, so
+			// past an end the light is a point light at that endpoint. Under the tube's
+			// width the light comes from overhead and the falloff runs from its surface
+			// out to the range; `beam` is this pixel's coverage by the tube (a 1 px box
+			// filter on its edge, 0 everywhere at zero width) and outside it the glow is
+			// t4.z of the beam's brightness. The cookie stays on the node.
 			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
 			float u = clamp(-dot(to_light_px, t4.xy) / max(dot(t4.xy, t4.xy), 1e-6), -1.0, 1.0);
 			to_light_px += t4.xy * u;
-			half_w = t4.w * lit_canvas_scale;
-			glow = t4.z;
-		}
-		float dist = length(to_light_px);
-		if (dist > range_px) {
-			return vec3(0.0);                // beyond range
-		}
-		float beam = 0.0;
-		if (is_line) {
-			// The tube's width: under it the light comes from overhead, and the falloff
-			// runs from its surface out to the range. `beam` is this pixel's coverage by
-			// the tube (a 1 px box filter on its edge; 0 everywhere at zero width).
-			beam = clamp(min(dist + 0.5, half_w) - max(dist - 0.5, -half_w), 0.0, 1.0);
+			dist = length(to_light_px);
+			float half_w = t4.w * lit_canvas_scale;
+			float beam = clamp(min(dist + 0.5, half_w) - max(dist - 0.5, -half_w), 0.0, 1.0);
 			float surf = max(dist - half_w, 0.0);
 			to_light_px *= surf / max(dist, 1e-4);
 			range_px -= half_w;
 			dist = surf;
+			energy *= mix(t4.z, 1.0, beam);
+		}
+		if (dist > range_px) {
+			return vec3(0.0);                // beyond range
 		}
 		Ldir = normalize(vec3(to_light_px, height_px));
 		atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
-		if (is_line) {
-			// Outside the beam the glow is `glow` of the beam's brightness.
-			atten *= mix(glow, 1.0, beam);
-		}
 
 		// A spot is a point light masked to a cone (texel 4): aim.xy is the
 		// screen-space direction it points. The fragment is lit if it falls inside

@@ -231,12 +231,13 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# Collect enabled, visible lights from the cache (view-culled), plus the full
 	# cached list for the tree-wide scans below.
 	_ctx.visible = _light_cache.cull_visible(tree, _ctx.world_rect)
+	_ctx.kinds = _light_cache.visible_kinds()
 	var lights: Array = _light_cache.all()
 
 	var count: int = _ctx.visible.size()
 
 	if sdf_host != null:
-		_world_sdf.update(sdf_host, viewport, _ctx.visible, _ctx.canvas_xform,
+		_world_sdf.update(sdf_host, viewport, _ctx.visible, _ctx.kinds, _ctx.canvas_xform,
 				_ctx.world_rect, receiver_root if receiver_root != null else tree.root)
 
 	# Publish which non-raymarched shadow algorithms are in play and re-point receiver
@@ -330,14 +331,20 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# this ordering keeps row indices consistent between the data texture and the buckets.
 	var directionals: Array = []
 	var positional: Array = []
-	for l in _ctx.visible:
-		if l is LitDirectionalLight2D:
-			directionals.append(l)
+	var pos_kinds := PackedByteArray()
+	for i in _ctx.visible.size():
+		if _ctx.kinds[i] == 1:
+			directionals.append(_ctx.visible[i])
 		else:
-			positional.append(l)
+			positional.append(_ctx.visible[i])
+			pos_kinds.append(_ctx.kinds[i])
 	_ctx.visible = directionals + positional
 	_ctx.positional = positional
 	_ctx.dir_count = directionals.size()
+	var dir_kinds := PackedByteArray()
+	dir_kinds.resize(_ctx.dir_count)
+	dir_kinds.fill(1)
+	_ctx.kinds = dir_kinds + pos_kinds
 
 	# Cookie atlas + pack + light-data globals, then the screen-tile grid the shader
 	# culls against; row order in the data texture matches ctx.visible for both.

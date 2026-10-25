@@ -14,6 +14,7 @@ var world_rect: Rect2
 # Light set for the frame: view-culled, then reordered directionals-first (the row
 # order the data texture and tile buckets share).
 var visible: Array = []
+var kinds := PackedByteArray()           # per visible light: 0 point, 1 directional, 2 spot, 3 line
 var positional: Array = []
 var dir_count := 0
 
