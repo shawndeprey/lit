@@ -48,6 +48,9 @@ shader_parameter/shadow_min_step = 0.2
 shader_parameter/shadow_ramp = 0.0
 shader_parameter/directional_horizontal_scale = 32.0
 
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
+polygon = PackedVector2Array(1920, 0, 1903.8984, 1079.9999, 1437, 1079.9999, 1437, 0)
+
 [node name="LineLightTest" type="Node2D" unique_id=1756555398]
 
 [node name="TileBasicCrypt" parent="." unique_id=736403759 instance=ExtResource("1_57o2h")]
@@ -67,22 +70,33 @@ lit_version = "1.1.6"
 color = Color(0, 0, 0, 1)
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
+[node name="LightOccluder2D" type="LightOccluder2D" parent="." unique_id=671839993]
+visible = false
+position = Vector2(1347.7454, 0)
+scale = Vector2(0.062111802, 1.0000001)
+occluder = SubResource("OccluderPolygon2D_ywxc3")
+
+[node name="Wall" type="Polygon2D" parent="LightOccluder2D" unique_id=936087508]
+material = SubResource("ShaderMaterial_aiw8a")
+polygon = PackedVector2Array(1438, 0, 1920, 0, 1920, 1080, 1437, 1080)
+
 [node name="Skeleton" parent="." unique_id=1906572971 instance=ExtResource("3_57o2h")]
-position = Vector2(960, 540)
+position = Vector2(1242.0001, 549)
 
 [node name="Lights" type="Node2D" parent="." unique_id=26516173]
 
 [node name="LightSaber" type="Node2D" parent="Lights" unique_id=1799641673]
-position = Vector2(1163, 535)
+position = Vector2(1422, 559)
 rotation = -1.5707964
 script = ExtResource("4_saber")
+length = 214.0
 range = 1024.0
 lit_version = "1.1.7"
 shadow_enabled = true
 
 [node name="LitPointLight2D" type="Node2D" parent="Lights" unique_id=1577877993]
 visible = false
-position = Vector2(1120, 560)
+position = Vector2(1378, 507)
 script = ExtResource("6_aiw8a")
 range = 1024.0
 lit_version = "1.1.7"
@@ -90,6 +104,7 @@ shadow_enabled = true
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=481900563]
+visible = false
 position = Vector2(960, 540)
 script = ExtResource("7_zoom")
 
