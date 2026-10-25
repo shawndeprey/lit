@@ -9,7 +9,8 @@ extends LitSuiteSection
 ## effects (light-cache notification, range packing, the mask latch); the rendered frame
 ## follows values set only through the methods; and the three nodes share the LitLight2D
 ## base, point and spot through LitPositionalLight2D (abstract, enums, group wiring,
-## visibility notification).
+## visibility notification) without splitting any inspector group across their class
+## sections.
 
 const AMBIENT := 0.1
 const TOL := 0.03
@@ -56,6 +57,7 @@ func run() -> void:
 	_roundtrip()
 	_side_effects()
 	_base_class()
+	_inspector_groups()
 	await _rendered()
 
 
@@ -206,6 +208,31 @@ func _base_class() -> void:
 			check(c, "%s.TextureSizeMode is the shared enum" % lit_name, LitShaderLibrary.TextureSizeMode, node.get_script().get("TextureSizeMode"))
 			check_true(c, "%s has no set_max_distance" % lit_name, not node.has_method("set_max_distance"))
 		node.free()
+
+
+func _inspector_groups() -> void:
+	var c := "inspector_groups"
+	for pair in PAIRS:
+		var lit_name: String = pair[1]
+		var node := _new_light(lit_name)
+		check(c, "%s: no group split across Lit class sections" % lit_name, [], _split_groups(node))
+		node.free()
+
+
+## Group names that show under more than one Lit class section of the inspector: Godot
+## gives every script in the chain its own section and never merges same-named groups.
+func _split_groups(obj: Object) -> Array:
+	var section_of := {}
+	var split := []
+	var section := ""
+	for p in obj.get_property_list():
+		if p.usage & PROPERTY_USAGE_CATEGORY:
+			section = p.hint_string if String(p.hint_string).begins_with("res://addons/lit/") else ""
+		elif p.usage & PROPERTY_USAGE_GROUP and not section.is_empty():
+			if section_of.get(p.name, section) != section and not split.has(p.name):
+				split.append(p.name)
+			section_of[p.name] = section
+	return split
 
 
 func _lit(c: String, desc: String, img: Image, at: Vector2, margin := 0.25) -> void:

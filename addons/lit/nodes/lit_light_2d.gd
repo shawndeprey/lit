@@ -1,5 +1,6 @@
 @tool
 @abstract
+@icon("res://addons/lit/icons/lit_light_2d.svg")
 extends Node2D
 class_name LitLight2D
 
@@ -61,6 +62,14 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
+## Length of cast shadows as a fraction; each shadow closes there through a natural
+## penumbral tip. Point/spot lights: a fraction of the fragment's distance to the light,
+## so shadows stretch with an occluder's distance from it, reading like a light hung
+## above the ground (values below 0.01 act as 0.01). Directional lights: a fraction of
+## `shadow_reach`, so a low sun reads as long evening shadows and a high sun as short
+## noon ones (0 = none at all); animate it alongside the node's rotation for day/night
+## cycles. 1 = full length (the default).
+@export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0
 ## Shadow marches per fragment across the source (STOCHASTIC): more is smoother and
 ## slower. Clamped by lit/quality/shadow_samples_max.
 @export_range(1, 32) var shadow_samples: int = 8

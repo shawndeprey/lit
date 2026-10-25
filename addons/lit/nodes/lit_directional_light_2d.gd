@@ -15,12 +15,7 @@ class_name LitDirectionalLight2D
 ## light-data texture. The shared surface (color, energy, height, the shadow gates,
 ## blend mode, z/layer ranges and the Light2D-style methods) lives on LitLight2D.
 
-@export_group("Shadow")
-## Length of cast shadows as a fraction of `shadow_reach`: every occluder's shadow
-## closes exactly at that distance through a natural penumbral tip, so a low sun reads
-## as long evening shadows and a high sun as short noon ones (0 = none at all). Animate
-## it alongside the node's rotation for day/night cycles.
-@export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0
+@export_group("Shadow Shape")
 ## Maximum distance shadows can extend, in world pixels; `shadow_length` scales within
 ## it. A world length, so shadows stay identical at any camera zoom. The world-SDF
 ## window grows to cover it, so very large values coarsen shadow-casting resolution.

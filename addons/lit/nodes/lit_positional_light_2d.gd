@@ -1,5 +1,6 @@
 @tool
 @abstract
+@icon("res://addons/lit/icons/lit_positional_light_2d.svg")
 extends LitLight2D
 class_name LitPositionalLight2D
 
@@ -34,12 +35,7 @@ const TextureSizeMode = LitShaderLibrary.TextureSizeMode
 ## The cookie still clips at `range`.
 @export var texture_offset: Vector2 = Vector2.ZERO
 
-@export_group("Shadow")
-## Caps each shadow at this fraction of the fragment's distance to the light; the
-## shadow closes there through a natural penumbral tip. Shadows stretch with an
-## occluder's distance from the light, reading like a light hung above the ground.
-## 1 = shadows reach all the way to the light (the default).
-@export_range(0.01, 1.0, 0.001) var shadow_length: float = 1.0
+@export_group("Shadow Shape")
 ## Radius of the physical emitting disc in world pixels (CONE_TRACED / STOCHASTIC),
 ## scaled with the node like `range`. Bigger sources cast softer shadows: wider
 ## penumbras and shorter umbras - an occluder's dark core tapers closed after roughly
