@@ -38,9 +38,10 @@ const int LIT_MAX_SHADOW_SAMPLES = 32;
 // tip band spans the FULL source's penumbra width at the cap and is shared by the gate
 // and all strata, so the aggregate closes as one shadow.
 //
-// The gate runs as iteration -1 of the strata loop so the cone march has one call
-// site: every call site inlines its own copy of the march. n = 0 returns the gate
-// alone, which is the Cone Traced algorithm.
+// The gate is its own call ahead of the strata loop (the march inlines twice): kept
+// out of the loop body it costs nothing, and the loop stays free of gate-only state,
+// which the stochastic variant's register budget cannot absorb. n = 0 returns the
+// gate alone, which is the Cone Traced algorithm.
 float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float t_cap, bool capped, float src,
 		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
 		vec2 seg, float src_r,
@@ -59,42 +60,39 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 	// Per-stratum cap as a fraction so point/spot strata (whose lengths differ per
 	// stratum) all close on the same tip isoline.
 	float cap_frac = capped ? t_cap / max(maxd, 1e-4) : 1.0;
+	float c = lit_shadow_cone(frag_sdf, dir, t_cap, band, w_gate,
+			max_steps, frag_d,
+			!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+	if (n <= 0 || c <= 0.0 || c >= 1.0) {
+		return c;
+	}
 	float sum = 0.0;
-	for (int i = -1; i < n; i++) {
-		vec2 sdir = dir;
-		float smaxd = t_cap;
-		float w_sub = w_gate;
-		if (i >= 0) {
-			float rnd = fract(ign + float(i) * 0.61803398875);
-			float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
-			if (is_dir) {
-				sdir = normalize(dir + perp * (u * src));
-				smaxd = maxd * cap_frac;
-				w_sub = max(half_stratum, 1e-4);
-			} else if (line) {
-				vec2 delta = (light_sdf + seg * u) - frag_sdf;
-				float len = length(delta);
-				sdir = delta / max(len, 1e-4);
-				smaxd = len * cap_frac;
-				w_sub = max((abs(seg.x * sdir.y - seg.y * sdir.x) / float(n) + src_r) / max(len, 1e-4), 1e-4);
-			} else {
-				vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
-				float len = length(delta);
-				sdir = delta / max(len, 1e-4);
-				smaxd = len * cap_frac;
-				w_sub = max(half_stratum / max(len, 1e-4), 1e-4);
-			}
+	for (int i = 0; i < n; i++) {
+		vec2 sdir;
+		float smaxd;
+		float w_sub;
+		float rnd = fract(ign + float(i) * 0.61803398875);
+		float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
+		if (is_dir) {
+			sdir = normalize(dir + perp * (u * src));
+			smaxd = maxd * cap_frac;
+			w_sub = max(half_stratum, 1e-4);
+		} else if (line) {
+			vec2 delta = (light_sdf + seg * u) - frag_sdf;
+			float len = length(delta);
+			sdir = delta / max(len, 1e-4);
+			smaxd = len * cap_frac;
+			w_sub = max((abs(seg.x * sdir.y - seg.y * sdir.x) / float(n) + src_r) / max(len, 1e-4), 1e-4);
+		} else {
+			vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
+			float len = length(delta);
+			sdir = delta / max(len, 1e-4);
+			smaxd = len * cap_frac;
+			w_sub = max(half_stratum / max(len, 1e-4), 1e-4);
 		}
-		float c = lit_shadow_cone(frag_sdf, sdir, smaxd, band, w_sub,
+		sum += lit_shadow_cone(frag_sdf, sdir, smaxd, band, w_sub,
 				max_steps, frag_d,
 				!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
-		if (i < 0) {
-			if (n <= 0 || c <= 0.0 || c >= 1.0) {
-				return c;
-			}
-			continue;
-		}
-		sum += c;
 	}
 	return sum / float(n);
 }
