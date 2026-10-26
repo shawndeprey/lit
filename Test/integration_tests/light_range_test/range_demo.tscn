@@ -69,20 +69,20 @@ position = Vector2(1677.9995, 746.99994)
 position = Vector2(1020, 172)
 rotation = 1.5707964
 script = ExtResource("4_8do8u")
+range = 1500.0
 lit_version = "1.1.6"
 color = Color(0.9999997, 0.04255242, 0.6208898, 1)
 energy = 1.25
-range = 1500.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="FloorLight" type="Node2D" parent="Lights" unique_id=1943864440]
 position = Vector2(1020, 172)
 rotation = 1.5707964
 script = ExtResource("4_8do8u")
+range = 1500.0
 lit_version = "1.1.6"
 color = Color(0.9999997, 0.04255242, 0.6208898, 1)
 energy = 1.25
-range = 1500.0
 range_layer_min = 0
 range_layer_max = 0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
@@ -91,20 +91,20 @@ metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 position = Vector2(1020, 980)
 rotation = 1.5707964
 script = ExtResource("4_8do8u")
+range = 1500.0
 lit_version = "1.1.6"
 color = Color(0.9999997, 0.04255242, 0.6208898, 1)
 energy = 1.25
-range = 1500.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="FloorLight2" type="Node2D" parent="Lights" unique_id=501021982]
 position = Vector2(1020, 980)
 rotation = 1.5707964
 script = ExtResource("4_8do8u")
+range = 1500.0
 lit_version = "1.1.6"
 color = Color(0.9999997, 0.04255242, 0.6208898, 1)
 energy = 1.25
-range = 1500.0
 range_layer_min = 0
 range_layer_max = 0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"

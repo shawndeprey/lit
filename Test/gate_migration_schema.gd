@@ -59,6 +59,8 @@ func _live_schema() -> Dictionary:
 		if script == null:
 			_check(false, "could not load %s" % path)
 			continue
+		if script.is_abstract():
+			continue
 		var obj: Object = script.new()
 		var props := {}
 		for p in obj.get_property_list():
