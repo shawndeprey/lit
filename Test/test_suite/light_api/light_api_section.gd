@@ -7,9 +7,12 @@ extends LitSuiteSection
 ## shadow_filter_smooth) stay absent; the methods read and write the Lit properties they
 ## alias (light_mask, shadow_mask, shadow_reach, texture_offset); setters keep their side
 ## effects (light-cache notification, range packing, the mask latch); the rendered frame
-## follows values set only through the methods; and the three nodes share the LitLight2D
+## follows values set only through the methods; a directional light keeps its own shadow
+## dials and loads, re-saves and renders every shadow value from a scene file; and the
+## three nodes share the LitLight2D
 ## base, point and spot through LitPositionalLight2D (abstract, enums, group wiring,
-## visibility notification).
+## visibility notification) without splitting any inspector group across their class
+## sections.
 
 const AMBIENT := 0.1
 const TOL := 0.03
@@ -40,6 +43,15 @@ const SHARED := [
 	["set_layer_range_max", "get_layer_range_max", "range_layer_max", 4],
 ]
 
+# Every directional shadow value off its default (plus the energy/height the rendered
+# checks need), written into a scene file and loaded back by _directional_surface().
+const SUN_SCRIPT := "res://addons/lit/nodes/lit_directional_light_2d.gd"
+const SUN_SAVED := {
+	"energy": 0.8, "height": 150.0, "shadow_enabled": true, "shadow_algorithm": 0,
+	"shadow_hardness": 1.0, "shadow_samples": 4, "shadow_jitter": 0.5,
+	"shadow_length": 0.05, "shadow_reach": 2048.0, "source_angle": 12.0,
+}
+
 # Light L, box B, probe S behind the box, P outside the shadow band (shadows geometry).
 const L := Vector2(120, 300)
 const B := Vector2(330, 300)
@@ -56,7 +68,9 @@ func run() -> void:
 	_roundtrip()
 	_side_effects()
 	_base_class()
+	_inspector_groups()
 	await _rendered()
+	await _directional_surface()
 
 
 func _new_light(lit_name: String) -> LitLight2D:
@@ -175,6 +189,109 @@ func _side_effects() -> void:
 	node.free()
 
 
+## A directional light's own shadow surface, whatever the inspector grouping: the
+## algorithm-gated dials show only when they apply, shadow_length still reaches 0 (no
+## shadow), no positional property leaks onto it, and a scene file carrying every
+## shadow value loads, re-saves each one exactly once and renders with them.
+func _directional_surface() -> void:
+	var c := "directional_surface"
+	var sun := LitDirectionalLight2D.new()
+	var info := {}
+	for p in sun.get_property_list():
+		info[String(p.name)] = p
+	var length_range := String(info["shadow_length"].hint_string).split(",")
+	check(c, "shadow_length range is 0..1 (0 = no shadow stays reachable)", [0.0, 1.0],
+			[float(length_range[0]), float(length_range[1])])
+	var leaked := []
+	for p in ["range", "falloff", "texture", "texture_scale", "texture_size_mode",
+			"texture_offset", "source_radius", "spot_angle", "spot_softness"]:
+		if info.has(p):
+			leaked.append(p)
+	check(c, "no positional property on a directional light", [], leaked)
+	var always := ["shadow_enabled", "shadow_mask", "exclude_scene_occluders",
+			"shadow_algorithm", "shadow_color", "shadow_hardness", "shadow_length", "shadow_reach"]
+	var gated := ["source_angle", "shadow_samples", "shadow_jitter"]
+	var expect := {
+		LitShaderLibrary.ShadowAlgorithm.RAYMARCHED: [],
+		LitShaderLibrary.ShadowAlgorithm.CONE_TRACED: ["source_angle"],
+		LitShaderLibrary.ShadowAlgorithm.STOCHASTIC: gated,
+	}
+	for algo in expect:
+		sun.shadow_algorithm = algo
+		var algo_name := String(LitShaderLibrary.ShadowAlgorithm.find_key(algo))
+		check(c, "%s: shadow dials always shown" % algo_name, always, _shown(sun, always))
+		check(c, "%s: algorithm-gated dials shown" % algo_name, expect[algo], _shown(sun, gated))
+	sun.free()
+
+	# Load a scene file carrying every value, as a saved scene stores them.
+	var lines := PackedStringArray(["[gd_scene format=3]", "",
+			"[ext_resource type=\"Script\" path=\"%s\" id=\"1\"]" % SUN_SCRIPT, "",
+			"[node name=\"Sun\" type=\"Node2D\"]", "script = ExtResource(\"1\")"])
+	for key in SUN_SAVED:
+		lines.append("%s = %s" % [key, var_to_str(SUN_SAVED[key])])
+	var path := "user://lit_suite_directional.tscn"
+	var resaved_path := "user://lit_suite_directional_resaved.tscn"
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string("\n".join(lines) + "\n")
+	f.close()
+	var scene := ResourceLoader.load(path, "PackedScene", ResourceLoader.CACHE_MODE_IGNORE) as PackedScene
+	var loaded: LitDirectionalLight2D = scene.instantiate() if scene != null else null
+	if not check_true(c, "the scene file loads as a LitDirectionalLight2D", loaded != null):
+		return
+	for key in SUN_SAVED:
+		check(c, "loads %s" % key, SUN_SAVED[key], loaded.get(key))
+
+	# Re-save it as a plain node (not an instance of the file it came from).
+	loaded.scene_file_path = ""
+	var repacked := PackedScene.new()
+	repacked.pack(loaded)
+	ResourceSaver.save(repacked, resaved_path)
+	var text := FileAccess.get_file_as_string(resaved_path)
+	var miswritten := []
+	for key in SUN_SAVED:
+		if text.count("\n%s = " % key) != 1:
+			miswritten.append(key)
+	check(c, "re-saving writes each value exactly once", [], miswritten)
+	var reloaded := (ResourceLoader.load(resaved_path, "PackedScene",
+			ResourceLoader.CACHE_MODE_IGNORE) as PackedScene).instantiate()
+	for key in SUN_SAVED:
+		check(c, "re-saved %s loads back" % key, SUN_SAVED[key], reloaded.get(key))
+	reloaded.free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(resaved_path))
+
+	# Render the loaded sun (rotation 0, from the left) over a box at B: its shadow stops
+	# at shadow_reach x shadow_length past the box.
+	var props := group("SunProps")
+	occluder(B, Vector2(40, 100), props)
+	add_child(loaded)
+	await frames(3)
+	var img := await capture()
+	_lit(c, "loaded sun lights the floor outside the shadow band", img, P)
+	_lit(c, "loaded reach 2048 x length 0.05 (102 px) stops short of the probe 170 px past the box",
+			img, S, 0.15)
+	loaded.shadow_length = 0.25
+	await frames(3)
+	img = await capture()
+	_dark(c, "length 0.25 (512 px) reaches the probe: in shadow", img, S)
+	loaded.shadow_length = 0.0
+	await frames(3)
+	img = await capture()
+	_lit(c, "length 0: no shadow at all", img, S, 0.15)
+	loaded.queue_free()
+	props.queue_free()
+	await frames(2)
+
+
+## The subset of `names` the inspector shows on `obj`, in `names` order.
+func _shown(obj: Object, names: Array) -> Array:
+	var shown := {}
+	for p in obj.get_property_list():
+		if p.usage & PROPERTY_USAGE_EDITOR:
+			shown[String(p.name)] = true
+	return names.filter(func(n: String) -> bool: return shown.has(n))
+
+
 func _base_class() -> void:
 	var c := "base_class"
 	var base := load("res://addons/lit/nodes/lit_light_2d.gd") as GDScript
@@ -197,7 +314,11 @@ func _base_class() -> void:
 		else:
 			check_true(c, "%s is LitPositionalLight2D" % lit_name, node is LitPositionalLight2D)
 			check(c, "%s extends the positional script" % lit_name, positional, (node.get_script() as GDScript).get_base_script())
-		check(c, "%s carries no configuration warning" % lit_name, 0, node._get_configuration_warnings().size())
+		# Calling the virtual directly errors when the script doesn't override it, which
+		# would abort the rest of this loop.
+		var warnings: PackedStringArray = node._get_configuration_warnings() \
+				if node.has_method("_get_configuration_warnings") else PackedStringArray()
+		check(c, "%s carries no configuration warning" % lit_name, 0, warnings.size())
 		check(c, "%s.BlendMode is the shared enum" % lit_name, LitShaderLibrary.BlendMode, node.get_script().get("BlendMode"))
 		check(c, "%s.ShadowAlgorithm is the shared enum" % lit_name, LitShaderLibrary.ShadowAlgorithm, node.get_script().get("ShadowAlgorithm"))
 		if node is LitDirectionalLight2D:
@@ -206,6 +327,31 @@ func _base_class() -> void:
 			check(c, "%s.TextureSizeMode is the shared enum" % lit_name, LitShaderLibrary.TextureSizeMode, node.get_script().get("TextureSizeMode"))
 			check_true(c, "%s has no set_max_distance" % lit_name, not node.has_method("set_max_distance"))
 		node.free()
+
+
+func _inspector_groups() -> void:
+	var c := "inspector_groups"
+	for pair in PAIRS:
+		var lit_name: String = pair[1]
+		var node := _new_light(lit_name)
+		check(c, "%s: no group split across Lit class sections" % lit_name, [], _split_groups(node))
+		node.free()
+
+
+## Group names that show under more than one Lit class section of the inspector: Godot
+## gives every script in the chain its own section and never merges same-named groups.
+func _split_groups(obj: Object) -> Array:
+	var section_of := {}
+	var split := []
+	var section := ""
+	for p in obj.get_property_list():
+		if p.usage & PROPERTY_USAGE_CATEGORY:
+			section = p.hint_string if String(p.hint_string).begins_with("res://addons/lit/") else ""
+		elif p.usage & PROPERTY_USAGE_GROUP and not section.is_empty():
+			if section_of.get(p.name, section) != section and not split.has(p.name):
+				split.append(p.name)
+			section_of[p.name] = section
+	return split
 
 
 func _lit(c: String, desc: String, img: Image, at: Vector2, margin := 0.25) -> void:

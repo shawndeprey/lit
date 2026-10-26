@@ -1,12 +1,21 @@
 @tool
 @abstract
+@icon("res://addons/lit/icons/lit_light_2d.svg")
 extends Node2D
 class_name LitLight2D
 
 ## Base of every Lit light: shared properties, registry wiring and Godot's Light2D
-## method names. set_item_cull_mask() writes CanvasItem's `light_mask` (a receiver is
-## lit when its `receiver_mask` shares a bit), set_item_shadow_cull_mask() writes
-## `shadow_mask`. Lights draw nothing; the registry packs the `lit_lights` group each frame.
+## method names.
+##
+## Lights draw nothing; the registry packs the `lit_lights` group each frame.[br][br]
+##
+## `light_mask` is the inherited CanvasItem property (Visibility > Light Mask in the
+## inspector): a receiver is lit by this light only if its `receiver_mask` shares a bit
+## with it.[br][br]
+##
+## The set_/get_/is_ methods carry Light2D's names so ported scripts keep working; each
+## reads or writes the matching property. set_item_cull_mask() writes `light_mask` and
+## set_item_shadow_cull_mask() writes `shadow_mask`.
 
 # Definitions live in LitShaderLibrary.
 const BlendMode = LitShaderLibrary.BlendMode
@@ -61,6 +70,14 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5
+## Length of cast shadows as a fraction; each shadow closes there through a natural
+## penumbral tip. Point/spot lights: a fraction of the fragment's distance to the light,
+## so shadows stretch with an occluder's distance from it, reading like a light hung
+## above the ground (values below 0.01 act as 0.01). Directional lights: a fraction of
+## `shadow_reach`, so a low sun reads as long evening shadows and a high sun as short
+## noon ones (0 = none at all); animate it alongside the node's rotation for day/night
+## cycles. 1 = full length (the default).
+@export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0
 ## Shadow marches per fragment across the source (STOCHASTIC): more is smoother and
 ## slower. Clamped by lit/quality/shadow_samples_max.
 @export_range(1, 32) var shadow_samples: int = 8
@@ -121,6 +138,14 @@ func _exit_tree() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_VISIBILITY_CHANGED:
 		LitLightRegistry.light_state_changed(self)
+
+# Godot runs only the most-derived _validate_property(), so subclasses supply their
+# source property through _shadow_source_property() rather than overriding this.
+func _validate_property(property: Dictionary) -> void:
+	LitShaderLibrary.validate_light_property(property, shadow_algorithm, _shadow_source_property())
+
+# The property sizing the shadow source, hidden under RAYMARCHED.
+@abstract func _shadow_source_property() -> StringName
 
 # Light2D method names.
 func set_enabled(value: bool) -> void:

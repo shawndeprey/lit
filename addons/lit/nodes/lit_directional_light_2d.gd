@@ -12,15 +12,10 @@ class_name LitDirectionalLight2D
 ## `range`, `falloff` or cookie, and directional lights are never positionally culled.[br][br]
 ##
 ## Shares the receiver and shadow code path with point lights via the type flag in the
-## light-data texture. The shared surface (color, energy, height, the shadow gates,
-## blend mode, z/layer ranges and the Light2D-style methods) lives on LitLight2D.
+## light-data texture. The settings it shares with every Lit light are inherited from
+## LitLight2D.
 
-@export_group("Shadow")
-## Length of cast shadows as a fraction of `shadow_reach`: every occluder's shadow
-## closes exactly at that distance through a natural penumbral tip, so a low sun reads
-## as long evening shadows and a high sun as short noon ones (0 = none at all). Animate
-## it alongside the node's rotation for day/night cycles.
-@export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0
+@export_group("Shadow Shape")
 ## Maximum distance shadows can extend, in world pixels; `shadow_length` scales within
 ## it. A world length, so shadows stay identical at any camera zoom. The world-SDF
 ## window grows to cover it, so very large values coarsen shadow-casting resolution.
@@ -34,8 +29,8 @@ class_name LitDirectionalLight2D
 @export_range(0.0, 60.0, 0.05) var source_angle: float = 6.0
 
 
-func _validate_property(property: Dictionary) -> void:
-	LitShaderLibrary.validate_light_property(property, shadow_algorithm, "source_angle")
+func _shadow_source_property() -> StringName:
+	return &"source_angle"
 
 
 # DirectionalLight2D's method names over `shadow_reach`.
