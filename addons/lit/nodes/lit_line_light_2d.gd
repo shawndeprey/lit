@@ -16,9 +16,8 @@ class_name LitLineLight2D
 ## Stochastic march `shadow_samples` narrow cones spread along the part of the segment
 ## within `range` of the receiver (Stochastic dithers them), so shadows are soft along
 ## the tube and sharp across it. The cookie stays centered on the node; FIT_RANGE spans
-## the capsule's bounding box. The shared surface lives on LitPositionalLight2D (falloff,
-## texture, shadow length and source) and LitLight2D (color, energy, height, the shadow
-## gates, blend mode, z/layer ranges and the Light2D-style methods).
+## the capsule's bounding box. Everything else is inherited from LitPositionalLight2D
+## and LitLight2D.
 
 @export_group("Line")
 ## Length of the emitting segment in local pixels, centered on the node along its local
