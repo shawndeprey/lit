@@ -99,19 +99,20 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 
 // Strata of a curved line light: one sub-cone per shadow chord of its path row, each
 // covering its chord as seen from the fragment plus the tube's radius src_r, weighted
-// as the shading weights the chords (lit_path_sample): the visible share of the light
+// as the shading weights the chords (lit_line_chord): the visible share of the light
 // the fragment receives. Its own loop, so the straight strata loop above carries no
 // chord fetch. Each stratum closes its own tip band at the cap.
-float lit_shadow_path(vec2 frag_sdf, int row, int n, vec4 kernel, float cap_frac, bool capped, float src_r,
+float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec4 kernel, float cap_frac, bool capped, float src_r,
 		float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
 	n = clamp(n, 1, LIT_MAX_SHADOW_SAMPLES);
 	float ign = fract(52.9829189 * fract(dot(noise_px, vec2(0.06711056, 0.00583715))));
 	float sum = 0.0;
 	float wsum = 0.0;
+	vec3 unused = vec3(0.0);
 	for (int i = 0; i < n; i++) {
 		vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
-		float w = lit_path_sample(ch, noise_px, kernel).w;
+		float w = lit_line_chord(ch, noise_px, N, kernel, unused);
 		if (w <= 0.0) {
 			continue;
 		}

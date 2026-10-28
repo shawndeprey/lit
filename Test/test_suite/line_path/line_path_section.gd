@@ -1,19 +1,21 @@
 extends LitSuiteSection
 
 ## LitLineLight2D bent by a Path2D child against the rendered frame: a 2-point path
-## renders as the straight light pixel for pixel; a ring (closed 4-point curve) lights
-## as a true circle (beam edge within a pixel of the circle, even around, no crease across
-## the arc joints, nearest-point shading inside and out); ring and S-curve shadows (umbra
-## behind a box outside the ring, inside lit, all three algorithms, shadow_length, the
-## closed seam); the node API (closed, length greyed by the child, warnings), packing
-## (flags bit 23, path row, arc count), the mirror, culling by the chain's bounds, the
-## luminance mirror, camera zoom invariance, a non-uniform node scale (an ellipse) and
-## normal-mapped receivers (no seam across a V's bisector, a ring's center lit evenly
-## from all around, a tilted face beside a 2-point path identical to the straight light).
+## renders as the straight light pixel for pixel; a V path renders as two straight
+## lights on its arms (the light adds up along the path, twice one arm's share on the
+## bisector, no crease there); a ring (closed 4-point curve) lights as a true circle
+## (beam edge within a pixel of the circle, even around, no crease across the arc
+## joints, the whole ring lighting its inside); ring and S-curve shadows (umbra behind
+## a box outside the ring, inside lit, all three algorithms, shadow_length, the closed
+## seam); the node API (closed, length greyed by the child, warnings), packing (flags
+## bit 23, path row, arc count, shading chord count), the mirror, culling by the chain's
+## bounds, the luminance mirror, camera zoom invariance, a non-uniform node scale (an
+## ellipse) and normal-mapped receivers (no seam across a V's bisector, a ring's center
+## lit from all around, a tilted face beside a 2-point path identical to the straight
+## light).
 ##
-## Numeric expectations are the receiver shader's diffuse term on a flat white receiver
-## with d the distance past the tube's surface: albedo x ambient + energy x glow_term x
-## (height / sqrt(d^2 + height^2)) x (1 - d / (range - half width))^falloff x diffuse_scale().
+## Numeric expectations come from _ref: the shader's line integral summed over 0.25 px
+## elements of the path, albedo x ambient + energy x integral x diffuse_scale().
 
 const AMBIENT := 0.1
 const TOL := 0.03
@@ -64,6 +66,7 @@ func run() -> void:
 	floor_receiver(Rect2(700, 560, 680, 480))
 	await frames(2)
 	await _straight_equivalence()
+	await _additive()
 	await _ring_geometry()
 	await _ring_shadows()
 	await _api()
@@ -108,18 +111,72 @@ func ring_child(light: LitLineLight2D, r: float) -> Path2D:
 	])
 
 
-## Diffuse at distance d from the tube's center line on a flat white receiver.
-func _exp(d: float, half_w: float, p_range: float, energy: float, glow: float, falloff: float,
-		height: float) -> float:
-	var surf := maxf(d - half_w, 0.0)
+## Diffuse at `p` on a face with normal `n` (the flat floor by default) under a tube
+## along the polyline `pts` (world px, a loop when `closed`): the model the shader
+## integrates in closed form per chord (lit_line_chord), summed here over 0.25 px
+## elements instead. An isotropic line source max(n.u, 0) / (PI |u|^2) per unit length
+## under the range window sqrt(1 - |u|^2 / R'^2) (R' the slant at the range), each
+## piece shaped by the falloff at its nearest point; the halo's tube is shrunk toward
+## `p` by the half width and an open tube runs on past its ends by it; the beam is `p`'s
+## coverage by the tube's body, and the glow scales the halo.
+func _ref(p: Vector2, pts: PackedVector2Array, closed: bool, p_range: float, energy: float, falloff: float,
+		height: float, half_w := 0.0, glow := 1.0, n := Vector3(0, 0, 1)) -> float:
+	var m := pts.size() - 1
+	var d_body := INF
+	for k in m:
+		d_body = minf(d_body, _seg_dist(p, pts[k], pts[k + 1]))
 	var reach := p_range - half_w
-	if surf > reach:
+	if maxf(d_body - half_w, 0.0) > reach:
 		return AMBIENT
-	var beam := clampf(minf(d + 0.5, half_w) - maxf(d - 0.5, -half_w), 0.0, 1.0)
-	var atten := pow(clampf(1.0 - surf / reach, 0.0, 1.0), falloff)
-	var ndotl := height / sqrt(surf * surf + height * height)
-	var c := energy * lerpf(glow, 1.0, beam) * ndotl * atten
-	return AMBIENT + (c * diffuse_scale() if c >= 0.004 else 0.0)
+	var beam := clampf(minf(d_body + 0.5, half_w) - maxf(d_body - 0.5, -half_w), 0.0, 1.0)
+	var ext := pts.duplicate()
+	if half_w > 0.0 and not closed:
+		ext[0] += (pts[0] - pts[1]).normalized() * half_w
+		ext[m] += (pts[m] - pts[m - 1]).normalized() * half_w
+	var rp := sqrt(reach * reach + height * height)
+	var acc := 0.0
+	for k in m:
+		var a := ext[k]
+		var ab := ext[k + 1] - a
+		var len := ab.length()
+		if len < 1e-6:
+			continue
+		var t := ab / len
+		var lf := (p - a).dot(t)
+		var v := a + t * lf - p
+		var dperp := v.length()
+		v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
+		var se := maxf((a + t * clampf(lf, 0.0, len)).distance_to(p) - half_w, 0.0)
+		var g := pow(maxf(1.0 - se / reach, 0.0), falloff) / maxf(1.0 - sqrt(se * se + height * height) / rp, 1e-6)
+		var cnt := maxi(int(ceil(len / 0.25)), 1)
+		var sum := 0.0
+		for j in cnt:
+			var l := -lf + (float(j) + 0.5) * len / float(cnt)
+			var u := Vector3(v.x + t.x * l, v.y + t.y * l, height)
+			var rho2 := u.length_squared()
+			sum += sqrt(maxf(1.0 - rho2 / (rp * rp), 0.0)) * maxf(n.dot(u), 0.0) / rho2
+		acc += sum * len / float(cnt) * g
+	var c := energy * acc / PI * lerpf(glow, 1.0, beam)
+	return minf(AMBIENT + (c * diffuse_scale() if c >= 0.004 else 0.0), 1.0)
+
+
+static func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var l2 := ab.length_squared()
+	if l2 < 1e-12:
+		return p.distance_to(a)
+	return (a + ab * clampf((p - a).dot(ab) / l2, 0.0, 1.0)).distance_to(p)
+
+
+## A ring of radius `r` around `c` from `from_deg` to `to_deg` as a polygon far finer
+## than the light's chords; `sx` stretches it along x.
+static func _ring_pts(c: Vector2, r: float, from_deg := 0.0, to_deg := 360.0, sx := 1.0) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var steps := int(round((to_deg - from_deg) * 2.0))
+	for k in steps + 1:
+		var a := deg_to_rad(from_deg + (to_deg - from_deg) * float(k) / float(steps))
+		out.append(c + Vector2(cos(a) * r * sx, sin(a) * r))
+	return out
 
 
 # --- A: a 2-point path is the straight light -----------------------------------------------------
@@ -154,6 +211,49 @@ func _straight_equivalence() -> void:
 	await frames(1)
 
 
+# --- A: a V path adds up like two straight lights ------------------------------------------------------
+
+## A right-angle V with 200 px arms under one light against two straight tubes on its
+## arms: the light is a line integral, so both render alike, the bisector is lit by both
+## arms (twice one arm's share) and there is no crease along it.
+func _additive() -> void:
+	var c := "path_additive"
+	var apex := Vector2(450, 420)
+	var pts := PackedVector2Array([Vector2(250, 420), apex, Vector2(450, 220)])
+	var bis := Vector2(-1, -1).normalized()
+	var s1 := line_light(Vector2(350, 420), 200.0, 0.8, 30.0)
+	s1.length = 200.0
+	var s2 := line_light(Vector2(450, 320), 200.0, 0.8, 30.0)
+	s2.length = 200.0
+	s2.rotation = PI / 2.0
+	await frames(2)
+	var two := await capture()
+	s1.queue_free()
+	s2.queue_free()
+	var v := line_light(apex, 200.0, 0.8, 30.0)
+	path_child(v, [[Vector2(-200, 0), Vector2.ZERO, Vector2.ZERO], [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO],
+			[Vector2(0, -200), Vector2.ZERO, Vector2.ZERO]])
+	await frames(2)
+	var img := await capture()
+	check_lt(c, "the V path renders as two straight lights on its arms (mean abs diff)", image_diff(two, img, Rect2(40, 110, 620, 390), 2), 0.002)
+	for t in [40.0, 80.0, 120.0, 160.0]:
+		var p: Vector2 = apex + bis * t
+		check_approx(c, "on the bisector %d px from the apex: both arms add up (the model)" % int(t),
+				_ref(p, pts, false, 200.0, 0.8, 1.0, 30.0), lum(img, p), TOL)
+		check_approx(c, "and %d px out it reads as the two straight lights" % int(t), lum(two, p), lum(img, p), 0.005)
+	var base := apex + bis * 80.0
+	check_gt(c, "80 px from the apex the bisector is far brighter than one arm alone lights it", lum(img, base),
+			_ref(base, pts.slice(0, 2), false, 200.0, 0.8, 1.0, 30.0), 0.1)
+	var across := Vector2(1, -1).normalized()
+	var curve := lum(img, base + across * 12.0, 1) + lum(img, base - across * 12.0, 1) - 2.0 * lum(img, base, 1)
+	var model := _ref(base + across * 12.0, pts, false, 200.0, 0.8, 1.0, 30.0) + _ref(base - across * 12.0, pts, false, 200.0, 0.8, 1.0, 30.0) \
+			- 2.0 * _ref(base, pts, false, 200.0, 0.8, 1.0, 30.0)
+	check_approx(c, "across the bisector the render bends as the model's smooth valley does, no crease (second difference, 12 px step)",
+			model, curve, 0.01)
+	v.queue_free()
+	await frames(1)
+
+
 # --- A: ring geometry --------------------------------------------------------------------------------
 
 func _ring_geometry() -> void:
@@ -165,8 +265,9 @@ func _ring_geometry() -> void:
 	await frames(2)
 	check_true(c, "the ring fits in at most 8 arcs", l.path_chain().arc_count() <= 8)
 	var img := await capture()
-	var on := _exp(0.0, 10.0, 150.0, 0.5, 0.5, 1.0, 100.0)
-	var out60 := _exp(60.0, 10.0, 150.0, 0.5, 0.5, 1.0, 100.0)
+	var ring := _ring_pts(CA, RA)
+	var on := _ref(CA + Vector2(RA, 0), ring, true, 150.0, 0.5, 1.0, 100.0, 10.0, 0.5)
+	var out60 := _ref(CA + Vector2(RA + 60.0, 0), ring, true, 150.0, 0.5, 1.0, 100.0, 10.0, 0.5)
 	for k in 8:
 		var dir := Vector2.from_angle(k * PI / 4.0)
 		check_approx(c, "on the beam at %d deg" % (k * 45), on, lum(img, CA + dir * RA, 2), TOL)
@@ -174,10 +275,12 @@ func _ring_geometry() -> void:
 	for k in 16:
 		var dir := Vector2.from_angle(k * PI / 8.0)
 		ring_vals.append(lum(img, CA + dir * (RA + 60.0)))
-	check_approx(c, "60 px outside the ring reads the point-light value at 50 px past the surface", out60, ring_vals[0], TOL)
+	check_approx(c, "60 px outside the ring reads the ring's integral 50 px past its surface", out60, ring_vals[0], TOL)
 	check_lt(c, "the glow 60 px outside is even around the ring (max - min)", ring_vals.max() - ring_vals.min(), 0.01)
-	check_approx(c, "60 px inside the ring reads the same (nearest-point shading)", out60, lum(img, CA + Vector2(60, 0)), TOL)
-	check_approx(c, "the ring's center is 120 px from the tube", _exp(RA, 10.0, 150.0, 0.5, 0.5, 1.0, 100.0), lum(img, CA), TOL)
+	check_approx(c, "60 px inside the ring: the whole ring lights it", _ref(CA + Vector2(60, 0), ring, true, 150.0, 0.5, 1.0, 100.0, 10.0, 0.5),
+			lum(img, CA + Vector2(60, 0)), TOL)
+	check_gt(c, "and it reads brighter than 60 px outside (the far side adds up)", lum(img, CA + Vector2(60, 0)), ring_vals[0], 0.05)
+	check_approx(c, "the ring's center: every part of the ring, 120 px away", _ref(CA, ring, true, 150.0, 0.5, 1.0, 100.0, 10.0, 0.5), lum(img, CA), TOL)
 	check_approx(c, "290 px out (beyond range): ambient", AMBIENT, lum(img, CA + Vector2(290, 0)), TOL)
 	# The beam edge (half width 10) sits on the circle of radius 130 along every ray.
 	var worst := 0.0
@@ -225,11 +328,19 @@ func _ring_shadows() -> void:
 	check_approx(c, "Cone Traced: umbra below the box outside the ring", AMBIENT, lum(img, P_UM), 0.06)
 	check_approx(c, "Cone Traced: umbra left of the left box", AMBIENT, lum(img, P_LEFT), 0.06)
 	check_gt(c, "beside the shadow: lit", lum(img, P_REF), AMBIENT, 0.2)
-	check_approx(c, "inside the ring: the center reads the 100 px value, unshadowed", _exp(RB, 0.0, 250.0, 0.8, 1.0, 0.3, 300.0),
-			lum(img, CB), TOL)
-	check_approx(c, "inside the ring: 60 px toward the left box reads the 40 px value", _exp(40.0, 0.0, 250.0, 0.8, 1.0, 0.3, 300.0),
-			lum(img, CB + Vector2(-60, 0)), TOL)
 	var cone_pen := lum(img, P_PEN)
+	# The whole ring lights its inside: at energy 0.8 the floor saturates there, so the
+	# interior reads against the model at energy 0.4.
+	var ringb := _ring_pts(CB, RB)
+	_ring_b.energy = 0.4
+	await frames(2)
+	img = await capture()
+	check_approx(c, "inside the ring: the center reads the ring's integral, unshadowed", _ref(CB, ringb, true, 250.0, 0.4, 0.3, 300.0),
+			lum(img, CB), TOL)
+	check_approx(c, "inside the ring: 60 px toward the left box, unshadowed", _ref(CB + Vector2(-60, 0), ringb, true, 250.0, 0.4, 0.3, 300.0),
+			lum(img, CB + Vector2(-60, 0)), TOL)
+	_ring_b.energy = 0.8
+	await frames(2)
 	_ring_b.shadow_algorithm = ALGO.STOCHASTIC
 	await frames(2)
 	img = await capture()
@@ -257,13 +368,16 @@ func _ring_shadows() -> void:
 	img = await capture()
 	check_gt(c, "hidden boxes cast nothing", lum(img, P_UM), AMBIENT, 0.25)
 	var on := lum(img, P_SEAM, 1)
-	check_approx(c, "closed: the seam at 315 deg is on the ring", AMBIENT + 0.8 * diffuse_scale(), on, TOL)
+	check_approx(c, "closed: the seam at 315 deg is on the ring", _ref(P_SEAM, ringb, true, 250.0, 0.8, 0.3, 300.0), on, TOL)
 	_ring_b.closed = false
 	await frames(2)
 	img = await capture()
-	check_approx(c, "open: the seam reads the distance to the nearer end (76 px)", _exp(2.0 * RB * sin(PI / 8.0), 0.0, 250.0, 0.8, 1.0, 0.3, 300.0),
+	var open := _ring_pts(CB, RB, 0.0, 270.0)
+	check_approx(c, "open: the seam at 315 deg sits in the gap, lit by the open ring's taper", _ref(P_SEAM, open, false, 250.0, 0.8, 0.3, 300.0),
 			lum(img, P_SEAM, 1), TOL)
-	check_approx(c, "open: the first point stays on the ring", AMBIENT + 0.8 * diffuse_scale(), lum(img, CB + Vector2(RB, 0), 1), TOL)
+	check_lt(c, "open: the gap is dimmer than the closed ring there", lum(img, P_SEAM, 1), on, 0.02)
+	check_approx(c, "open: the first point stays on the ring", _ref(CB + Vector2(RB, 0), open, false, 250.0, 0.8, 0.3, 300.0),
+			lum(img, CB + Vector2(RB, 0), 1), TOL)
 	_ring_b.closed = true
 	below.visible = true
 	left.visible = true
@@ -327,6 +441,7 @@ func _api() -> void:
 		check_approx(c, "path row texel 1: the first arc point is the curve's first point (x)", CC.x + RC, packer._path_buf[pb + 4], 0.5)
 		var chord_len := Vector2(packer._path_buf[pb + 4 * packer.PATH_SHADOW + 2], packer._path_buf[pb + 4 * packer.PATH_SHADOW + 3]).length() * 2.0
 		check_approx(c, "the first shadow chord spans 1/8 of the ring (8 samples)", 2.0 * RC * sin(PI / 8.0), chord_len, 1.0)
+		check(c, "path row texel 0.w: the ring's arcs share all 32 shading chords", 32, int(round(packer._path_buf[pb + 3])))
 		l.rotation = PI / 2.0
 		await frames(1)
 		check_approx(c, "rotated 90: the first arc point turns to +y", CC.y + RC, packer._path_buf[pb + 5], 0.5)
@@ -481,15 +596,16 @@ func _scale() -> void:
 	l.scale = Vector2(2.0, 1.0)
 	await frames(2)
 	var img := await capture()
-	var on := _exp(0.0, 4.0, 120.0, 0.5, 0.5, 1.0, 100.0)
-	check_approx(c, "scale (2, 1): the beam passes 100 px right of the node", on, lum(img, CE + Vector2(100, 0), 1), TOL)
-	check_approx(c, "scale (2, 1): and 50 px below it", on, lum(img, CE + Vector2(0, 50), 1), TOL)
-	check_approx(c, "scale (2, 1): and through the ellipse's 45 deg point", on, lum(img, CE + Vector2(70.7, 35.4), 1), TOL)
-	check_lt(c, "scale (2, 1): the circle's 45 deg point is off the beam", lum(img, CE + Vector2(35.4, 35.4), 1), on - 0.1)
+	var ellipse := _ring_pts(CE, 50.0, 0.0, 360.0, 2.0)
+	for pt in [Vector2(100, 0), Vector2(0, 50), Vector2(70.7, 35.4)]:
+		check_approx(c, "scale (2, 1): the beam passes %s from the node" % pt, _ref(CE + pt, ellipse, true, 120.0, 0.5, 1.0, 100.0, 4.0, 0.5),
+				lum(img, CE + pt, 1), TOL)
+	check_lt(c, "scale (2, 1): the circle's 45 deg point is off the beam", lum(img, CE + Vector2(35.4, 35.4), 1), lum(img, CE + Vector2(70.7, 35.4), 1), 0.05)
 	l.scale = Vector2.ONE
 	await frames(2)
 	img = await capture()
-	check_approx(c, "scale 1: the circle's 45 deg point is back on the beam", on, lum(img, CE + Vector2(35.4, 35.4), 1), TOL)
+	check_approx(c, "scale 1: the circle's 45 deg point is back on the beam",
+			_ref(CE + Vector2(35.4, 35.4), _ring_pts(CE, 50.0), true, 60.0, 0.5, 1.0, 100.0, 2.0, 0.5), lum(img, CE + Vector2(35.4, 35.4), 1), TOL)
 
 
 # --- D: normal-mapped receivers --------------------------------------------------------------------
@@ -500,19 +616,6 @@ func tilted_box(pos: Vector2, size: int, nx: float, ny := 0.0) -> LitSprite2D:
 	var s := box_receiver(pos, Vector2(size, size), Color.WHITE, null, tex_normal(size, nx, ny))
 	s.specular_strength = 0.0
 	return s
-
-
-## Diffuse at the center of a ring of radius r on a face with normal n: the mean clamped
-## cosine over the ring (the shading chords' midpoints sit at r cos(pi / 32)), scaled to
-## the nearest point's slant.
-func _ring_face(r: float, height: float, p_range: float, energy: float, n: Vector3) -> float:
-	var rc := r * cos(PI / 32.0)
-	var acc := 0.0
-	for k in 360:
-		var a := deg_to_rad(float(k))
-		acc += maxf(n.x * rc * cos(a) + n.y * rc * sin(a) + n.z * height, 0.0)
-	var ndotl := acc / 360.0 / sqrt(r * r + height * height)
-	return AMBIENT + energy * (1.0 - r / p_range) * ndotl * diffuse_scale()
 
 
 ## The light's direction on a tilted face is continuous across the path's medial axis,
@@ -549,8 +652,9 @@ func _normals() -> void:
 		lo = minf(lo, val)
 	check_lt(c, "a face tilted toward one arm: no step across the V's bisector (max change per 2 px)", step, 0.02)
 	check_gt(c, "both arms light it on either side of the bisector", lo, AMBIENT, 0.05)
-	check_approx(c, "the flat floor beside it keeps the distance-field value (120 px from the nearer arm)",
-			_exp(120.0, 0.0, 300.0, 1.0, 1.0, 1.0, 60.0), lum(img, P_BIS + Vector2(-80, 0)), TOL)
+	check_approx(c, "the flat floor beside it reads the V's integral",
+			_ref(P_BIS + Vector2(-80, 0), PackedVector2Array([V_APEX + Vector2(-240, 0), V_APEX, V_APEX + Vector2(0, -240)]), false,
+					300.0, 1.0, 1.0, 60.0), lum(img, P_BIS + Vector2(-80, 0)), TOL)
 	# The luminance mirror follows the integral: get_luminance() on normal-mapped sprites
 	# under the V matches their rendered mean.
 	var white := tex_sized(Vector2(64, 64))
@@ -580,11 +684,16 @@ func _normals() -> void:
 		plus.append(lum(img, CR + Vector2.from_angle(k * PI / 4.0) * 12.0, 1))
 	var center := lum(img, CR, 1)
 	check_gt(c, "a face at the ring's center is lit (every side of the ring reaches it)", center, AMBIENT, 0.05)
-	check_approx(c, "and reads the ring's mean clamped cosine", _ring_face(80.0, 60.0, 300.0, 1.0, Vector3(0.6, 0.0, 1.0).normalized()),
+	var ring80 := _ring_pts(CR, 80.0)
+	check_approx(c, "and reads the ring's integral on that face", _ref(CR, ring80, true, 300.0, 1.0, 1.0, 60.0, 0.0, 1.0, Vector3(0.6, 0.0, 1.0).normalized()),
 			center, 0.04)
-	check_gt(c, "12 px toward the side it faces it reads brighter than 12 px away from it", plus[0], plus[4], 0.01)
-	check_approx(c, "the flat floor beside the ring keeps the distance-field value (40 px outside)",
-			_exp(40.0, 0.0, 300.0, 1.0, 1.0, 1.0, 60.0), lum(img, CR + Vector2(-120, 0)), TOL)
+	var tilt_n := Vector3(0.6, 0.0, 1.0).normalized()
+	check_approx(c, "12 px toward the side it faces it reads the ring's integral there", _ref(CR + Vector2(12, 0), ring80, true, 300.0, 1.0, 1.0, 60.0, 0.0, 1.0, tilt_n),
+			plus[0], 0.04)
+	check_approx(c, "and 12 px away from it (the ring around it lights it from the side it faces)",
+			_ref(CR - Vector2(12, 0), ring80, true, 300.0, 1.0, 1.0, 60.0, 0.0, 1.0, tilt_n), plus[4], 0.04)
+	check_approx(c, "the flat floor beside the ring reads its integral (40 px outside)",
+			_ref(CR + Vector2(-120, 0), ring80, true, 300.0, 1.0, 1.0, 60.0), lum(img, CR + Vector2(-120, 0)), TOL)
 	side.texture = canvas_tex(tex_sized(Vector2(40, 40)), tex_normal(40, -0.6))
 	await frames(2)
 	img = await capture()

@@ -1,11 +1,11 @@
 extends LitSuiteSection
 
-## LitLineLight2D against the rendered frame: the capsule footprint (every distance
-## measured from Q, the nearest point of the segment, so the light is constant along
-## the tube and a point light past each end cap), length / rotation / node scale, the
-## point-light shading contract (range, falloff, energy, colour, height, gates, blend,
-## light masks), width and glow (a flat beam under the tube, a halo at a fraction of its
-## brightness falling off from its surface),
+## LitLineLight2D against the rendered frame: the tube as a line source (the light
+## adds up along it, beside a long tube it reads as a point light at the same distance
+## from the segment, it tapers past each end, a zero length emits nothing), length /
+## rotation / node scale, the shading contract (range, falloff, energy, colour, height,
+## gates, blend, light masks), width and glow (a flat beam under the tube, a halo at a
+## fraction of its brightness falling off from its surface, the caps lit as the body),
 ## shadows (umbra, colour, length, soft along the tube and sharp across it on Cone
 ## Traced and Stochastic with the stochastic as the reference, Raymarched hard, and an
 ## occluder beside the tube darkening nothing but its own shadow), cookies
@@ -13,9 +13,9 @@ extends LitSuiteSection
 ## registry plumbing (kind, mirror, packed row, capsule culling, activity flags), the
 ## luminance mirror, z ranges and camera zoom invariance.
 ##
-## Numeric expectations are the receiver shader's diffuse term on a flat white
-## receiver, with d the distance to Q: albedo x ambient + energy x
-## (height / sqrt(d^2 + height^2)) x (1 - d / range)^falloff x diffuse_scale().
+## Numeric expectations come from _ref: the shader's line integral summed over 0.25 px
+## elements of the tube, on a flat white receiver, albedo x ambient + energy x
+## integral x diffuse_scale().
 
 const AMBIENT := 0.1
 const TOL := 0.03
@@ -84,14 +84,50 @@ func line_light(pos: Vector2, length: float, p_range: float, energy: float, heig
 	return l
 
 
-## Diffuse at distance d from Q on a flat white receiver.
-func _exp(d: float, p_range: float, energy: float, falloff: float, height: float) -> float:
-	if d > p_range:
+## Diffuse at `p` on a flat white receiver under a tube from `a` to `b` (world px): the
+## model the shader integrates in closed form (lit_line_chord), summed here over 0.25 px
+## elements of the tube instead. An isotropic line source, 1 / (PI |u|^2) x the
+## elevation per unit length under the range window sqrt(1 - |u|^2 / R'^2) (R' the
+## slant at the range), shaped by the falloff at the nearest point so an endless tube
+## reads (1 - d / range)^falloff x the elevation. The halo's tube is shrunk toward `p`
+## by the half width and runs on past its ends by it; the beam is `p`'s coverage by the
+## tube's body, and the glow scales the halo.
+func _ref(p: Vector2, a: Vector2, b: Vector2, p_range: float, energy: float, falloff: float, height: float,
+		half_w := 0.0, glow := 1.0) -> float:
+	var ab := b - a
+	var len := ab.length()
+	if len < 1e-4:
 		return AMBIENT
-	var atten := pow(clampf(1.0 - d / p_range, 0.0, 1.0), falloff)
-	var ndotl := height / sqrt(d * d + height * height)
-	var c := energy * ndotl * atten
-	return AMBIENT + (c * diffuse_scale() if c >= 0.004 else 0.0)
+	var t := ab / len
+	var d_body := (a + t * clampf((p - a).dot(t), 0.0, len)).distance_to(p)
+	var reach := p_range - half_w
+	if maxf(d_body - half_w, 0.0) > reach:
+		return AMBIENT
+	var beam := clampf(minf(d_body + 0.5, half_w) - maxf(d_body - 0.5, -half_w), 0.0, 1.0)
+	var ea := a - t * half_w
+	var elen := len + 2.0 * half_w
+	var lf := (p - ea).dot(t)
+	var v := ea + t * lf - p
+	var dperp := v.length()
+	v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
+	var rp := sqrt(reach * reach + height * height)
+	var m := maxi(int(ceil(elen / 0.25)), 1)
+	var acc := 0.0
+	for k in m:
+		var l := -lf + (float(k) + 0.5) * elen / float(m)
+		var rho2 := (v + t * l).length_squared() + height * height
+		acc += sqrt(maxf(1.0 - rho2 / (rp * rp), 0.0)) * height / rho2
+	acc *= elen / float(m) / PI
+	var se := maxf((ea + t * clampf(lf, 0.0, elen)).distance_to(p) - half_w, 0.0)
+	var g := pow(maxf(1.0 - se / reach, 0.0), falloff) / maxf(1.0 - sqrt(se * se + height * height) / rp, 1e-6)
+	var c := energy * acc * g * lerpf(glow, 1.0, beam)
+	return minf(AMBIENT + (c * diffuse_scale() if c >= 0.004 else 0.0), 1.0)
+
+
+## _ref under the 200 px tube A centered on CA along +X.
+func _ref_a(p: Vector2, p_range := 150.0, energy := 0.5, falloff := 1.0, height := 100.0, half_w := 0.0,
+		glow := 1.0) -> float:
+	return _ref(p, CA + Vector2(-100, 0), CA + Vector2(100, 0), p_range, energy, falloff, height, half_w, glow)
 
 
 # --- A: geometry -----------------------------------------------------------------------------
@@ -101,49 +137,60 @@ func _geometry() -> void:
 	var l := line_light(CA, 200.0, 150.0, 0.5, 100.0)
 	await frames(1)
 	var img := await capture()
-	var on := _exp(0.0, 150.0, 0.5, 1.0, 100.0)
-	var beside := _exp(100.0, 150.0, 0.5, 1.0, 100.0)
+	var on := _ref_a(CA)
+	var beside := _ref_a(CA + Vector2(0, 100))
 	check_approx(c, "on the segment at the node", on, lum(img, CA), TOL)
-	check_approx(c, "on the segment 80 px along it (still distance 0)", on, lum(img, CA + Vector2(80, 0)), TOL)
-	check_approx(c, "at the right end cap", on, lum(img, CA + Vector2(100, 0)), TOL)
-	check_approx(c, "at the left end cap", on, lum(img, CA + Vector2(-100, 0)), TOL)
-	for dx in [-100, 0, 100]:
-		check_approx(c, "100 px beside the tube at x %+d: the point-light value at 100 px" % dx, beside,
-				lum(img, CA + Vector2(dx, 100)), TOL)
-	check_approx(c, "100 px above the tube reads the same", beside, lum(img, CA + Vector2(0, -100)), TOL)
-	check_approx(c, "100 px past the end cap along the axis: a point light at the endpoint", beside,
-			lum(img, CA + Vector2(200, 0)), TOL)
-	check_approx(c, "100 px past the end cap on the diagonal", beside, lum(img, CA + Vector2(171, 71)), TOL)
-	check_approx(c, "120 px beside the tube", _exp(120.0, 150.0, 0.5, 1.0, 100.0), lum(img, CA + Vector2(0, 120)), 0.02)
+	check_approx(c, "on the segment 80 px along it", _ref_a(CA + Vector2(80, 0)), lum(img, CA + Vector2(80, 0)), TOL)
+	check_lt(c, "80 px along it is dimmer than the middle (the light tapers toward the ends)", lum(img, CA + Vector2(80, 0)),
+			lum(img, CA), 0.02)
+	check_approx(c, "at the right end: half the tube is left to light it", _ref_a(CA + Vector2(100, 0)), lum(img, CA + Vector2(100, 0)), TOL)
+	check_approx(c, "at the left end", _ref_a(CA + Vector2(-100, 0)), lum(img, CA + Vector2(-100, 0)), TOL)
+	check_approx(c, "100 px beside the tube's middle", beside, lum(img, CA + Vector2(0, 100)), TOL)
+	for dx in [-100, 100]:
+		check_approx(c, "100 px beside the tube at x %+d (an end): dimmer, the tube runs one way from there" % dx,
+				_ref_a(CA + Vector2(dx, 100)), lum(img, CA + Vector2(dx, 100)), TOL)
+	check_approx(c, "100 px above the tube reads as below it", beside, lum(img, CA + Vector2(0, -100)), TOL)
+	check_approx(c, "100 px past the end along the axis: the taper", _ref_a(CA + Vector2(200, 0)), lum(img, CA + Vector2(200, 0)), TOL)
+	check_approx(c, "100 px past the end on the diagonal", _ref_a(CA + Vector2(171, 71)), lum(img, CA + Vector2(171, 71)), TOL)
+	check_approx(c, "120 px beside the tube", _ref_a(CA + Vector2(0, 120)), lum(img, CA + Vector2(0, 120)), 0.02)
 	check_approx(c, "170 px beside the tube (beyond range): ambient", AMBIENT, lum(img, CA + Vector2(0, 170)), TOL)
 	check_approx(c, "170 px above the tube: ambient", AMBIENT, lum(img, CA + Vector2(0, -170)), TOL)
-	check_approx(c, "170 px past the end cap: ambient", AMBIENT, lum(img, CA + Vector2(270, 0)), TOL)
+	check_approx(c, "170 px past the end: ambient", AMBIENT, lum(img, CA + Vector2(270, 0)), TOL)
 
 	l.length = 0.0
 	img = await capture()
-	check_approx(c, "length 0: a point light (the old end cap is now 100 px away)", beside, lum(img, CA + Vector2(100, 0)), TOL)
-	check_approx(c, "length 0: still lit at the node", on, lum(img, CA), TOL)
-	check_approx(c, "length 0: 100 px beside unchanged", beside, lum(img, CA + Vector2(0, 100)), TOL)
+	check_approx(c, "length 0 emits nothing: ambient at the node", AMBIENT, lum(img, CA), TOL)
+	check_approx(c, "length 0: ambient 100 px beside", AMBIENT, lum(img, CA + Vector2(0, 100)), TOL)
+	l.length = 40.0
+	img = await capture()
+	check_approx(c, "a 40 px tube under a 100 px height at its node", _ref(CA, CA + Vector2(-20, 0), CA + Vector2(20, 0), 150.0, 0.5, 1.0, 100.0),
+			lum(img, CA), TOL)
+	check_lt(c, "and reads far dimmer than the 200 px tube there (the light adds up along the tube)", lum(img, CA), on, 0.1)
 	l.length = 200.0
 	l.rotation = PI / 2.0
 	img = await capture()
-	check_approx(c, "rotation 90: the segment runs along y (100 px above the node is on it)", on,
-			lum(img, CA + Vector2(0, -100)), TOL)
-	check_approx(c, "rotation 90: 100 px below the node is on it too", on, lum(img, CA + Vector2(0, 100)), TOL)
-	check_approx(c, "rotation 90: 100 px to the right is beside it", beside, lum(img, CA + Vector2(100, 0)), TOL)
+	var ra := CA + Vector2(0, -100)
+	var rb := CA + Vector2(0, 100)
+	check_approx(c, "rotation 90: the segment runs along y (100 px above the node is its end)", _ref(ra, ra, rb, 150.0, 0.5, 1.0, 100.0),
+			lum(img, ra), TOL)
+	check_approx(c, "rotation 90: 100 px below the node is its other end", _ref(rb, ra, rb, 150.0, 0.5, 1.0, 100.0), lum(img, rb), TOL)
+	check_approx(c, "rotation 90: 100 px to the right is beside its middle", beside, lum(img, CA + Vector2(100, 0)), TOL)
 	l.rotation = 0.0
 	l.scale = Vector2(2.0, 1.0)
 	img = await capture()
-	check_approx(c, "scale (2, 1): the segment doubles (200 px along is on it)", on, lum(img, CA + Vector2(200, 0)), TOL)
+	var sa := CA + Vector2(-200, 0)
+	var sb := CA + Vector2(200, 0)
+	check_approx(c, "scale (2, 1): the segment doubles (200 px along is its end, range 300)", _ref(sb, sa, sb, 300.0, 0.5, 1.0, 100.0),
+			lum(img, sb), TOL)
 	check_approx(c, "scale (2, 1): range follows the larger axis (200 px above lit at range 300)",
-			_exp(200.0, 300.0, 0.5, 1.0, 100.0), lum(img, CA + Vector2(0, -200)), TOL)
-	check_approx(c, "scale (2, 1): 100 px past the doubled end cap", _exp(100.0, 300.0, 0.5, 1.0, 100.0),
+			_ref(CA + Vector2(0, -200), sa, sb, 300.0, 0.5, 1.0, 100.0), lum(img, CA + Vector2(0, -200)), TOL)
+	check_approx(c, "scale (2, 1): 100 px past the doubled end", _ref(CA + Vector2(300, 0), sa, sb, 300.0, 0.5, 1.0, 100.0),
 			lum(img, CA + Vector2(300, 0)), TOL)
 	l.scale = Vector2(1.0, 2.0)
 	img = await capture()
-	check_approx(c, "scale (1, 2): the segment keeps its length (200 px along is 100 px past the cap, range 300)",
-			_exp(100.0, 300.0, 0.5, 1.0, 100.0), lum(img, CA + Vector2(200, 0)), TOL)
-	check_approx(c, "scale (1, 2): range follows the larger axis", _exp(200.0, 300.0, 0.5, 1.0, 100.0),
+	check_approx(c, "scale (1, 2): the segment keeps its length (200 px along is 100 px past the end, range 300)",
+			_ref_a(CA + Vector2(200, 0), 300.0), lum(img, CA + Vector2(200, 0)), TOL)
+	check_approx(c, "scale (1, 2): range follows the larger axis", _ref_a(CA + Vector2(0, -200), 300.0),
 			lum(img, CA + Vector2(0, -200)), TOL)
 	l.scale = Vector2.ONE
 	l.name = "TubeA"
@@ -156,33 +203,33 @@ func _shading() -> void:
 	var l := get_node("TubeA") as LitLineLight2D
 	var side := CA + Vector2(0, 100)
 	var img := await capture()
-	check_approx(c, "falloff 1 at 100 px beside", _exp(100.0, 150.0, 0.5, 1.0, 100.0), lum(img, side), TOL)
+	check_approx(c, "falloff 1 at 100 px beside", _ref_a(side), lum(img, side), TOL)
 	l.falloff = 2.0
 	img = await capture()
-	check_approx(c, "falloff 2 at 100 px beside", _exp(100.0, 150.0, 0.5, 2.0, 100.0), lum(img, side), TOL)
+	check_approx(c, "falloff 2 at 100 px beside", _ref_a(side, 150.0, 0.5, 2.0), lum(img, side), TOL)
 	l.falloff = 0.0
 	img = await capture()
-	check_approx(c, "falloff 0 at 100 px beside (elevation only)", _exp(100.0, 150.0, 0.5, 0.0, 100.0), lum(img, side), TOL)
+	check_approx(c, "falloff 0 at 100 px beside (elevation only)", _ref_a(side, 150.0, 0.5, 0.0), lum(img, side), TOL)
 	l.falloff = 1.0
 	l.energy = 0.2
 	img = await capture()
-	check_approx(c, "energy 0.2 on the segment", AMBIENT + 0.2 * diffuse_scale(), lum(img, CA), TOL)
+	check_approx(c, "energy 0.2 on the segment", _ref_a(CA, 150.0, 0.2), lum(img, CA), TOL)
 	l.energy = 0.5
 	l.height = 300.0
 	img = await capture()
-	check_approx(c, "height 300 at 100 px beside (more head-on: brighter)", _exp(100.0, 150.0, 0.5, 1.0, 300.0),
+	check_approx(c, "height 300 at 100 px beside (more head-on: brighter)", _ref_a(side, 150.0, 0.5, 1.0, 300.0),
 			lum(img, side), TOL)
 	l.height = 100.0
 	l.color = Color(1.0, 0.0, 0.0)
 	img = await capture()
 	var col := probe(img, CA)
-	check_approx(c, "red light: red channel", AMBIENT + 0.5 * diffuse_scale(), col.r, TOL)
+	check_approx(c, "red light: red channel", _ref_a(CA), col.r, TOL)
 	check_approx(c, "red light: green channel stays ambient", AMBIENT, col.g, TOL)
 	l.color = Color.WHITE
 	l.range = 80.0
 	img = await capture()
 	check_approx(c, "range 80: 100 px beside is ambient", AMBIENT, lum(img, side), TOL)
-	check_approx(c, "range 80: 50 px beside", _exp(50.0, 80.0, 0.5, 1.0, 100.0), lum(img, CA + Vector2(0, 50)), TOL)
+	check_approx(c, "range 80: 50 px beside", _ref_a(CA + Vector2(0, 50), 80.0), lum(img, CA + Vector2(0, 50)), TOL)
 	l.range = 150.0
 	l.enabled = false
 	img = await capture()
@@ -193,19 +240,17 @@ func _shading() -> void:
 	check_approx(c, "visible = false: ambient on the segment", AMBIENT, lum(img, CA), TOL)
 	l.visible = true
 	img = await capture()
-	check_approx(c, "re-enabled and visible: lit again", _exp(0.0, 150.0, 0.5, 1.0, 100.0), lum(img, CA), TOL)
+	check_approx(c, "re-enabled and visible: lit again", _ref_a(CA), lum(img, CA), TOL)
 	l.position = CA + Vector2(0, 100)
 	img = await capture()
-	check_approx(c, "moved 100 px down: the old side probe is on the segment", _exp(0.0, 150.0, 0.5, 1.0, 100.0),
-			lum(img, side), TOL)
-	check_approx(c, "moved: the old node position is 100 px beside", _exp(100.0, 150.0, 0.5, 1.0, 100.0), lum(img, CA), TOL)
+	check_approx(c, "moved 100 px down: the old side probe is on the segment", _ref_a(CA), lum(img, side), TOL)
+	check_approx(c, "moved: the old node position is 100 px beside", _ref_a(side), lum(img, CA), TOL)
 	l.position = CA
 	l.blend_mode = LitShaderLibrary.BlendMode.SUBTRACT
 	l.energy = 0.3
 	img = await capture()
 	check_approx(c, "subtract energy 0.3 on the segment clamps at black", 0.0, lum(img, CA), TOL)
-	check_approx(c, "subtract at 100 px beside: partial carve",
-			AMBIENT - (_exp(100.0, 150.0, 0.3, 1.0, 100.0) - AMBIENT), lum(img, side), TOL)
+	check_approx(c, "subtract at 100 px beside: partial carve", AMBIENT - (_ref_a(side, 150.0, 0.3) - AMBIENT), lum(img, side), TOL)
 	l.blend_mode = LitShaderLibrary.BlendMode.ADD
 	l.energy = 0.5
 
@@ -220,12 +265,12 @@ func _shading() -> void:
 	await frames(1)
 	img = await capture()
 	check_approx(c, "light_mask 2 vs receiver_mask 1: not lit", AMBIENT, lum(img, a.position), TOL)
-	check_gt(c, "light_mask 2 vs receiver_mask 3: lit", lum(img, b.position), AMBIENT, 0.2)
+	check_gt(c, "light_mask 2 vs receiver_mask 3: lit", lum(img, b.position), AMBIENT, 0.15)
 	check_approx(c, "the mask-1 floor beside the mask-2 tube stays ambient", AMBIENT, lum(img, Vector2(560, 400)), TOL)
 	m.light_mask = 1
 	img = await capture()
-	check_gt(c, "light_mask 1: receiver_mask 1 now lit", lum(img, a.position), AMBIENT, 0.2)
-	check_gt(c, "light_mask 1: the floor beside the tube lit", lum(img, Vector2(560, 400)), AMBIENT, 0.15)
+	check_gt(c, "light_mask 1: receiver_mask 1 now lit", lum(img, a.position), AMBIENT, 0.15)
+	check_gt(c, "light_mask 1: the floor beside the tube lit", lum(img, Vector2(560, 400)), AMBIENT, 0.08)
 	m.queue_free()
 	a.queue_free()
 	b.queue_free()
@@ -243,17 +288,21 @@ func _width() -> void:
 	var c := "line_width"
 	var mgr := get_node("/root/LitManager")
 	var l := get_node("LineExhibit") as LitLineLight2D
-	var on := _exp(0.0, 150.0, 0.5, 1.0, 100.0)
 	l.width = 40.0
 	await frames(1)
 	var img := await capture()
-	check_approx(c, "width 40: on the segment unchanged", on, lum(img, CA), TOL)
+	var on := _ref_a(CA, 150.0, 0.5, 1.0, 100.0, 20.0)
+	check_approx(c, "width 40: on the segment", on, lum(img, CA), TOL)
 	check_approx(c, "width 40: 10 px beside is under the tube (flat core)", on, lum(img, CA + Vector2(0, 10)), TOL)
-	check_approx(c, "width 40: 20 px beside, the tube's surface, is continuous", on, lum(img, CA + Vector2(0, 20)), TOL)
+	check_approx(c, "width 40: 20 px beside, the tube's surface, is continuous", _ref_a(CA + Vector2(0, 20), 150.0, 0.5, 1.0, 100.0, 20.0),
+			lum(img, CA + Vector2(0, 20)), TOL)
 	check_approx(c, "width 40: 60 px beside falls off from the surface over range - 20",
-			_exp(40.0, 130.0, 0.5, 1.0, 100.0), lum(img, CA + Vector2(0, 60)), TOL)
-	check_approx(c, "width 40: 100 px past the end cap carries the width too",
-			_exp(80.0, 130.0, 0.5, 1.0, 100.0), lum(img, CA + Vector2(200, 0)), TOL)
+			_ref_a(CA + Vector2(0, 60), 150.0, 0.5, 1.0, 100.0, 20.0), lum(img, CA + Vector2(0, 60)), TOL)
+	check_approx(c, "width 40: 100 px past the end carries the width too (the tube runs on by its half width)",
+			_ref_a(CA + Vector2(200, 0), 150.0, 0.5, 1.0, 100.0, 20.0), lum(img, CA + Vector2(200, 0)), TOL)
+	check_approx(c, "width 40: the end cap's rim, 19 px past the end", _ref_a(CA + Vector2(119, 0), 150.0, 0.5, 1.0, 100.0, 20.0),
+			lum(img, CA + Vector2(119, 0)), TOL)
+	check_approx(c, "width 40: and 2 px further, past the rim, is continuous", lum(img, CA + Vector2(119, 0)), lum(img, CA + Vector2(121, 0)), 0.02)
 	check_approx(c, "width 40: the range still ends at 150 (160 px beside is ambient)", AMBIENT,
 			lum(img, CA + Vector2(0, 160)), TOL)
 	check_approx(c, "width 40: sample_luminance 60 px beside matches the render", lum(img, CA + Vector2(0, 60)),
@@ -264,9 +313,9 @@ func _width() -> void:
 	await frames(1)
 	img = await capture()
 	check_approx(c, "glow 0.5, width 40: under the tube the beam keeps its brightness", on, lum(img, CA + Vector2(0, 10)), TOL)
-	var halo := AMBIENT + 0.5 * (_exp(40.0, 130.0, 0.5, 1.0, 100.0) - AMBIENT)
+	var halo := _ref_a(CA + Vector2(0, 60), 150.0, 0.5, 1.0, 100.0, 20.0, 0.5)
 	check_approx(c, "glow 0.5: 60 px beside, the halo is half the beam's energy", halo, lum(img, CA + Vector2(0, 60)), TOL)
-	check_approx(c, "glow 0.5: 100 px past the end cap, the halo too", AMBIENT + 0.5 * (_exp(80.0, 130.0, 0.5, 1.0, 100.0) - AMBIENT),
+	check_approx(c, "glow 0.5: 100 px past the end, the halo too", _ref_a(CA + Vector2(200, 0), 150.0, 0.5, 1.0, 100.0, 20.0, 0.5),
 			lum(img, CA + Vector2(200, 0)), TOL)
 	check_approx(c, "glow 0.5: sample_luminance 60 px beside matches the render", lum(img, CA + Vector2(0, 60)),
 			mgr.sample_luminance(CA + Vector2(0, 60)), TOL)
@@ -279,28 +328,28 @@ func _width() -> void:
 	l.width = 0.0
 	await frames(1)
 	img = await capture()
-	var halo_on := AMBIENT + 0.5 * (on - AMBIENT)
+	var halo_on := _ref_a(CA, 150.0, 0.5, 1.0, 100.0, 0.0, 0.5)
 	check_approx(c, "width 0, glow 0.5: no beam, the pixel on the segment is halo (no hairline)", halo_on, lum(img, CA), TOL)
-	check_approx(c, "width 0, glow 0.5: one pixel beside the segment is halo too", halo_on, lum(img, CA + Vector2(0, 1)), TOL)
+	check_approx(c, "width 0, glow 0.5: one pixel beside the segment is halo too", _ref_a(CA + Vector2(0, 1), 150.0, 0.5, 1.0, 100.0, 0.0, 0.5),
+			lum(img, CA + Vector2(0, 1)), TOL)
 	check_approx(c, "width 0, glow 0.5: sample_luminance on the segment matches", lum(img, CA), mgr.sample_luminance(CA), TOL)
 	l.width = 12.0
 	await frames(1)
 	img = await capture()
-	check_approx(c, "width 12, glow 0.5: the beam is back on the segment", on, lum(img, CA), TOL)
+	check_approx(c, "width 12, glow 0.5: the beam is back on the segment", _ref_a(CA, 150.0, 0.5, 1.0, 100.0, 6.0, 0.5), lum(img, CA), TOL)
 	l.glow = 1.0
 	l.width = 400.0
 	await frames(1)
 	img = await capture()
-	check_approx(c, "width 400 (wider than the range): the core is clamped inside it, 100 px beside is core", on,
-			lum(img, CA + Vector2(0, 100)), TOL)
+	check_approx(c, "width 400 (wider than the range): the core is clamped inside it, 100 px beside is core",
+			_ref_a(CA + Vector2(0, 100), 150.0, 0.5, 1.0, 100.0, 135.0), lum(img, CA + Vector2(0, 100)), TOL)
 	check_approx(c, "width 400: the last tenth of the range still falls off (140 px beside)",
-			_exp(5.0, 15.0, 0.5, 1.0, 100.0), lum(img, CA + Vector2(0, 140)), TOL)
+			_ref_a(CA + Vector2(0, 140), 150.0, 0.5, 1.0, 100.0, 135.0), lum(img, CA + Vector2(0, 140)), TOL)
 	l.width = -3.0
 	check(c, "a negative width clamps to 0", 0.0, l.width)
 	await frames(1)
 	img = await capture()
-	check_approx(c, "width 0: 10 px beside is the ideal line again", _exp(10.0, 150.0, 0.5, 1.0, 100.0),
-			lum(img, CA + Vector2(0, 10)), TOL)
+	check_approx(c, "width 0: 10 px beside is the ideal line again", _ref_a(CA + Vector2(0, 10)), lum(img, CA + Vector2(0, 10)), TOL)
 
 
 # --- B: shadows beside the tube ------------------------------------------------------------
@@ -320,7 +369,7 @@ func _shadows() -> void:
 	await frames(2)
 	img = await capture()
 	check_approx(c, "shadow_enabled (Cone Traced): the umbra behind the wall is ambient", AMBIENT, lum(img, P_UM), 0.06)
-	check_gt(c, "beside the shadow band: lit", lum(img, P_REF), AMBIENT, 0.2)
+	check_gt(c, "beside the shadow band: lit", lum(img, P_REF), AMBIENT, 0.15)
 	check_gt(c, "between the tube and the wall: lit", lum(img, P_NEAR), AMBIENT, 0.25)
 	_tube_b.shadow_algorithm = ALGO.RAYMARCHED
 	await frames(2)
@@ -351,30 +400,38 @@ func _shadows() -> void:
 
 	# Soft along the tube: the wall's shadow edge along the tube's direction is a wide
 	# penumbra (the source is 300 px long) where a point light at the node has umbra.
+	var pt := point_light(CB, 300.0, 0.8, Color.WHITE, 300.0)
+	pt.falloff = 0.3
+	pt.source_radius = 2.0
+	pt.shadow_enabled = true
+	pt.enabled = false
 	var point_pen := {}
 	var line_pen := {}
 	for algo in [ALGO.CONE_TRACED, ALGO.STOCHASTIC, ALGO.RAYMARCHED]:
 		var an: String = ["Raymarched", "Cone Traced", "Stochastic"][algo]
 		_tube_b.shadow_algorithm = algo
 		_tube_b.shadow_samples = 16
-		_tube_b.length = 0.0
+		pt.shadow_algorithm = algo
+		pt.enabled = true
+		_tube_b.enabled = false
 		await frames(2)
 		img = await capture()
 		point_pen[algo] = lum(img, P_PEN)
-		check_approx(c, "%s, length 0 (a point light): the penumbra probe is in its umbra" % an, AMBIENT, point_pen[algo], 0.06)
-		_tube_b.length = 300.0
+		check_approx(c, "%s, a point light at the node: the penumbra probe is in its umbra" % an, AMBIENT, point_pen[algo], 0.06)
+		pt.enabled = false
+		_tube_b.enabled = true
 		await frames(2)
 		img = await capture()
 		line_pen[algo] = lum(img, P_PEN)
 		check_approx(c, "%s: umbra behind the wall is ambient" % an, AMBIENT, lum(img, P_UM), 0.06)
-		check_gt(c, "%s: beside the band stays lit" % an, lum(img, P_REF), AMBIENT, 0.2)
+		check_gt(c, "%s: beside the band stays lit" % an, lum(img, P_REF), AMBIENT, 0.15)
 	check_gt(c, "Cone Traced: soft along the tube (the point's umbra probe is partly lit)", line_pen[ALGO.CONE_TRACED],
-			point_pen[ALGO.CONE_TRACED], 0.1)
-	check_gt(c, "Stochastic: soft along the tube too", line_pen[ALGO.STOCHASTIC], point_pen[ALGO.STOCHASTIC], 0.1)
+			point_pen[ALGO.CONE_TRACED], 0.07)
+	check_gt(c, "Stochastic: soft along the tube too", line_pen[ALGO.STOCHASTIC], point_pen[ALGO.STOCHASTIC], 0.07)
 	check_approx(c, "Cone Traced matches the Stochastic reference in the penumbra", line_pen[ALGO.STOCHASTIC],
 			line_pen[ALGO.CONE_TRACED], 0.04)
-	check_gt(c, "Raymarched: its one hard march goes to Q, the end cap here, and clears the wall", line_pen[ALGO.RAYMARCHED],
-			AMBIENT, 0.25)
+	check_gt(c, "Raymarched: its one hard march goes to the nearest point, the end here, and clears the wall", line_pen[ALGO.RAYMARCHED],
+			AMBIENT, 0.2)
 	# Each stratum is a cone: with 4 of them over the 300 px tube every sub-cone is
 	# wider than the 20 px wall, and the half-plane coverage cannot close the umbra.
 	_tube_b.shadow_algorithm = ALGO.CONE_TRACED
@@ -388,39 +445,13 @@ func _shadows() -> void:
 	check_true(c, "a Cone Traced line light publishes F_STOCH (its cone is marched as strata)",
 			LitLightRegistry.activity_flags & LitShaderLibrary.F_STOCH != 0)
 	check_true(c, "and not F_CONE", LitLightRegistry.activity_flags & LitShaderLibrary.F_CONE == 0)
-	# A window under a pixel long is a point: a Cone Traced tube of length 0 (or 2 px)
-	# marches the point light's single cone, so it reads exactly as a Cone Traced point
-	# light with the same source, where its strata would run the point's stochastic
-	# estimate instead.
+	# A tube of length 0 emits nothing, shadows or not.
 	var pts := {"um": P_UM, "pen": P_PEN, "ref": P_REF, "near": P_NEAR}
-	var pt := point_light(CB, 300.0, 0.8, Color.WHITE, 300.0)
-	pt.falloff = 0.3
-	pt.source_radius = 2.0
-	pt.shadow_enabled = true
-	_tube_b.enabled = false
+	_tube_b.length = 0.0
 	await frames(2)
 	img = await capture()
-	# The point's umbra edge past the wall's corner, found on the row so the probe
-	# straddles the penumbra, where one cone and sixteen strata would differ most.
-	var edge := Vector2(1380, 300)
-	for x in range(1100, 1380, 2):
-		if lum(img, Vector2(x, 300), 1) > AMBIENT + 0.05:
-			edge = Vector2(x, 300)
-			break
-	check_true(c, "the point light's umbra edge lies on the floor", edge.x < 1380.0)
-	pts["edge"] = edge
-	var pt_ref := {}
 	for k in pts:
-		pt_ref[k] = lum(img, pts[k])
-	pt.enabled = false
-	_tube_b.enabled = true
-	for len in [0.0, 2.0]:
-		_tube_b.length = len
-		await frames(2)
-		img = await capture()
-		for k in pts:
-			check_approx(c, "Cone Traced, length %d: %s reads as the Cone Traced point light" % [int(len), k],
-					pt_ref[k], lum(img, pts[k]), 0.004 if len == 0.0 else 0.01)
+		check_approx(c, "Cone Traced, length 0: %s reads ambient (nothing emitted)" % k, AMBIENT, lum(img, pts[k]), TOL)
 	_tube_b.length = 300.0
 	pt.queue_free()
 	await frames(2)
@@ -464,14 +495,16 @@ func _shadow_shape() -> void:
 	var side_box := occluder(Vector2(1040, 900), Vector2(100, 20), _props)
 	await frames(3)
 	var img := await capture()
-	var lit_edge := _exp(sqrt(170.0 * 170.0 + 100.0 * 100.0), 300.0, 0.8, 0.3, 300.0)
-	var lit_side := _exp(180.0, 300.0, 0.8, 0.3, 300.0)
+	var da := CD + Vector2(-150, 0)
+	var db := CD + Vector2(150, 0)
+	var lit_edge := _ref(P_EDGE, da, db, 300.0, 0.8, 0.3, 300.0)
+	var lit_side := _ref(P_SIDE, da, db, 300.0, 0.8, 0.3, 300.0)
 	# The broadside box sits 90 px below the tube's middle. A source marched as one
 	# tube-wide cone read it from every direction (an hourglass pinch at its height on
 	# both sides of the tube); the strata see it only from behind it.
 	var lit_opp := lum(img, P_OPP)
 	var lit_between := lum(img, P_BETWEEN)
-	check_approx(c, "Cone Traced (default): 100 px above the tube, opposite the broadside box, is unshadowed", _exp(100.0, 300.0, 0.8, 0.3, 300.0),
+	check_approx(c, "Cone Traced (default): 100 px above the tube, opposite the broadside box, is unshadowed", _ref(P_OPP, da, db, 300.0, 0.8, 0.3, 300.0),
 			lit_opp, TOL)
 	var results := {}
 	for algo in [ALGO.CONE_TRACED, ALGO.STOCHASTIC, ALGO.RAYMARCHED]:
@@ -514,7 +547,7 @@ func _shadow_shape() -> void:
 	await frames(2)
 	img = await capture()
 	check_gt(c, "source_radius 60: the end-on umbra re-brightens behind the 20 px box", lum(img, P_AX),
-			results[ALGO.CONE_TRACED]["ax"], 0.05)
+			results[ALGO.CONE_TRACED]["ax"], 0.02)
 	_tube_d.source_radius = 2.0
 	_tube_d.name = "TubeD"
 	end_box.name = "EndBox"
@@ -533,43 +566,46 @@ func _cookies() -> void:
 	name_texture(half_tex, "left-half cookie")
 	await frames(1)
 	var img := await capture()
-	var on := _exp(0.0, 100.0, 0.6, 0.0, 100.0)
-	check_approx(c, "no cookie: the left end cap is lit", on, lum(img, CC + Vector2(-80, 0)), TOL)
+	var ca := CC + Vector2(-80, 0)
+	var cb := CC + Vector2(80, 0)
+	var on := _ref(ca, ca, cb, 100.0, 0.6, 0.0, 100.0)
+	check_approx(c, "no cookie: the left end is lit", on, lum(img, ca), TOL)
 	l.texture = half_tex
 	await frames(3)
 	img = await capture()
-	check_gt(c, "NATIVE cookie: its opaque half (15 px left of the node) is lit", lum(img, CC + Vector2(-15, 0), 2), AMBIENT, 0.3)
+	check_approx(c, "NATIVE cookie: its opaque half (15 px left of the node) is lit", _ref(CC + Vector2(-15, 0), ca, cb, 100.0, 0.6, 0.0, 100.0),
+			lum(img, CC + Vector2(-15, 0), 2), TOL)
 	check_approx(c, "NATIVE cookie: its transparent half masks the segment 15 px right of the node", AMBIENT,
 			lum(img, CC + Vector2(15, 0), 2), TOL)
-	check_approx(c, "NATIVE cookie is centered on the node, not Q: the left end cap outside it is dark", AMBIENT,
-			lum(img, CC + Vector2(-80, 0)), TOL)
+	check_approx(c, "NATIVE cookie is centered on the node, not the tube: the left end outside it is dark", AMBIENT,
+			lum(img, ca), TOL)
 	l.texture_size_mode = LitShaderLibrary.TextureSizeMode.FIT_RANGE
 	await frames(2)
 	img = await capture()
-	check_gt(c, "FIT_RANGE spans the capsule's box: 150 px left of the node (70 px past the cap) is lit",
-			lum(img, CC + Vector2(-150, 0)), AMBIENT, 0.25)
-	check_gt(c, "FIT_RANGE: the left end cap is lit", lum(img, CC + Vector2(-80, 0)), AMBIENT, 0.3)
-	check_approx(c, "FIT_RANGE: the transparent half still masks the right end cap", AMBIENT, lum(img, CC + Vector2(80, 0)), TOL)
+	check_approx(c, "FIT_RANGE spans the capsule's box: 110 px left of the node (30 px past the end, outside the native cookie) is lit",
+			_ref(CC + Vector2(-110, 0), ca, cb, 100.0, 0.6, 0.0, 100.0), lum(img, CC + Vector2(-110, 0)), TOL)
+	check_approx(c, "FIT_RANGE: the left end is lit", on, lum(img, ca), TOL)
+	check_approx(c, "FIT_RANGE: the transparent half still masks the right end", AMBIENT, lum(img, cb), TOL)
 	check_gt(c, "FIT_RANGE: 60 px above the node (inside the range half-extent) is lit", lum(img, CC + Vector2(-20, -60)), AMBIENT, 0.15)
 	l.texture_scale = 0.5
 	await frames(2)
 	img = await capture()
-	check_approx(c, "FIT_RANGE texture_scale 0.5: 150 px left is outside the halved footprint", AMBIENT,
-			lum(img, CC + Vector2(-150, 0)), TOL)
-	check_gt(c, "FIT_RANGE texture_scale 0.5: the left end cap (80 px, inside 90) still lit", lum(img, CC + Vector2(-80, 0)), AMBIENT, 0.3)
+	check_approx(c, "FIT_RANGE texture_scale 0.5: 110 px left is outside the halved footprint (90 px)", AMBIENT,
+			lum(img, CC + Vector2(-110, 0)), TOL)
+	check_approx(c, "FIT_RANGE texture_scale 0.5: the left end (80 px, inside 90) still lit", on, lum(img, ca), TOL)
 	l.texture_scale = 1.0
 	l.texture_size_mode = LitShaderLibrary.TextureSizeMode.NATIVE
 	l.texture_offset = Vector2(100.0, 0.0)
 	await frames(2)
 	img = await capture()
 	check_gt(c, "texture_offset (100, 0) slides the cookie: 85 px right of the node is now lit",
-			lum(img, CC + Vector2(85, 0), 2), AMBIENT, 0.3)
+			lum(img, CC + Vector2(85, 0), 2), AMBIENT, 0.2)
 	check_approx(c, "texture_offset (100, 0): 15 px left of the node is dark", AMBIENT, lum(img, CC + Vector2(-15, 0), 2), TOL)
 	l.texture_offset = Vector2.ZERO
 	l.texture = null
 	await frames(3)
 	img = await capture()
-	check_approx(c, "cookie cleared: the left end cap is lit again", on, lum(img, CC + Vector2(-80, 0)), TOL)
+	check_approx(c, "cookie cleared: the left end is lit again", on, lum(img, ca), TOL)
 	l.name = "TubeC"
 
 
@@ -680,14 +716,13 @@ func _luminance() -> void:
 	var mgr := get_node("/root/LitManager")
 	var l := get_node("TubeC") as LitLineLight2D
 	var img := await capture()
-	var pts := {"on the segment": CC, "80 px beside": CC + Vector2(0, 80), "70 px past the right end cap": CC + Vector2(150, 0),
+	var pts := {"on the segment": CC, "80 px beside": CC + Vector2(0, 80), "35 px past the right end": CC + Vector2(110, 0),
 			"110 px beside (beyond range)": CC + Vector2(0, 110)}
 	for desc in pts:
 		var p: Vector2 = pts[desc]
 		check_approx(c, "sample_luminance %s matches the render" % desc, lum(img, p),
 				mgr.sample_luminance(p), TOL)
-	check_gt(c, "past the end cap is lit (Q, not the node, sets the distance)",
-			mgr.sample_luminance(CC + Vector2(150, 0)), AMBIENT, 0.2)
+	check_gt(c, "past the end the taper is still lit", mgr.sample_luminance(CC + Vector2(110, 0)), AMBIENT, 0.08)
 	# A hard shadow (Raymarched): the mirror's segment test agrees with the render.
 	l.shadow_enabled = true
 	l.shadow_algorithm = ALGO.RAYMARCHED
@@ -703,12 +738,12 @@ func _luminance() -> void:
 	check_approx(c, "beside the post: sampled lit", lum(img, clear), mgr.sample_luminance(clear), TOL)
 	post.queue_free()
 	l.shadow_enabled = false
-	# get_luminance on a sprite past the end cap.
-	var box := box_receiver(CC + Vector2(150, 0), Vector2(20, 20))
+	# get_luminance on a sprite past the end.
+	var box := box_receiver(CC + Vector2(110, 0), Vector2(20, 20))
 	box.specular_strength = 0.0
 	await frames(3)
 	img = await capture()
-	check_approx(c, "get_luminance on a box 70 px past the end cap matches its rendered mean",
+	check_approx(c, "get_luminance on a box 35 px past the end matches its rendered mean",
 			mean_lum(img, Rect2(box.position - Vector2(8, 8), Vector2(16, 16))), box.get_luminance(), TOL)
 	box.queue_free()
 	await frames(1)

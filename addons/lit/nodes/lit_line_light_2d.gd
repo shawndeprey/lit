@@ -7,22 +7,23 @@ class_name LitLineLight2D
 ## light sabers, or a curved path of light for rings, arcs and neon tubes.
 ##
 ## The segment is centered on the node along its local +X and follows the node's
-## transform (rotation, scale and skew). Every distance a point light measures from its
-## position this light measures from the nearest point of the segment, so it lights a
-## capsule around the segment and past an end cap it behaves as a point light at that
-## end; `width` gives the tube a body, lit from overhead across it, and `glow` dims the
-## halo around it against the beam. Shadows follow:
-## Raymarched casts one hard march from that nearest point, while Cone Traced and
-## Stochastic march `shadow_samples` narrow cones spread along the part of the segment
-## within `range` of the receiver (Stochastic dithers them), so shadows are soft along
-## the tube and sharp across it. The cookie stays centered on the node; FIT_RANGE spans
-## the capsule's bounding box.[br][br]
+## transform (rotation, scale and skew). The tube is a line source: every part of it
+## adds its light, so beside a long tube the light reads as a point light does at the
+## same distance from the segment, two tubes meeting at a corner add up like two
+## lights, and the light tapers off past each end; `width` gives the tube a body, lit
+## from overhead across it, and `glow` dims the halo around it against the beam.
+## Shadows follow: Raymarched casts one hard march from the nearest point of the
+## segment, while Cone Traced and Stochastic march `shadow_samples` narrow cones spread
+## along the part of the segment within `range` of the receiver (Stochastic dithers
+## them), so shadows are soft along the tube and sharp across it. The cookie stays
+## centered on the node; FIT_RANGE spans the capsule's bounding box.[br][br]
 ##
 ## Add a Path2D child to bend the light: it follows the child's curve instead of
 ## `length` (select the Path2D to draw and edit the curve with Godot's pen gizmo), and
 ## `closed` joins the curve's ends into a loop. The curve is lit as true arcs, up to 32
-## of them; Cone Traced and Stochastic shadows march it as `shadow_samples` chords of
-## equal length. Everything else is inherited from LitPositionalLight2D and LitLight2D.
+## of them, each straight stretch as one piece and the bends as up to 32 chords; Cone
+## Traced and Stochastic shadows march it as `shadow_samples` chords of equal length.
+## Everything else is inherited from LitPositionalLight2D and LitLight2D.
 
 const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd")
 
@@ -30,8 +31,10 @@ const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd"
 ## Length of the emitting segment in local pixels, centered on the node along its local
 ## +X; it stretches with the node's x scale. `range` and `source_radius` follow the
 ## node's larger scale axis as on a point light, so this is the way to lengthen a tube.
-## 0 is a point light. For a laser, raycast to the wall the beam hits and set the length
-## to that distance. Ignored while a Path2D child shapes the light.
+## The light comes from the whole length, so a tube much shorter than `height` is dim
+## and 0 emits nothing: use a point light for a point. For a laser, raycast to the wall
+## the beam hits and set the length to that distance. Ignored while a Path2D child
+## shapes the light.
 @export_range(0.0, 4096.0, 1.0, "or_greater") var length: float = 128.0:
 	set(value):
 		length = maxf(value, 0.0)
@@ -136,6 +139,13 @@ func path_chords(n: int) -> PackedVector2Array:
 	if not _chords.has(n):
 		_chords[n] = LinePathScript.chords(_chain, n)
 	return _chords[n]
+
+## Fit-space points cutting the chain into its shading chords, at most max(`n`, arcs)
+## of them (line_path.gd shade_chords).
+func path_shade_chords(n: int) -> PackedVector2Array:
+	if not _chords.has(-n):
+		_chords[-n] = LinePathScript.shade_chords(_chain, n)
+	return _chords[-n]
 
 func _on_child_entered(_node: Node) -> void:
 	_find_path(null)

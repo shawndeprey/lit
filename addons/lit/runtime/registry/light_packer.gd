@@ -453,14 +453,15 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 
 	# Texel 4: the half-vector (screen px; a curved line: its path row and arc count),
 	# the glow and the tube's half width (world px, scaled like range and kept inside it).
+	var half_w := minf(light.width * 0.5, light.range * 0.9) * s
 	if curved:
 		_pack_path(o, light, canvas_xform * xf * light.path_fit_xf().affine_inverse(),
-				mini(light.shadow_samples, shadow_samples_max))
+				mini(light.shadow_samples, shadow_samples_max), canvas_xform.basis_xform(Vector2(half_w, 0.0)).length())
 	else:
 		_pack_buf[o + 16] = half_px.x
 		_pack_buf[o + 17] = half_px.y
 	_pack_buf[o + 18] = light.glow
-	_pack_buf[o + 19] = minf(light.width * 0.5, light.range * 0.9) * s
+	_pack_buf[o + 19] = half_w
 
 	# Texel 7: source_radius | samples | jitter (read only by cone/stochastic shaders)
 	_pack_buf[o + 28] = light.source_radius * s
@@ -535,7 +536,7 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transfor
 ## a non-uniform node scale still lands on arcs), the chain's bounding circle for the
 ## shadow gate and its `n` equal-length chords for the strata. Texel 4.xy of the light's
 ## own row holds the path row and the arc count.
-func _pack_path(o: int, light: LitLineLight2D, pxf: Transform2D, n: int) -> void:
+func _pack_path(o: int, light: LitLineLight2D, pxf: Transform2D, n: int, ext_px: float) -> void:
 	var chain = light.path_chain()
 	var row := _path_rows
 	_path_rows += 1
@@ -561,15 +562,28 @@ func _pack_path(o: int, light: LitLineLight2D, pxf: Transform2D, n: int) -> void
 		_path_buf[b + 4] = p.x
 		_path_buf[b + 5] = p.y
 		prev = p
-	_pack_chords(base + 4 * PATH_CHORDS, light.path_chords(PATH_SHADE), pxf)
-	_pack_chords(base + 4 * PATH_SHADOW, light.path_chords(n), pxf)
+	var shade: PackedVector2Array = light.path_shade_chords(PATH_SHADE)
+	_path_buf[base + 3] = float(shade.size() - 1)
+	_pack_chords(base + 4 * PATH_CHORDS, shade, pxf, ext_px, light.closed)
+	_pack_chords(base + 4 * PATH_SHADOW, light.path_chords(n), pxf, ext_px, light.closed)
 	_pack_buf[o + 16] = float(row)
 	_pack_buf[o + 17] = float(arcs)
 
-func _pack_chords(at: int, cuts: PackedVector2Array, pxf: Transform2D) -> void:
+## Chords mid | half in screen px from `cuts`; an open chain's two free ends run on by
+## `ext_px` (the half width) so the tube's caps are lit as its body is.
+func _pack_chords(at: int, cuts: PackedVector2Array, pxf: Transform2D, ext_px: float, closed: bool) -> void:
+	var m := cuts.size() - 1
 	var prev := pxf * cuts[0]
-	for k in cuts.size() - 1:
-		var p := pxf * cuts[k + 1]
+	var last := pxf * cuts[m]
+	if ext_px > 0.0 and not closed and m >= 1:
+		var d0 := prev - pxf * cuts[1]
+		var d1 := last - pxf * cuts[m - 1]
+		if d0.length_squared() > 1e-8:
+			prev += d0.normalized() * ext_px
+		if d1.length_squared() > 1e-8:
+			last += d1.normalized() * ext_px
+	for k in m:
+		var p := last if k == m - 1 else pxf * cuts[k + 1]
 		var b := at + 4 * k
 		_path_buf[b] = (prev.x + p.x) * 0.5
 		_path_buf[b + 1] = (prev.y + p.y) * 0.5

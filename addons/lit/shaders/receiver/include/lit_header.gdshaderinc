@@ -30,26 +30,80 @@
 global uniform sampler2D lit_light_data;
 global uniform sampler2D lit_light_path;                // curved line lights: one row each (see _pack_path)
 
-// A path row's texel columns: 0 the bounding circle, 1 on the arc points, then
-// LIT_PATH_SHADE shading chords from LIT_PATH_CHORDS and the shadow chords from
-// LIT_PATH_SHADOW, each chord mid.xy | half.xy in screen px.
+// A path row's texel columns: 0 the bounding circle (xyz) and the shading chord count
+// (w), 1 on the arc points, then the shading chords from LIT_PATH_CHORDS (up to
+// LIT_PATH_SHADE) and the shadow chords from LIT_PATH_SHADOW, each chord mid.xy |
+// half.xy in screen px.
 const int LIT_PATH_CHORDS = 34;
 const int LIT_PATH_SHADE = 32;
 const int LIT_PATH_SHADOW = 66;
 
-// A curved line light's chord `ch` as seen from pixel `p` (screen px): xyz = the vector
-// from the pixel to the chord's nearest surface point, elevated by the light's height;
-// w = the chord's weight in the light's integrals, the falloff at that distance over
-// the squared distance. kernel = height px | range px | half width px | falloff.
-vec4 lit_path_sample(vec4 ch, vec2 p, vec4 kernel) {
-	vec2 rel = p - ch.xy;
-	float u = clamp(dot(rel, ch.zw) / max(dot(ch.zw, ch.zw), 1e-6), -1.0, 1.0);
-	vec2 v = ch.xy + ch.zw * u - p;
-	float d = length(v);
-	float s = max(d - kernel.z, 0.0);
-	vec3 to_light = vec3(v * (s / max(d, 1e-4)), kernel.x);
-	float w = pow(clamp(1.0 - s / max(kernel.y, 1e-4), 0.0, 1.0), kernel.w) / max(dot(to_light, to_light), 1e-4);
-	return vec4(to_light, w);
+// A line light's chord `ch` (mid.xy | half.xy, screen px) seen from pixel `p` with
+// normal N: the chord's share of the light's diffuse term at energy 1, and that share
+// times the chord's mean light direction added to `acc_l`. The light is an isotropic
+// line source, max(N.u, 0) / (PI |u|^2) per unit length under the range window
+// sqrt(1 - |u|^2 / R'^2) (R' the slant at the range), integrated in closed form over
+// the part of the chord above the horizon and inside the range, then shaped by the
+// falloff through the chord's nearest point so an endless tube reads exactly
+// (1 - d / range)^falloff times the elevation. kernel = height px | range px | half
+// width px | falloff; the halo's chords are shrunk toward the pixel by the half width.
+float lit_line_chord(vec4 ch, vec2 p, vec3 N, vec4 kernel, inout vec3 acc_l) {
+	float hl = length(ch.zw);
+	if (hl < 1e-4) {
+		return 0.0;
+	}
+	float L = 2.0 * hl;
+	vec2 t = ch.zw / hl;
+	vec2 a = ch.xy - ch.zw;
+	float lf = dot(p - a, t);
+	vec2 v = a + t * lf - p;
+	float dperp = length(v);
+	v *= max(dperp - kernel.z, 0.0) / max(dperp, 1e-6);
+	float h = kernel.x;
+	float D2 = max(dot(v, v) + h * h, 1e-6);
+	float D = sqrt(D2);
+	float R = kernel.y;
+	float Rp = sqrt(R * R + h * h);
+	if (D >= Rp) {
+		return 0.0;
+	}
+	float alpha = dot(N, vec3(v, h));
+	float beta = dot(N.xy, t);
+	float a2 = Rp * Rp - D2;
+	float amax = sqrt(a2);
+	float lo = max(-lf, -amax);
+	float hi = min(L - lf, amax);
+	if (abs(beta) > 1e-6) {
+		float root = -alpha / beta;
+		lo = beta > 0.0 ? max(lo, root) : lo;
+		hi = beta < 0.0 ? min(hi, root) : hi;
+	} else if (alpha <= 0.0) {
+		return 0.0;
+	}
+	if (hi <= lo) {
+		return 0.0;
+	}
+	float mh = sqrt(max(a2 - hi * hi, 0.0));
+	float ml = sqrt(max(a2 - lo * lo, 0.0));
+	float x = hi * ml - lo * mh;
+	float dA = (Rp / D) * atan(Rp * D * x, D2 * mh * ml + Rp * Rp * hi * lo) - atan(x, mh * ml + hi * lo);
+	float dB = (mh - ml) - Rp * log((Rp + mh) / (Rp + ml)) + 0.5 * Rp * log((D2 + hi * hi) / (D2 + lo * lo));
+	vec2 nq = a + t * clamp(lf, 0.0, L) - p;
+	float s = max(length(nq) - kernel.z, 0.0);
+	float g = pow(max(1.0 - s / R, 0.0), kernel.w) / max(1.0 - sqrt(s * s + h * h) / Rp, 1e-6);
+	float c = (alpha * dA + beta * dB) * g / (PI * Rp);
+	float rh = sqrt(D2 + hi * hi);
+	float rl = sqrt(D2 + lo * lo);
+	float eh = hi / rh;
+	float el = lo / rl;
+	float j0 = (eh - el) / D2;
+	float j1 = 1.0 / rl - 1.0 / rh;
+	float j2 = log((hi < 0.0 ? D2 / (rh - hi) : hi + rh) / (lo < 0.0 ? D2 / (rl - lo) : lo + rl)) - (eh - el);
+	float cpo = alpha * j0 + beta * j1;
+	float ct = alpha * j1 + beta * j2;
+	vec3 lv = vec3(cpo * v + ct * t, cpo * h);
+	acc_l += c * lv * inversesqrt(max(dot(lv, lv), 1e-12));
+	return c;
 }
 global uniform int       lit_light_count;
 global uniform int       lit_directional_count;         // directionals occupy rows [0, this)

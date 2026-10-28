@@ -279,6 +279,53 @@ static func chords(chain: Chain, n: int) -> PackedVector2Array:
 	return out
 
 
+## Fit-space points cutting the chain into at most max(`n`, arcs) shading chords: a
+## straight arc is one chord, so a straight path lights as the straight light's single
+## chord, and the curved arcs share the rest of `n` by arc length, at least one each.
+static func shade_chords(chain: Chain, n: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var arcs := chain.arc_count()
+	if arcs == 0:
+		return out
+	var curved_len := 0.0
+	var straight := 0
+	for k in arcs:
+		if absf(chain.bulges[k]) < 1e-3:
+			straight += 1
+		else:
+			curved_len += chain.lengths[k]
+	var budget := maxi(n - straight, arcs - straight)
+	var counts := PackedInt32Array()
+	counts.resize(arcs)
+	var rem := PackedFloat32Array()
+	rem.resize(arcs)
+	var left := budget
+	for k in arcs:
+		if absf(chain.bulges[k]) < 1e-3:
+			counts[k] = 1
+			rem[k] = -1.0
+		else:
+			var share := float(budget) * chain.lengths[k] / maxf(curved_len, 1e-6)
+			counts[k] = maxi(int(floor(share)), 1)
+			rem[k] = share - floor(share)
+			left -= counts[k]
+	while left > 0:
+		var best := -1
+		for k in arcs:
+			if rem[k] >= 0.0 and (best < 0 or rem[k] > rem[best]):
+				best = k
+		if best < 0:
+			break
+		counts[best] += 1
+		rem[best] = -1.0
+		left -= 1
+	out.append(chain.points[0])
+	for k in arcs:
+		for j in counts[k]:
+			out.append(arc_point(chain.points[k], chain.points[k + 1], chain.bulges[k], float(j + 1) / float(counts[k])))
+	return out
+
+
 ## The chain under `xf`: points mapped, each bulge refitted through its mapped apex.
 static func transformed(chain: Chain, xf: Transform2D) -> Chain:
 	var out := Chain.new()
