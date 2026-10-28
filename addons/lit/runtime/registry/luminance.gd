@@ -287,7 +287,8 @@ func _shadow_masks(surf: Array, casters: Array, shadow_color: Color,
 
 # Point, spot and line share the radial path, exactly like the shader: a line light's
 # body and range measure from the nearest point of its segment or chain (_nearest) and
-# its light is the sum of its chords' shares (_chord_share). `light` is accessed
+# its cosine is its chords' shares (_chord_share) over the angle a straight tube would
+# subtend. `light` is accessed
 # dynamically: the shared properties live on LitPositionalLight2D. Falloff and N.L go
 # per lobe; cone, cookie and shadow per mask point.
 func _positional(light, pos: Vector2,
@@ -303,6 +304,7 @@ func _positional(light, pos: Vector2,
 	var len2 := 0.0
 	var half_w := 0.0
 	var glow := 1.0
+	var open := true
 	var chain = null
 	var cuts := PackedVector2Array()
 	var shadow_cuts := PackedVector2Array()
@@ -312,16 +314,19 @@ func _positional(light, pos: Vector2,
 		glow = light.glow
 		if light.is_curved():
 			chain = LinePathScript.transformed(light.path_chain(), xf * light.path_fit_xf().affine_inverse())
-			cuts = _extended(LinePathScript.shade_chords(chain, 32), half_w, light.closed)
-			shadow_cuts = _extended(LinePathScript.chords(chain, maxi(light.shadow_samples, 1)), half_w, light.closed)
+			cuts = LinePathScript.shade_chords(chain, 32)
+			shadow_cuts = LinePathScript.chords(chain, maxi(light.shadow_samples, 1))
+			open = not light.closed
 			fit_extra = light.path_extent(xf)
 		else:
 			half = xf.basis_xform(Vector2(light.length * 0.5, 0.0))
 			len2 = half.length_squared()
 			fit_extra = Vector2(sqrt(len2), 0.0)
 			if len2 > 1e-8:
-				var ext := half * (1.0 + half_w / sqrt(len2))
-				cuts = PackedVector2Array([xf.origin - ext, xf.origin + ext])
+				cuts = PackedVector2Array([xf.origin - half, xf.origin + half])
+	var tube_len := 0.0
+	for j in cuts.size() - 1:
+		tube_len += cuts[j].distance_to(cuts[j + 1])
 	if range_px <= 0.0 or energy <= 0.0 \
 			or _nearest(xf.origin, half, len2, pos, chain).distance_to(pos) > range_px:
 		return 0.0
@@ -378,8 +383,8 @@ func _positional(light, pos: Vector2,
 					var vis := Color(0.0, 0.0, 0.0)
 					var wsum := 0.0
 					for j in shadow_cuts.size() - 1:
-						var w := _chord_share(shadow_cuts[j], shadow_cuts[j + 1], p, Vector3(0.0, 0.0, 1.0), height,
-								range_px - half_w, half_w, falloff)
+						var w := _chord_share(shadow_cuts[j], shadow_cuts[j + 1], p, Vector3(0.0, 0.0, 1.0), height, half_w,
+								open and j == 0, open and j == shadow_cuts.size() - 2)
 						if w <= 0.0:
 							continue
 						var mid := (shadow_cuts[j] + shadow_cuts[j + 1]) * 0.5
@@ -411,20 +416,20 @@ func _positional(light, pos: Vector2,
 		if slant <= 0.0:
 			continue
 		var n := normals[i]
-		var f: float
-		if light is LitLineLight2D:
-			# The shader's sum over the tube's chords (lit_shade); the glow scales it.
-			var irr := 0.0
-			for j in cuts.size() - 1:
-				irr += _chord_share(cuts[j], cuts[j + 1], points[i], n, height, range_px - half_w, half_w, falloff)
-			if irr <= 0.0:
-				continue
-			f = irr * lerpf(glow, 1.0, beam)
-		else:
-			var ndotl := (n.x * tl.x + n.y * tl.y + n.z * height) / slant
-			if ndotl <= 0.0:
-				continue
-			f = pow(1.0 - d / range_px, falloff) * ndotl
+		var ndotl := (n.x * tl.x + n.y * tl.y + n.z * height) / slant
+		if light is LitLineLight2D and tube_len > 1e-3:
+			# The tube's mean cosine (lit_shade): its chords' shares over the angle an endless
+			# straight tube would subtend at the nearest point, blended back to the nearest
+			# point's under the body and out to a half width past its surface.
+			var mean := 0.0
+			var m := cuts.size() - 1
+			for j in m:
+				mean += _chord_share(cuts[j], cuts[j + 1], points[i], n, height, half_w, open and j == 0, open and j == m - 1)
+			mean /= 2.0 * atan2(tube_len, 2.0 * slant)
+			ndotl = lerpf(mean, maxf(ndotl, 0.0), 1.0 - smoothstep(0.0, half_w, d) if half_w > 0.0 else 0.0)
+		if ndotl <= 0.0:
+			continue
+		var f := pow(1.0 - d / (range_px - half_w), falloff) * ndotl * lerpf(glow, 1.0, beam)
 		if pbr:
 			f *= _pbr_diffuse(height / slant)
 		if masked:
@@ -438,13 +443,13 @@ func _positional(light, pos: Vector2,
 	return -lum if light.blend_mode == LitShaderLibrary.BlendMode.SUBTRACT else lum
 
 
-## The share of chord `a`-`b` in a line light's diffuse term at `p` on a face with
-## normal `n`, as the shader's lit_line_chord at energy 1: the isotropic line source
-## under the range window, integrated in closed form over the part of the chord above
-## the horizon and inside `reach` (the range past the tube's surface), shaped by the
-## falloff at the chord's nearest point; the chord is shrunk toward `p` by `half_w`.
-static func _chord_share(a: Vector2, b: Vector2, p: Vector2, n: Vector3, height: float, reach: float,
-		half_w: float, falloff: float) -> float:
+## The share of chord `a`-`b` in a line light's mean cosine at `p` on a face with
+## normal `n`, as the shader's lit_line_chord: the line integral of max(n.u, 0) / |u|^2
+## over the part of the chord above the horizon. `free_a` / `free_b` mark the chain's
+## free ends: past one the chord slides toward `p` by `half_w`, elsewhere it is shrunk
+## toward `p` across the tube's width.
+static func _chord_share(a: Vector2, b: Vector2, p: Vector2, n: Vector3, height: float, half_w: float,
+		free_a: bool, free_b: bool) -> float:
 	var ab := b - a
 	var len := ab.length()
 	if len < 1e-4:
@@ -452,19 +457,21 @@ static func _chord_share(a: Vector2, b: Vector2, p: Vector2, n: Vector3, height:
 	var t := ab / len
 	var lf := (p - a).dot(t)
 	var v := a + t * lf - p
-	var dperp := v.length()
-	v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
+	if (lf <= 0.0 and free_a) or (lf >= len and free_b):
+		var pq := p - (a if lf <= 0.0 else b)
+		var shift := pq * minf(half_w / maxf(pq.length(), 1e-6), 1.0)
+		var along := shift.dot(t)
+		lf -= along
+		v += shift - t * along
+	else:
+		var dperp := v.length()
+		v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
 	var d2 := maxf(v.length_squared() + height * height, 1e-6)
 	var d := sqrt(d2)
-	var rp := sqrt(reach * reach + height * height)
-	if d >= rp:
-		return 0.0
 	var alpha := n.x * v.x + n.y * v.y + n.z * height
 	var beta := n.x * t.x + n.y * t.y
-	var a2 := rp * rp - d2
-	var amax := sqrt(a2)
-	var lo := maxf(-lf, -amax)
-	var hi := minf(len - lf, amax)
+	var lo := -lf
+	var hi := len - lf
 	if absf(beta) > 1e-6:
 		var root := -alpha / beta
 		if beta > 0.0:
@@ -475,29 +482,7 @@ static func _chord_share(a: Vector2, b: Vector2, p: Vector2, n: Vector3, height:
 		return 0.0
 	if hi <= lo:
 		return 0.0
-	var mh := sqrt(maxf(a2 - hi * hi, 0.0))
-	var ml := sqrt(maxf(a2 - lo * lo, 0.0))
-	var x := hi * ml - lo * mh
-	var da := (rp / d) * atan2(rp * d * x, d2 * mh * ml + rp * rp * hi * lo) - atan2(x, mh * ml + hi * lo)
-	var db := (mh - ml) - rp * log((rp + mh) / (rp + ml)) + 0.5 * rp * log((d2 + hi * hi) / (d2 + lo * lo))
-	var s := maxf((a + t * clampf(lf, 0.0, len) - p).length() - half_w, 0.0)
-	var g := pow(maxf(1.0 - s / reach, 0.0), falloff) / maxf(1.0 - sqrt(s * s + height * height) / rp, 1e-6)
-	return (alpha * da + beta * db) * g / (PI * rp)
-
-
-## `cuts` with an open chain's two free ends run on by `ext` (the half width).
-static func _extended(cuts: PackedVector2Array, ext: float, closed: bool) -> PackedVector2Array:
-	var m := cuts.size() - 1
-	if ext <= 0.0 or closed or m < 1:
-		return cuts
-	var out := cuts.duplicate()
-	var d0 := cuts[0] - cuts[1]
-	var d1 := cuts[m] - cuts[m - 1]
-	if d0.length_squared() > 1e-8:
-		out[0] += d0.normalized() * ext
-	if d1.length_squared() > 1e-8:
-		out[m] += d1.normalized() * ext
-	return out
+	return alpha * atan2(d * (hi - lo), d2 + hi * lo) / d + 0.5 * beta * log((d2 + hi * hi) / (d2 + lo * lo))
 
 
 ## The point of the segment `origin` +- `half` (`len2` = |half|^2) nearest `p`; the

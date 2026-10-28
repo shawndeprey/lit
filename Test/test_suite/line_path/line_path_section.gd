@@ -1,9 +1,9 @@
 extends LitSuiteSection
 
 ## LitLineLight2D bent by a Path2D child against the rendered frame: a 2-point path
-## renders as the straight light pixel for pixel; a V path renders as two straight
-## lights on its arms (the light adds up along the path, twice one arm's share on the
-## bisector, no crease there); a ring (closed 4-point curve) lights as a true circle
+## renders as the straight light pixel for pixel; a V path lights its bisector brighter
+## than one arm alone and dimmer than two separate lights, with no crease along it and
+## no hot spot at the bend; a ring (closed 4-point curve) lights as a true circle
 ## (beam edge within a pixel of the circle, even around, no crease across the arc
 ## joints, the whole ring lighting its inside); ring and S-curve shadows (umbra behind
 ## a box outside the ring, inside lit, all three algorithms, shadow_length, the closed
@@ -112,60 +112,77 @@ func ring_child(light: LitLineLight2D, r: float) -> Path2D:
 
 
 ## Diffuse at `p` on a face with normal `n` (the flat floor by default) under a tube
-## along the polyline `pts` (world px, a loop when `closed`): the model the shader
-## integrates in closed form per chord (lit_line_chord), summed here over 0.25 px
-## elements instead. An isotropic line source max(n.u, 0) / (PI |u|^2) per unit length
-## under the range window sqrt(1 - |u|^2 / R'^2) (R' the slant at the range), each
-## piece shaped by the falloff at its nearest point; the halo's tube is shrunk toward
-## `p` by the half width and an open tube runs on past its ends by it; the beam is `p`'s
-## coverage by the tube's body, and the glow scales the halo.
+## along the polyline `pts` (world px, a loop when `closed`), as the shader shades it
+## (lit_shade): the point light's falloff from the tube's surface times the tube's mean
+## cosine, max(n.u, 0) / |u|^2 summed over 0.25 px elements of every piece (an open
+## tube's two ends slid toward `p` by the half width past them, every piece shrunk
+## across its width elsewhere) over the angle an endless straight tube would subtend
+## at the nearest point, blended back to the nearest point's cosine under the body and
+## out to a half width past its surface. The beam is `p`'s coverage by the tube's body
+## and the glow scales the halo.
 func _ref(p: Vector2, pts: PackedVector2Array, closed: bool, p_range: float, energy: float, falloff: float,
 		height: float, half_w := 0.0, glow := 1.0, n := Vector3(0, 0, 1)) -> float:
 	var m := pts.size() - 1
 	var d_body := INF
+	var q := p
+	var total := 0.0
 	for k in m:
-		d_body = minf(d_body, _seg_dist(p, pts[k], pts[k + 1]))
+		var sd := _seg_dist(p, pts[k], pts[k + 1])
+		if sd < d_body:
+			d_body = sd
+			q = _seg_point(p, pts[k], pts[k + 1])
+		total += pts[k].distance_to(pts[k + 1])
 	var reach := p_range - half_w
-	if maxf(d_body - half_w, 0.0) > reach:
+	var s := maxf(d_body - half_w, 0.0)
+	if s > reach:
 		return AMBIENT
 	var beam := clampf(minf(d_body + 0.5, half_w) - maxf(d_body - 0.5, -half_w), 0.0, 1.0)
-	var ext := pts.duplicate()
-	if half_w > 0.0 and not closed:
-		ext[0] += (pts[0] - pts[1]).normalized() * half_w
-		ext[m] += (pts[m] - pts[m - 1]).normalized() * half_w
-	var rp := sqrt(reach * reach + height * height)
 	var acc := 0.0
 	for k in m:
-		var a := ext[k]
-		var ab := ext[k + 1] - a
+		var a := pts[k]
+		var ab := pts[k + 1] - a
 		var len := ab.length()
 		if len < 1e-6:
 			continue
 		var t := ab / len
 		var lf := (p - a).dot(t)
 		var v := a + t * lf - p
-		var dperp := v.length()
-		v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
-		var se := maxf((a + t * clampf(lf, 0.0, len)).distance_to(p) - half_w, 0.0)
-		var g := pow(maxf(1.0 - se / reach, 0.0), falloff) / maxf(1.0 - sqrt(se * se + height * height) / rp, 1e-6)
+		if (lf <= 0.0 and k == 0 and not closed) or (lf >= len and k == m - 1 and not closed):
+			var pq := p - (a if lf <= 0.0 else pts[k + 1])
+			var shift := pq * minf(half_w / maxf(pq.length(), 1e-6), 1.0)
+			var along := shift.dot(t)
+			lf -= along
+			v += shift - t * along
+		else:
+			var dperp := v.length()
+			v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
 		var cnt := maxi(int(ceil(len / 0.25)), 1)
 		var sum := 0.0
 		for j in cnt:
 			var l := -lf + (float(j) + 0.5) * len / float(cnt)
 			var u := Vector3(v.x + t.x * l, v.y + t.y * l, height)
-			var rho2 := u.length_squared()
-			sum += sqrt(maxf(1.0 - rho2 / (rp * rp), 0.0)) * maxf(n.dot(u), 0.0) / rho2
-		acc += sum * len / float(cnt) * g
-	var c := energy * acc / PI * lerpf(glow, 1.0, beam)
+			sum += maxf(n.dot(u), 0.0) / u.length_squared()
+		acc += sum * len / float(cnt)
+	var slant := sqrt(s * s + height * height)
+	var cosine := acc / (2.0 * atan2(total, 2.0 * slant))
+	if half_w > 0.0:
+		var tl := (q - p) * (s / maxf(d_body, 1e-6))
+		var near := maxf(n.dot(Vector3(tl.x, tl.y, height)) / slant, 0.0)
+		cosine = lerpf(cosine, near, 1.0 - smoothstep(0.0, half_w, s))
+	var c := energy * pow(1.0 - s / reach, falloff) * cosine * lerpf(glow, 1.0, beam)
 	return minf(AMBIENT + (c * diffuse_scale() if c >= 0.004 else 0.0), 1.0)
 
 
 static func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
+	return _seg_point(p, a, b).distance_to(p)
+
+
+static func _seg_point(p: Vector2, a: Vector2, b: Vector2) -> Vector2:
 	var ab := b - a
 	var l2 := ab.length_squared()
 	if l2 < 1e-12:
-		return p.distance_to(a)
-	return (a + ab * clampf((p - a).dot(ab) / l2, 0.0, 1.0)).distance_to(p)
+		return a
+	return a + ab * clampf((p - a).dot(ab) / l2, 0.0, 1.0)
 
 
 ## A ring of radius `r` around `c` from `from_deg` to `to_deg` as a polygon far finer
@@ -211,11 +228,12 @@ func _straight_equivalence() -> void:
 	await frames(1)
 
 
-# --- A: a V path adds up like two straight lights ------------------------------------------------------
+# --- A: a V path adds up on its bisector ---------------------------------------------------------------
 
 ## A right-angle V with 200 px arms under one light against two straight tubes on its
-## arms: the light is a line integral, so both render alike, the bisector is lit by both
-## arms (twice one arm's share) and there is no crease along it.
+## arms: the bisector sees both arms, so it is brighter than one arm alone lights it,
+## yet the bend is one tube, not two lights piled up, so it stays dimmer than the two
+## straight lights and has no hot spot at the apex; there is no crease along it.
 func _additive() -> void:
 	var c := "path_additive"
 	var apex := Vector2(450, 420)
@@ -235,12 +253,16 @@ func _additive() -> void:
 			[Vector2(0, -200), Vector2.ZERO, Vector2.ZERO]])
 	await frames(2)
 	var img := await capture()
-	check_lt(c, "the V path renders as two straight lights on its arms (mean abs diff)", image_diff(two, img, Rect2(40, 110, 620, 390), 2), 0.002)
+	check_approx(c, "at the apex the bend reads as the model (one tube, no hot spot)", _ref(apex, pts, false, 200.0, 0.8, 1.0, 30.0),
+			lum(img, apex), TOL)
+	check_lt(c, "and dimmer than the two straight lights piled up there", lum(img, apex), lum(two, apex), 0.03)
 	for t in [40.0, 80.0, 120.0, 160.0]:
 		var p: Vector2 = apex + bis * t
 		check_approx(c, "on the bisector %d px from the apex: both arms add up (the model)" % int(t),
 				_ref(p, pts, false, 200.0, 0.8, 1.0, 30.0), lum(img, p), TOL)
-		check_approx(c, "and %d px out it reads as the two straight lights" % int(t), lum(two, p), lum(img, p), 0.005)
+		check_gt(c, "and %d px out it is brighter than one arm alone lights it" % int(t), lum(img, p),
+				_ref(p, pts.slice(0, 2), false, 200.0, 0.8, 1.0, 30.0), 0.02)
+		check_lt(c, "and %d px out dimmer than the two straight lights there" % int(t), lum(img, p), lum(two, p), 0.02)
 	var base := apex + bis * 80.0
 	check_gt(c, "80 px from the apex the bisector is far brighter than one arm alone lights it", lum(img, base),
 			_ref(base, pts.slice(0, 2), false, 200.0, 0.8, 1.0, 30.0), 0.1)

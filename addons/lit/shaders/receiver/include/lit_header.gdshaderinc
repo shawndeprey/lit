@@ -31,23 +31,23 @@ global uniform sampler2D lit_light_data;
 global uniform sampler2D lit_light_path;                // curved line lights: one row each (see _pack_path)
 
 // A path row's texel columns: 0 the bounding circle (xyz) and the shading chord count
-// (w), 1 on the arc points, then the shading chords from LIT_PATH_CHORDS (up to
-// LIT_PATH_SHADE) and the shadow chords from LIT_PATH_SHADOW, each chord mid.xy |
-// half.xy in screen px.
+// (w), 1 on the arc points (point.xy | bulge; texel 1's w is the chain's length in
+// screen px and texel 2's w is 1 when it is closed), then the shading chords from
+// LIT_PATH_CHORDS (up to LIT_PATH_SHADE) and the shadow chords from LIT_PATH_SHADOW,
+// each chord mid.xy | half.xy in screen px.
 const int LIT_PATH_CHORDS = 34;
 const int LIT_PATH_SHADE = 32;
 const int LIT_PATH_SHADOW = 66;
 
 // A line light's chord `ch` (mid.xy | half.xy, screen px) seen from pixel `p` with
-// normal N: the chord's share of the light's diffuse term at energy 1, and that share
-// times the chord's mean light direction added to `acc_l`. The light is an isotropic
-// line source, max(N.u, 0) / (PI |u|^2) per unit length under the range window
-// sqrt(1 - |u|^2 / R'^2) (R' the slant at the range), integrated in closed form over
-// the part of the chord above the horizon and inside the range, then shaped by the
-// falloff through the chord's nearest point so an endless tube reads exactly
-// (1 - d / range)^falloff times the elevation. kernel = height px | range px | half
-// width px | falloff; the halo's chords are shrunk toward the pixel by the half width.
-float lit_line_chord(vec4 ch, vec2 p, vec3 N, vec4 kernel, inout vec3 acc_l) {
+// normal N: the chord's share of the tube's mean cosine at `p`, the line integral of
+// max(N.u, 0) / |u|^2 over the part of the chord above the horizon in closed form,
+// and that share times the chord's mean light direction added to `acc_l`. The tube
+// is 2 w wide and lights from its surface: past one of the chain's free ends (`free`)
+// the chord slides toward the pixel by w (onto it under the cap), elsewhere it is
+// shrunk toward the pixel across its width, so the caps are round and the body reads
+// from overhead.
+float lit_line_chord(vec4 ch, vec2 p, vec3 N, float h, float w, vec2 free, inout vec3 acc_l) {
 	float hl = length(ch.zw);
 	if (hl < 1e-4) {
 		return 0.0;
@@ -57,22 +57,22 @@ float lit_line_chord(vec4 ch, vec2 p, vec3 N, vec4 kernel, inout vec3 acc_l) {
 	vec2 a = ch.xy - ch.zw;
 	float lf = dot(p - a, t);
 	vec2 v = a + t * lf - p;
-	float dperp = length(v);
-	v *= max(dperp - kernel.z, 0.0) / max(dperp, 1e-6);
-	float h = kernel.x;
+	if ((lf <= 0.0 && free.x > 0.5) || (lf >= L && free.y > 0.5)) {
+		vec2 pq = p - (lf <= 0.0 ? a : a + t * L);
+		vec2 shift = pq * min(w / max(length(pq), 1e-6), 1.0);
+		float along = dot(shift, t);
+		lf -= along;
+		v += shift - t * along;
+	} else {
+		float dperp = length(v);
+		v *= max(dperp - w, 0.0) / max(dperp, 1e-6);
+	}
 	float D2 = max(dot(v, v) + h * h, 1e-6);
 	float D = sqrt(D2);
-	float R = kernel.y;
-	float Rp = sqrt(R * R + h * h);
-	if (D >= Rp) {
-		return 0.0;
-	}
 	float alpha = dot(N, vec3(v, h));
 	float beta = dot(N.xy, t);
-	float a2 = Rp * Rp - D2;
-	float amax = sqrt(a2);
-	float lo = max(-lf, -amax);
-	float hi = min(L - lf, amax);
+	float lo = -lf;
+	float hi = L - lf;
 	if (abs(beta) > 1e-6) {
 		float root = -alpha / beta;
 		lo = beta > 0.0 ? max(lo, root) : lo;
@@ -83,15 +83,7 @@ float lit_line_chord(vec4 ch, vec2 p, vec3 N, vec4 kernel, inout vec3 acc_l) {
 	if (hi <= lo) {
 		return 0.0;
 	}
-	float mh = sqrt(max(a2 - hi * hi, 0.0));
-	float ml = sqrt(max(a2 - lo * lo, 0.0));
-	float x = hi * ml - lo * mh;
-	float dA = (Rp / D) * atan(Rp * D * x, D2 * mh * ml + Rp * Rp * hi * lo) - atan(x, mh * ml + hi * lo);
-	float dB = (mh - ml) - Rp * log((Rp + mh) / (Rp + ml)) + 0.5 * Rp * log((D2 + hi * hi) / (D2 + lo * lo));
-	vec2 nq = a + t * clamp(lf, 0.0, L) - p;
-	float s = max(length(nq) - kernel.z, 0.0);
-	float g = pow(max(1.0 - s / R, 0.0), kernel.w) / max(1.0 - sqrt(s * s + h * h) / Rp, 1e-6);
-	float c = (alpha * dA + beta * dB) * g / (PI * Rp);
+	float c = alpha * atan(D * (hi - lo), D2 + hi * lo) / D + 0.5 * beta * log((D2 + hi * hi) / (D2 + lo * lo));
 	float rh = sqrt(D2 + hi * hi);
 	float rl = sqrt(D2 + lo * lo);
 	float eh = hi / rh;

@@ -7,11 +7,12 @@ class_name LitLineLight2D
 ## light sabers, or a curved path of light for rings, arcs and neon tubes.
 ##
 ## The segment is centered on the node along its local +X and follows the node's
-## transform (rotation, scale and skew). The tube is a line source: every part of it
-## adds its light, so beside a long tube the light reads as a point light does at the
-## same distance from the segment, two tubes meeting at a corner add up like two
-## lights, and the light tapers off past each end; `width` gives the tube a body, lit
-## from overhead across it, and `glow` dims the halo around it against the beam.
+## transform (rotation, scale and skew). A tube of length 0 is a point light, and a
+## longer one lights every point as a point light would from the nearest point of the
+## segment, with `range`, `falloff`, `energy` and `height` meaning the same; where the
+## tube bends around a point it adds up like two lights, and past each end it tapers
+## off. `width` gives the tube a body, lit from overhead across it, and `glow` dims
+## the halo around it against the beam.
 ## Shadows follow: Raymarched casts one hard march from the nearest point of the
 ## segment, while Cone Traced and Stochastic march `shadow_samples` narrow cones spread
 ## along the part of the segment within `range` of the receiver (Stochastic dithers
@@ -31,10 +32,8 @@ const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd"
 ## Length of the emitting segment in local pixels, centered on the node along its local
 ## +X; it stretches with the node's x scale. `range` and `source_radius` follow the
 ## node's larger scale axis as on a point light, so this is the way to lengthen a tube.
-## The light comes from the whole length, so a tube much shorter than `height` is dim
-## and 0 emits nothing: use a point light for a point. For a laser, raycast to the wall
-## the beam hits and set the length to that distance. Ignored while a Path2D child
-## shapes the light.
+## 0 is a point light at the node. For a laser, raycast to the wall the beam hits and
+## set the length to that distance. Ignored while a Path2D child shapes the light.
 @export_range(0.0, 4096.0, 1.0, "or_greater") var length: float = 128.0:
 	set(value):
 		length = maxf(value, 0.0)

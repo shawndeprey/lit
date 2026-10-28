@@ -134,8 +134,8 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 	}
 	int path_row = -1;                       // a curved line light's path texture row
 	vec4 line_t4 = vec4(0.0);                // a line light's texel 4
-	vec4 line_kernel = vec4(0.0);            // its chord kernel: height px | range px | half width | falloff
-	float line_irr = -1.0;                   // its integrated diffuse term, in place of N.L x atten
+	vec3 line_tube = vec3(0.0);              // its tube: height px | half width px | 1 when its chain is open
+	float line_irr = -1.0;                   // its diffuse term, in place of N.L x atten
 
 	vec4 t1 = texelFetch(lit_light_data, ivec2(1, i), 0); // uv.xy / dir.xy | range | energy
 	vec4 t2 = texelFetch(lit_light_data, ivec2(2, i), 0); // color.rgb | height
@@ -191,7 +191,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			range_px -= half_w;
 			dist = surf;
 			energy *= mix(line_t4.z, 1.0, beam);
-			line_kernel = vec4(height_px, range_px, half_w, falloff);
+			line_tube = vec3(height_px, half_w, 1.0);
 		}
 		if (dist > range_px) {
 			return vec3(0.0);                // beyond range
@@ -199,27 +199,45 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		Ldir = normalize(vec3(to_light_px, height_px));
 		atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
 		if (is_line) {
-			// An isotropic line source: every chord of the tube adds its closed-form share
-			// of the diffuse term (lit_line_chord), so a path lights like the sum of its
-			// pieces, with no seam where the nearest point jumps, and its ends taper. A
-			// straight light is its one chord, lengthened by the half width so the end
-			// caps read as the body does; a curved one loops its path row's shading
-			// chords. The light direction is the shares' mean direction; the shares stand
-			// in for N.L x atten below, and the specular amplitude keeps its ratio to N.L.
+			// The tube as a line source: its mean cosine at the pixel is the sum of its
+			// chords' line integrals of max(N.u, 0) / |u|^2 (lit_line_chord) over the angle
+			// 2 atan(L / 2D) an endless straight tube subtends at the nearest point. Beside a
+			// straight tube's middle, and at length 0, that is exactly N.L toward the tube's
+			// surface: a line light reads as the point light does at the same distance, and
+			// range and falloff keep their meaning; inside a bend the tube wraps around the
+			// pixel and the cosine rises, past an end it tapers. A straight light is its one
+			// chord, a curved one loops its path row's shading chords. The light direction
+			// is the shares' mean direction; the specular amplitude keeps its ratio to N.L.
+			// Under a wide tube and out to a half width past its surface the light blends
+			// back to the nearest point's (the body is lit from overhead, its caps as its
+			// sides), so the taper is the halo's alone.
 			vec2 p = frag_uv * lit_viewport_size;
 			vec3 acc_l = vec3(0.0);
-			line_irr = 0.0;
+			float cosine = 0.0;
+			float len;
 			if (path_row >= 0) {
 				int count = int(round(texelFetch(lit_light_path, ivec2(0, path_row), 0).w));
+				len = texelFetch(lit_light_path, ivec2(1, path_row), 0).w;
+				line_tube.z = texelFetch(lit_light_path, ivec2(2, path_row), 0).w < 0.5 ? 1.0 : 0.0;
 				for (int k = 0; k < count; k++) {
-					line_irr += lit_line_chord(texelFetch(lit_light_path, ivec2(LIT_PATH_CHORDS + k, path_row), 0), p, N, line_kernel, acc_l);
+					vec2 free = vec2(k == 0 ? line_tube.z : 0.0, k == count - 1 ? line_tube.z : 0.0);
+					cosine += lit_line_chord(texelFetch(lit_light_path, ivec2(LIT_PATH_CHORDS + k, path_row), 0), p, N, height_px, half_w, free, acc_l);
 				}
 			} else {
-				float hl = length(line_t4.xy);
-				vec2 hv = hl > 1e-4 ? line_t4.xy * ((hl + half_w) / hl) : vec2(0.0);
-				line_irr = lit_line_chord(vec4(light_uv * lit_viewport_size, hv), p, N, line_kernel, acc_l);
+				len = 2.0 * length(line_t4.xy);
+				cosine = lit_line_chord(vec4(light_uv * lit_viewport_size, line_t4.xy), p, N, height_px, half_w, vec2(1.0), acc_l);
 			}
-			Ldir = dot(acc_l, acc_l) > 1e-12 ? normalize(acc_l) : vec3(0.0, 0.0, 1.0);
+			if (len > 1e-3) {
+				cosine /= 2.0 * atan(len, 2.0 * sqrt(dist * dist + height_px * height_px));
+				float body = half_w > 0.0 ? 1.0 - smoothstep(0.0, half_w, dist) : 0.0;
+				cosine = mix(cosine, max(dot(N, Ldir), 0.0), body);
+				if (dot(acc_l, acc_l) > 1e-12) {
+					Ldir = normalize(mix(normalize(acc_l), Ldir, body));
+				}
+			} else {
+				cosine = max(dot(N, Ldir), 0.0);
+			}
+			line_irr = atten * cosine;
 			atten = line_irr / max(dot(N, Ldir), 0.1);
 		}
 
@@ -469,7 +487,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 				}
 				if (path_row >= 0) {
 					// Curved line: every chord stratum, weighted as the shading weights them.
-					s = lit_shadow_path(frag_sdf, path_row, n, N, line_kernel, t_cap / max(march_len, 1e-4), t_cap < march_len,
+					s = lit_shadow_path(frag_sdf, path_row, n, N, line_tube, t_cap / max(march_len, 1e-4), t_cap < march_len,
 							src_r, stoch ? t7.z : 0.0, frag_uv * lit_viewport_size, steps, frag_d,
 							self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 				} else {
@@ -499,7 +517,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 				float k = mix(8.0, 256.0, t3.w);
 				s = path_row >= 0
 						? lit_shadow_path_hard(frag_sdf, path_row, int(round(texelFetch(lit_light_data, ivec2(7, i), 0).y)),
-								N, line_kernel, t_cap / max(march_len, 1e-4), capped, k, frag_uv * lit_viewport_size, steps, frag_d,
+								N, line_tube, t_cap / max(march_len, 1e-4), capped, k, frag_uv * lit_viewport_size, steps, frag_d,
 								self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS)
 						: lit_shadow(frag_sdf, march_dir, t_cap, capped ? t_cap / k : 0.0,
 								k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
@@ -509,7 +527,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			float k = mix(8.0, 256.0, t3.w);
 			s = path_row >= 0
 					? lit_shadow_path_hard(frag_sdf, path_row, int(round(texelFetch(lit_light_data, ivec2(7, i), 0).y)),
-							N, line_kernel, t_cap / max(march_len, 1e-4), capped, k, frag_uv * lit_viewport_size, steps, frag_d,
+							N, line_tube, t_cap / max(march_len, 1e-4), capped, k, frag_uv * lit_viewport_size, steps, frag_d,
 							self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS)
 					: lit_shadow(frag_sdf, march_dir, t_cap, capped ? t_cap / k : 0.0,
 							k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);

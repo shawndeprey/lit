@@ -1,8 +1,8 @@
 extends LitSuiteSection
 
-## LitLineLight2D against the rendered frame: the tube as a line source (the light
-## adds up along it, beside a long tube it reads as a point light at the same distance
-## from the segment, it tapers past each end, a zero length emits nothing), length /
+## LitLineLight2D against the rendered frame: the tube as a line source (a zero length
+## is the point light, beside its middle any length reads as the point light at that
+## distance from the segment, it tapers past each end), length /
 ## rotation / node scale, the shading contract (range, falloff, energy, colour, height,
 ## gates, blend, light masks), width and glow (a flat beam under the tube, a halo at a
 ## fraction of its brightness falling off from its surface, the caps lit as the body),
@@ -84,43 +84,48 @@ func line_light(pos: Vector2, length: float, p_range: float, energy: float, heig
 	return l
 
 
-## Diffuse at `p` on a flat white receiver under a tube from `a` to `b` (world px): the
-## model the shader integrates in closed form (lit_line_chord), summed here over 0.25 px
-## elements of the tube instead. An isotropic line source, 1 / (PI |u|^2) x the
-## elevation per unit length under the range window sqrt(1 - |u|^2 / R'^2) (R' the
-## slant at the range), shaped by the falloff at the nearest point so an endless tube
-## reads (1 - d / range)^falloff x the elevation. The halo's tube is shrunk toward `p`
-## by the half width and runs on past its ends by it; the beam is `p`'s coverage by the
-## tube's body, and the glow scales the halo.
+## Diffuse at `p` on a flat white receiver under a tube from `a` to `b` (world px), as
+## the shader shades it (lit_shade): the point light's falloff from the tube's surface
+## times the tube's mean cosine, the elevation / |u|^2 summed over 0.25 px elements of
+## the tube (slid toward `p` by the half width past an end, shrunk across its width
+## elsewhere) over the angle an endless straight tube would subtend at the nearest
+## point, blended back to the nearest point's cosine under the body and out to a half
+## width past its surface; a tube of length 0 is the point light. The beam is `p`'s
+## coverage by the tube's body and the glow scales the halo.
 func _ref(p: Vector2, a: Vector2, b: Vector2, p_range: float, energy: float, falloff: float, height: float,
 		half_w := 0.0, glow := 1.0) -> float:
 	var ab := b - a
 	var len := ab.length()
-	if len < 1e-4:
-		return AMBIENT
-	var t := ab / len
-	var d_body := (a + t * clampf((p - a).dot(t), 0.0, len)).distance_to(p)
+	var t := ab / len if len > 1e-6 else Vector2.RIGHT
+	var lf := (p - a).dot(t)
+	var q := a + t * clampf(lf, 0.0, len)
+	var d_body := q.distance_to(p)
 	var reach := p_range - half_w
-	if maxf(d_body - half_w, 0.0) > reach:
+	var s := maxf(d_body - half_w, 0.0)
+	if s > reach:
 		return AMBIENT
 	var beam := clampf(minf(d_body + 0.5, half_w) - maxf(d_body - 0.5, -half_w), 0.0, 1.0)
-	var ea := a - t * half_w
-	var elen := len + 2.0 * half_w
-	var lf := (p - ea).dot(t)
-	var v := ea + t * lf - p
-	var dperp := v.length()
-	v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
-	var rp := sqrt(reach * reach + height * height)
-	var m := maxi(int(ceil(elen / 0.25)), 1)
-	var acc := 0.0
-	for k in m:
-		var l := -lf + (float(k) + 0.5) * elen / float(m)
-		var rho2 := (v + t * l).length_squared() + height * height
-		acc += sqrt(maxf(1.0 - rho2 / (rp * rp), 0.0)) * height / rho2
-	acc *= elen / float(m) / PI
-	var se := maxf((ea + t * clampf(lf, 0.0, elen)).distance_to(p) - half_w, 0.0)
-	var g := pow(maxf(1.0 - se / reach, 0.0), falloff) / maxf(1.0 - sqrt(se * se + height * height) / rp, 1e-6)
-	var c := energy * acc * g * lerpf(glow, 1.0, beam)
+	var slant := sqrt(s * s + height * height)
+	var cosine := height / slant
+	if len > 1e-3:
+		var v := a + t * lf - p
+		if lf <= 0.0 or lf >= len:
+			var pq := p - q
+			var shift := pq * minf(half_w / maxf(pq.length(), 1e-6), 1.0)
+			var along := shift.dot(t)
+			lf -= along
+			v += shift - t * along
+		else:
+			var dperp := v.length()
+			v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
+		var m := maxi(int(ceil(len / 0.25)), 1)
+		var acc := 0.0
+		for k in m:
+			var l := -lf + (float(k) + 0.5) * len / float(m)
+			acc += height / ((v + t * l).length_squared() + height * height)
+		var mean := acc * len / float(m) / (2.0 * atan2(len, 2.0 * slant))
+		cosine = lerpf(mean, cosine, 1.0 - smoothstep(0.0, half_w, s) if half_w > 0.0 else 0.0)
+	var c := energy * pow(1.0 - s / reach, falloff) * cosine * lerpf(glow, 1.0, beam)
 	return minf(AMBIENT + (c * diffuse_scale() if c >= 0.004 else 0.0), 1.0)
 
 
@@ -159,13 +164,24 @@ func _geometry() -> void:
 
 	l.length = 0.0
 	img = await capture()
-	check_approx(c, "length 0 emits nothing: ambient at the node", AMBIENT, lum(img, CA), TOL)
-	check_approx(c, "length 0: ambient 100 px beside", AMBIENT, lum(img, CA + Vector2(0, 100)), TOL)
+	check_approx(c, "length 0 is a point light: lit at the node", _ref(CA, CA, CA, 150.0, 0.5, 1.0, 100.0), lum(img, CA), TOL)
+	check_approx(c, "length 0: 100 px beside reads as beside the 200 px tube's middle", beside, lum(img, CA + Vector2(0, 100)), TOL)
+	check_approx(c, "length 0: and 100 px along the axis reads the same (a point)", beside, lum(img, CA + Vector2(100, 0)), TOL)
+	l.visible = false
+	var pt := point_light(CA, 150.0, 0.5, Color.WHITE, 100.0)
+	await frames(1)
+	var point := await capture()
+	pt.queue_free()
+	l.visible = true
+	await frames(1)
+	check_lt(c, "length 0 renders as a LitPointLight2D with the same settings (mean abs diff)",
+			image_diff(point, img, Rect2(CA - Vector2(160, 160), Vector2(320, 320)), 2), 0.002)
 	l.length = 40.0
 	img = await capture()
 	check_approx(c, "a 40 px tube under a 100 px height at its node", _ref(CA, CA + Vector2(-20, 0), CA + Vector2(20, 0), 150.0, 0.5, 1.0, 100.0),
 			lum(img, CA), TOL)
-	check_lt(c, "and reads far dimmer than the 200 px tube there (the light adds up along the tube)", lum(img, CA), on, 0.1)
+	check_approx(c, "and 100 px beside it reads as beside the 200 px tube (any length is the point light at that distance)", beside,
+			lum(img, CA + Vector2(0, 100)), TOL)
 	l.length = 200.0
 	l.rotation = PI / 2.0
 	img = await capture()
@@ -445,15 +461,24 @@ func _shadows() -> void:
 	check_true(c, "a Cone Traced line light publishes F_STOCH (its cone is marched as strata)",
 			LitLightRegistry.activity_flags & LitShaderLibrary.F_STOCH != 0)
 	check_true(c, "and not F_CONE", LitLightRegistry.activity_flags & LitShaderLibrary.F_CONE == 0)
-	# A tube of length 0 emits nothing, shadows or not.
+	# A tube of length 0 is the point light, shadows and all.
 	var pts := {"um": P_UM, "pen": P_PEN, "ref": P_REF, "near": P_NEAR}
 	_tube_b.length = 0.0
 	await frames(2)
 	img = await capture()
-	for k in pts:
-		check_approx(c, "Cone Traced, length 0: %s reads ambient (nothing emitted)" % k, AMBIENT, lum(img, pts[k]), TOL)
-	_tube_b.length = 300.0
+	_tube_b.visible = false
+	pt.shadow_algorithm = ALGO.CONE_TRACED
+	pt.shadow_samples = _tube_b.shadow_samples
+	pt.falloff = _tube_b.falloff
+	pt.source_radius = _tube_b.source_radius
+	pt.enabled = true
+	await frames(2)
+	var point := await capture()
 	pt.queue_free()
+	_tube_b.visible = true
+	for k in pts:
+		check_approx(c, "Cone Traced, length 0: %s reads as the Cone Traced point light" % k, lum(point, pts[k]), lum(img, pts[k]), 0.03)
+	_tube_b.length = 300.0
 	await frames(2)
 	# Samples are per tube: a pixel that sees part of a tube marches that part's share
 	# of them, so its strata are as wide as the tube's middle gets, never narrower. On

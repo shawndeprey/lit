@@ -102,7 +102,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 // as the shading weights the chords (lit_line_chord): the visible share of the light
 // the fragment receives. Its own loop, so the straight strata loop above carries no
 // chord fetch. Each stratum closes its own tip band at the cap.
-float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec4 kernel, float cap_frac, bool capped, float src_r,
+float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float cap_frac, bool capped, float src_r,
 		float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
 	n = clamp(n, 1, LIT_MAX_SHADOW_SAMPLES);
@@ -112,7 +112,8 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec4 kernel, float 
 	vec3 unused = vec3(0.0);
 	for (int i = 0; i < n; i++) {
 		vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
-		float w = lit_line_chord(ch, noise_px, N, kernel, unused);
+		vec2 free = vec2(i == 0 ? tube.z : 0.0, i == n - 1 ? tube.z : 0.0);
+		float w = lit_line_chord(ch, noise_px, N, tube.x, tube.y, free, unused);
 		if (w <= 0.0) {
 			continue;
 		}
