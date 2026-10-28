@@ -28,6 +28,29 @@
 // manager. Read via texelFetch (integer coords, no filtering), so the texture's
 // filter mode doesn't matter here.
 global uniform sampler2D lit_light_data;
+global uniform sampler2D lit_light_path;                // curved line lights: one row each (see _pack_path)
+
+// A path row's texel columns: 0 the bounding circle, 1 on the arc points, then
+// LIT_PATH_SHADE shading chords from LIT_PATH_CHORDS and the shadow chords from
+// LIT_PATH_SHADOW, each chord mid.xy | half.xy in screen px.
+const int LIT_PATH_CHORDS = 34;
+const int LIT_PATH_SHADE = 32;
+const int LIT_PATH_SHADOW = 66;
+
+// A curved line light's chord `ch` as seen from pixel `p` (screen px): xyz = the vector
+// from the pixel to the chord's nearest surface point, elevated by the light's height;
+// w = the chord's weight in the light's integrals, the falloff at that distance over
+// the squared distance. kernel = height px | range px | half width px | falloff.
+vec4 lit_path_sample(vec4 ch, vec2 p, vec4 kernel) {
+	vec2 rel = p - ch.xy;
+	float u = clamp(dot(rel, ch.zw) / max(dot(ch.zw, ch.zw), 1e-6), -1.0, 1.0);
+	vec2 v = ch.xy + ch.zw * u - p;
+	float d = length(v);
+	float s = max(d - kernel.z, 0.0);
+	vec3 to_light = vec3(v * (s / max(d, 1e-4)), kernel.x);
+	float w = pow(clamp(1.0 - s / max(kernel.y, 1e-4), 0.0, 1.0), kernel.w) / max(dot(to_light, to_light), 1e-4);
+	return vec4(to_light, w);
+}
 global uniform int       lit_light_count;
 global uniform int       lit_directional_count;         // directionals occupy rows [0, this)
 global uniform vec2      lit_viewport_size;             // pixels

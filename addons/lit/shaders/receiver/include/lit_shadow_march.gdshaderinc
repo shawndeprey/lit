@@ -354,3 +354,27 @@ float lit_shadow_contrast(float s, float hardness) {
 }
 #endif
 
+// A curved line light's shadow when raymarched: one march per shadow chord of its path
+// row, to the chord's middle, weighted as the shading weights the chords
+// (lit_path_sample).
+float lit_shadow_path_hard(vec2 frag_sdf, int row, int n, vec4 kernel, float cap_frac, bool capped, float k,
+		vec2 noise_px, int max_steps, float frag_d,
+		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
+	n = clamp(n, 1, 32);
+	float sum = 0.0;
+	float wsum = 0.0;
+	for (int i = 0; i < n; i++) {
+		vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
+		float w = lit_path_sample(ch, noise_px, kernel).w;
+		if (w <= 0.0) {
+			continue;
+		}
+		vec2 delta = screen_uv_to_sdf(ch.xy / lit_viewport_size) - frag_sdf;
+		float len = length(delta);
+		float maxd = len * cap_frac;
+		sum += w * lit_shadow(frag_sdf, delta / max(len, 1e-4), maxd, capped ? maxd / k : 0.0, k,
+				max_steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+		wsum += w;
+	}
+	return wsum > 0.0 ? clamp(sum / wsum, 0.0, 1.0) : 1.0;
+}

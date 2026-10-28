@@ -20,6 +20,7 @@ const F_VISIBLE := 2
 const F_SHADOW := 4
 const F_EXCLUDE := 8
 const ALGO_SHIFT := 4
+const F_PATH := 64
 
 # Cached list of [node, kind] for the lit_lights group, rebuilt only when the tree
 # changes (see _get_cached_lights), so refresh() skips a group scan + type dispatch
@@ -37,6 +38,7 @@ var _nodes: Array = []
 var _kinds := PackedByteArray()
 var _ranges := PackedFloat32Array()
 var _lengths := PackedFloat32Array()
+var _prects := PackedFloat32Array()    # a curved line's light-local chain bounds, 4 per light
 var _visible_kinds := PackedByteArray()
 var _flags := PackedInt32Array()
 var _smasks := PackedInt32Array()
@@ -84,6 +86,20 @@ func cull_visible(tree: SceneTree, world_rect: Rect2) -> Array:
 		var rx := r
 		var ry := r
 		if _kinds[i] == 3:
+			if f & F_PATH != 0:
+				# Curved line: the chain's light-local bounds under the basis, grown by range.
+				var b := i * 4
+				var c0 := xf.basis_xform(Vector2(_prects[b], _prects[b + 1]))
+				var c1 := xf.basis_xform(Vector2(_prects[b + 2], _prects[b + 3]))
+				var c2 := xf.basis_xform(Vector2(_prects[b], _prects[b + 3]))
+				var c3 := xf.basis_xform(Vector2(_prects[b + 2], _prects[b + 1]))
+				var lo := c0.min(c1).min(c2).min(c3)
+				var hi := c0.max(c1).max(c2).max(c3)
+				if p.x + hi.x + r < min_x or p.x + lo.x - r > max_x or p.y + hi.y + r < min_y or p.y + lo.y - r > max_y:
+					continue
+				visible.append(node)
+				_visible_kinds.append(3)
+				continue
 			# Line light: the segment's bounds grown by range.
 			var h := xf.basis_xform(Vector2(_lengths[i] * 0.5, 0.0))
 			rx += absf(h.x)
@@ -149,7 +165,9 @@ func _cull_visible_walk(lights: Array, world_rect: Rect2) -> Array:
 				_visible_kinds.append(0)
 		elif kind == 3:
 			var line := node as LitLineLight2D
-			if line.enabled and line.is_visible_in_tree() and _aabb_visible(line.global_transform, line.range, world_rect, line.length):
+			if line.enabled and line.is_visible_in_tree() and (
+					_rect_visible(line.global_transform, line.range, world_rect, line.path_rect()) if line.is_curved()
+					else _aabb_visible(line.global_transform, line.range, world_rect, line.length)):
 				visible.append(line)
 				_visible_kinds.append(3)
 		else:
@@ -191,7 +209,7 @@ func _get_cached_lights(tree: SceneTree) -> Array:
 	if _cache_dirty:
 		_rebuild_light_cache(tree)
 	elif not _pending.is_empty() and not Engine.is_editor_hint():
-		for id in _pending:
+		for id in _pending.keys():
 			var i: int = _index.get(id, -1)
 			if i >= 0 and is_instance_valid(_nodes[i]):
 				_write_mirror(i, _nodes[i], _kinds[i])
@@ -241,6 +259,7 @@ func _rebuild_light_cache(tree: SceneTree) -> void:
 	_kinds.resize(n)
 	_ranges.resize(n)
 	_lengths.resize(n)
+	_prects.resize(n * 4)
 	_flags.resize(n)
 	_smasks.resize(n)
 	for i in n:
@@ -281,6 +300,13 @@ func _write_mirror(i: int, node: Node, kind: int) -> void:
 		f |= line.shadow_algorithm << ALGO_SHIFT
 		_ranges[i] = line.range
 		_lengths[i] = line.length
+		if line.is_curved():
+			f |= F_PATH
+			var r: Rect2 = line.path_rect()
+			_prects[i * 4] = r.position.x
+			_prects[i * 4 + 1] = r.position.y
+			_prects[i * 4 + 2] = r.end.x
+			_prects[i * 4 + 3] = r.end.y
 		_smasks[i] = line.shadow_mask
 	else:
 		var spot := node as LitSpotLight2D
@@ -300,3 +326,12 @@ func _aabb_visible(xf: Transform2D, light_range: float, world_rect: Rect2, lengt
 	var e := Vector2(r, r) + xf.basis_xform(Vector2(length * 0.5, 0.0)).abs()
 	var aabb := Rect2(xf.origin - e, e * 2.0)
 	return world_rect.intersects(aabb)
+
+## True if a curved line's light-local chain bounds under the node transform, grown
+## by its node-scaled `range`, intersect the visible world rect.
+func _rect_visible(xf: Transform2D, light_range: float, world_rect: Rect2, rect: Rect2) -> bool:
+	var r := light_range * maxf(xf.x.length(), xf.y.length())
+	var aabb := Rect2(xf * rect.position, Vector2.ZERO)
+	aabb = aabb.expand(xf * rect.end).expand(xf * Vector2(rect.position.x, rect.end.y)) \
+			.expand(xf * Vector2(rect.end.x, rect.position.y))
+	return world_rect.intersects(aabb.grow(r))

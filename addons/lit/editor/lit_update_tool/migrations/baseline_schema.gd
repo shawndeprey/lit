@@ -67,6 +67,7 @@ const BASELINE_SCHEMA := {
 		"script": "res://addons/lit/nodes/lit_line_light_2d.gd",
 		"props": {
 			&"blend_mode": {"type": TYPE_INT, "default": 0},
+			&"closed": {"type": TYPE_BOOL, "default": false},
 			&"color": {"type": TYPE_COLOR, "default": Color(1, 1, 1, 1)},
 			&"enabled": {"type": TYPE_BOOL, "default": true},
 			&"energy": {"type": TYPE_FLOAT, "default": 1.0},

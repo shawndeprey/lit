@@ -29,6 +29,45 @@ vec4 lit_line_window(vec4 t4, vec2 light_uv, vec2 frag_uv, float range) {
 }
 #endif
 
+// Nearest point of a curved line light's arc chain to `p` (screen px): path texture row
+// `row`, `count` arcs from texel 1 on, each texel a point and the bulge (the tangent of
+// a quarter of the sweep) of the arc leaving it. Returns the point and its distance.
+vec3 lit_path_nearest(int row, int count, vec2 p) {
+	vec4 cur = texelFetch(lit_light_path, ivec2(1, row), 0);
+	float best = 1e30;
+	vec2 q = cur.xy;
+	for (int k = 1; k <= count; k++) {
+		vec4 nxt = texelFetch(lit_light_path, ivec2(1 + k, row), 0);
+		vec2 a = cur.xy;
+		vec2 ab = nxt.xy - a;
+		float bu = cur.z;
+		float l2 = dot(ab, ab);
+		vec2 cq;
+		if (abs(bu) < 1e-3 || l2 < 1e-8) {
+			cq = a + ab * clamp(dot(p - a, ab) / max(l2, 1e-8), 0.0, 1.0);
+		} else {
+			float l = 0.5 * sqrt(l2);
+			vec2 nn = vec2(-ab.y, ab.x) / (2.0 * l);
+			float r = l * (1.0 + bu * bu) / (2.0 * abs(bu));
+			vec2 c = a + ab * 0.5 - nn * (l * (1.0 - bu * bu) / (2.0 * bu));
+			vec2 v = p - c;
+			vec2 vh = v / max(length(v), 1e-6);
+			if (dot(vh, nn * sign(bu)) >= (1.0 - bu * bu) / (1.0 + bu * bu)) {
+				cq = c + vh * r;
+			} else {
+				cq = dot(p - a, p - a) < dot(p - nxt.xy, p - nxt.xy) ? a : nxt.xy;
+			}
+		}
+		float d2 = dot(p - cq, p - cq);
+		if (d2 < best) {
+			best = d2;
+			q = cq;
+		}
+		cur = nxt;
+	}
+	return vec3(q, sqrt(best));
+}
+
 // Shade this fragment by light row `i` and return its contribution (negative for a
 // subtractive light). Called once per light affecting the fragment, from the directional
 // sweep and the per-tile loop in fragment(). metallic/roughness are sampled once per
@@ -82,6 +121,21 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		return vec3(0.0);
 	}
 
+	// A curved line light (flags bit 23) lights from Q, the nearest point of its arc
+	// chain (path texture row t4.x, t4.y arcs), found here ahead of the shading state:
+	// the shading measures from it below, and past the cookie (which keeps the node's
+	// position) it replaces light_uv so the shadow block marches from it. light_uv
+	// itself never depends on it before then: a position fed by a fetch inside a branch
+	// stalls every light, curved or not.
+	vec2 q_px = vec2(0.0);
+	if (is_line && (flags & 8388608) != 0) {
+		vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // path row | arc count | glow | half width
+		q_px = lit_path_nearest(int(round(t4.x)), int(round(t4.y)), frag_uv * lit_viewport_size).xy;
+	}
+	int path_row = -1;                       // a curved line light's path texture row
+	vec4 path_kernel = vec4(0.0);            // its chords' weights: height px | range px | half width | falloff
+	float path_ndotl = -1.0;                 // its integrated N.L, in place of Q's
+
 	vec4 t1 = texelFetch(lit_light_data, ivec2(1, i), 0); // uv.xy / dir.xy | range | energy
 	vec4 t2 = texelFetch(lit_light_data, ivec2(2, i), 0); // color.rgb | height
 
@@ -111,6 +165,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		float height_px = height * lit_canvas_scale;
 		vec2 to_light_px = (light_uv - frag_uv) * lit_viewport_size;
 		float dist = length(to_light_px);
+		float half_w = 0.0;
 		if (is_line) {
 			// A line light lights from Q, the nearest point of its segment: texel 4 holds
 			// the half-vector from the node to one end, the glow and the half width (see
@@ -121,10 +176,15 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			// filter on its edge, 0 everywhere at zero width) and outside it the glow is
 			// t4.z of the beam's brightness. The cookie stays on the node.
 			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
-			float u = clamp(-dot(to_light_px, t4.xy) / max(dot(t4.xy, t4.xy), 1e-6), -1.0, 1.0);
-			to_light_px += t4.xy * u;
+			if ((flags & 8388608) != 0) {
+				to_light_px = q_px - frag_uv * lit_viewport_size;
+				path_row = int(round(t4.x));
+			} else {
+				float u = clamp(-dot(to_light_px, t4.xy) / max(dot(t4.xy, t4.xy), 1e-6), -1.0, 1.0);
+				to_light_px += t4.xy * u;
+			}
 			dist = length(to_light_px);
-			float half_w = t4.w * lit_canvas_scale;
+			half_w = t4.w * lit_canvas_scale;
 			float beam = clamp(min(dist + 0.5, half_w) - max(dist - 0.5, -half_w), 0.0, 1.0);
 			float surf = max(dist - half_w, 0.0);
 			to_light_px *= surf / max(dist, 1e-4);
@@ -137,6 +197,29 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		}
 		Ldir = normalize(vec3(to_light_px, height_px));
 		atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
+		if (path_row >= 0) {
+			// Curved: the light's direction is integrated over the path instead of taken
+			// from Q alone. Q jumps across the path's medial axis (inside a bend, at a
+			// ring's center) and every normal-mapped pixel there would show a seam. Each
+			// shading chord contributes its nearest point's clamped cosine, weighted by
+			// lit_path_sample, and the sum is scaled so a flat pixel keeps exactly the
+			// distance-field value from Q; a single chord reduces to the straight light.
+			path_kernel = vec4(height_px, range_px, half_w, falloff);
+			vec2 p = frag_uv * lit_viewport_size;
+			float acc_c = 0.0;
+			float acc_d = 0.0;
+			vec3 acc_l = vec3(0.0);
+			for (int k = 0; k < LIT_PATH_SHADE; k++) {
+				vec4 smp = lit_path_sample(texelFetch(lit_light_path, ivec2(LIT_PATH_CHORDS + k, path_row), 0), p, path_kernel);
+				float inv = inversesqrt(max(dot(smp.xyz, smp.xyz), 1e-8));
+				acc_c += smp.w * max(dot(N, smp.xyz), 0.0) * inv;
+				acc_d += smp.w * inv;
+				acc_l += smp.w * max(dot(N, smp.xyz), 0.0) * smp.xyz * inv * inv;
+			}
+			float dn = length(vec3(to_light_px, height_px));
+			path_ndotl = acc_d > 1e-12 ? clamp(acc_c / (dn * acc_d), 0.0, 1.0) : 0.0;
+			Ldir = dot(acc_l, acc_l) > 1e-12 ? normalize(acc_l) : vec3(0.0, 0.0, 1.0);
+		}
 
 		// A spot is a point light masked to a cone (texel 4): aim.xy is the
 		// screen-space direction it points. The fragment is lit if it falls inside
@@ -174,7 +257,11 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		light_color *= cookie.rgb * (cookie.a * inside);
 	}
 
-	float ndotl = max(dot(N, Ldir), 0.0);
+	if (is_line && (flags & 8388608) != 0) {
+		light_uv = q_px / lit_viewport_size;
+	}
+
+	float ndotl = path_ndotl >= 0.0 ? path_ndotl : max(dot(N, Ldir), 0.0);
 
 	vec3 contribution;
 	if (lit_lighting_model == LIT_MODEL_PBR) {
@@ -279,17 +366,23 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			// the fragment, the source its strata tile. Its own branch, so point and spot
 			// keep the branch below unchanged.
 			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
-			vec2 d = (light_uv - frag_uv) * lit_viewport_size;
-			vec2 target_uv = light_uv + t4.xy * clamp(-dot(d, t4.xy) / max(dot(t4.xy, t4.xy), 1e-6), -1.0, 1.0)
-					/ lit_viewport_size;
+			vec2 target_uv = light_uv;
+			if ((flags & 8388608) != 0) {
+				// Curved: light_uv is Q, whose distance sets the cap; the shadow itself is
+				// the chords' weighted visibility (lit_shadow_path, lit_shadow_path_hard).
+			} else {
+				vec2 d = (light_uv - frag_uv) * lit_viewport_size;
+				target_uv = light_uv + t4.xy * clamp(-dot(d, t4.xy) / max(dot(t4.xy, t4.xy), 1e-6), -1.0, 1.0)
+						/ lit_viewport_size;
 #ifdef LIT_SHADOW_STOCH
-			if (LIT_PHYS_ALGO(flags, true)) {
-				vec4 win = lit_line_window(t4, light_uv, frag_uv, range);
-				target_uv = win.xy;
-				line_seg = win.zw * px_to_sdf;
-				line_frac = sqrt(dot(win.zw, win.zw) / max(dot(t4.xy, t4.xy), 1e-6));
-			}
+				if (LIT_PHYS_ALGO(flags, true)) {
+					vec4 win = lit_line_window(t4, light_uv, frag_uv, range);
+					target_uv = win.xy;
+					line_seg = win.zw * px_to_sdf;
+					line_frac = sqrt(dot(win.zw, win.zw) / max(dot(t4.xy, t4.xy), 1e-6));
+				}
 #endif
+			}
 			vec2 delta = screen_uv_to_sdf(target_uv) - frag_sdf;
 			march_len = length(delta);
 			march_dir = delta / max(march_len, 0.0001);
@@ -363,7 +456,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 				bool stoch = algo == 2;
 				bool strata = stoch || is_line;
 				int n = max(int(round(t7.y)), 1);
-				if (is_line) {
+				if (is_line && path_row < 0) {
 					src += abs(line_seg.x * march_dir.y - line_seg.y * march_dir.x);
 					strata = stoch || dot(line_seg, line_seg) > px_to_sdf * px_to_sdf;
 					// Samples are per tube: a window that is part of the tube marches
@@ -371,11 +464,18 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 					// tube's middle gets, and none narrower.
 					n = clamp(int(ceil(float(n) * line_frac)), 1, n);
 				}
-				s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
-						march_len, t_cap, strata ? t_cap < march_len : capped, src, is_directional,
-						strata ? n : 0, stoch ? t7.z : 0.0,
-						frag_uv * lit_viewport_size, steps, frag_d, line_seg, src_r,
-						self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+				if (path_row >= 0) {
+					// Curved line: every chord stratum, weighted as the shading weights them.
+					s = lit_shadow_path(frag_sdf, path_row, n, path_kernel, t_cap / max(march_len, 1e-4), t_cap < march_len,
+							src_r, stoch ? t7.z : 0.0, frag_uv * lit_viewport_size, steps, frag_d,
+							self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+				} else {
+					s = lit_shadow_stoch(frag_sdf, frag_sdf + march_dir * march_len, march_dir,
+							march_len, t_cap, strata ? t_cap < march_len : capped, src, is_directional,
+							strata ? n : 0, stoch ? t7.z : 0.0,
+							frag_uv * lit_viewport_size, steps, frag_d, line_seg, src_r,
+							self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+				}
 				s = lit_shadow_contrast(s, t3.w);
 			} else
 #elif defined(LIT_SHADOW_CONE)
@@ -394,14 +494,22 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 #endif
 			{
 				float k = mix(8.0, 256.0, t3.w);
-				s = lit_shadow(frag_sdf, march_dir, t_cap, capped ? t_cap / k : 0.0,
-						k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+				s = path_row >= 0
+						? lit_shadow_path_hard(frag_sdf, path_row, int(round(texelFetch(lit_light_data, ivec2(7, i), 0).y)),
+								path_kernel, t_cap / max(march_len, 1e-4), capped, k, frag_uv * lit_viewport_size, steps, frag_d,
+								self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS)
+						: lit_shadow(frag_sdf, march_dir, t_cap, capped ? t_cap / k : 0.0,
+								k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 			}
 #else
 			// Low hardness is soft, high is crisp.
 			float k = mix(8.0, 256.0, t3.w);
-			s = lit_shadow(frag_sdf, march_dir, t_cap, capped ? t_cap / k : 0.0,
-					k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+			s = path_row >= 0
+					? lit_shadow_path_hard(frag_sdf, path_row, int(round(texelFetch(lit_light_data, ivec2(7, i), 0).y)),
+							path_kernel, t_cap / max(march_len, 1e-4), capped, k, frag_uv * lit_viewport_size, steps, frag_d,
+							self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS)
+					: lit_shadow(frag_sdf, march_dir, t_cap, capped ? t_cap / k : 0.0,
+							k, steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 #endif
 		}
 		contribution *= mix(t3.rgb, vec3(1.0), s);

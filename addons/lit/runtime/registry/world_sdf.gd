@@ -124,6 +124,9 @@ func update(host: Node, viewport: Viewport, visible: Array, kinds: PackedByteArr
 			var toward := -Vector2.from_angle(light.global_rotation) * reach
 			rect = rect.expand(world_rect.position + toward).expand(world_rect.end + toward)
 		elif kind == 3:
+			if light.is_curved():
+				rect = rect.merge(light.path_rect_in(light.global_transform))
+				continue
 			var half: Vector2 = light.global_transform.basis_xform(Vector2(light.length * 0.5, 0.0))
 			rect = rect.expand(light.global_position - half).expand(light.global_position + half)
 		else:

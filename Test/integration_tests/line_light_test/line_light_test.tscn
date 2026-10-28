@@ -51,6 +51,30 @@ shader_parameter/directional_horizontal_scale = 32.0
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
 polygon = PackedVector2Array(1920, 0, 1903.8984, 1079.9999, 1437, 1079.9999, 1437, 0)
 
+[sub_resource type="Curve2D" id="Curve2D_circle"]
+_data = {
+"points": PackedVector2Array(0, -88.37, 0, 88.37, 160, 0, 88.37, 0, -88.37, 0, 0, 160, 0, 88.37, 0, -88.37, -160, 0, -88.37, 0, 88.37, 0, 0, -160)
+}
+point_count = 4
+
+[sub_resource type="Curve2D" id="Curve2D_vmv5v"]
+_data = {
+"points": PackedVector2Array(152.40793, 25.657907, -152.40793, -25.657907, -24, -2, -2.565792, 41.052643, 2.565792, -41.052643, -146, -171, -57.98686, 41.05264, 57.98686, -41.05264, -48, -337, 0, 0, 0, 0, 79.00003, -392, -29.250004, -85.69739, 29.250004, 85.69739, 213, -312)
+}
+point_count = 5
+
+[sub_resource type="Curve2D" id="Curve2D_0vvki"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, -103, -1, 0, 0, 0, 0, 451, 231, 0, 0, 0, 0, 396, -207)
+}
+point_count = 3
+
+[sub_resource type="Curve2D" id="Curve2D_uxnsf"]
+_data = {
+"points": PackedVector2Array(281.40152, 36.19971, -281.40152, -36.19971, 94, -317, -183.04759, -363.36313, 183.04759, 363.36313, -80, 44)
+}
+point_count = 2
+
 [node name="LineLightTest" type="Node2D" unique_id=1756555398]
 
 [node name="TileBasicCrypt" parent="." unique_id=736403759 instance=ExtResource("1_57o2h")]
@@ -60,7 +84,6 @@ tile_map_data = PackedByteArray("AAAAAAAAAQAGAAAAAAAAAAEAAQAGAAAAAAAAAAIAAQAGAAA
 lit_version = "1.1.3"
 
 [node name="Floor" type="Polygon2D" parent="." unique_id=2051337065]
-visible = false
 material = SubResource("ShaderMaterial_aiw8a")
 polygon = PackedVector2Array(0, 0, 1920, 0, 1920, 1080, 0, 1080)
 
@@ -77,16 +100,18 @@ scale = Vector2(0.062111802, 1.0000001)
 occluder = SubResource("OccluderPolygon2D_ywxc3")
 
 [node name="Wall" type="Polygon2D" parent="LightOccluder2D" unique_id=936087508]
+visible = false
 material = SubResource("ShaderMaterial_aiw8a")
 polygon = PackedVector2Array(1438, 0, 1920, 0, 1920, 1080, 1437, 1080)
 
 [node name="Skeleton" parent="." unique_id=1906572971 instance=ExtResource("3_57o2h")]
+visible = false
 position = Vector2(1242.0001, 549)
 
 [node name="Lights" type="Node2D" parent="." unique_id=26516173]
 
 [node name="LightSaber" type="Node2D" parent="Lights" unique_id=1799641673]
-position = Vector2(1422, 559)
+position = Vector2(1414, 565)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 214.0
@@ -94,9 +119,74 @@ range = 1024.0
 lit_version = "1.1.7"
 shadow_enabled = true
 
+[node name="LightSaber2" type="Node2D" parent="Lights" unique_id=347245802]
+position = Vector2(1331, 569)
+rotation = -1.5707964
+script = ExtResource("4_saber")
+length = 214.0
+range = 1024.0
+lit_version = "1.1.7"
+shadow_enabled = true
+
+[node name="Circle" type="Node2D" parent="Lights" unique_id=390123348]
+visible = false
+position = Vector2(966, 705)
+script = ExtResource("4_saber")
+length = 214.0
+closed = true
+range = 1024.0
+lit_version = "1.1.7"
+energy = 2.0
+shadow_enabled = true
+
+[node name="Path2D" type="Path2D" parent="Lights/Circle" unique_id=710844138]
+position = Vector2(10, -180)
+curve = SubResource("Curve2D_circle")
+
+[node name="Curved" type="Node2D" parent="Lights" unique_id=899121877]
+visible = false
+position = Vector2(1174, 585)
+rotation = -1.5707964
+script = ExtResource("4_saber")
+length = 214.0
+range = 1024.0
+lit_version = "1.1.7"
+energy = 2.0
+shadow_enabled = true
+
+[node name="Path2D" type="Path2D" parent="Lights/Curved" unique_id=2098839968]
+position = Vector2(10.000004, -11.000001)
+curve = SubResource("Curve2D_vmv5v")
+
+[node name="ThreePointPath" type="Node2D" parent="Lights" unique_id=1282219292]
+visible = false
+position = Vector2(737, 503)
+script = ExtResource("4_saber")
+range = 1024.0
+lit_version = "1.1.7"
+energy = 2.0
+shadow_enabled = true
+metadata/_custom_type_script = "uid://cmsiurxidcqsf"
+
+[node name="Path2D" type="Path2D" parent="Lights/ThreePointPath" unique_id=2015453461]
+curve = SubResource("Curve2D_0vvki")
+
+[node name="TwoPointCurve" type="Node2D" parent="Lights" unique_id=777304227]
+visible = false
+position = Vector2(1028, 732)
+script = ExtResource("4_saber")
+lit_version = "1.1.7"
+energy = 2.0
+shadow_enabled = true
+metadata/_custom_type_script = "uid://cmsiurxidcqsf"
+
+[node name="Path2D" type="Path2D" parent="Lights/TwoPointCurve" unique_id=1118166441]
+position = Vector2(-22, 0)
+curve = SubResource("Curve2D_uxnsf")
+
 [node name="LitPointLight2D" type="Node2D" parent="Lights" unique_id=1577877993]
 visible = false
-position = Vector2(1378, 507)
+position = Vector2(997, 482)
 script = ExtResource("6_aiw8a")
 range = 1024.0
 lit_version = "1.1.7"
