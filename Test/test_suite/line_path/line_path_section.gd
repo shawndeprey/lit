@@ -117,8 +117,8 @@ func ring_child(light: LitLineLight2D, r: float) -> Path2D:
 ## cosine, max(n.u, 0) / |u|^2 summed over 0.25 px elements of every piece (an open
 ## tube's two ends slid toward `p` by the half width past them, every piece shrunk
 ## across its width elsewhere) over the angle an endless straight tube would subtend
-## at the nearest point, blended back to the nearest point's cosine under the body and
-## out to a half width past its surface. The beam is `p`'s coverage by the tube's body
+## at the nearest point, lifted to the nearest point's cosine where it falls short under
+## the body and out to a half width past its surface. The beam is `p`'s coverage by the tube's body
 ## and the glow scales the halo.
 func _ref(p: Vector2, pts: PackedVector2Array, closed: bool, p_range: float, energy: float, falloff: float,
 		height: float, half_w := 0.0, glow := 1.0, n := Vector3(0, 0, 1)) -> float:
@@ -168,7 +168,7 @@ func _ref(p: Vector2, pts: PackedVector2Array, closed: bool, p_range: float, ene
 	if half_w > 0.0:
 		var tl := (q - p) * (s / maxf(d_body, 1e-6))
 		var near := maxf(n.dot(Vector3(tl.x, tl.y, height)) / slant, 0.0)
-		cosine = lerpf(cosine, near, 1.0 - smoothstep(0.0, half_w, s))
+		cosine += maxf(near - cosine, 0.0) * (1.0 - smoothstep(0.0, half_w, s))
 	var c := energy * pow(1.0 - s / reach, falloff) * cosine * lerpf(glow, 1.0, beam)
 	return minf(AMBIENT + (c * diffuse_scale() if c >= 0.004 else 0.0), 1.0)
 

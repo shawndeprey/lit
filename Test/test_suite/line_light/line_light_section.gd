@@ -89,8 +89,8 @@ func line_light(pos: Vector2, length: float, p_range: float, energy: float, heig
 ## times the tube's mean cosine, the elevation / |u|^2 summed over 0.25 px elements of
 ## the tube (slid toward `p` by the half width past an end, shrunk across its width
 ## elsewhere) over the angle an endless straight tube would subtend at the nearest
-## point, blended back to the nearest point's cosine under the body and out to a half
-## width past its surface; a tube of length 0 is the point light. The beam is `p`'s
+## point, lifted to the nearest point's cosine where it falls short under the body and
+## out to a half width past its surface; a tube of length 0 is the point light. The beam is `p`'s
 ## coverage by the tube's body and the glow scales the halo.
 func _ref(p: Vector2, a: Vector2, b: Vector2, p_range: float, energy: float, falloff: float, height: float,
 		half_w := 0.0, glow := 1.0) -> float:
@@ -124,7 +124,7 @@ func _ref(p: Vector2, a: Vector2, b: Vector2, p_range: float, energy: float, fal
 			var l := -lf + (float(k) + 0.5) * len / float(m)
 			acc += height / ((v + t * l).length_squared() + height * height)
 		var mean := acc * len / float(m) / (2.0 * atan2(len, 2.0 * slant))
-		cosine = lerpf(mean, cosine, 1.0 - smoothstep(0.0, half_w, s) if half_w > 0.0 else 0.0)
+		cosine = mean + maxf(cosine - mean, 0.0) * (1.0 - smoothstep(0.0, half_w, s) if half_w > 0.0 else 0.0)
 	var c := energy * pow(1.0 - s / reach, falloff) * cosine * lerpf(glow, 1.0, beam)
 	return minf(AMBIENT + (c * diffuse_scale() if c >= 0.004 else 0.0), 1.0)
 

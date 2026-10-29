@@ -208,9 +208,10 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			// pixel and the cosine rises, past an end it tapers. A straight light is its one
 			// chord, a curved one loops its path row's shading chords. The light direction
 			// is the shares' mean direction; the specular amplitude keeps its ratio to N.L.
-			// Under a wide tube and out to a half width past its surface the light blends
-			// back to the nearest point's (the body is lit from overhead, its caps as its
-			// sides), so the taper is the halo's alone.
+			// Under a wide tube and out to a half width past its surface the light is lifted
+			// to the nearest point's where the tube's mean falls short of it (the body is lit
+			// from overhead, its caps as its sides), never lowered, so where two parts of the
+			// tube face each other their light still adds up.
 			vec2 p = frag_uv * lit_viewport_size;
 			vec3 acc_l = vec3(0.0);
 			float cosine = 0.0;
@@ -230,7 +231,7 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			if (len > 1e-3) {
 				cosine /= 2.0 * atan(len, 2.0 * sqrt(dist * dist + height_px * height_px));
 				float body = half_w > 0.0 ? 1.0 - smoothstep(0.0, half_w, dist) : 0.0;
-				cosine = mix(cosine, max(dot(N, Ldir), 0.0), body);
+				cosine += body * max(max(dot(N, Ldir), 0.0) - cosine, 0.0);
 				if (dot(acc_l, acc_l) > 1e-12) {
 					Ldir = normalize(mix(normalize(acc_l), Ldir, body));
 				}

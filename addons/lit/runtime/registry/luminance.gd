@@ -419,14 +419,14 @@ func _positional(light, pos: Vector2,
 		var ndotl := (n.x * tl.x + n.y * tl.y + n.z * height) / slant
 		if light is LitLineLight2D and tube_len > 1e-3:
 			# The tube's mean cosine (lit_shade): its chords' shares over the angle an endless
-			# straight tube would subtend at the nearest point, blended back to the nearest
-			# point's under the body and out to a half width past its surface.
+			# straight tube would subtend at the nearest point, lifted to the nearest point's
+			# where it falls short under the body and out to a half width past its surface.
 			var mean := 0.0
 			var m := cuts.size() - 1
 			for j in m:
 				mean += _chord_share(cuts[j], cuts[j + 1], points[i], n, height, half_w, open and j == 0, open and j == m - 1)
 			mean /= 2.0 * atan2(tube_len, 2.0 * slant)
-			ndotl = lerpf(mean, maxf(ndotl, 0.0), 1.0 - smoothstep(0.0, half_w, d) if half_w > 0.0 else 0.0)
+			ndotl = mean + maxf(ndotl - mean, 0.0) * (1.0 - smoothstep(0.0, half_w, d) if half_w > 0.0 else 0.0)
 		if ndotl <= 0.0:
 			continue
 		var f := pow(1.0 - d / (range_px - half_w), falloff) * ndotl * lerpf(glow, 1.0, beam)

@@ -87,6 +87,18 @@ _data = {
 }
 point_count = 2
 
+[sub_resource type="Curve2D" id="Curve2D_spiral"]
+_data = {
+"points": PackedVector2Array(-2.01, -7.59, 2.01, 7.59, 30, 0, 5.12, -7.99, -5.12, 7.99, 25.63, 25.63, 10.94, -2.05, -10.94, 2.05, 0, 42.5, 10.36, 7.45, -10.36, -7.45, -34.47, 34.47, 2.06, 14.25, -2.06, -14.25, -55, 0, -9.78, 12.7, 9.78, -12.7, -43.31, -43.31, -17.55, 2.07, 17.55, -2.07, 0, -67.5, -15.04, -12.11, 15.04, 12.11, 52.15, -52.15, -2.07, -20.84, 2.07, 20.84, 80, 0, 14.43, -17.37, -14.43, 17.37, 60.99, 60.99, 24.13, -2.08, -24.13, 2.08, 0, 92.5, 19.69, 16.75, -19.69, -16.75, -69.83, 69.83, 2.08, 27.41, -2.08, -27.41, -105, 0, -19.07, 22.01, 19.07, -22.01, -78.67, -78.67, -30.69, 2.08, 30.69, -2.08, 0, -117.5, -24.33, -21.39, 24.33, 21.39, 87.5, -87.5, -2.08, -33.97, 2.08, 33.97, 130, 0, 23.71, -26.65, -23.71, 26.65, 96.34, 96.34, 37.25, -2.08, -37.25, 2.08, 0, 142.5, 28.97, 26.03, -28.97, -26.03, -105.18, 105.18, 2.08, 40.53, -2.08, -40.53, -155, 0, -28.34, 31.29, 28.34, -31.29, -114.02, -114.02, -43.8, 2.08, 43.8, -2.08, 0, -167.5, -33.6, -30.66, 33.6, 30.66, 122.86, -122.86, -2.08, -47.08, 2.08, 47.08, 180, 0)
+}
+point_count = 25
+
+[sub_resource type="Curve2D" id="Curve2D_loops"]
+_data = {
+"points": PackedVector2Array(0, 0, 38.66, 0, -42, 70, 0, 38.66, 0, -38.66, 28, 0, 38.66, 0, -38.66, 0, -42, -70, 0, -38.66, 0, 38.66, -112, 0, -38.66, 0, 0, 0, -42, 70, 0, 0, 38.66, 0, 42, 70, 0, 38.66, 0, -38.66, 112, 0, 38.66, 0, -38.66, 0, 42, -70, 0, -38.66, 0, 38.66, -28, 0, -38.66, 0, 0, 0, 42, 70)
+}
+point_count = 10
+
 [node name="LineLightTest" type="Node2D" unique_id=1756555398]
 
 [node name="TileBasicCrypt" parent="." unique_id=736403759 instance=ExtResource("1_57o2h")]
@@ -124,7 +136,7 @@ position = Vector2(1242.0001, 549)
 
 [node name="LitPointLight2D" type="Node2D" parent="Lights" unique_id=1577877993]
 visible = false
-position = Vector2(1416, 447)
+position = Vector2(1460, 176)
 script = ExtResource("6_aiw8a")
 range = 1024.0
 lit_version = "1.1.7"
@@ -132,33 +144,36 @@ shadow_enabled = true
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="ZeroLengthLine" type="Node2D" parent="Lights" unique_id=1736456417]
-visible = false
-position = Vector2(1376, 506)
+position = Vector2(1288, 160)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 0.0
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(0.34901962, 0.4392157, 1, 1)
+energy = 2.0
 shadow_enabled = true
 
 [node name="LightSaber" type="Node2D" parent="Lights" unique_id=1799641673]
-visible = false
-position = Vector2(1550, 453)
+position = Vector2(1517, 542)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 347.0
+width = 11.0
+glow = 0.96
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(1.6197081, 0, 1.6197081, 1)
 shadow_enabled = true
 
 [node name="PathLine" type="Node2D" parent="Lights" unique_id=1417204964]
-visible = false
-position = Vector2(1550, 453)
+position = Vector2(965, 865)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 347.0
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(0.77656865, 2.055, 2.055, 1)
 shadow_enabled = true
 
 [node name="Path2D" type="Path2D" parent="Lights/PathLine" unique_id=42123874]
@@ -166,19 +181,18 @@ position = Vector2(6, 2.6226832e-07)
 curve = SubResource("Curve2D_pitca")
 
 [node name="LineWithWidth" type="Node2D" parent="Lights" unique_id=694138970]
-visible = false
-position = Vector2(1431, 437)
+position = Vector2(1789, 245)
 rotation = -1.5707964
 script = ExtResource("4_saber")
-length = 404.0
+length = 243.0
 width = 102.5
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(1.1188424, 0.9313861, 2.137626, 1)
 shadow_enabled = true
 
 [node name="LineWithWidthLessGlow" type="Node2D" parent="Lights" unique_id=286570265]
-visible = false
-position = Vector2(1431, 437)
+position = Vector2(1794, 765)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 404.0
@@ -186,16 +200,17 @@ width = 102.5
 glow = 0.66
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(0, 1, 0, 1)
 shadow_enabled = true
 
 [node name="Arc" type="Node2D" parent="Lights" unique_id=1707973995]
-visible = false
-position = Vector2(1550, 453)
+position = Vector2(891, 233)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 347.0
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(0, 1, 0, 1)
 shadow_enabled = true
 
 [node name="Path2D" type="Path2D" parent="Lights/Arc" unique_id=1240960088]
@@ -203,8 +218,7 @@ position = Vector2(6, 2.6226832e-07)
 curve = SubResource("Curve2D_vshlv")
 
 [node name="Circle" type="Node2D" parent="Lights" unique_id=390123348]
-visible = false
-position = Vector2(758, 673)
+position = Vector2(1231, 726)
 script = ExtResource("4_saber")
 length = 214.0
 closed = true
@@ -217,13 +231,15 @@ position = Vector2(10, -180)
 curve = SubResource("Curve2D_circle")
 
 [node name="Curved" type="Node2D" parent="Lights" unique_id=899121877]
-visible = false
-position = Vector2(1438, 629)
+position = Vector2(786, 881)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 214.0
+width = 11.0
+glow = 0.7
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(2.055, 0, 0, 1)
 shadow_enabled = true
 
 [node name="Path2D" type="Path2D" parent="Lights/Curved" unique_id=2098839968]
@@ -231,11 +247,13 @@ position = Vector2(10.000004, -11.000001)
 curve = SubResource("Curve2D_vmv5v")
 
 [node name="ThreePointPath" type="Node2D" parent="Lights" unique_id=1282219292]
-visible = false
-position = Vector2(1076, 696)
+position = Vector2(371, 503)
 script = ExtResource("4_saber")
+width = 11.0
+glow = 0.84
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(0, 1.0018499, 1.9754877, 1)
 shadow_enabled = true
 metadata/_custom_type_script = "uid://cmsiurxidcqsf"
 
@@ -243,16 +261,46 @@ metadata/_custom_type_script = "uid://cmsiurxidcqsf"
 curve = SubResource("Curve2D_0vvki")
 
 [node name="TwoPointCurve" type="Node2D" parent="Lights" unique_id=777304227]
-position = Vector2(936, 692)
+position = Vector2(683, 377)
 script = ExtResource("4_saber")
 range = 2048.0
 lit_version = "1.1.7"
+color = Color(3.1681983, 2.0419812, 1.9341518, 1)
 shadow_enabled = true
 metadata/_custom_type_script = "uid://cmsiurxidcqsf"
 
 [node name="Path2D" type="Path2D" parent="Lights/TwoPointCurve" unique_id=1118166441]
 position = Vector2(-22, 0)
 curve = SubResource("Curve2D_uxnsf")
+
+[node name="Spiral" type="Node2D" parent="Lights" unique_id=1444000001]
+position = Vector2(216, 320)
+script = ExtResource("4_saber")
+width = 8.0
+glow = 0.82
+range = 1024.0
+lit_version = "1.1.7"
+color = Color(1.2236274, 0.8471569, 1.2236274, 1)
+shadow_enabled = true
+metadata/_custom_type_script = "uid://cmsiurxidcqsf"
+
+[node name="Path2D" type="Path2D" parent="Lights/Spiral" unique_id=1444000002]
+curve = SubResource("Curve2D_spiral")
+
+[node name="Loops" type="Node2D" parent="Lights" unique_id=1444000003]
+position = Vector2(188, 815)
+rotation = -0.92538095
+script = ExtResource("4_saber")
+width = 10.0
+glow = 0.84
+range = 1024.0
+lit_version = "1.1.7"
+color = Color(1.1755697, 1.1755697, 0, 1)
+shadow_enabled = true
+metadata/_custom_type_script = "uid://cmsiurxidcqsf"
+
+[node name="Path2D" type="Path2D" parent="Lights/Loops" unique_id=1444000004]
+curve = SubResource("Curve2D_loops")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=481900563]
 visible = false
@@ -261,6 +309,7 @@ script = ExtResource("7_zoom")
 
 [node name="HUD" type="CanvasLayer" parent="." unique_id=1362947105]
 layer = 128
+visible = false
 
 [node name="Stats" type="Label" parent="HUD" unique_id=908214671]
 offset_left = 16.0
