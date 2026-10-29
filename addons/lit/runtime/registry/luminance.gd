@@ -15,6 +15,8 @@ extends RefCounted
 # texels' summed normal (as a share of the surface) and their mean position, so a near
 # light weighs the part of the sprite that faces it. The sharp-edged terms (spot cone,
 # cookie, shadow) average over mask points instead, SUB x SUB per frame cell.
+const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd")
+
 const PROFILE_CELLS := 3
 const PROFILE_BINS := 8
 const PROFILE_SUB := 2
@@ -283,8 +285,10 @@ func _shadow_masks(surf: Array, casters: Array, shadow_color: Color,
 	return cell_mask
 
 
-# Point, spot and line share the radial path, exactly like the shader: a line light
-# measures from the nearest point of its segment (_nearest). `light` is accessed
+# Point, spot and line share the radial path, exactly like the shader: a line light's
+# body and range measure from the nearest point of its segment or chain (_nearest) and
+# its cosine is its chords' shares (_chord_share) over the angle a straight tube would
+# subtend. `light` is accessed
 # dynamically: the shared properties live on LitPositionalLight2D. Falloff and N.L go
 # per lobe; cone, cookie and shadow per mask point.
 func _positional(light, pos: Vector2,
@@ -300,13 +304,31 @@ func _positional(light, pos: Vector2,
 	var len2 := 0.0
 	var half_w := 0.0
 	var glow := 1.0
+	var open := true
+	var chain = null
+	var cuts := PackedVector2Array()
+	var shadow_cuts := PackedVector2Array()
+	var fit_extra := Vector2.ZERO
 	if light is LitLineLight2D:
-		half = xf.basis_xform(Vector2(light.length * 0.5, 0.0))
-		len2 = half.length_squared()
 		half_w = minf(light.width * 0.5, light.range * 0.9) * s
 		glow = light.glow
+		if light.is_curved():
+			chain = LinePathScript.transformed(light.path_chain(), xf * light.path_fit_xf().affine_inverse())
+			cuts = LinePathScript.shade_chords(chain, 32)
+			shadow_cuts = LinePathScript.chords(chain, maxi(light.shadow_samples, 1))
+			open = not light.closed
+			fit_extra = light.path_extent(xf)
+		else:
+			half = xf.basis_xform(Vector2(light.length * 0.5, 0.0))
+			len2 = half.length_squared()
+			fit_extra = Vector2(sqrt(len2), 0.0)
+			if len2 > 1e-8:
+				cuts = PackedVector2Array([xf.origin - half, xf.origin + half])
+	var tube_len := 0.0
+	for j in cuts.size() - 1:
+		tube_len += cuts[j].distance_to(cuts[j + 1])
 	if range_px <= 0.0 or energy <= 0.0 \
-			or _nearest(xf.origin, half, len2, pos).distance_to(pos) > range_px:
+			or _nearest(xf.origin, half, len2, pos, chain).distance_to(pos) > range_px:
 		return 0.0
 	# Height is world px and, unlike range, not scaled by the node.
 	var height := maxf(light.height, 0.0)
@@ -325,8 +347,14 @@ func _positional(light, pos: Vector2,
 	var textured: bool = light.texture != null
 	var casters: Array = []
 	if light.shadow_enabled:
-		casters = _casters(light, surf[S_CENTER], _nearest(xf.origin, half, len2, surf[S_CENTER]),
-				surf[S_REACH], occ_nodes, occ_layers, rx_mask, self_source)
+		var to: Vector2 = _nearest(xf.origin, half, len2, surf[S_CENTER], chain)
+		var reach: float = surf[S_REACH]
+		if chain != null:
+			# Curved: every shadow chord casts, so the search covers them all.
+			to = surf[S_CENTER]
+			for j in shadow_cuts.size() - 1:
+				reach = maxf(reach, ((shadow_cuts[j] + shadow_cuts[j + 1]) * 0.5).distance_to(to) + surf[S_REACH])
+		casters = _casters(light, surf[S_CENTER], to, reach, occ_nodes, occ_layers, rx_mask, self_source)
 	var masked := spot or textured or not casters.is_empty()
 	var cell_mask: Array[Color] = []
 	if masked:
@@ -339,17 +367,34 @@ func _positional(light, pos: Vector2,
 		var cap := clampf(light.shadow_length, 0.01, 1.0)
 		for k in mask_points.size():
 			var p := mask_points[k]
-			var tl: Vector2 = _nearest(xf.origin, half, len2, p) - p
+			var tl: Vector2 = _nearest(xf.origin, half, len2, p, chain) - p
 			var d := tl.length()
 			var m := Color.WHITE
 			if spot and d > 0.0001:
 				var cone := smoothstep(cos_outer, cos_inner, aim.dot(-tl / d))
 				m = Color(cone, cone, cone)
 			if textured:
-				var ck := _cookie(light, p - xf.origin, xf, range_px, sqrt(len2))
+				var ck := _cookie(light, p - xf.origin, xf, range_px, fit_extra)
 				m = Color(m.r * ck.r, m.g * ck.g, m.b * ck.b) * ck.a
-			if d > 0.0001 and not casters.is_empty() and _blocked(p, p + tl * cap, casters):
-				m = Color(m.r * shadow_color.r, m.g * shadow_color.g, m.b * shadow_color.b)
+			if d > 0.0001 and not casters.is_empty():
+				if chain != null:
+					# Curved: each shadow chord's visibility, weighted as the shader weights
+					# the chords (lit_shadow_path).
+					var vis := Color(0.0, 0.0, 0.0)
+					var wsum := 0.0
+					for j in shadow_cuts.size() - 1:
+						var w := _chord_share(shadow_cuts[j], shadow_cuts[j + 1], p, Vector3(0.0, 0.0, 1.0), height, half_w,
+								open and j == 0, open and j == shadow_cuts.size() - 2)
+						if w <= 0.0:
+							continue
+						var mid := (shadow_cuts[j] + shadow_cuts[j + 1]) * 0.5
+						vis += (shadow_color if _blocked(p, p + (mid - p) * cap, casters) else Color.WHITE) * w
+						wsum += w
+					if wsum > 0.0:
+						vis /= wsum
+						m = Color(m.r * vis.r, m.g * vis.g, m.b * vis.b)
+				elif _blocked(p, p + tl * cap, casters):
+					m = Color(m.r * shadow_color.r, m.g * shadow_color.g, m.b * shadow_color.b)
 			cell_mask[mask_cells[k]] += m * mask_weights[k]
 
 	var normals: PackedVector3Array = surf[S_NORMALS]
@@ -358,7 +403,7 @@ func _positional(light, pos: Vector2,
 	var lit := Color(0.0, 0.0, 0.0)
 	var factor := 0.0
 	for i in normals.size():
-		var tl: Vector2 = _nearest(xf.origin, half, len2, points[i]) - points[i]
+		var tl: Vector2 = _nearest(xf.origin, half, len2, points[i], chain) - points[i]
 		var d := tl.length()
 		if d > range_px:
 			continue
@@ -372,6 +417,16 @@ func _positional(light, pos: Vector2,
 			continue
 		var n := normals[i]
 		var ndotl := (n.x * tl.x + n.y * tl.y + n.z * height) / slant
+		if light is LitLineLight2D and tube_len > 1e-3:
+			# The tube's mean cosine (lit_shade): its chords' shares over the angle an endless
+			# straight tube would subtend at the nearest point, lifted to the nearest point's
+			# where it falls short under the body and out to a half width past its surface.
+			var mean := 0.0
+			var m := cuts.size() - 1
+			for j in m:
+				mean += _chord_share(cuts[j], cuts[j + 1], points[i], n, height, half_w, open and j == 0, open and j == m - 1)
+			mean /= 2.0 * atan2(tube_len, 2.0 * slant)
+			ndotl = mean + maxf(ndotl - mean, 0.0) * (1.0 - smoothstep(0.0, half_w, d) if half_w > 0.0 else 0.0)
 		if ndotl <= 0.0:
 			continue
 		var f := pow(1.0 - d / (range_px - half_w), falloff) * ndotl * lerpf(glow, 1.0, beam)
@@ -388,9 +443,54 @@ func _positional(light, pos: Vector2,
 	return -lum if light.blend_mode == LitShaderLibrary.BlendMode.SUBTRACT else lum
 
 
+## The share of chord `a`-`b` in a line light's mean cosine at `p` on a face with
+## normal `n`, as the shader's lit_line_chord: the line integral of max(n.u, 0) / |u|^2
+## over the part of the chord above the horizon. `free_a` / `free_b` mark the chain's
+## free ends: past one the chord slides toward `p` by `half_w`, elsewhere it is shrunk
+## toward `p` across the tube's width.
+static func _chord_share(a: Vector2, b: Vector2, p: Vector2, n: Vector3, height: float, half_w: float,
+		free_a: bool, free_b: bool) -> float:
+	var ab := b - a
+	var len := ab.length()
+	if len < 1e-4:
+		return 0.0
+	var t := ab / len
+	var lf := (p - a).dot(t)
+	var v := a + t * lf - p
+	if (lf <= 0.0 and free_a) or (lf >= len and free_b):
+		var pq := p - (a if lf <= 0.0 else b)
+		var shift := pq * minf(half_w / maxf(pq.length(), 1e-6), 1.0)
+		var along := shift.dot(t)
+		lf -= along
+		v += shift - t * along
+	else:
+		var dperp := v.length()
+		v *= maxf(dperp - half_w, 0.0) / maxf(dperp, 1e-6)
+	var d2 := maxf(v.length_squared() + height * height, 1e-6)
+	var d := sqrt(d2)
+	var alpha := n.x * v.x + n.y * v.y + n.z * height
+	var beta := n.x * t.x + n.y * t.y
+	var lo := -lf
+	var hi := len - lf
+	if absf(beta) > 1e-6:
+		var root := -alpha / beta
+		if beta > 0.0:
+			lo = maxf(lo, root)
+		else:
+			hi = minf(hi, root)
+	elif alpha <= 0.0:
+		return 0.0
+	if hi <= lo:
+		return 0.0
+	return alpha * atan2(d * (hi - lo), d2 + hi * lo) / d + 0.5 * beta * log((d2 + hi * hi) / (d2 + lo * lo))
+
+
 ## The point of the segment `origin` +- `half` (`len2` = |half|^2) nearest `p`; the
-## origin itself for a point or spot light.
-static func _nearest(origin: Vector2, half: Vector2, len2: float, p: Vector2) -> Vector2:
+## origin itself for a point or spot light; the nearest point of a curved line's world
+## space `chain`.
+static func _nearest(origin: Vector2, half: Vector2, len2: float, p: Vector2, chain = null) -> Vector2:
+	if chain != null:
+		return LinePathScript.nearest(chain, p)
 	if len2 <= 0.0:
 		return origin
 	return origin + half * clampf((p - origin).dot(half) / len2, -1.0, 1.0)
@@ -399,16 +499,16 @@ static func _nearest(origin: Vector2, half: Vector2, len2: float, p: Vector2) ->
 ## Cookie modulation at `world_offset` from the light's center: WHITE when the light
 ## has no readable cookie, TRANSPARENT outside the footprint (the cookie masks the
 ## light to zero there). `fit_extra` widens a FIT_RANGE footprint along the node's
-## local x (a line light's world half-length).
+## local axes (a line light's world half-length, a curved line's extents).
 func _cookie(light, world_offset: Vector2, xf: Transform2D, range_px: float,
-		fit_extra := 0.0) -> Color:
+		fit_extra := Vector2.ZERO) -> Color:
 	var tex: Texture2D = light.texture
 	if tex == null:
 		return Color.WHITE
 	var half: Vector2
 	var local: Vector2
 	if int(light.texture_size_mode) == LitShaderLibrary.TextureSizeMode.FIT_RANGE:
-		half = Vector2(range_px + fit_extra, range_px) * light.texture_scale
+		half = (Vector2(range_px, range_px) + fit_extra) * light.texture_scale
 		local = world_offset.rotated(-light.global_rotation)
 	else:
 		half = Vector2(tex.get_size()) * 0.5 * light.texture_scale

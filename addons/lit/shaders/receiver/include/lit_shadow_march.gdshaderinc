@@ -354,3 +354,53 @@ float lit_shadow_contrast(float s, float hardness) {
 }
 #endif
 
+// A curved line light's shadow when raymarched: one march per shadow chord of its path
+// row, to the chord's middle, weighted as the shading weights the chords
+// (lit_line_chord). Clearance past the bounding circle (texel 0) by 1/k is lit unmarched;
+// the weights come from a prepass, eight per register pair.
+float lit_shadow_path_hard(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float cap_frac, bool capped, float k,
+		vec2 noise_px, int max_steps, float frag_d,
+		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
+	n = clamp(n, 1, 32);
+	vec4 c0 = texelFetch(lit_light_path, ivec2(0, row), 0);
+	vec2 c_sdf = screen_uv_to_sdf(c0.xy / lit_viewport_size);
+	float r_sdf = max(length(screen_uv_to_sdf((c0.xy + vec2(c0.z, 0.0)) / lit_viewport_size) - c_sdf),
+			length(screen_uv_to_sdf((c0.xy + vec2(0.0, c0.z)) / lit_viewport_size) - c_sdf));
+	if (frag_d >= (length(c_sdf - frag_sdf) + r_sdf) * (1.0 + 1.0 / k) * 1.05 + 0.5) {
+		return 1.0;
+	}
+	float sum = 0.0;
+	float wsum = 0.0;
+	for (int b = 0; b < n; b += 8) {
+		vec4 w0 = vec4(0.0);
+		vec4 w1 = vec4(0.0);
+		float wb = 0.0;
+		for (int i = b; i < min(b + 8, n); i++) {
+			vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
+			vec2 free = vec2(i == 0 ? tube.z : 0.0, i == n - 1 ? tube.z : 0.0);
+			float w = lit_line_weight(ch, noise_px, N, tube.x, tube.y, free);
+			int j = i - b;
+			w0 += vec4(j == 0 ? w : 0.0, j == 1 ? w : 0.0, j == 2 ? w : 0.0, j == 3 ? w : 0.0);
+			w1 += vec4(j == 4 ? w : 0.0, j == 5 ? w : 0.0, j == 6 ? w : 0.0, j == 7 ? w : 0.0);
+			wb += max(w, 0.0);
+		}
+		if (wb <= 0.0) {
+			continue;
+		}
+		for (int i = b; i < min(b + 8, n); i++) {
+			int j = i - b;
+			float w = j < 4 ? (j < 2 ? (j == 0 ? w0.x : w0.y) : (j == 2 ? w0.z : w0.w))
+					: (j < 6 ? (j == 4 ? w1.x : w1.y) : (j == 6 ? w1.z : w1.w));
+			if (w <= 0.0) {
+				continue;
+			}
+			vec2 delta = screen_uv_to_sdf(texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0).xy / lit_viewport_size) - frag_sdf;
+			float len = length(delta);
+			float maxd = len * cap_frac;
+			sum += w * lit_shadow(frag_sdf, delta / max(len, 1e-4), maxd, capped ? maxd / k : 0.0, k,
+					max_steps, frag_d, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+			wsum += w;
+		}
+	}
+	return wsum > 0.0 ? clamp(sum / wsum, 0.0, 1.0) : 1.0;
+}

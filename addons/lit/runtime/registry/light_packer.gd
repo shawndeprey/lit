@@ -7,7 +7,10 @@ extends RefCounted
 ##                 (aim direction plus the cosines of the inner and outer angles).
 ##  3 line:        texel 1 is the node's position (as a point: the cookie's center);
 ##                 texel 4 adds the segment's half-vector from the node to one end in
-##                 screen px, the glow and the tube's half width (see _pack_line).
+##                 screen px, the glow and the tube's half width (see _pack_line). A
+##                 curved line (flags bit 23) packs its arc chain and shadow chords into
+##                 a row of the path texture instead, and texel 4.xy holds that row and
+##                 the arc count (see _pack_path).
 ## Layout per row: t0 = z code | flags | mask + z code high bits | falloff, t1 = uv/dir | range (directional:
 ## shadow_reach, world px) | energy, t2 = color.rgb | height,
 ## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone / line segment,
@@ -27,7 +30,16 @@ extends RefCounted
 ## 6-17 shadow_length fraction quantized to 12 bits (point/spot: 0 = full march,
 ## uncapped; directional: plain fraction of shadow_reach, 4095 = full reach), bit 18
 ## cookie offset, bit 19 z range narrower than +-4096 (texel 0 code), bits 20-21 type,
-## bit 22 layer range set (texel 9 written and read).
+## bit 22 layer range set (texel 9 written and read), bit 23 curved line (path row).
+##
+## Path texture (lit_light_path), one PATH_W-wide row per curved line light on screen:
+## t0 = a circle enclosing every arc, center.xy (screen px) | radius | shading chord
+## count, t1..t33 = arc points (xy screen px, z = the bulge tan(sweep / 4) of the arc
+## leaving the point), t33.z = 1 when the chain is closed, t33.w = the chain's length in
+## screen px, t34..t65 = the 32 shading chords, t66..t97 = the shadow chords, one per
+## packed shadow sample, t98..t113 = the coarse shading chords (the shading chords
+## merged in pairs, see _pack_coarse); chords are mid.xy | half.xy in screen px, of equal
+## arc length.
 ##
 ## Node scale: range, source_radius, width and the FIT_RANGE cookie footprint pack multiplied
 ## by the node's global scale (larger basis axis, snapped to 1 for unscaled nodes);
@@ -35,6 +47,7 @@ extends RefCounted
 
 const LitCookieAtlasScript := preload("res://addons/lit/runtime/lit_cookie_atlas.gd")
 const FrameContext := preload("res://addons/lit/runtime/registry/frame_context.gd")
+const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd")
 
 var _texture: ImageTexture
 var _dummy: ImageTexture
@@ -56,6 +69,29 @@ var _published_light_tex: Texture2D = null
 var _pack_buf: PackedFloat32Array = PackedFloat32Array()
 var _pack_img: Image
 var _pack_img_count: int = -1
+# Curved line lights: PATH_W texels per row (circle, 33 arc points, 32 shading chords,
+# 32 shadow chords, 16 coarse shading chords), rows appended as the pack meets them,
+# each light's row rebuilt only when its inputs changed (the light keeps its last row).
+# The texture keeps its high-water height and is uploaded only when a row or the row
+# order changed.
+const PATH_W := 114
+const PATH_INFO := 33
+const PATH_CHORDS := 34
+const PATH_SHADE := 32
+const PATH_SHADOW := 66
+const PATH_COARSE := 98
+const PATH_SHRINK_FRAMES := 120
+var _path_buf: PackedFloat32Array = PackedFloat32Array()
+var _path_rows := 0
+var _path_zero_row: PackedFloat32Array = PackedFloat32Array()
+var _path_ids := PackedInt64Array()
+var _path_ids_last := PackedInt64Array()
+var _path_changed := false
+var _path_alloc := 0
+var _path_slack := 0
+var _path_img: Image
+var _path_tex: ImageTexture
+var _published_path_tex: Texture2D = null
 # Per-frame mirrors of facade-owned frame state, assigned at pack_and_publish entry.
 var _tpl := 9
 var _excl_active := false
@@ -98,6 +134,7 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 	if _pack_buf.size() != floats_needed:
 		_pack_buf.resize(floats_needed)
 	_pack_buf.fill(0.0)
+	_path_begin()
 	var kinds: PackedByteArray = ctx.kinds
 	for i in count:
 		var kind := kinds[i]
@@ -110,6 +147,7 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 		else:
 			_pack_line(i, visible[i] as LitLineLight2D, canvas_xform, vp_size)
 	_upload_pack_buffer(count)
+	_upload_path_buffer()
 
 	# Publish globals.
 	RenderingServer.global_shader_parameter_set("lit_light_count", count)
@@ -132,6 +170,8 @@ func publish_empty(vp_size: Vector2) -> void:
 	_cookie_atlas.refresh([])
 	_cookies_active = false
 	_publish_cookie_atlas()
+	_path_begin()
+	_upload_path_buffer()
 
 
 ## The texel 0 part of a light's ranges, kept by the light's setters in `range_pack`:
@@ -376,7 +416,7 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 ## Pack one line light: a point light (texels 0 to 3, 7) at the node plus its segment
 ## (texel 4). The segment is centered on the node along its local +X and takes the full
 ## node transform, so a non-uniform scale stretches it; range and source_radius keep
-## the larger-axis rule.
+## the larger-axis rule. A curved line packs its chain into the path texture instead.
 func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
 	var xf := light.global_transform
 	var screen_px: Vector2 = canvas_xform * xf.origin
@@ -384,8 +424,11 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 	var s := maxf(xf.x.length(), xf.y.length())
 	if absf(s - 1.0) < 1e-5:
 		s = 1.0
-	var half_world := xf.basis_xform(Vector2(light.length * 0.5, 0.0))
-	var half_px := canvas_xform.basis_xform(half_world)
+	var curved := light.is_curved()
+	var half_world := Vector2.ZERO if curved else xf.basis_xform(Vector2(light.length * 0.5, 0.0))
+	var fit_extra := Vector2.ZERO
+	if _cookies_active and light.texture != null:
+		fit_extra = light.path_extent(xf) if curved else Vector2(half_world.length(), 0.0)
 
 	var o := row * _tpl * 4
 
@@ -397,10 +440,11 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 	if rp.z >= 4194304.0 and _read_ranges:
 		_pack_layer_range(o, light)
 	var flags := float(light.shadow_enabled) + 2.0 * subtractive + rp.z \
-			+ _pack_cookie(o, light, canvas_xform, xf, s, half_world.length()) \
+			+ _pack_cookie(o, light, canvas_xform, xf, s, fit_extra) \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
-			+ _pack_shadow_length(light.shadow_length)
+			+ _pack_shadow_length(light.shadow_length) \
+			+ (8388608.0 if curved else 0.0)
 	const TYPE_LINE := 3145728.0
 	_pack_buf[o + 1] = flags + TYPE_LINE
 	_pack_buf[o + 3] = light.falloff
@@ -423,12 +467,18 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 14] = light.shadow_color.b
 	_pack_buf[o + 15] = light.shadow_hardness
 
-	# Texel 4: the half-vector (screen px), the glow and the tube's half width (world px,
-	# scaled like range and kept inside it).
-	_pack_buf[o + 16] = half_px.x
-	_pack_buf[o + 17] = half_px.y
+	# Texel 4: the half-vector (screen px; a curved line: its path row and arc count),
+	# the glow and the tube's half width (world px, scaled like range and kept inside it).
+	var half_w := minf(light.width * 0.5, light.range * 0.9) * s
+	if curved:
+		_pack_path(o, light, canvas_xform * xf * light.path_fit_inv(),
+				mini(light.shadow_samples, shadow_samples_max))
+	else:
+		var half_px := canvas_xform.basis_xform(half_world)
+		_pack_buf[o + 16] = half_px.x
+		_pack_buf[o + 17] = half_px.y
 	_pack_buf[o + 18] = light.glow
-	_pack_buf[o + 19] = minf(light.width * 0.5, light.range * 0.9) * s
+	_pack_buf[o + 19] = half_w
 
 	# Texel 7: source_radius | samples | jitter (read only by cone/stochastic shaders)
 	_pack_buf[o + 28] = light.source_radius * s
@@ -444,9 +494,10 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 ## 2x2 matrix taking a screen-pixel offset from the light's center to a cookie-UV
 ## offset around that center. `light` is accessed dynamically: the cookie properties
 ## live on LitPositionalLight2D. `fit_extra` widens a FIT_RANGE footprint along the
-## node's local x (a line light's world half-length), so it spans the capsule's box.
+## node's local axes (a line light's world half-length, a curved line's extents), so it
+## spans the light's box.
 func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transform2D, s: float,
-		fit_extra := 0.0) -> float:
+		fit_extra := Vector2.ZERO) -> float:
 	if not _cookies_active:
 		return 0.0
 	var tex: Texture2D = light.get("texture")
@@ -461,7 +512,7 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transfor
 	var basis: Transform2D
 	if int(light.get("texture_size_mode")) == 1:
 		var r: float = float(light.get("range")) * s
-		half = Vector2(r + fit_extra, r) * float(light.get("texture_scale"))
+		half = (Vector2(r, r) + fit_extra) * float(light.get("texture_scale"))
 		basis = canvas_xform * Transform2D(xf.get_rotation(), Vector2.ZERO)
 	else:
 		half = Vector2(tex.get_size()) * 0.5 * float(light.get("texture_scale"))
@@ -496,6 +547,161 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transfor
 	_pack_buf[o + 32] = 0.5 - offset.x * sx
 	_pack_buf[o + 33] = 0.5 - offset.y * sy
 	return 4.0 + 262144.0
+
+## Pack a curved line light's chain into the next path row: `pxf` maps its fit space to
+## screen px (every point and apex through it, each bulge refitted through its apex, so
+## a non-uniform node scale still lands on arcs), a circle enclosing every arc for the
+## range reject and the shadow gates and its `n` equal-length chords for the strata.
+## Texel 4.xy of the light's own row holds the path row and the arc count. A row whose
+## inputs match the light's memo is appended from it instead of rebuilt.
+func _pack_path(o: int, light: LitLineLight2D, pxf: Transform2D, n: int) -> void:
+	var row := _path_rows
+	_path_rows += 1
+	_path_ids.append(light.get_instance_id())
+	_pack_buf[o + 16] = float(row)
+	if light.path_row_same(pxf, n):
+		_path_buf.append_array(light.path_row())
+		_pack_buf[o + 17] = float(light.path_row_arcs())
+		return
+	_path_changed = true
+	_path_buf.append_array(_path_zero_row)
+	var chain = light.path_chain()
+	var base := row * PATH_W * 4
+	var fit_rect: Rect2 = light.path_fit_rect()
+	var center := pxf * fit_rect.get_center()
+	var radius := pxf.basis_xform(fit_rect.size * 0.5).length()
+	var sx := pxf.x.length_squared()
+	var sy := pxf.y.length_squared()
+	var smax := maxf(sx, sy)
+	if smax <= 0.0 or absf(sx - sy) > 1e-5 * smax or absf(pxf.x.dot(pxf.y)) > 1e-5 * smax:
+		var sr: Rect2 = LinePathScript.bounds(LinePathScript.transformed(chain, pxf))
+		center = sr.get_center()
+		radius = (sr.size * 0.5).length()
+	_path_buf[base] = center.x
+	_path_buf[base + 1] = center.y
+	_path_buf[base + 2] = radius
+	var fit_pts: PackedVector2Array = chain.points
+	var fit_apexes: PackedVector2Array = chain.apexes
+	var pts := pxf * fit_pts
+	var apexes := pxf * fit_apexes
+	var arcs: int = chain.arc_count()
+	var prev := pts[0]
+	_path_buf[base + 4] = prev.x
+	_path_buf[base + 5] = prev.y
+	for k in arcs:
+		var p := pts[k + 1]
+		var b := base + 4 * (k + 1)
+		_path_buf[b + 2] = LinePathScript.bulge_through(prev, p, apexes[k])
+		_path_buf[b + 4] = p.x
+		_path_buf[b + 5] = p.y
+		prev = p
+	var shade: PackedVector2Array = light.path_shade_chords(PATH_SHADE)
+	_path_buf[base + 3] = float(shade.size() - 1)
+	_path_buf[base + 4 * PATH_INFO + 2] = 1.0 if light.closed else 0.0
+	_path_buf[base + 4 * PATH_INFO + 3] = _pack_chords(base + 4 * PATH_CHORDS, shade, pxf)
+	_pack_coarse(base + 4 * PATH_CHORDS, shade.size() - 1, base + 4 * PATH_COARSE)
+	_pack_chords(base + 4 * PATH_SHADOW, light.path_chords(n), pxf)
+	_pack_buf[o + 17] = float(arcs)
+	light.path_row_store(_path_buf.slice(base, base + PATH_W * 4), pxf, n, arcs)
+
+## Chords mid | half in screen px from `cuts`; returns their total length.
+func _pack_chords(at: int, cuts: PackedVector2Array, pxf: Transform2D) -> float:
+	var pts := pxf * cuts
+	var prev := pts[0]
+	var total := 0.0
+	for k in pts.size() - 1:
+		var p := pts[k + 1]
+		var b := at + 4 * k
+		_path_buf[b] = (prev.x + p.x) * 0.5
+		_path_buf[b + 1] = (prev.y + p.y) * 0.5
+		_path_buf[b + 2] = (p.x - prev.x) * 0.5
+		_path_buf[b + 3] = (p.y - prev.y) * 0.5
+		total += prev.distance_to(p)
+		prev = p
+	return total
+
+## The coarse shading chords at `at`: the `count` chords at `from` merged in pairs, each
+## pair one chord of their summed length through the length-weighted mean of their
+## midpoints along the sum of their half-vectors (an odd last chord copied). Read by the
+## shader past LIT_PATH_LOD_K bounding radii, only when count exceeds PATH_SHADE / 2.
+func _pack_coarse(from: int, count: int, at: int) -> void:
+	if count <= PATH_SHADE >> 1:
+		return
+	for k in count >> 1:
+		var a := from + 8 * k
+		var ax := _path_buf[a + 2]
+		var ay := _path_buf[a + 3]
+		var bx := _path_buf[a + 6]
+		var by := _path_buf[a + 7]
+		var la := 2.0 * sqrt(ax * ax + ay * ay)
+		var lb := 2.0 * sqrt(bx * bx + by * by)
+		var l := la + lb
+		var dx := ax + bx
+		var dy := ay + by
+		var dl := sqrt(dx * dx + dy * dy)
+		if dl < 1e-6:
+			dx = ax
+			dy = ay
+			dl = 0.5 * la
+		var s := 0.5 * l / maxf(dl, 1e-6)
+		var il := 1.0 / maxf(l, 1e-6)
+		var b := at + 4 * k
+		_path_buf[b] = (_path_buf[a] * la + _path_buf[a + 4] * lb) * il
+		_path_buf[b + 1] = (_path_buf[a + 1] * la + _path_buf[a + 5] * lb) * il
+		_path_buf[b + 2] = dx * s
+		_path_buf[b + 3] = dy * s
+	if count % 2 == 1:
+		var a := from + 4 * (count - 1)
+		var b := at + 4 * (count >> 1)
+		for j in 4:
+			_path_buf[b + j] = _path_buf[a + j]
+
+## Start a frame's path rows.
+func _path_begin() -> void:
+	_path_rows = 0
+	_path_changed = false
+	_path_ids.clear()
+	_path_buf.clear()
+	if _path_zero_row.size() != PATH_W * 4:
+		_path_zero_row.resize(PATH_W * 4)
+		_path_zero_row.fill(0.0)
+
+## Upload the path rows (PATH_W x rows RGBAF) when a row or the row order changed. The
+## texture keeps its high-water height and shrinks only after PATH_SHRINK_FRAMES frames
+## at half of it or less; the 1x1 dummy stands in while there is none.
+func _upload_path_buffer() -> void:
+	var rows := _path_alloc
+	if _path_rows > rows:
+		rows = _path_rows
+		_path_slack = 0
+	elif _path_rows * 2 <= rows:
+		_path_slack += 1
+		if _path_slack >= PATH_SHRINK_FRAMES:
+			rows = _path_rows
+			_path_slack = 0
+	else:
+		_path_slack = 0
+	var same := not _path_changed and rows == _path_alloc and _path_ids == _path_ids_last
+	_path_ids_last = _path_ids.duplicate()
+	_path_alloc = rows
+	if rows == 0:
+		_path_img = null
+		_path_tex = null
+	elif not same and _path_rows > 0:
+		_path_buf.resize(rows * PATH_W * 4)
+		var bytes := _path_buf.to_byte_array()
+		if _path_img == null or _path_img.get_height() != rows:
+			_path_img = Image.create_from_data(PATH_W, rows, false, Image.FORMAT_RGBAF, bytes)
+		else:
+			_path_img.set_data(PATH_W, rows, false, Image.FORMAT_RGBAF, bytes)
+		if _path_tex == null or _path_tex.get_size() != Vector2(PATH_W, rows):
+			_path_tex = ImageTexture.create_from_image(_path_img)
+		else:
+			_path_tex.update(_path_img)
+	var tex: Texture2D = _path_tex if _path_tex != null else _get_dummy()
+	if tex != _published_path_tex:
+		_published_path_tex = tex
+		RenderingServer.global_shader_parameter_set("lit_light_path", tex)
 
 ## Publish the cookie atlas global only when the atlas texture object changed.
 func _publish_cookie_atlas() -> void:

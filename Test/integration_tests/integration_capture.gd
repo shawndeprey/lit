@@ -5,6 +5,7 @@ extends Node2D
 ##   steps=N   min_step=X   (override shadow_steps / shadow_min_step on every receiver)
 ##   shadows=off   (disable shadows on every light, for an unshadowed baseline)
 ##   light=off   hardness=X   (zero every light's energy / set its shadow_hardness)
+##   measure=S   (after the warmup frames, time S seconds of frames and print INTEGRATION BENCH)
 
 const ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 
@@ -17,6 +18,7 @@ var _min_step := -1.0
 var _shadows_off := false
 var _light_off := false
 var _hardness := -1.0
+var _measure := 0.0
 
 
 func _ready() -> void:
@@ -43,6 +45,8 @@ func _ready() -> void:
 				_light_off = kv[1] == "off"
 			"hardness":
 				_hardness = float(kv[1])
+			"measure":
+				_measure = float(kv[1])
 	var win := get_window()
 	win.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
@@ -77,8 +81,26 @@ func _capture() -> void:
 			await mgr.precompiler.finished
 		while get_tree().root.get_node_or_null("LitPrecompileOverlay") != null:
 			await RenderingServer.frame_post_draw
+	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 	for i in _frames:
 		await RenderingServer.frame_post_draw
+	if _measure > 0.0:
+		await _bench()
 	get_viewport().get_texture().get_image().save_png(_out)
 	print("INTEGRATION CAPTURE scene=%s algo=%d saved=%s" % [_scene, _algo, _out])
 	get_tree().quit()
+
+func _bench() -> void:
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	var rid := get_viewport().get_viewport_rid()
+	var t0 := Time.get_ticks_usec()
+	var frames := 0
+	var gpu := 0.0
+	var cpu := 0.0
+	while float(Time.get_ticks_usec() - t0) < _measure * 1000000.0:
+		await RenderingServer.frame_post_draw
+		frames += 1
+		gpu += RenderingServer.viewport_get_measured_render_time_gpu(rid)
+		cpu += RenderingServer.viewport_get_measured_render_time_cpu(rid)
+	var secs := float(Time.get_ticks_usec() - t0) / 1000000.0
+	print("INTEGRATION BENCH scene=%s frames=%d avg_fps=%.2f render_gpu_ms=%.3f render_cpu_ms=%.3f" % [_scene, frames, frames / secs, gpu / frames, cpu / frames])

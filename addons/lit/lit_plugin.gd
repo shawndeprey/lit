@@ -677,6 +677,10 @@ func _ps_global_defs() -> Array:
 			"name": "lit_light_data",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
 		},
+		{
+			"name": "lit_light_path",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
 		{"name": "lit_light_count", "def": {"type": "int", "value": 0}},
 		{"name": "lit_viewport_size", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{"name": "lit_canvas_scale", "def": {"type": "float", "value": 1.0}},
@@ -742,6 +746,7 @@ func _rs_global_defs() -> Array:
 			"type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D,
 			"value": _placeholder_texture(),
 		},
+		{"name": "lit_light_path", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_light_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_viewport_size", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_canvas_scale", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
