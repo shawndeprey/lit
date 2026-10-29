@@ -46,14 +46,16 @@ vec3 lit_path_nearest(int row, int count, vec2 p) {
 		if (abs(bu) < 1e-3 || l2 < 1e-8) {
 			cq = a + ab * clamp(dot(p - a, ab) / max(l2, 1e-8), 0.0, 1.0);
 		} else {
-			float l = 0.5 * sqrt(l2);
-			vec2 nn = vec2(-ab.y, ab.x) / (2.0 * l);
-			float r = l * (1.0 + bu * bu) / (2.0 * abs(bu));
-			vec2 c = a + ab * 0.5 - nn * (l * (1.0 - bu * bu) / (2.0 * bu));
+			// The circle through a and nxt: its sagitta and radius ride on 1 / bu, the
+			// sector test and the projection on one inversesqrt of |v|^2 |ab|^2.
+			vec2 perp = vec2(-ab.y, ab.x);
+			float rb = 1.0 / bu;
+			float bu2 = bu * bu;
+			vec2 c = a + ab * 0.5 - perp * ((1.0 - bu2) * 0.25 * rb);
 			vec2 v = p - c;
-			vec2 vh = v / max(length(v), 1e-6);
-			if (dot(vh, nn * sign(bu)) >= (1.0 - bu * bu) / (1.0 + bu * bu)) {
-				cq = c + vh * r;
+			float s = inversesqrt(max(dot(v, v), 1e-12) * l2);
+			if (dot(v, perp) * sign(bu) * s * (1.0 + bu2) >= 1.0 - bu2) {
+				cq = c + v * ((1.0 + bu2) * 0.25 * abs(rb) * l2 * s);
 			} else {
 				cq = dot(p - a, p - a) < dot(p - nxt.xy, p - nxt.xy) ? a : nxt.xy;
 			}
@@ -121,17 +123,9 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		return vec3(0.0);
 	}
 
-	// A curved line light (flags bit 23) measures its body and its range from Q, the
-	// nearest point of its arc chain (path texture row t4.x, t4.y arcs), found here
-	// ahead of the shading state, and past the cookie (which keeps the node's position)
-	// Q replaces light_uv so the shadow block marches from it. light_uv itself never
-	// depends on it before then: a position fed by a fetch inside a branch stalls every
-	// light, curved or not.
+	// A curved line light's Q, the nearest point of its arc chain, found in the line block;
+	// the shadow block marches from it, the cookie keeps the node's position.
 	vec2 q_px = vec2(0.0);
-	if (is_line && (flags & 8388608) != 0) {
-		vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // path row | arc count | glow | half width
-		q_px = lit_path_nearest(int(round(t4.x)), int(round(t4.y)), frag_uv * lit_viewport_size).xy;
-	}
 	int path_row = -1;                       // a curved line light's path texture row
 	vec4 line_t4 = vec4(0.0);                // a line light's texel 4
 	vec3 line_tube = vec3(0.0);              // its tube: height px | half width px | 1 when its chain is open
@@ -176,9 +170,18 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			// beam's brightness. The light itself is integrated along the tube below. The
 			// cookie stays on the node.
 			line_t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
+			vec2 p = frag_uv * lit_viewport_size;
+			vec4 circle = vec4(0.0);                 // a curved line's path texel 0: center.xy | radius | shading chord count
 			if ((flags & 8388608) != 0) {
-				to_light_px = q_px - frag_uv * lit_viewport_size;
 				path_row = int(round(line_t4.x));
+				// Path texel 0's circle encloses every arc: a pixel farther from it than the
+				// range fails the range exit below without Q.
+				circle = texelFetch(lit_light_path, ivec2(0, path_row), 0);
+				if (length(p - circle.xy) - circle.z > range_px + 1.0) {
+					return vec3(0.0);
+				}
+				q_px = lit_path_nearest(path_row, int(round(line_t4.y)), p).xy;
+				to_light_px = q_px - p;
 			} else {
 				float u = clamp(-dot(to_light_px, line_t4.xy) / max(dot(line_t4.xy, line_t4.xy), 1e-6), -1.0, 1.0);
 				to_light_px += line_t4.xy * u;
@@ -192,13 +195,11 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			dist = surf;
 			energy *= mix(line_t4.z, 1.0, beam);
 			line_tube = vec3(height_px, half_w, 1.0);
-		}
-		if (dist > range_px) {
-			return vec3(0.0);                // beyond range
-		}
-		Ldir = normalize(vec3(to_light_px, height_px));
-		atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
-		if (is_line) {
+			if (dist > range_px) {
+				return vec3(0.0);                // beyond range
+			}
+			Ldir = normalize(vec3(to_light_px, height_px));
+			atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
 			// The tube as a line source: its mean cosine at the pixel is the sum of its
 			// chords' line integrals of max(N.u, 0) / |u|^2 (lit_line_chord) over the angle
 			// 2 atan(L / 2D) an endless straight tube subtends at the nearest point. Beside a
@@ -212,17 +213,24 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			// to the nearest point's where the tube's mean falls short of it (the body is lit
 			// from overhead, its caps as its sides), never lowered, so where two parts of the
 			// tube face each other their light still adds up.
-			vec2 p = frag_uv * lit_viewport_size;
 			vec3 acc_l = vec3(0.0);
 			float cosine = 0.0;
 			float len;
 			if (path_row >= 0) {
-				int count = int(round(texelFetch(lit_light_path, ivec2(0, path_row), 0).w));
-				len = texelFetch(lit_light_path, ivec2(1, path_row), 0).w;
-				line_tube.z = texelFetch(lit_light_path, ivec2(2, path_row), 0).w < 0.5 ? 1.0 : 0.0;
+				int count = int(round(circle.w));
+				vec4 info = texelFetch(lit_light_path, ivec2(LIT_PATH_INFO, path_row), 0); // z 1 when closed | w length px
+				len = info.w;
+				line_tube.z = info.z < 0.5 ? 1.0 : 0.0;
+				// LOD: the coarse chords (pairs merged) past LIT_PATH_LOD_K bounding radii.
+				int chord0 = LIT_PATH_CHORDS;
+				vec2 dc = p - circle.xy;
+				if (count > LIT_PATH_SHADE / 2 && dot(dc, dc) > LIT_PATH_LOD_K * LIT_PATH_LOD_K * circle.z * circle.z) {
+					chord0 = LIT_PATH_COARSE;
+					count = (count + 1) / 2;
+				}
 				for (int k = 0; k < count; k++) {
 					vec2 free = vec2(k == 0 ? line_tube.z : 0.0, k == count - 1 ? line_tube.z : 0.0);
-					cosine += lit_line_chord(texelFetch(lit_light_path, ivec2(LIT_PATH_CHORDS + k, path_row), 0), p, N, height_px, half_w, free, acc_l);
+					cosine += lit_line_chord(texelFetch(lit_light_path, ivec2(chord0 + k, path_row), 0), p, N, height_px, half_w, free, acc_l);
 				}
 			} else {
 				len = 2.0 * length(line_t4.xy);
@@ -240,16 +248,22 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			}
 			line_irr = atten * cosine;
 			atten = line_irr / max(dot(N, Ldir), 0.1);
-		}
+		} else {
+			if (dist > range_px) {
+				return vec3(0.0);                // beyond range
+			}
+			Ldir = normalize(vec3(to_light_px, height_px));
+			atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
 
-		// A spot is a point light masked to a cone (texel 4): aim.xy is the
-		// screen-space direction it points. The fragment is lit if it falls inside
-		// the cone, with a soft edge between the inner and outer angle.
-		if (is_spot) {
-			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // aim.xy | cos_outer | cos_inner
-			vec2 dir_to_frag = (dist > 0.0001) ? (-to_light_px / dist) : t4.xy;
-			float cone = smoothstep(t4.z, t4.w, dot(t4.xy, dir_to_frag));
-			atten *= cone;
+			// A spot is a point light masked to a cone (texel 4): aim.xy is the
+			// screen-space direction it points. The fragment is lit if it falls inside
+			// the cone, with a soft edge between the inner and outer angle.
+			if (is_spot) {
+				vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // aim.xy | cos_outer | cos_inner
+				vec2 dir_to_frag = (dist > 0.0001) ? (-to_light_px / dist) : t4.xy;
+				float cone = smoothstep(t4.z, t4.w, dot(t4.xy, dir_to_frag));
+				atten *= cone;
+			}
 		}
 	}
 
@@ -276,10 +290,6 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 		vec4 t5 = texelFetch(lit_light_data, ivec2(5, i), 0); // atlas UV rect: min.xy | size.xy
 		vec4 cookie = textureLod(lit_cookie_atlas, t5.xy + cl * t5.zw, 0.0);
 		light_color *= cookie.rgb * (cookie.a * inside);
-	}
-
-	if (is_line && (flags & 8388608) != 0) {
-		light_uv = q_px / lit_viewport_size;
 	}
 
 	float ndotl = max(dot(N, Ldir), 0.0);
@@ -387,12 +397,11 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 			// an area source toward the middle of the part of its segment within range of
 			// the fragment, the source its strata tile. Its own branch, so point and spot
 			// keep the branch below unchanged.
-			vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
 			vec2 target_uv = light_uv;
 			if ((flags & 8388608) != 0) {
-				// Curved: light_uv is Q, whose distance sets the cap; the shadow itself is
-				// the chords' weighted visibility (lit_shadow_path, lit_shadow_path_hard).
+				target_uv = q_px / lit_viewport_size;
 			} else {
+				vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
 				vec2 d = (light_uv - frag_uv) * lit_viewport_size;
 				target_uv = light_uv + t4.xy * clamp(-dot(d, t4.xy) / max(dot(t4.xy, t4.xy), 1e-6), -1.0, 1.0)
 						/ lit_viewport_size;
@@ -478,14 +487,12 @@ vec3 lit_shade(int i, bool positional, vec3 albedo, vec3 N, vec3 spec_shin, floa
 				bool stoch = algo == 2;
 				bool strata = stoch || is_line;
 				int n = max(int(round(t7.y)), 1);
-				if (is_line && path_row < 0) {
-					src += abs(line_seg.x * march_dir.y - line_seg.y * march_dir.x);
-					strata = stoch || dot(line_seg, line_seg) > px_to_sdf * px_to_sdf;
-					// Samples are per tube: a window that is part of the tube marches
-					// that part's share of them, so no pixel's strata are wider than the
-					// tube's middle gets, and none narrower.
-					n = clamp(int(ceil(float(n) * line_frac)), 1, n);
-				}
+				src += abs(line_seg.x * march_dir.y - line_seg.y * march_dir.x);
+				strata = stoch || dot(line_seg, line_seg) > px_to_sdf * px_to_sdf;
+				// Samples are per tube: a window that is part of the tube marches
+				// that part's share of them, so no pixel's strata are wider than the
+				// tube's middle gets, and none narrower.
+				n = clamp(int(ceil(float(n) * line_frac)), 1, n);
 				if (path_row >= 0) {
 					// Curved line: every chord stratum, weighted as the shading weights them.
 					s = lit_shadow_path(frag_sdf, path_row, n, N, line_tube, t_cap / max(march_len, 1e-4), t_cap < march_len,

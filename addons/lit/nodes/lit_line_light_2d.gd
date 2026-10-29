@@ -71,10 +71,18 @@ var _path_dirty := true
 # The chain is fitted under the node's basis at fit time (so rotation and uniform scale
 # never refit it); _fit_xf maps light-local space to that fit space.
 var _fit_xf := Transform2D()
+var _fit_inv := Transform2D()
 var _chain: LinePathScript.Chain
 var _fit_rect := Rect2()
 var _path_rect := Rect2()
+var _path_corners := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
 var _chords := {}
+# The packed path row the registry last built from this light, keyed by its inputs.
+var _row := PackedFloat32Array()
+var _row_pxf := Transform2D()
+var _row_n := -1
+var _row_arcs := 0
+var _row_dirty := true
 
 func _init() -> void:
 	child_entered_tree.connect(_on_child_entered)
@@ -112,6 +120,10 @@ func path_chain() -> LinePathScript.Chain:
 func path_fit_xf() -> Transform2D:
 	return _fit_xf
 
+## The chain's fit space to light-local space.
+func path_fit_inv() -> Transform2D:
+	return _fit_inv
+
 ## Bounds of the chain in fit space.
 func path_fit_rect() -> Rect2:
 	return _fit_rect
@@ -122,15 +134,17 @@ func path_rect() -> Rect2:
 
 ## Bounds of the chain under `xf` applied to light-local space.
 func path_rect_in(xf: Transform2D) -> Rect2:
-	return _rect_in(_path_rect, xf)
+	var c := xf * _path_corners
+	return Rect2(c[0], Vector2.ZERO).expand(c[1]).expand(c[2]).expand(c[3])
 
 ## Half extents of the chain around the node in the node's rotated frame, in world px
 ## under `xf` (the FIT_RANGE cookie footprint).
 func path_extent(xf: Transform2D) -> Vector2:
 	var rot := -xf.get_rotation()
+	var c := Transform2D(xf.x, xf.y, Vector2.ZERO) * _path_corners
 	var e := Vector2.ZERO
-	for c in _corners(_path_rect):
-		e = e.max(xf.basis_xform(c).rotated(rot).abs())
+	for p in c:
+		e = e.max(p.rotated(rot).abs())
 	return e
 
 ## `n` + 1 fit-space points cutting the chain into `n` chords of equal arc length.
@@ -145,6 +159,24 @@ func path_shade_chords(n: int) -> PackedVector2Array:
 	if not _chords.has(-n):
 		_chords[-n] = LinePathScript.shade_chords(_chain, n)
 	return _chords[-n]
+
+## True while the packed row memo was built from `pxf` and `n` on the current chain.
+func path_row_same(pxf: Transform2D, n: int) -> bool:
+	return not _row_dirty and n == _row_n and pxf == _row_pxf
+
+## The packed row memo (light_packer.gd _pack_path) and the arc count it packed.
+func path_row() -> PackedFloat32Array:
+	return _row
+
+func path_row_arcs() -> int:
+	return _row_arcs
+
+func path_row_store(row: PackedFloat32Array, pxf: Transform2D, n: int, arcs: int) -> void:
+	_row = row
+	_row_pxf = pxf
+	_row_n = n
+	_row_arcs = arcs
+	_row_dirty = false
 
 func _on_child_entered(_node: Node) -> void:
 	_find_path(null)
@@ -196,17 +228,21 @@ func _refresh_path() -> void:
 		_path_dirty = true
 	var basis := global_transform
 	basis.origin = Vector2.ZERO
-	if not _path_dirty and not _similar(basis * _fit_xf.affine_inverse()):
+	if not _path_dirty and not _similar(basis * _fit_inv):
 		_path_dirty = true
 	if not _path_dirty:
 		return
 	_path_dirty = false
 	_fit_xf = basis if absf(basis.determinant()) > 1e-8 else Transform2D()
+	_fit_inv = _fit_xf.affine_inverse()
 	_chain = LinePathScript.fit(curve, closed, _fit_xf * _path_xf)
 	_chords.clear()
+	_row_dirty = true
 	_fit_rect = LinePathScript.bounds(_chain)
-	_path_rect = _rect_in(_fit_rect, _fit_xf.affine_inverse())
+	_path_rect = _rect_in(_fit_rect, _fit_inv)
+	_path_corners = PackedVector2Array(_corners(_path_rect))
 	update_configuration_warnings()
+	LitLightRegistry.light_state_changed(self)
 
 static func _similar(q: Transform2D) -> bool:
 	var xx := q.x.length_squared()

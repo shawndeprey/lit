@@ -309,7 +309,6 @@ script = ExtResource("7_zoom")
 
 [node name="HUD" type="CanvasLayer" parent="." unique_id=1362947105]
 layer = 128
-visible = false
 
 [node name="Stats" type="Label" parent="HUD" unique_id=908214671]
 offset_left = 16.0

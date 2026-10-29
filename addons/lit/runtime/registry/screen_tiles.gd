@@ -93,14 +93,14 @@ func build_and_publish(ctx: FrameContext) -> void:
 					n_minus = Vector2.from_angle(phi - half_angle + PI * 0.5)
 					cone_valid = true
 
-		if kind == 3:
+		if kind >= 3:
 			# A line light's footprint is its segment grown by range (a capsule): per tile
 			# row its span is the union of the two end discs (the circle formula below) and
 			# the straight part, the segment clipped to the band grown by r|n.y| and widened
 			# by r|n.x| (n the segment's unit normal): exact, like the circle. Its own
 			# loop, so the point loop below stays as lean as it was.
 			var line: LitLineLight2D = visible[i]
-			if line.is_curved():
+			if kind == 4:
 				# A curved line fills the tiles under its chain's screen bounds grown by range.
 				var sr := line.path_rect_in(canvas_xform * xf).grow(light_range)
 				var cy0 := clampi(int(floor(sr.position.y / float(TILE_SIZE))), 0, tiles_y - 1)

@@ -184,7 +184,7 @@ func _ready() -> void:
 			"shadows":
 				_opt_shadows = kv[1] != "off"
 			"kinds":
-				_opt_kinds = ["point", "spot", "point", "dir"] if kv[1] == "mix" else [kv[1]]
+				_opt_kinds = ["point", "spot", "point", "dir"] if kv[1] == "mix" else Array(kv[1].split(","))
 			"lights":
 				_opt_light_count = int(kv[1])
 			"shadow_algo":
