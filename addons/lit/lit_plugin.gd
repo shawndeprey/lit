@@ -27,6 +27,7 @@ const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_regi
 const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
 const LitReceiverInspectorScript := preload("res://addons/lit/editor/lit_receiver_inspector.gd")
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
+const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
 const LitPortToolScript := preload("res://addons/lit/editor/lit_port_tool.gd")
 const LitUpdateToolScript := preload("res://addons/lit/editor/lit_update_tool.gd")
@@ -87,7 +88,7 @@ func _enter_tree() -> void:
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
 	_registry = LitLightRegistryScript.new()
 	# Silent background warm so first-session editor tier swaps never pay a compile.
-	_warm_pending = LitShaderLibrary.all_variant_flags()
+	_warm_pending = LitShaderPrecompilerScript.default_variant_flags()
 	set_process(true)
 
 func _exit_tree() -> void:
@@ -240,8 +241,8 @@ func _start_converted_sprite(node: Node) -> void:
 #
 # "Generate Lit Precompile Config" scans the project's saved scenes for actual Lit
 # usage and writes res://lit_precompile.cfg; while that file exists, the startup
-# precompiler builds exactly that list instead of the full variant matrix. Deleting
-# the file restores the full build. The scan itself lives in
+# precompiler builds exactly that list instead of the default build. Deleting the
+# file restores the default build. The scan itself lives in
 # editor/lit_precompile_config.gd.
 
 func _generate_precompile_config() -> void:
@@ -677,6 +678,10 @@ func _ps_global_defs() -> Array:
 			"name": "lit_light_data",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
 		},
+		{
+			"name": "lit_light_path",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
 		{"name": "lit_light_count", "def": {"type": "int", "value": 0}},
 		{"name": "lit_viewport_size", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{"name": "lit_canvas_scale", "def": {"type": "float", "value": 1.0}},
@@ -742,6 +747,7 @@ func _rs_global_defs() -> Array:
 			"type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D,
 			"value": _placeholder_texture(),
 		},
+		{"name": "lit_light_path", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_light_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_viewport_size", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_canvas_scale", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
@@ -876,20 +882,20 @@ func _project_setting_defs() -> Array:
 		},
 		{
 			"name": "lit/startup/precompile_max_workers",
-			"default": 4,
+			"default": 8,
 			"description": "The most hidden worker processes an asynchronous or API shader precompile may start.\n\n"
-					+ "Lit starts one worker for every 6 hardware threads of the CPU the game is running on, "
-					+ "because each worker uses up to 6 threads. This setting only caps that number, it never raises it: "
-					+ "a 24-thread CPU has room for 4 workers, so it runs 4 whether this is set to 4 or to 16, "
-					+ "and an 8-thread CPU always runs 1.\n\n"
-					+ "Raise it only if builds on CPUs with more than 24 threads need to finish sooner. "
-					+ "Every worker is a whole hidden copy of the game, so more of them cost memory and frame rate "
-					+ "while the build runs, and each extra worker adds less speed than the one before.",
+					+ "Lit starts one worker for every 3 hardware threads of the CPU the game is running on. "
+					+ "This setting only caps that number, it never raises it: "
+					+ "a 24-thread CPU has room for 8 workers, so it runs 8 whether this is set to 8 or to 16, "
+					+ "and an 8-thread CPU always runs 2.\n\n"
+					+ "The GPU driver builds one shader at a time per process, so the build finishes about as many "
+					+ "times faster as there are workers. Lower it if the hidden copies of the game cost too much "
+					+ "memory or frame rate while the build runs.",
 			"info": {
 				"name": "lit/startup/precompile_max_workers",
 				"type": TYPE_INT,
 				"hint": PROPERTY_HINT_RANGE,
-				"hint_string": "1,16,1,suffix:workers x 6 threads each",
+				"hint_string": "1,16,1,suffix:workers x 3 threads each",
 			},
 		},
 		{

@@ -51,9 +51,13 @@ func _matrix() -> void:
 	var ok_inverse := true
 	var ok_src := true
 	var ok_flags_of := true
+	var ok_line := true
+	var ok_cone := true
 	for fl in all:
 		var f: String = Lib.variant_name(fl) + ".gdshader"
 		ok_prune = ok_prune and Lib._prune(fl) == fl
+		ok_line = ok_line and (fl & Lib.F_LINE == 0 or fl & Lib.F_STOCH != 0)
+		ok_cone = ok_cone and fl & (Lib.F_CONE | Lib.F_STOCH) != Lib.F_CONE | Lib.F_STOCH
 		ok_unique = ok_unique and not names.has(f)
 		names[f] = true
 		ok_inverse = ok_inverse and Lib.flags_from_path(SHADER_DIR + f) == fl \
@@ -66,6 +70,9 @@ func _matrix() -> void:
 		ok_src = ok_src and p.defines == want and p.includes.size() == 1 and p.shader_type != "" and p.render_mode != ""
 		ok_flags_of = ok_flags_of and Lib.flags_of(Lib.get_receiver(fl)) == fl
 	check_true(case_name, "prune is a fixed point on every member", ok_prune)
+	check(case_name, "the matrix holds 80 variants", 80, all.size())
+	check_true(case_name, "every line member carries stoch", ok_line)
+	check_true(case_name, "no member carries cone with stoch", ok_cone)
 	check_true(case_name, "variant names are unique", ok_unique)
 	check_true(case_name, "name <-> flags inverse for every variant", ok_inverse)
 	check_true(case_name, "generated source: defines from the axes, one include", ok_src)
@@ -118,6 +125,9 @@ func _interaction_rules() -> void:
 	var case_name := "variant_rules"
 	var rules := [
 		[Lib.F_YSORT, Lib.F_SELF_EXCL, 0, "ysort implies self-exclusion"],
+		[Lib.F_LINE, Lib.F_LINE | Lib.F_STOCH, Lib.F_CONE, "line implies stoch"],
+		[Lib.F_CONE | Lib.F_STOCH, Lib.F_STOCH, Lib.F_CONE, "stoch folds cone"],
+		[Lib.F_CONE | Lib.F_LINE, Lib.F_STOCH | Lib.F_LINE, Lib.F_CONE, "line folds cone into stoch"],
 		[Lib.F_MASKS | Lib.F_GX, Lib.F_MASKS, Lib.F_GX, "masks folds gx"],
 		[Lib.F_RX | Lib.F_GX, Lib.F_RX, Lib.F_GX, "rx folds gx"],
 		[Lib.F_MASKS | Lib.F_RX | Lib.F_GX, Lib.F_MASKS | Lib.F_RX, Lib.F_GX, "masks+rx folds gx"],
@@ -208,20 +218,58 @@ func _render_matrix() -> void:
 func _precompiler() -> void:
 	var case_name := "precompile"
 	var work: Array = Pre.work_list()
-	var has_entries := true
+	var entries_folded := true
 	for tier in Lib.ENTRY_PATHS:
-		has_entries = has_entries and work.has(Lib.ENTRY_PATHS[tier])
+		entries_folded = entries_folded and work.has(Lib.ENTRY_PATHS[tier]) != work.has(tier)
 	var has_variants := true
-	for fl in Lib.all_variant_flags():
-		has_variants = has_variants and work.has(fl)
+	var twins := 0
+	for fl in Pre.default_variant_flags():
+		var twin: int = (fl & ~Lib.F_RAMP) | Lib.F_SELF_EXCL
+		if fl & Lib.F_RAMP != 0 and work.has(twin):
+			twins += 1
+			has_variants = has_variants and not work.has(fl)
+		else:
+			has_variants = has_variants and work.has(fl)
 	var cfg_present := FileAccess.file_exists(Pre.CONFIG_PATH)
 	if cfg_present:
 		check_true(case_name, "a lit_precompile.cfg is present: work list comes from it", work.size() > 0)
 	else:
-		check_true(case_name, "full work list carries the entry files", has_entries)
+		check_true(case_name, "each entry file or its base variant is listed, never both", entries_folded)
 		check_true(case_name, "full work list carries the world-SDF encode shader", work.has("res://addons/lit/shaders/sdf/lit_world_sdf_encode.gdshader"))
-		check_true(case_name, "full work list carries every receiver variant", has_variants)
+		check_true(case_name, "default work list carries every default variant once, ramp twins folded", has_variants)
+		check(case_name, "20 ramp variants fold into their full-tier twins", 20, twins)
+	var pair := [Lib.F_SELF_EXCL | Lib.F_CONE, Lib.F_CONE | Lib.F_RAMP, Lib.ENTRY_PATHS[0], 0]
+	check(case_name, "dedupe keeps one of each twin pair", 2, Pre.dedupe(pair).size())
+	check(case_name, "dedupe keeps a ramp variant whose twin is absent", 1, Pre.dedupe([Lib.F_CONE | Lib.F_RAMP]).size())
 	check(case_name, "static shaders: three entries + encoder", 4, Pre.static_shaders().size())
+	var ysort_was = ProjectSettings.get_setting("lit/render/y_sorting", false)
+	set_setting("lit/render/y_sorting", false)
+	var dflt: Array[int] = Pre.default_variant_flags()
+	var on_ysort := 0
+	for fl in dflt:
+		if fl & Lib.F_YSORT != 0:
+			on_ysort += 1
+	check(case_name, "default build with y_sorting off: 60 variants (fast 40 + full 20)", 60, dflt.size())
+	check(case_name, "and none on the y-sort tier", 0, on_ysort)
+	set_setting("lit/render/y_sorting", true)
+	check(case_name, "default build with y_sorting on: the full 80", 80, Pre.default_variant_flags().size())
+	var ys_cfg := ConfigFile.new()
+	ys_cfg.set_value("lit", "shaders", PackedStringArray([]))
+	var sixty := PackedStringArray()
+	for fl in dflt:
+		sixty.append(Lib.variant_name(fl))
+	ys_cfg.set_value("lit", "variants", sixty)
+	check(case_name, "a config naming the 60 non-ysort members parses to 80 with y_sorting on", 80, Array(Pre.parse_config(ys_cfg)).size())
+	set_setting("lit/render/y_sorting", false)
+	check(case_name, "and to 60 with it off", 60, Array(Pre.parse_config(ys_cfg)).size())
+	ys_cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_stoch_line_ysort"]))
+	check(case_name, "a config naming only a y-sort variant parses to an empty list with y_sorting off (not null)", [], Pre.parse_config(ys_cfg))
+	set_setting("lit/render/y_sorting", true)
+	check(case_name, "and keeps it with y_sorting on", [Lib.F_SELF_EXCL | Lib.F_YSORT | Lib.F_STOCH | Lib.F_LINE], Pre.parse_config(ys_cfg))
+	ys_cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_fast_ramp"]))
+	check(case_name, "one fast variant with y_sorting on yields itself then its y-sort counterpart only",
+			[Lib.F_CONE | Lib.F_RAMP, Lib.F_SELF_EXCL | Lib.F_YSORT | Lib.F_CONE], Pre.parse_config(ys_cfg))
+	set_setting("lit/render/y_sorting", ysort_was)
 	var h1: String = Pre.bundle_hash(work)
 	check_true(case_name, "bundle hash is a 32-char md5", h1.length() == 32)
 	check(case_name, "bundle hash is deterministic", h1, Pre.bundle_hash(work))
@@ -265,6 +313,9 @@ func _precompiler() -> void:
 	check(case_name, "done_key of a variant", "f_%d" % Lib.F_CONE, Pre.done_key(Lib.F_CONE))
 	check_true(case_name, "done_key of a path is stable", Pre.done_key("a") == Pre.done_key("a") and Pre.done_key("a") != Pre.done_key("b"))
 	if not cfg_present:
+		# Parsed with y_sorting off: on, every kept variant also brings its y-sort counterpart.
+		var ys_saved = ProjectSettings.get_setting("lit/render/y_sorting", false)
+		set_setting("lit/render/y_sorting", false)
 		var cfg := ConfigFile.new()
 		# (Unknown shader paths and variant names are skipped with a Lit warning; that path
 		# is left unexercised so a green run stays warning-free.)
@@ -277,6 +328,19 @@ func _precompiler() -> void:
 					parsed is Array and parsed.size() == 3 and parsed[0] == Lib.ENTRY_PATHS[0]
 					and parsed[1] == 0 and parsed[2] == (Lib.F_CONE | Lib.F_SELF_EXCL))
 			check_true(case_name, "config file removed again", not FileAccess.file_exists(Pre.CONFIG_PATH))
+		var stale := ConfigFile.new()
+		stale.set_value("lit", "shaders", PackedStringArray([]))
+		stale.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_stoch", "lit_receiver_stoch_line_fast"]))
+		# (The stale name warns; the rejection is the check.)
+		var kept = Pre.parse_config(stale)
+		check_true(case_name, "a stale variant name (lit_receiver_cone_stoch) is rejected and the current one kept",
+				kept is Array and kept == [Lib.F_STOCH | Lib.F_LINE])
+		stale.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_stoch"]))
+		check_true(case_name, "a config naming only stale variants falls back to the full build (null)", Pre.parse_config(stale) == null)
+		if stale.save(Pre.CONFIG_PATH) == OK:
+			check_true(case_name, "config_work_list applies that fallback from the file", Pre.config_work_list() == null)
+			DirAccess.remove_absolute(Pre.CONFIG_PATH)
+		set_setting("lit/render/y_sorting", ys_saved)
 		check_true(case_name, "no config file: config_work_list is null", Pre.config_work_list() == null)
 	var used = Pre.used_post_shaders()
 	var all_post := used is Array
@@ -291,7 +355,54 @@ func _precompiler() -> void:
 	if not cfg_present:
 		# The editor's "Generate Lit Precompile Config" is runtime-safe: scan the saved
 		# scenes, write the config, parse it back, remove it again.
+		# A saved fixture with a shadowless and a Cone Traced line light joins the scan.
+		var fixture := "res://Test/test_suite/shader_library/scan_fixture.tscn"
+		var fx_root := Node2D.new()
+		var dark := LitLineLight2D.new()
+		dark.name = "Shadowless"
+		dark.shadow_enabled = false
+		fx_root.add_child(dark)
+		dark.owner = fx_root
+		var cone := LitLineLight2D.new()
+		cone.name = "ConeTraced"
+		cone.shadow_enabled = true
+		cone.shadow_algorithm = Lib.ShadowAlgorithm.CONE_TRACED
+		fx_root.add_child(cone)
+		cone.owner = fx_root
+		# Subclassed nodes scan as their base class: a line light and a receiver.
+		var sub_line := "res://Test/test_suite/shader_library/scan_fixture_line.gd"
+		var sub_rx := "res://Test/test_suite/shader_library/scan_fixture_receiver.gd"
+		var fa := FileAccess.open(sub_line, FileAccess.WRITE)
+		fa.store_string("extends LitLineLight2D\n")
+		fa.close()
+		fa = FileAccess.open(sub_rx, FileAccess.WRITE)
+		fa.store_string("extends LitSprite2D\n")
+		fa.close()
+		var line_script := load(sub_line) as Script
+		var rx_script := load(sub_rx) as Script
+		check(case_name, "a LitLineLight2D subclass scans as its base", "res://addons/lit/nodes/lit_line_light_2d.gd", Config.lit_base_path(line_script))
+		check(case_name, "a LitSprite2D subclass scans as its base", "res://addons/lit/nodes/lit_sprite_2d.gd", Config.lit_base_path(rx_script))
+		check(case_name, "a non-Lit script scans as nothing", "", Config.lit_base_path(get_script()))
+		var sub := line_script.new() as LitLineLight2D
+		sub.name = "Subclassed"
+		sub.shadow_enabled = true
+		fx_root.add_child(sub)
+		sub.owner = fx_root
+		var sub_r := rx_script.new() as LitSprite2D
+		sub_r.name = "SubclassedReceiver"
+		sub_r.texture = tex_sized(Vector2(8, 8))
+		fx_root.add_child(sub_r)
+		sub_r.owner = fx_root
+		var packed := PackedScene.new()
+		packed.pack(fx_root)
+		check(case_name, "line-light scan fixture saved", OK, ResourceSaver.save(packed, fixture))
+		fx_root.free()
 		var gen: Dictionary = Config.generate()
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+		for p in [sub_line, sub_rx, sub_line + ".uid", sub_rx + ".uid"]:
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+		check_true(case_name, "scan fixture removed again", not FileAccess.file_exists(fixture)
+				and not FileAccess.file_exists(sub_line) and not FileAccess.file_exists(sub_rx))
 		check_true(case_name, "Generate Lit Precompile Config writes lit_precompile.cfg",
 				bool(gen.get("saved", false)) and FileAccess.file_exists(Pre.CONFIG_PATH))
 		check_true(case_name, "generated config lists the fast receiver variant and the entry shaders",
@@ -300,6 +411,22 @@ func _precompiler() -> void:
 		for vname in Array(gen.get("variants", [])):
 			ramp_listed = ramp_listed or String(vname).ends_with("_ramp")
 		check_true(case_name, "generated config lists the ramp variants (a saved test scene uses shadow_ramp)", ramp_listed)
+		var members := {}
+		for fl in Lib.all_variant_flags():
+			members[fl] = true
+		var line_stoch := false
+		var cone_stoch := false
+		var all_members := true
+		for vname in Array(gen.get("variants", [])):
+			var s := String(vname)
+			line_stoch = line_stoch or (s.contains("_line") and s.contains("_stoch"))
+			cone_stoch = cone_stoch or (s.contains("_cone") and s.contains("_stoch"))
+			all_members = all_members and members.has(Lib.flags_from_variant_name(s))
+		check_true(case_name, "scanned line lights (shadowless and Cone Traced) list a stoch+line variant", line_stoch)
+		check_true(case_name, "stoch+line is listed on the fast and full receiver tiers",
+				Array(gen.get("variants", [])).has("lit_receiver_stoch_line_fast") and Array(gen.get("variants", [])).has("lit_receiver_stoch_line"))
+		check_true(case_name, "no generated name carries cone with stoch", not cone_stoch)
+		check_true(case_name, "every generated name round-trips to a matrix member", all_members)
 		var listed = Pre.config_work_list()
 		check_true(case_name, "generated config parses back into a non-empty work list", listed is Array and listed.size() > 0)
 		DirAccess.remove_absolute(Pre.CONFIG_PATH)

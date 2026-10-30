@@ -93,7 +93,7 @@ void fragment() {
 		// leading directional rows for every fragment. Kept separate from the tile loop
 		// so the row index stays wave-uniform.
 		for (int i = 0; i < lit_directional_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS);
+			lit += lit_shade(i LIT_LINE_DIR_ARGS, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS);
 		}
 
 		// Positional lights: look up this fragment's tile and shade only the lights
@@ -107,12 +107,12 @@ void fragment() {
 			int flat_idx = offset + j;
 			ivec2 icoord = ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH);
 			int li = int(round(texelFetch(lit_tile_indices, icoord, 0).x));
-			lit += lit_shade(li, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS);
+			lit += lit_shade(li LIT_LINE_POS_ARGS, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS);
 		}
 	} else {
 		// Fallback: no tile grid published, so iterate every light.
 		for (int i = 0; i < lit_light_count; i++) {
-			lit += lit_shade(i, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS);
+			lit += lit_shade(i LIT_LINE_POS_ARGS, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS);
 		}
 	}
 

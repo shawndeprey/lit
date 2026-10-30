@@ -55,6 +55,12 @@ lit_light_data={
 "type": "sampler2D",
 "value": ""
 }
+lit_light_path={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
 lit_light_count={
 "type": "int",
 "value": 0

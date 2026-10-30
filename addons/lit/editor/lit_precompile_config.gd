@@ -3,11 +3,12 @@ extends RefCounted
 
 ## The scan behind "Generate Lit Precompile Config" (Project > Tools): finds every
 ## actual Lit use in the project's saved scenes and writes res://lit_precompile.cfg,
-## which the precompiler then runs verbatim instead of the full variant matrix
-## (delete the file to restore full builds). Scenes are read through SceneState
+## which the precompiler then runs verbatim instead of its default build (delete the
+## file to restore that). Scenes are read through SceneState
 ## (never instanced), so no scene code runs. Lit usage created purely from code is
 ## invisible here; dev builds warn when a variant compiles outside the configured
-## list, which is the cue to regenerate or hand-extend the file.
+## list, which is the cue to regenerate or hand-extend the file. The y-sort tier
+## follows lit/render/y_sorting when the list is built, whatever the file says.
 
 const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const WorldSdfScript := preload("res://addons/lit/runtime/registry/world_sdf.gd")
@@ -15,6 +16,7 @@ const WorldSdfScript := preload("res://addons/lit/runtime/registry/world_sdf.gd"
 const LIGHT_SCRIPTS := {
 	"res://addons/lit/nodes/lit_point_light_2d.gd": true,
 	"res://addons/lit/nodes/lit_spot_light_2d.gd": true,
+	"res://addons/lit/nodes/lit_line_light_2d.gd": true,
 	"res://addons/lit/nodes/lit_directional_light_2d.gd": true,
 }
 const RECEIVER_SCRIPTS := {
@@ -25,7 +27,7 @@ const RECEIVER_SCRIPTS := {
 
 ## Every variant axis this scan knows how to detect. The test suite checks it against
 ## LitShaderLibrary.AXES, so a new axis fails there until the scan below handles it.
-const SCANNED_AXES := LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT 		| LitShaderLibrary.F_CONE | LitShaderLibrary.F_STOCH | LitShaderLibrary.F_GX 		| LitShaderLibrary.F_MASKS | LitShaderLibrary.F_RX | LitShaderLibrary.F_RAMP
+const SCANNED_AXES := LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT 		| LitShaderLibrary.F_CONE | LitShaderLibrary.F_STOCH | LitShaderLibrary.F_GX 		| LitShaderLibrary.F_MASKS | LitShaderLibrary.F_RX | LitShaderLibrary.F_RAMP 		| LitShaderLibrary.F_LINE
 
 
 ## Scan, write the settings, and return a summary:
@@ -39,6 +41,7 @@ static func generate() -> Dictionary:
 	var rx := false
 	var cone := false
 	var stoch := false
+	var lines := false
 	var masks := false
 	var ramp := false
 	for scene_path in scenes:
@@ -54,16 +57,19 @@ static func generate() -> Dictionary:
 			var script_path := ""
 			var script = props.get("script")
 			if script is Script:
-				script_path = (script as Script).resource_path
+				script_path = lit_base_path(script as Script)
 			if RECEIVER_SCRIPTS.has(script_path):
 				receivers = true
 			# Properties are checked by name, not just by script: overrides on instanced
 			# sub-scene nodes carry the property without the script.
+			# A line light lives in the stoch+line variant whatever its algorithm.
+			var line := script_path.ends_with("lit_line_light_2d.gd")
+			lines = lines or line
 			if props.has("shadow_algorithm"):
 				var algo := int(props["shadow_algorithm"])
-				cone = cone or algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED
-				stoch = stoch or algo == LitShaderLibrary.ShadowAlgorithm.STOCHASTIC
-			elif LIGHT_SCRIPTS.has(script_path):
+				cone = cone or (algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED and not line)
+				stoch = stoch or (algo == LitShaderLibrary.ShadowAlgorithm.STOCHASTIC and not line)
+			elif LIGHT_SCRIPTS.has(script_path) and not line:
 				cone = true  # absent export = the CONE_TRACED default
 			if int(props.get("shadow_mask", 1)) != 1 \
 					or bool(props.get("exclude_scene_occluders", false)) \
@@ -105,6 +111,8 @@ static func generate() -> Dictionary:
 		axes.append(LitShaderLibrary.F_CONE)
 	if stoch:
 		axes.append(LitShaderLibrary.F_STOCH)
+	if lines:
+		axes.append(LitShaderLibrary.F_LINE)
 	if masks:
 		axes.append(LitShaderLibrary.F_MASKS)
 		axes.append(LitShaderLibrary.F_GX)
@@ -156,3 +164,13 @@ static func generate() -> Dictionary:
 		"full": LitShaderLibrary.all_variant_flags().size(),
 		"saved": err == OK,
 	}
+
+## The Lit node script a script derives from (itself included), else "": a subclass
+## scans as its base class.
+static func lit_base_path(script: Script) -> String:
+	var s := script
+	while s != null:
+		if LIGHT_SCRIPTS.has(s.resource_path) or RECEIVER_SCRIPTS.has(s.resource_path):
+			return s.resource_path
+		s = s.get_base_script()
+	return ""

@@ -14,7 +14,8 @@ const RANGED_TEXELS_PER_LIGHT := 10
 
 # Which shadow algorithms the shaders must support this frame, from the last refresh()
 # in this process (bit 0 = Cone Traced, bit 1 = Stochastic, among enabled shadow-casting
-# lights). Internal working state; nodes read activity_flags below instead.
+# lights; bit 2 = an enabled line light exists). Internal working state; nodes read
+# activity_flags below instead.
 static var active_algos: int = 0
 
 # The sole node-facing activity surface: LitShaderLibrary F_* bits derived from the
@@ -231,12 +232,13 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# Collect enabled, visible lights from the cache (view-culled), plus the full
 	# cached list for the tree-wide scans below.
 	_ctx.visible = _light_cache.cull_visible(tree, _ctx.world_rect)
+	_ctx.kinds = _light_cache.visible_kinds()
 	var lights: Array = _light_cache.all()
 
 	var count: int = _ctx.visible.size()
 
 	if sdf_host != null:
-		_world_sdf.update(sdf_host, viewport, _ctx.visible, _ctx.canvas_xform,
+		_world_sdf.update(sdf_host, viewport, _ctx.visible, _ctx.kinds, _ctx.canvas_xform,
 				_ctx.world_rect, receiver_root if receiver_root != null else tree.root)
 
 	# Publish which non-raymarched shadow algorithms are in play and re-point receiver
@@ -244,6 +246,7 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# shader). Computed over every enabled light in the tree, not just the view-culled
 	# set, so camera movement past a light's AABB never thrashes receiver shaders. Only
 	# shadow-casting lights count: an algorithm on a shadowless light is never marched.
+	# A line light counts by presence: its code lives in the stoch+line variant alone.
 	if _tileset_edited:
 		_tileset_edited = false
 		_note_tileset_masks(receiver_root if receiver_root != null else tree.root)
@@ -303,8 +306,10 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 
 	# The one activity publish point: everything the working state decided this
 	# refresh lands in the node-facing flags together.
-	var new_flags := (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
-			| (LitShaderLibrary.F_STOCH if active_algos & 2 != 0 else 0) \
+	var stoch: bool = active_algos & 6 != 0
+	var new_flags := (LitShaderLibrary.F_CONE if active_algos & 1 != 0 and not stoch else 0) \
+			| (LitShaderLibrary.F_STOCH if stoch else 0) \
+			| (LitShaderLibrary.F_LINE if active_algos & 4 != 0 else 0) \
 			| (LitShaderLibrary.F_MASKS if masks_active else 0) \
 			| (LitShaderLibrary.F_GX if gx_active else 0) \
 			| (LitShaderLibrary.F_RAMP if ramp_active else 0)
@@ -330,14 +335,20 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# this ordering keeps row indices consistent between the data texture and the buckets.
 	var directionals: Array = []
 	var positional: Array = []
-	for l in _ctx.visible:
-		if l is LitDirectionalLight2D:
-			directionals.append(l)
+	var pos_kinds := PackedByteArray()
+	for i in _ctx.visible.size():
+		if _ctx.kinds[i] == 1:
+			directionals.append(_ctx.visible[i])
 		else:
-			positional.append(l)
+			positional.append(_ctx.visible[i])
+			pos_kinds.append(_ctx.kinds[i])
 	_ctx.visible = directionals + positional
 	_ctx.positional = positional
 	_ctx.dir_count = directionals.size()
+	var dir_kinds := PackedByteArray()
+	dir_kinds.resize(_ctx.dir_count)
+	dir_kinds.fill(1)
+	_ctx.kinds = dir_kinds + pos_kinds
 
 	# Cookie atlas + pack + light-data globals, then the screen-tile grid the shader
 	# culls against; row order in the data texture matches ctx.visible for both.
@@ -386,7 +397,7 @@ func _on_tree_changed(node: Node) -> void:
 				if ts.get_occlusion_layer_light_mask(l) != 1:
 					_occluder_tiles.note_mask_seen()
 					break
-	elif node is LitPointLight2D or node is LitSpotLight2D or node is LitDirectionalLight2D:
+	elif node is LitLight2D:
 		# Scope roots follow the light set.
 		_occluder_tiles.mark_dirty()
 

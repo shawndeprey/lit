@@ -45,6 +45,10 @@ const PAIR_MODES := ["z_pairs", "z_grid", "layer_pairs", "layer_grid"]
 ## 0 adds none. Run kinds at the same count to compare them.
 @export_range(0, 1000) var receiver_count: int = 0
 @export var receivers: ReceiverKind = ReceiverKind.SKULL
+## Every spawned light becomes a LitLineLight2D (seeded length, colour and a slow
+## spin) in place of the point / spot / directional mix: the line light's cost against
+## the standing benchmark. Off by default so standing benchmarks stay comparable.
+@export var line_lights: bool = false
 
 # Deterministic shadow-source parameters for the cone/stochastic runs. The angle is a
 # full angular diameter (source_angle convention), so this marches the same cone as
@@ -55,7 +59,16 @@ const SHADOW_SAMPLES := 8
 
 const LIGHT_COUNT := 128
 # Overrides for cost attribution, passed after "--" on the CLI:
-#   shadows=off   kinds=point|spot|dir|cookie|mix   lights=N   warmup=N   measure=N
+#   shadows=off   kinds=point|spot|dir|cookie|line|mix   lights=N   warmup=N   measure=N
+#   lines=on      every light a LitLineLight2D (seeded length 60..420 px, slow spin),
+#     whatever kinds= says; kinds=point is its point-light baseline
+#   linelen=N     every line light exactly N px long (0 = point-sized capsules: the
+#     line code path at the point light's footprint)
+#   linecurve=on  every line light bent into an S-curve (a Path2D child) spanning its
+#     length: the curved path (arcs for the look, chords for the shadows)
+#   props=off     no prop occluders: the Test scene's own casters only (sparse scene)
+#   linewall=N    an occluder wall N px behind every line light, riding with it (a
+#     light bar on a wall: the gate's hardest case, every open-side pixel sees the wall)
 #   shadow_algo=raymarch|cone|stochastic|mixed   sdf=25|50|100 (SDF scale probe)
 #     mixed cycles the three algorithms across the spawned lights (launch only)
 #   shadowlen=on   random (seeded) shadow_length fraction per light
@@ -118,6 +131,11 @@ var _opt_receiver_count := 0
 # precompile=api: start LitManager.precompile_shaders() when measuring begins; the
 # measure window then ends when the precompile finishes (measure=S is the timeout).
 var _opt_precompile := ""
+var _opt_lines := false
+var _opt_linelen := -1.0
+var _opt_linecurve := false
+var _opt_props := true
+var _opt_linewall := 0.0
 var _pre_elapsed := -1.0
 var _last_usec := 0
 
@@ -157,6 +175,7 @@ func _ready() -> void:
 	_opt_skeleton = RECEIVER_KIND_NAMES[skeleton]
 	_opt_receivers = RECEIVER_KIND_NAMES[receivers]
 	_opt_receiver_count = receiver_count
+	_opt_lines = line_lights
 	for arg in OS.get_cmdline_user_args():
 		var kv := arg.split("=")
 		if kv.size() != 2:
@@ -165,7 +184,7 @@ func _ready() -> void:
 			"shadows":
 				_opt_shadows = kv[1] != "off"
 			"kinds":
-				_opt_kinds = ["point", "spot", "point", "dir"] if kv[1] == "mix" else [kv[1]]
+				_opt_kinds = ["point", "spot", "point", "dir"] if kv[1] == "mix" else Array(kv[1].split(","))
 			"lights":
 				_opt_light_count = int(kv[1])
 			"shadow_algo":
@@ -217,6 +236,18 @@ func _ready() -> void:
 				_opt_skeleton = kv[1]
 			"precompile":
 				_opt_precompile = kv[1]
+			"lines":
+				_opt_lines = kv[1] == "on"
+			"linelen":
+				_opt_linelen = float(kv[1])
+			"linecurve":
+				_opt_linecurve = kv[1] == "on"
+			"props":
+				_opt_props = kv[1] != "off"
+			"linewall":
+				_opt_linewall = float(kv[1])
+	if _opt_lines:
+		_opt_kinds = ["line"]
 	# A startup takeover (lit/startup/precompile_shaders) is already running by now:
 	# report how long the boot spent in it.
 	var boot_pre: Node = get_node("/root/LitManager").precompiler
@@ -302,7 +333,8 @@ func _setup() -> void:
 			_opt_receiver_count = LIGHT_COUNT
 		_opt_light_count = _opt_receiver_count
 	_rng.seed = RNG_SEED
-	_spawn_props()
+	if _opt_props:
+		_spawn_props()
 	if _opt_receiver_count > 0 and not (_spawn_pair_grid() if paired else _spawn_receivers()):
 		get_tree().quit(1)
 		return
@@ -734,6 +766,32 @@ func _spawn_light(kind: String, col: Color) -> void:
 		"dir":
 			n = LitDirectionalLight2D.new()
 			n.height = _rng.randf_range(10, 22)
+		"line":
+			n = LitLineLight2D.new()
+			n.range = _rng.randf_range(220, 380)
+			n.height = _rng.randf_range(12, 26)
+			n.length = _rng.randf_range(60, 420)
+			n.width = _rng.randf_range(0, 24)
+			n.glow = _rng.randf_range(0.2, 1.0)
+			if _opt_linelen >= 0.0:
+				n.length = _opt_linelen
+			if _opt_linecurve:
+				var path := Path2D.new()
+				var curve := Curve2D.new()
+				var h: float = n.length * 0.5
+				curve.add_point(Vector2(-h, 0), Vector2.ZERO, Vector2(h * 0.6, 0))
+				curve.add_point(Vector2(0, h * 0.4), Vector2(-h * 0.25, -h * 0.25), Vector2(h * 0.25, h * 0.25))
+				curve.add_point(Vector2(h, 0), Vector2(-h * 0.6, 0), Vector2.ZERO)
+				path.curve = curve
+				n.add_child(path)
+			if _opt_linewall > 0.0:
+				var wall := LightOccluder2D.new()
+				var poly := OccluderPolygon2D.new()
+				var hw: float = n.length * 0.5 + 20.0
+				poly.polygon = PackedVector2Array([Vector2(-hw, 0), Vector2(hw, 0), Vector2(hw, 12), Vector2(-hw, 12)])
+				wall.occluder = poly
+				wall.position = Vector2(0, _opt_linewall)
+				n.add_child(wall)
 		_:
 			n = LitPointLight2D.new()
 			n.range = _rng.randf_range(220, 380)
@@ -768,6 +826,8 @@ func _update_lights() -> void:
 			n.position = p
 			if d.kind == "spot":
 				n.rotation = (d.target - p).angle()
+			elif d.kind == "line":
+				n.rotation = d.phase + _clock * d.dir_speed
 		if d.pulse_speed > 0.0:
 			n.energy = d.base_energy * (0.72 + 0.28 * sin(_clock * d.pulse_speed + d.phase))
 		if d.hue >= 0.0:
@@ -929,8 +989,16 @@ func _report() -> void:
 	print("LITBENCH layers=%s" % _opt_layers)
 	print("LITBENCH post=%s" % (_opt_post if _opt_post != "" else "off"))
 	print("LITBENCH skeleton=%s" % _opt_skeleton)
+	print("LITBENCH kinds=%s lines=%s linelen=%s" % [",".join(_opt_kinds), "on" if _opt_lines else "off",
+			("%.0f" % _opt_linelen) if _opt_linelen >= 0.0 else "random"])
 	if _opt_rangecost != "":
 		print("LITBENCH rangecost=%s" % _opt_rangecost)
+	if not _opt_props:
+		print("LITBENCH props=off")
+	if _opt_linewall > 0.0:
+		print("LITBENCH linewall=%.0f" % _opt_linewall)
+	if _opt_linecurve:
+		print("LITBENCH linecurve=on")
 	if _opt_plain:
 		print("LITBENCH plain=on")
 	if _opt_receiver_count > 0:

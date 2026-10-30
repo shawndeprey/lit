@@ -15,19 +15,191 @@
 //    matching rx_mask are ignored, tested per sample against the occluder identity
 //    tiles (the _rx / _mask_rx wrappers).
 //  - LIT_SHADOW_CONE / LIT_SHADOW_STOCH: the Cone Traced and Stochastic per-light
-//    shadow algorithms (the _cone / _stoch / _cone_stoch wrappers). Base wrappers
-//    support only the Raymarched algorithm and compile byte-identical to the
-//    pre-algorithm-selection shader.
+//    shadow algorithms (the _cone / _stoch wrappers; a _stoch wrapper runs a Cone
+//    Traced light as the stochastic gate alone). Base wrappers support only the
+//    Raymarched algorithm and compile byte-identical to the pre-algorithm-selection
+//    shader.
+//  - LIT_LINE: line lights (the _stoch_line wrappers): their shading, marches and the
+//    path texture exist only here, so no other wrapper carries line code. Always with
+//    LIT_SHADOW_STOCH, whose strata march the tube.
 //  - LIT_OCC_RAMP: shadow ramps on a fast-tier receiver (the _ramp wrappers): the
 //    ramp weight rides the exclusion march, so it is LIT_SELF_EXCLUSION here.
 #if defined(LIT_OCC_RAMP) && !defined(LIT_SELF_EXCLUSION)
 #define LIT_SELF_EXCLUSION
+#endif
+#if defined(LIT_LINE) && !defined(LIT_SHADOW_STOCH)
+#define LIT_SHADOW_STOCH
 #endif
 
 // Transport: global uniforms plus the per-frame light-data texture, packed by the
 // manager. Read via texelFetch (integer coords, no filtering), so the texture's
 // filter mode doesn't matter here.
 global uniform sampler2D lit_light_data;
+#ifdef LIT_LINE
+global uniform sampler2D lit_light_path;                // curved line lights: one row each (see _pack_path)
+
+// A path row's texel columns: 0 the bounding circle (xyz, enclosing every arc) and the
+// shading chord count (w), 1 on the arc points (point.xy | bulge), LIT_PATH_INFO's z 1
+// when the chain is closed and w its length in screen px, then the shading chords from
+// LIT_PATH_CHORDS (up to LIT_PATH_SHADE), the shadow chords from LIT_PATH_SHADOW and
+// the coarse shading chords from LIT_PATH_COARSE (the shading chords merged in pairs,
+// read past LIT_PATH_LOD_K bounding radii), each chord mid.xy | half.xy in screen px.
+const int LIT_PATH_INFO = 33;
+const int LIT_PATH_CHORDS = 34;
+const int LIT_PATH_SHADE = 32;
+const int LIT_PATH_SHADOW = 66;
+const int LIT_PATH_COARSE = 98;
+const float LIT_PATH_LOD_K = 4.25;
+
+// A line light's chord `ch` (mid.xy | half.xy, screen px) seen from pixel `p` with
+// normal N: the chord's share of the tube's mean cosine at `p`, the line integral of
+// max(N.u, 0) / |u|^2 over the part of the chord above the horizon in closed form,
+// and that share times the chord's mean light direction added to `acc_l`. The tube
+// is 2 w wide and lights from its surface: past one of the chain's free ends (`free`)
+// the chord slides toward the pixel by w (onto it under the cap), elsewhere it is
+// shrunk toward the pixel across its width, so the caps are round and the body reads
+// from overhead.
+// A chord seen from beyond four half-lengths with its whole length above the horizon
+// takes 3-point Gauss-Legendre quadrature of the same integrand (relative error under
+// 1.6e-4, direction under 0.1 mrad); every other chord takes the closed form.
+float lit_line_chord(vec4 ch, vec2 p, vec3 N, float h, float w, vec2 free, inout vec3 acc_l) {
+	float q = dot(ch.zw, ch.zw);
+	if (q < 1e-8) {
+		return 0.0;
+	}
+	float ihl = inversesqrt(q);
+	float hl = q * ihl;
+	float L = 2.0 * hl;
+	vec2 t = ch.zw * ihl;
+	vec2 a = ch.xy - ch.zw;
+	float lf = dot(p - a, t);
+	vec2 v = a + t * lf - p;
+	if ((lf <= 0.0 && free.x > 0.5) || (lf >= L && free.y > 0.5)) {
+		vec2 pq = p - (lf <= 0.0 ? a : a + t * L);
+		vec2 shift = pq * min(w * inversesqrt(max(dot(pq, pq), 1e-12)), 1.0);
+		float along = dot(shift, t);
+		lf -= along;
+		v += shift - t * along;
+	} else {
+		v *= max(1.0 - w * inversesqrt(max(dot(v, v), 1e-12)), 0.0);
+	}
+	float D2 = max(dot(v, v) + h * h, 1e-6);
+	float alpha = dot(N, vec3(v, h));
+	float beta = dot(N.xy, t);
+	float lo = -lf;
+	float hi = L - lf;
+	float e0 = alpha + beta * lo;
+	float e1 = alpha + beta * hi;
+	if (max(e0, e1) <= 0.0) {
+		return 0.0;
+	}
+	// Far chord wholly above the horizon: 3-point Gauss-Legendre on the same integrand.
+	float lm = hl - lf;
+	float Dm2 = D2 + lm * lm;
+	if (min(e0, e1) >= 0.0 && Dm2 > 16.0 * hl * hl) {
+		float gh = 0.7745966692 * hl;
+		float am = 0.5 * (e0 + e1);
+		float gb = beta * gh;
+		float i = inversesqrt(Dm2);
+		float k = 1.6 * am * i * i;
+		float c = k;
+		float s1 = k * i;
+		float s2 = s1 * lm;
+		i = inversesqrt(Dm2 + gh * (gh - 2.0 * lm));
+		k = (am - gb) * i * i;
+		c += k;
+		s1 += k * i;
+		s2 += k * i * (lm - gh);
+		i = inversesqrt(Dm2 + gh * (gh + 2.0 * lm));
+		k = (am + gb) * i * i;
+		c += k;
+		s1 += k * i;
+		s2 += k * i * (lm + gh);
+		c *= 0.7172191382 * gh;
+		vec3 lv = vec3(v, h) * s1 + vec3(t, 0.0) * s2;
+		acc_l += c * lv * inversesqrt(max(dot(lv, lv), 1e-12));
+		return c;
+	}
+	if (min(e0, e1) < 0.0) {
+		float root = -alpha / beta;
+		lo = e0 < 0.0 ? root : lo;
+		hi = e1 < 0.0 ? root : hi;
+	}
+	float rD = inversesqrt(D2);
+	float c = alpha * atan(D2 * rD * (hi - lo), D2 + hi * lo) * rD + 0.5 * beta * log((D2 + hi * hi) / (D2 + lo * lo));
+	float qh = D2 + hi * hi;
+	float irh = inversesqrt(qh);
+	float eh = hi * irh;
+	float th = sign(hi) * log((abs(hi) + qh * irh) * rD);
+	float cpo = alpha * eh * rD * rD - beta * irh;
+	float ct = beta * (th - eh) - alpha * irh;
+	float ql = D2 + lo * lo;
+	float irl = inversesqrt(ql);
+	float el = lo * irl;
+	float tl = sign(lo) * log((abs(lo) + ql * irl) * rD);
+	cpo += beta * irl - alpha * el * rD * rD;
+	ct += alpha * irl - beta * (tl - el);
+	vec3 lv = vec3(cpo * v + ct * t, cpo * h);
+	acc_l += c * lv * inversesqrt(max(dot(lv, lv), 1e-12));
+	return c;
+}
+// The chord's share alone (lit_line_chord without its direction tail), for the shadow
+// weights.
+float lit_line_weight(vec4 ch, vec2 p, vec3 N, float h, float w, vec2 free) {
+	float q = dot(ch.zw, ch.zw);
+	if (q < 1e-8) {
+		return 0.0;
+	}
+	float ihl = inversesqrt(q);
+	float hl = q * ihl;
+	float L = 2.0 * hl;
+	vec2 t = ch.zw * ihl;
+	vec2 a = ch.xy - ch.zw;
+	float lf = dot(p - a, t);
+	vec2 v = a + t * lf - p;
+	if ((lf <= 0.0 && free.x > 0.5) || (lf >= L && free.y > 0.5)) {
+		vec2 pq = p - (lf <= 0.0 ? a : a + t * L);
+		vec2 shift = pq * min(w * inversesqrt(max(dot(pq, pq), 1e-12)), 1.0);
+		float along = dot(shift, t);
+		lf -= along;
+		v += shift - t * along;
+	} else {
+		v *= max(1.0 - w * inversesqrt(max(dot(v, v), 1e-12)), 0.0);
+	}
+	float D2 = max(dot(v, v) + h * h, 1e-6);
+	float alpha = dot(N, vec3(v, h));
+	float beta = dot(N.xy, t);
+	float lo = -lf;
+	float hi = L - lf;
+	float e0 = alpha + beta * lo;
+	float e1 = alpha + beta * hi;
+	if (max(e0, e1) <= 0.0) {
+		return 0.0;
+	}
+	float lm = hl - lf;
+	float Dm2 = D2 + lm * lm;
+	if (min(e0, e1) >= 0.0 && Dm2 > 16.0 * hl * hl) {
+		float gh = 0.7745966692 * hl;
+		float am = 0.5 * (e0 + e1);
+		float gb = beta * gh;
+		float i = inversesqrt(Dm2);
+		float c = 1.6 * am * i * i;
+		i = inversesqrt(Dm2 + gh * (gh - 2.0 * lm));
+		c += (am - gb) * i * i;
+		i = inversesqrt(Dm2 + gh * (gh + 2.0 * lm));
+		c += (am + gb) * i * i;
+		c *= 0.7172191382 * gh;
+		return c;
+	}
+	if (min(e0, e1) < 0.0) {
+		float root = -alpha / beta;
+		lo = e0 < 0.0 ? root : lo;
+		hi = e1 < 0.0 ? root : hi;
+	}
+	float rD = inversesqrt(D2);
+	return alpha * atan(D2 * rD * (hi - lo), D2 + hi * lo) * rD + 0.5 * beta * log((D2 + hi * hi) / (D2 + lo * lo));
+}
+#endif
 global uniform int       lit_light_count;
 global uniform int       lit_directional_count;         // directionals occupy rows [0, this)
 global uniform vec2      lit_viewport_size;             // pixels
@@ -264,6 +436,24 @@ uniform float directional_horizontal_scale = 32.0;
 #define LIT_MK_PARAMS
 #define LIT_MK_ARGS
 #define LIT_MK_ON false
+#endif
+
+// Line light context (the _line variants): lit_shade's `positional` is a call-site
+// constant (the directional sweep passes false, so its inlined copy folds the line
+// blocks away), and the strata march takes the window's half-vector and the tube
+// radius. The macros erase both from every other variant.
+#ifdef LIT_LINE
+#define LIT_LINE_PARAMS , bool positional
+#define LIT_LINE_DIR_ARGS , false
+#define LIT_LINE_POS_ARGS , true
+#define LIT_SEG_PARAMS , vec2 seg, float src_r
+#define LIT_SEG_ARGS , line_seg, src_r
+#else
+#define LIT_LINE_PARAMS
+#define LIT_LINE_DIR_ARGS
+#define LIT_LINE_POS_ARGS
+#define LIT_SEG_PARAMS
+#define LIT_SEG_ARGS
 #endif
 
 // Fragment position in canvas space, for the self-shadow bounds test. Canvas space

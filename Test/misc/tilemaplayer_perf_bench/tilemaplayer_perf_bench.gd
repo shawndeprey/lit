@@ -25,7 +25,10 @@ class_name TileMapLayerPerfBench extends Node2D
 ##   potmode=plain pots built from plain Sprite2Ds sharing the scene's receiver
 ##                 materials (no LitSprite2D script) - drive-cost attribution
 ##   dummies=N     spawn N nodes with an empty _process - callback-overhead control
+##   lines=on      rebuild every torch light as a LitLineLight2D with the same
+##                 properties plus a seeded length (24..96 px) and rotation
 
+const Migrations := preload("res://addons/lit/editor/lit_update_tool/migrations/migration_registry.gd")
 const TORCH_SCENE := preload("res://Test/misc/tilemaplayer_perf_bench/props/crypt_torch/crypt_torch.tscn")
 const POT_SCENE := preload("res://Test/misc/tilemaplayer_perf_bench/props/pot/pot.tscn")
 const POT_PLAIN_SCENE := preload("res://Test/misc/tilemaplayer_perf_bench/props/pot/pot_plain.tscn")
@@ -121,8 +124,10 @@ var _opt_range := 0.0
 var _opt_solid := false
 var _opt_potmode := "lit"
 var _opt_dummies := 0
+var _opt_lines := false
 
 var _rng := RandomNumberGenerator.new()
+var _line_rng := RandomNumberGenerator.new()
 var _w := 0
 var _h := 0
 var _cells := PackedByteArray()
@@ -178,6 +183,7 @@ func _ready() -> void:
 			"solid": _opt_solid = kv[1] == "on"
 			"potmode": _opt_potmode = kv[1]
 			"dummies": _opt_dummies = maxi(int(kv[1]), 0)
+			"lines": _opt_lines = kv[1] == "on"
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 
@@ -209,6 +215,7 @@ func _setup() -> void:
 
 	seed(_opt_seed)
 	_rng.seed = _opt_seed
+	_line_rng.seed = _opt_seed ^ 0x11E
 	var t0 := Time.get_ticks_msec()
 	_generate()
 	_add_background()
@@ -551,6 +558,8 @@ func _place_props_and_torches() -> void:
 			W_LEFT: world += Vector2(9, 0)
 		torch.position = world
 		var light: Node2D = torch.get_node("PointLight2D")
+		if _opt_lines:
+			light = _to_line_light(light)
 		if _opt_lights >= 0 and _torch_count >= _opt_lights:
 			light.enabled = false
 		else:
@@ -562,6 +571,26 @@ func _place_props_and_torches() -> void:
 		_shadow_algo_name = ["raymarch", "cone", "stochastic"][light.shadow_algorithm]
 		lights_parent.add_child(torch)
 		_torch_count += 1
+
+
+## Replace a torch's point light with a line light carrying every stored property of
+## the point light (cookie included), under the same name so the torch script finds it.
+func _to_line_light(point: Node2D) -> LitLineLight2D:
+	var line := LitLineLight2D.new()
+	for p in Migrations.BASELINE_SCHEMA[&"LitPointLight2D"]["props"]:
+		line.set(p, point.get(p))
+	line.transform = point.transform
+	line.length = _line_rng.randf_range(24.0, 96.0)
+	line.rotation = _line_rng.randf_range(0.0, TAU)
+	var parent := point.get_parent()
+	var index := point.get_index()
+	var light_name := point.name
+	parent.remove_child(point)
+	point.queue_free()
+	line.name = light_name
+	parent.add_child(line)
+	parent.move_child(line, index)
+	return line
 
 
 # --- camera route: walk the MST room graph depth-first, backtracking included --------
@@ -735,6 +764,7 @@ func _report() -> void:
 	print("LITBENCH camera=%s zoom=%.2f speed=%.0f route_px=%.0f" \
 			% ["on" if _opt_camera else "off", _opt_zoom, _opt_speed, _route_len])
 	print("LITBENCH shadow_algo=%s" % _shadow_algo_name)
+	print("LITBENCH lines=%s" % ("on" if _opt_lines else "off"))
 	print("LITBENCH shadows=%s range=%s" % ["on" if _opt_shadows else "off",
 			("%.0f" % _opt_range) if _opt_range > 0.0 else "template"])
 	print("LITBENCH frames=%d" % n)

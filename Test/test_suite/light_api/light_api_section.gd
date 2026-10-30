@@ -24,6 +24,7 @@ const CORE_COUNTS := {"Light2D": 32, "PointLight2D": 6, "DirectionalLight2D": 2}
 const PAIRS := [
 	["PointLight2D", "LitPointLight2D"],
 	["PointLight2D", "LitSpotLight2D"],
+	["PointLight2D", "LitLineLight2D"],
 	["DirectionalLight2D", "LitDirectionalLight2D"],
 ]
 # setter, getter, Lit property, probe value (must differ from the default).
@@ -79,6 +80,8 @@ func _new_light(lit_name: String) -> LitLight2D:
 			return LitPointLight2D.new()
 		"LitSpotLight2D":
 			return LitSpotLight2D.new()
+		"LitLineLight2D":
+			return LitLineLight2D.new()
 	return LitDirectionalLight2D.new()
 
 

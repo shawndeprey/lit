@@ -78,8 +78,8 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## noon ones (0 = none at all); animate it alongside the node's rotation for day/night
 ## cycles. 1 = full length (the default).
 @export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0
-## Shadow marches per fragment across the source (STOCHASTIC): more is smoother and
-## slower. Clamped by lit/quality/shadow_samples_max.
+## Shadow marches per fragment across the source (STOCHASTIC, and a line light's
+## CONE_TRACED): more is smoother and slower. Clamped by lit/quality/shadow_samples_max.
 @export_range(1, 32) var shadow_samples: int = 8
 ## STOCHASTIC dither inside each stratum. Samples are fractional sub-cone coverages,
 ## so any setting is smooth (no binary noise); the default is just enough dither to
