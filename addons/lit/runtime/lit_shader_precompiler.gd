@@ -30,8 +30,8 @@ const BUILD_BUDGET_MS := 8.0
 const SILENT_PER_FRAME := 4
 const QUAD_POOL := 16
 const SETTING_MAX_WORKERS := "lit/startup/precompile_max_workers"
-const DEFAULT_MAX_WORKERS := 4
-const THREADS_PER_WORKER := 6
+const DEFAULT_MAX_WORKERS := 8
+const THREADS_PER_WORKER := 3
 const HEARTBEAT_STALE_SEC := 5.0
 const WORKER_BOOT_SEC := 15.0
 const FOLLOW_POLL_MSEC := 250
@@ -71,18 +71,38 @@ func _init() -> void:
 
 
 ## Work items: int = receiver variant flags (compiled from generated source); String =
-## a static shader path warmed verbatim. The authored entry files and the world-SDF
-## encoder hash to their own cache entries (their source text differs from the
-## generated variants), so skipping them here would leave unwarmed PSOs for the first
-## frames of async/API runs.
+## a static shader path warmed verbatim. Twins are folded: a fast ramp variant is the
+## same program as its full-tier sibling (lit_header promotes LIT_OCC_RAMP to
+## LIT_SELF_EXCLUSION), and an entry file is its tier's base variant, so one of each
+## pair bakes and the other is a cache hit in every process that loads it.
 static func work_list() -> Array:
 	var configured: Variant = config_work_list()
 	if configured != null:
-		return configured
+		return dedupe(configured)
 	var out: Array = []
 	out.append_array(static_shaders())
 	out.append_array(used_post_shaders())
 	out.append_array(default_variant_flags())
+	return dedupe(out)
+
+## The list without its twins: a ramp variant whose full-tier sibling is listed, and
+## an entry file whose base variant is listed, are dropped.
+static func dedupe(work: Array) -> Array:
+	var flags := {}
+	for item in work:
+		if item is int:
+			flags[item] = true
+	var out: Array = []
+	for item in work:
+		if item is int:
+			if item & LitShaderLibrary.F_RAMP != 0 \
+					and flags.has((item & ~LitShaderLibrary.F_RAMP) | LitShaderLibrary.F_SELF_EXCL):
+				continue
+		else:
+			var tier: Variant = LitShaderLibrary.ENTRY_PATHS.find_key(item)
+			if tier != null and flags.has(tier):
+				continue
+		out.append(item)
 	return out
 
 ## The variants a build without a config covers (the editor warm too): every matrix
@@ -288,10 +308,10 @@ static func item_label(item: Variant) -> String:
 
 
 ## How many worker processes bake a list of this size: one per THREADS_PER_WORKER
-## hardware threads (a shader's backend compile runs six engine variants in parallel),
-## up to the lit/startup/precompile_max_workers setting. Each is a whole engine
-## instance, and measured scaling is well short of linear (about 1.5x for two, 2x for
-## four), so the default cap stays low.
+## hardware threads, up to the lit/startup/precompile_max_workers setting. The GPU
+## driver builds one pipeline at a time per process and that is nearly all of a cold
+## shader's cost, so the farm scales with processes: on a 24-thread CPU the same list
+## took 95 s with 4 workers, 75 s with 6 and 55 s with 8.
 static func worker_count(work_size: int) -> int:
 	var cap := clampi(int(ProjectSettings.get_setting(SETTING_MAX_WORKERS, DEFAULT_MAX_WORKERS)), 1, 16)
 	return clampi(mini(OS.get_processor_count() / THREADS_PER_WORKER, work_size), 1, cap)

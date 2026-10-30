@@ -882,20 +882,20 @@ func _project_setting_defs() -> Array:
 		},
 		{
 			"name": "lit/startup/precompile_max_workers",
-			"default": 4,
+			"default": 8,
 			"description": "The most hidden worker processes an asynchronous or API shader precompile may start.\n\n"
-					+ "Lit starts one worker for every 6 hardware threads of the CPU the game is running on, "
-					+ "because each worker uses up to 6 threads. This setting only caps that number, it never raises it: "
-					+ "a 24-thread CPU has room for 4 workers, so it runs 4 whether this is set to 4 or to 16, "
-					+ "and an 8-thread CPU always runs 1.\n\n"
-					+ "Raise it only if builds on CPUs with more than 24 threads need to finish sooner. "
-					+ "Every worker is a whole hidden copy of the game, so more of them cost memory and frame rate "
-					+ "while the build runs, and each extra worker adds less speed than the one before.",
+					+ "Lit starts one worker for every 3 hardware threads of the CPU the game is running on. "
+					+ "This setting only caps that number, it never raises it: "
+					+ "a 24-thread CPU has room for 8 workers, so it runs 8 whether this is set to 8 or to 16, "
+					+ "and an 8-thread CPU always runs 2.\n\n"
+					+ "The GPU driver builds one shader at a time per process, so the build finishes about as many "
+					+ "times faster as there are workers. Lower it if the hidden copies of the game cost too much "
+					+ "memory or frame rate while the build runs.",
 			"info": {
 				"name": "lit/startup/precompile_max_workers",
 				"type": TYPE_INT,
 				"hint": PROPERTY_HINT_RANGE,
-				"hint_string": "1,16,1,suffix:workers x 6 threads each",
+				"hint_string": "1,16,1,suffix:workers x 3 threads each",
 			},
 		},
 		{

@@ -218,19 +218,29 @@ func _render_matrix() -> void:
 func _precompiler() -> void:
 	var case_name := "precompile"
 	var work: Array = Pre.work_list()
-	var has_entries := true
+	var entries_folded := true
 	for tier in Lib.ENTRY_PATHS:
-		has_entries = has_entries and work.has(Lib.ENTRY_PATHS[tier])
+		entries_folded = entries_folded and work.has(Lib.ENTRY_PATHS[tier]) != work.has(tier)
 	var has_variants := true
+	var twins := 0
 	for fl in Pre.default_variant_flags():
-		has_variants = has_variants and work.has(fl)
+		var twin: int = (fl & ~Lib.F_RAMP) | Lib.F_SELF_EXCL
+		if fl & Lib.F_RAMP != 0 and work.has(twin):
+			twins += 1
+			has_variants = has_variants and not work.has(fl)
+		else:
+			has_variants = has_variants and work.has(fl)
 	var cfg_present := FileAccess.file_exists(Pre.CONFIG_PATH)
 	if cfg_present:
 		check_true(case_name, "a lit_precompile.cfg is present: work list comes from it", work.size() > 0)
 	else:
-		check_true(case_name, "full work list carries the entry files", has_entries)
+		check_true(case_name, "each entry file or its base variant is listed, never both", entries_folded)
 		check_true(case_name, "full work list carries the world-SDF encode shader", work.has("res://addons/lit/shaders/sdf/lit_world_sdf_encode.gdshader"))
-		check_true(case_name, "default work list carries every default variant", has_variants)
+		check_true(case_name, "default work list carries every default variant once, ramp twins folded", has_variants)
+		check(case_name, "20 ramp variants fold into their full-tier twins", 20, twins)
+	var pair := [Lib.F_SELF_EXCL | Lib.F_CONE, Lib.F_CONE | Lib.F_RAMP, Lib.ENTRY_PATHS[0], 0]
+	check(case_name, "dedupe keeps one of each twin pair", 2, Pre.dedupe(pair).size())
+	check(case_name, "dedupe keeps a ramp variant whose twin is absent", 1, Pre.dedupe([Lib.F_CONE | Lib.F_RAMP]).size())
 	check(case_name, "static shaders: three entries + encoder", 4, Pre.static_shaders().size())
 	var ysort_was = ProjectSettings.get_setting("lit/render/y_sorting", false)
 	set_setting("lit/render/y_sorting", false)

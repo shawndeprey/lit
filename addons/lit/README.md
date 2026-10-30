@@ -175,11 +175,11 @@ first session is as clean as every later one.
 **Asynchronous** (`lit/startup/precompile_async`). The game starts immediately and
 plays normally while hidden worker processes build the shaders into the on-disk
 caches; a small floating progress box shows the countdown. One worker starts for every
-6 hardware threads of the player's CPU, up to `lit/startup/precompile_max_workers`
-(4 by default, 1 to 16). Each worker is a whole hidden copy of the game using up to
-6 threads, so raise the cap only if builds on many-core machines really need to
-finish sooner: it costs memory and frame rate while the build runs, and the speedup
-flattens (four workers build about twice as fast as one).
+3 hardware threads of the player's CPU, up to `lit/startup/precompile_max_workers`
+(8 by default, 1 to 16). The graphics driver builds one shader at a time per process,
+so the build finishes about as many times faster as there are workers. Each worker is
+a whole hidden copy of the game, so lower the cap if they cost too much memory or
+frame rate while the build runs.
 The game's own frames never wait on that build. A graphics driver only picks its
 cache up when a process starts, so the build pays off from the next launch on: in
 this first session, shaders your scenes use still compile on the spot the first time

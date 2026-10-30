@@ -29,11 +29,8 @@ float lit_rect_segment_exit(vec2 a, vec2 ab, vec4 rect, float pad) {
 float lit_self_dist2(vec2 p_canvas) {
 	float best = 1e20;
 	// self_shadow only opts out of the receiver's own rects, never the global ones.
-	int sc = self_shadow ? 0 : self_rect_count;
-	for (int i = 0; i < 4; i++) {
-		if (i >= sc) {
-			break;
-		}
+	int sc = min(self_shadow ? 0 : self_rect_count, 4);
+	for (int i = 0; i < sc; i++) {
 		vec2 dv = max(max(self_rects[i].xy - p_canvas, vec2(0.0)), p_canvas - self_rects[i].zw);
 		best = min(best, dot(dv, dv));
 	}
@@ -58,11 +55,8 @@ float lit_self_dist2(vec2 p_canvas) {
 float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 	vec2 inv = 1.0 / ab;
 	float t_end = 0.0;
-	int sc = self_shadow ? 0 : self_rect_count;
-	for (int i = 0; i < 4; i++) {
-		if (i >= sc) {
-			break;
-		}
+	int sc = min(self_shadow ? 0 : self_rect_count, 4);
+	for (int i = 0; i < sc; i++) {
 		vec2 t0 = (self_rects[i].xy - pad - a) * inv;
 		vec2 t1 = (self_rects[i].zw + pad - a) * inv;
 		vec2 tn = min(t0, t1);
@@ -94,12 +88,9 @@ float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 // True when the sample's nearest outline can belong to one of the light's exempt
 // occluders (texels 12-15 of its row; texel 10.x is the count).
 bool lit_mk_exempt(int row, vec2 p_canvas, float reach) {
-	int cnt = int(round(texelFetch(lit_light_data, ivec2(10, row), 0).x));
+	int cnt = min(int(round(texelFetch(lit_light_data, ivec2(10, row), 0).x)), 4);
 	float r2 = reach * reach;
-	for (int j = 0; j < 4; j++) {
-		if (j >= cnt) {
-			break;
-		}
+	for (int j = 0; j < cnt; j++) {
 		vec4 rect = texelFetch(lit_light_data, ivec2(12 + j, row), 0);
 		vec2 dv = max(max(rect.xy - p_canvas, vec2(0.0)), p_canvas - rect.zw);
 		if (dot(dv, dv) <= r2) {

@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_gate_entry_equivalence()
 	_gate_config_parse()
 	_gate_default_build()
+	_gate_twins()
 	print("GATE RESULT: " + ("PASS" if _fails == 0 else "FAIL (%d failures)" % _fails))
 	quit(1 if _fails > 0 else 0)
 
@@ -200,6 +201,32 @@ func _gate_default_build() -> void:
 			"setting on: one fast variant yields itself then its y-sort counterpart only")
 	ProjectSettings.set_setting("lit/render/y_sorting", was)
 	print("  default-build rules hold: %d/7 (off %d, on %d)" % [7 - (_fails - before), off.size(), on.size()])
+
+
+func _gate_twins() -> void:
+	print("[gate 7] twin fold (a ramp variant and its full-tier sibling, an entry file and its base variant, are one program)")
+	var before := _fails
+	var all := Lib.all_variant_flags()
+	var ramps := 0
+	for fl in all:
+		if fl & Lib.F_RAMP != 0:
+			ramps += 1
+			var twin: int = (fl & ~Lib.F_RAMP) | Lib.F_SELF_EXCL
+			_check(members_of(all).has(twin), "ramp variant %d has a full-tier twin in the matrix" % fl)
+	_check(ramps == 20, "20 ramp variants (got %d)" % ramps)
+	var work: Array = Pre.static_shaders()
+	work.append_array(all)
+	var folded := Pre.dedupe(work)
+	_check(folded.size() == work.size() - 23, "the full list folds 20 ramp twins and 3 entry files (got %d of %d)" % [folded.size(), work.size()])
+	for item in folded:
+		if item is int and item & Lib.F_RAMP != 0:
+			_check(false, "ramp variant %d survived the fold" % item)
+		elif item is String and Lib.ENTRY_PATHS.find_key(item) != null:
+			_check(false, "entry file %s survived the fold" % item)
+	_check(Pre.dedupe([Lib.F_CONE | Lib.F_RAMP, Lib.ENTRY_PATHS[Lib.F_SELF_EXCL]]).size() == 2,
+			"a ramp variant and an entry file without their twins stay")
+	_check(Pre.dedupe([]).is_empty(), "an empty list stays empty")
+	print("  twin fold rules hold: %d failures" % (_fails - before))
 
 
 func members_of(flags_list: Array[int]) -> Dictionary:
