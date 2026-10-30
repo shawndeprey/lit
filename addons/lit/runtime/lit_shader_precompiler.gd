@@ -82,14 +82,27 @@ static func work_list() -> Array:
 	var out: Array = []
 	out.append_array(static_shaders())
 	out.append_array(used_post_shaders())
-	out.append_array(LitShaderLibrary.all_variant_flags())
+	out.append_array(default_variant_flags())
+	return out
+
+## The variants a build without a config covers (the editor warm too): every matrix
+## member, less the y-sort tier while lit/render/y_sorting is off, since the setting is
+## read at process start and that tier is never requested then.
+static func default_variant_flags() -> Array[int]:
+	if bool(ProjectSettings.get_setting("lit/render/y_sorting", false)):
+		return LitShaderLibrary.all_variant_flags()
+	var out: Array[int] = []
+	for fl in LitShaderLibrary.all_variant_flags():
+		if fl & LitShaderLibrary.F_YSORT == 0:
+			out.append(fl)
 	return out
 
 
 ## A generated res://lit_precompile.cfg (Project > Tools > Generate Lit Precompile
-## Config) replaces the full work list verbatim: exactly what it names, nothing more.
-## Returns null when the file is absent, unreadable or stale throughout, which means
-## the full build above; delete the file to get back there.
+## Config) replaces the full work list: exactly what it names, nothing more, with the
+## y-sort tier following lit/render/y_sorting at build time. Returns null when the file
+## is absent, unreadable or stale throughout, which means the full build above; delete
+## the file to get back there.
 static func config_work_list() -> Variant:
 	if not FileAccess.file_exists(CONFIG_PATH):
 		return null
@@ -100,7 +113,9 @@ static func config_work_list() -> Variant:
 	return parse_config(cfg)
 
 ## The work list a loaded config describes. A name whose flags are no longer a matrix
-## member (an older Lit wrote it) is skipped; null when every named variant was.
+## member (an older Lit wrote it) is skipped; null when every named variant was. The
+## y-sort tier follows lit/render/y_sorting now, not at generate time: on, every kept
+## variant brings its y-sort counterpart; off, listed y-sort variants are left out.
 static func parse_config(cfg: ConfigFile) -> Variant:
 	var members := {}
 	for fl in LitShaderLibrary.all_variant_flags():
@@ -113,12 +128,17 @@ static func parse_config(cfg: ConfigFile) -> Variant:
 			push_warning("Lit: precompile config names a missing shader '%s'; regenerate the config" % path)
 	var named := 0
 	var kept := 0
+	var ysort := bool(ProjectSettings.get_setting("lit/render/y_sorting", false))
+	var listed: Array[int] = []
+	var seen := {}
 	for name in cfg.get_value("lit", "variants", PackedStringArray()):
 		named += 1
 		var flags := LitShaderLibrary.flags_from_variant_name(String(name))
 		if flags >= 0 and members.has(flags):
-			out.append(flags)
 			kept += 1
+			if (ysort or flags & LitShaderLibrary.F_YSORT == 0) and not seen.has(flags):
+				seen[flags] = true
+				listed.append(flags)
 		elif flags >= 0:
 			push_warning("Lit: precompile config names the stale variant '%s' (written by an older Lit); regenerate it with Project > Tools > Generate Lit Precompile Config" % name)
 		else:
@@ -126,6 +146,13 @@ static func parse_config(cfg: ConfigFile) -> Variant:
 	if named > 0 and kept == 0:
 		push_warning("Lit: precompile config names no current variant; running the full precompile")
 		return null
+	out.append_array(listed)
+	if ysort:
+		for flags in listed:
+			var ys: int = LitShaderLibrary.resolve(LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT, 0, flags)
+			if not seen.has(ys):
+				seen[ys] = true
+				out.append(ys)
 	return out
 
 

@@ -27,6 +27,7 @@ const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_regi
 const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
 const LitReceiverInspectorScript := preload("res://addons/lit/editor/lit_receiver_inspector.gd")
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
+const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
 const LitPortToolScript := preload("res://addons/lit/editor/lit_port_tool.gd")
 const LitUpdateToolScript := preload("res://addons/lit/editor/lit_update_tool.gd")
@@ -87,7 +88,7 @@ func _enter_tree() -> void:
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
 	_registry = LitLightRegistryScript.new()
 	# Silent background warm so first-session editor tier swaps never pay a compile.
-	_warm_pending = LitShaderLibrary.all_variant_flags()
+	_warm_pending = LitShaderPrecompilerScript.default_variant_flags()
 	set_process(true)
 
 func _exit_tree() -> void:
@@ -240,8 +241,8 @@ func _start_converted_sprite(node: Node) -> void:
 #
 # "Generate Lit Precompile Config" scans the project's saved scenes for actual Lit
 # usage and writes res://lit_precompile.cfg; while that file exists, the startup
-# precompiler builds exactly that list instead of the full variant matrix. Deleting
-# the file restores the full build. The scan itself lives in
+# precompiler builds exactly that list instead of the default build. Deleting the
+# file restores the default build. The scan itself lives in
 # editor/lit_precompile_config.gd.
 
 func _generate_precompile_config() -> void:

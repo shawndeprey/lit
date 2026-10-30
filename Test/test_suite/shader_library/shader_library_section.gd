@@ -222,7 +222,7 @@ func _precompiler() -> void:
 	for tier in Lib.ENTRY_PATHS:
 		has_entries = has_entries and work.has(Lib.ENTRY_PATHS[tier])
 	var has_variants := true
-	for fl in Lib.all_variant_flags():
+	for fl in Pre.default_variant_flags():
 		has_variants = has_variants and work.has(fl)
 	var cfg_present := FileAccess.file_exists(Pre.CONFIG_PATH)
 	if cfg_present:
@@ -230,8 +230,36 @@ func _precompiler() -> void:
 	else:
 		check_true(case_name, "full work list carries the entry files", has_entries)
 		check_true(case_name, "full work list carries the world-SDF encode shader", work.has("res://addons/lit/shaders/sdf/lit_world_sdf_encode.gdshader"))
-		check_true(case_name, "full work list carries every receiver variant", has_variants)
+		check_true(case_name, "default work list carries every default variant", has_variants)
 	check(case_name, "static shaders: three entries + encoder", 4, Pre.static_shaders().size())
+	var ysort_was = ProjectSettings.get_setting("lit/render/y_sorting", false)
+	set_setting("lit/render/y_sorting", false)
+	var dflt: Array[int] = Pre.default_variant_flags()
+	var on_ysort := 0
+	for fl in dflt:
+		if fl & Lib.F_YSORT != 0:
+			on_ysort += 1
+	check(case_name, "default build with y_sorting off: 60 variants (fast 40 + full 20)", 60, dflt.size())
+	check(case_name, "and none on the y-sort tier", 0, on_ysort)
+	set_setting("lit/render/y_sorting", true)
+	check(case_name, "default build with y_sorting on: the full 80", 80, Pre.default_variant_flags().size())
+	var ys_cfg := ConfigFile.new()
+	ys_cfg.set_value("lit", "shaders", PackedStringArray([]))
+	var sixty := PackedStringArray()
+	for fl in dflt:
+		sixty.append(Lib.variant_name(fl))
+	ys_cfg.set_value("lit", "variants", sixty)
+	check(case_name, "a config naming the 60 non-ysort members parses to 80 with y_sorting on", 80, Array(Pre.parse_config(ys_cfg)).size())
+	set_setting("lit/render/y_sorting", false)
+	check(case_name, "and to 60 with it off", 60, Array(Pre.parse_config(ys_cfg)).size())
+	ys_cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_stoch_line_ysort"]))
+	check(case_name, "a config naming only a y-sort variant parses to an empty list with y_sorting off (not null)", [], Pre.parse_config(ys_cfg))
+	set_setting("lit/render/y_sorting", true)
+	check(case_name, "and keeps it with y_sorting on", [Lib.F_SELF_EXCL | Lib.F_YSORT | Lib.F_STOCH | Lib.F_LINE], Pre.parse_config(ys_cfg))
+	ys_cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_fast_ramp"]))
+	check(case_name, "one fast variant with y_sorting on yields itself then its y-sort counterpart only",
+			[Lib.F_CONE | Lib.F_RAMP, Lib.F_SELF_EXCL | Lib.F_YSORT | Lib.F_CONE], Pre.parse_config(ys_cfg))
+	set_setting("lit/render/y_sorting", ysort_was)
 	var h1: String = Pre.bundle_hash(work)
 	check_true(case_name, "bundle hash is a 32-char md5", h1.length() == 32)
 	check(case_name, "bundle hash is deterministic", h1, Pre.bundle_hash(work))
@@ -275,6 +303,9 @@ func _precompiler() -> void:
 	check(case_name, "done_key of a variant", "f_%d" % Lib.F_CONE, Pre.done_key(Lib.F_CONE))
 	check_true(case_name, "done_key of a path is stable", Pre.done_key("a") == Pre.done_key("a") and Pre.done_key("a") != Pre.done_key("b"))
 	if not cfg_present:
+		# Parsed with y_sorting off: on, every kept variant also brings its y-sort counterpart.
+		var ys_saved = ProjectSettings.get_setting("lit/render/y_sorting", false)
+		set_setting("lit/render/y_sorting", false)
 		var cfg := ConfigFile.new()
 		# (Unknown shader paths and variant names are skipped with a Lit warning; that path
 		# is left unexercised so a green run stays warning-free.)
@@ -299,6 +330,7 @@ func _precompiler() -> void:
 		if stale.save(Pre.CONFIG_PATH) == OK:
 			check_true(case_name, "config_work_list applies that fallback from the file", Pre.config_work_list() == null)
 			DirAccess.remove_absolute(Pre.CONFIG_PATH)
+		set_setting("lit/render/y_sorting", ys_saved)
 		check_true(case_name, "no config file: config_work_list is null", Pre.config_work_list() == null)
 	var used = Pre.used_post_shaders()
 	var all_post := used is Array

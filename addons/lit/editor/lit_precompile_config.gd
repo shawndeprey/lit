@@ -3,11 +3,12 @@ extends RefCounted
 
 ## The scan behind "Generate Lit Precompile Config" (Project > Tools): finds every
 ## actual Lit use in the project's saved scenes and writes res://lit_precompile.cfg,
-## which the precompiler then runs verbatim instead of the full variant matrix
-## (delete the file to restore full builds). Scenes are read through SceneState
+## which the precompiler then runs verbatim instead of its default build (delete the
+## file to restore that). Scenes are read through SceneState
 ## (never instanced), so no scene code runs. Lit usage created purely from code is
 ## invisible here; dev builds warn when a variant compiles outside the configured
-## list, which is the cue to regenerate or hand-extend the file.
+## list, which is the cue to regenerate or hand-extend the file. The y-sort tier
+## follows lit/render/y_sorting when the list is built, whatever the file says.
 
 const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const WorldSdfScript := preload("res://addons/lit/runtime/registry/world_sdf.gd")

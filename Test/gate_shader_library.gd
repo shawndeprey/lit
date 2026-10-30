@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_gate_interaction_rules()
 	_gate_entry_equivalence()
 	_gate_config_parse()
+	_gate_default_build()
 	print("GATE RESULT: " + ("PASS" if _fails == 0 else "FAIL (%d failures)" % _fails))
 	quit(1 if _fails > 0 else 0)
 
@@ -135,6 +136,8 @@ func _gate_entry_equivalence() -> void:
 func _gate_config_parse() -> void:
 	print("[gate 5] config parse (stale and unknown names rejected, members kept; two Lit warnings expected)")
 	var before := _fails
+	var was = ProjectSettings.get_setting("lit/render/y_sorting", false)
+	ProjectSettings.set_setting("lit/render/y_sorting", false)
 	var members := {}
 	for fl in Lib.all_variant_flags():
 		members[fl] = true
@@ -153,7 +156,57 @@ func _gate_config_parse() -> void:
 	cfg.set_value("lit", "variants", PackedStringArray([]))
 	var empty = Pre.parse_config(cfg)
 	_check(empty is Array and empty.is_empty(), "an empty variant list stays an empty build")
+	ProjectSettings.set_setting("lit/render/y_sorting", was)
 	print("  rejection and fallback rules hold: %d/4" % (4 - (_fails - before)))
+
+
+func _gate_default_build() -> void:
+	print("[gate 6] default build (the y-sort tier follows lit/render/y_sorting; never saved)")
+	var before := _fails
+	var was = ProjectSettings.get_setting("lit/render/y_sorting", false)
+	ProjectSettings.set_setting("lit/render/y_sorting", false)
+	var off: Array[int] = Pre.default_variant_flags()
+	var ys := 0
+	for fl in off:
+		if fl & Lib.F_YSORT != 0:
+			ys += 1
+	_check(off.size() == 60 and ys == 0, "setting off: 60 variants, none on the y-sort tier (got %d, %d)" % [off.size(), ys])
+	ProjectSettings.set_setting("lit/render/y_sorting", true)
+	var on: Array[int] = Pre.default_variant_flags()
+	_check(on.size() == 80, "setting on: 80 variants (got %d)" % on.size())
+	var cfg := ConfigFile.new()
+	cfg.set_value("lit", "shaders", PackedStringArray([]))
+	var sixty := PackedStringArray()
+	for fl in off:
+		sixty.append(Lib.variant_name(fl))
+	cfg.set_value("lit", "variants", sixty)
+	var grown = Pre.parse_config(cfg)
+	var grown_ok: bool = grown is Array and grown.size() == 80
+	var gseen := {}
+	for fl in (grown if grown is Array else []):
+		grown_ok = grown_ok and members_of(on).has(fl) and not gseen.has(fl)
+		gseen[fl] = true
+	_check(grown_ok, "setting on: the 60 non-ysort names grow their 20 y-sort counterparts, deduped (got %d)" % (grown.size() if grown is Array else -1))
+	ProjectSettings.set_setting("lit/render/y_sorting", false)
+	var same = Pre.parse_config(cfg)
+	_check(same is Array and same.size() == 60, "setting off: the same 60 stay 60")
+	cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_stoch_line_ysort"]))
+	var dropped = Pre.parse_config(cfg)
+	_check(dropped is Array and dropped.is_empty(), "setting off: a listed y-sort variant is left out, not stale (empty, not null)")
+	ProjectSettings.set_setting("lit/render/y_sorting", true)
+	_check(Pre.parse_config(cfg) == [Lib.F_SELF_EXCL | Lib.F_YSORT | Lib.F_STOCH | Lib.F_LINE], "setting on: it is kept")
+	cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_fast_ramp"]))
+	_check(Pre.parse_config(cfg) == [Lib.F_CONE | Lib.F_RAMP, Lib.F_SELF_EXCL | Lib.F_YSORT | Lib.F_CONE],
+			"setting on: one fast variant yields itself then its y-sort counterpart only")
+	ProjectSettings.set_setting("lit/render/y_sorting", was)
+	print("  default-build rules hold: %d/7 (off %d, on %d)" % [7 - (_fails - before), off.size(), on.size()])
+
+
+func members_of(flags_list: Array[int]) -> Dictionary:
+	var d := {}
+	for fl in flags_list:
+		d[fl] = true
+	return d
 
 
 func _parse(src: String) -> Dictionary:
