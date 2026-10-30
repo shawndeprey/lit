@@ -354,6 +354,7 @@ float lit_shadow_contrast(float s, float hardness) {
 }
 #endif
 
+#ifdef LIT_LINE
 // A curved line light's shadow when raymarched: one march per shadow chord of its path
 // row, to the chord's middle, weighted as the shading weights the chords
 // (lit_line_chord). Clearance past the bounding circle (texel 0) by 1/k is lit unmarched;
@@ -404,3 +405,4 @@ float lit_shadow_path_hard(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, flo
 	}
 	return wsum > 0.0 ? clamp(sum / wsum, 0.0, 1.0) : 1.0;
 }
+#endif

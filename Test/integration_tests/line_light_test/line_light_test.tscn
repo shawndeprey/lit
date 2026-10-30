@@ -136,14 +136,17 @@ position = Vector2(1242.0001, 549)
 
 [node name="LitPointLight2D" type="Node2D" parent="Lights" unique_id=1577877993]
 visible = false
-position = Vector2(1460, 176)
+position = Vector2(1288, 160)
 script = ExtResource("6_aiw8a")
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(0.34901962, 0.4392157, 1, 1)
+energy = 2.0
 shadow_enabled = true
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="ZeroLengthLine" type="Node2D" parent="Lights" unique_id=1736456417]
+visible = false
 position = Vector2(1288, 160)
 rotation = -1.5707964
 script = ExtResource("4_saber")
@@ -155,6 +158,7 @@ energy = 2.0
 shadow_enabled = true
 
 [node name="LightSaber" type="Node2D" parent="Lights" unique_id=1799641673]
+visible = false
 position = Vector2(1517, 542)
 rotation = -1.5707964
 script = ExtResource("4_saber")
@@ -167,6 +171,7 @@ color = Color(1.6197081, 0, 1.6197081, 1)
 shadow_enabled = true
 
 [node name="PathLine" type="Node2D" parent="Lights" unique_id=1417204964]
+visible = false
 position = Vector2(965, 865)
 rotation = -1.5707964
 script = ExtResource("4_saber")
@@ -181,6 +186,7 @@ position = Vector2(6, 2.6226832e-07)
 curve = SubResource("Curve2D_pitca")
 
 [node name="LineWithWidth" type="Node2D" parent="Lights" unique_id=694138970]
+visible = false
 position = Vector2(1789, 245)
 rotation = -1.5707964
 script = ExtResource("4_saber")
@@ -192,6 +198,7 @@ color = Color(1.1188424, 0.9313861, 2.137626, 1)
 shadow_enabled = true
 
 [node name="LineWithWidthLessGlow" type="Node2D" parent="Lights" unique_id=286570265]
+visible = false
 position = Vector2(1794, 765)
 rotation = -1.5707964
 script = ExtResource("4_saber")
@@ -204,13 +211,14 @@ color = Color(0, 1, 0, 1)
 shadow_enabled = true
 
 [node name="Arc" type="Node2D" parent="Lights" unique_id=1707973995]
+visible = false
 position = Vector2(891, 233)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 347.0
 range = 1024.0
 lit_version = "1.1.7"
-color = Color(0, 1, 0, 1)
+color = Color(0, 2.5025156, 0, 1)
 shadow_enabled = true
 
 [node name="Path2D" type="Path2D" parent="Lights/Arc" unique_id=1240960088]
@@ -218,12 +226,14 @@ position = Vector2(6, 2.6226832e-07)
 curve = SubResource("Curve2D_vshlv")
 
 [node name="Circle" type="Node2D" parent="Lights" unique_id=390123348]
+visible = false
 position = Vector2(1231, 726)
 script = ExtResource("4_saber")
 length = 214.0
 closed = true
 range = 1024.0
 lit_version = "1.1.7"
+color = Color(2.3133948, 2.3133948, 2.3133948, 1)
 shadow_enabled = true
 
 [node name="Path2D" type="Path2D" parent="Lights/Circle" unique_id=710844138]
@@ -231,6 +241,7 @@ position = Vector2(10, -180)
 curve = SubResource("Curve2D_circle")
 
 [node name="Curved" type="Node2D" parent="Lights" unique_id=899121877]
+visible = false
 position = Vector2(786, 881)
 rotation = -1.5707964
 script = ExtResource("4_saber")
@@ -247,10 +258,10 @@ position = Vector2(10.000004, -11.000001)
 curve = SubResource("Curve2D_vmv5v")
 
 [node name="ThreePointPath" type="Node2D" parent="Lights" unique_id=1282219292]
-position = Vector2(371, 503)
+visible = false
+position = Vector2(475, 404)
 script = ExtResource("4_saber")
 width = 11.0
-glow = 0.84
 range = 1024.0
 lit_version = "1.1.7"
 color = Color(0, 1.0018499, 1.9754877, 1)
@@ -261,6 +272,7 @@ metadata/_custom_type_script = "uid://cmsiurxidcqsf"
 curve = SubResource("Curve2D_0vvki")
 
 [node name="TwoPointCurve" type="Node2D" parent="Lights" unique_id=777304227]
+visible = false
 position = Vector2(683, 377)
 script = ExtResource("4_saber")
 range = 2048.0
@@ -288,6 +300,7 @@ metadata/_custom_type_script = "uid://cmsiurxidcqsf"
 curve = SubResource("Curve2D_spiral")
 
 [node name="Loops" type="Node2D" parent="Lights" unique_id=1444000003]
+visible = false
 position = Vector2(188, 815)
 rotation = -0.92538095
 script = ExtResource("4_saber")
@@ -303,7 +316,6 @@ metadata/_custom_type_script = "uid://cmsiurxidcqsf"
 curve = SubResource("Curve2D_loops")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=481900563]
-visible = false
 position = Vector2(960, 540)
 script = ExtResource("7_zoom")
 

@@ -18,8 +18,8 @@ enum TextureSizeMode {
 
 ## Per-light shadow algorithm. The order is a wire format: light_packer.gd packs it
 ## into flags bits 3-4 of the light's data row and the shader decodes it there, and
-## the registry derives active_algos (bit 0 = CONE_TRACED, bit 1 = STOCHASTIC) from
-## it for the variant swap. Append new algorithms; never reorder.
+## the registry derives active_algos (bit 0 = CONE_TRACED, bit 1 = STOCHASTIC, bit 2 =
+## a line light present) from it for the variant swap. Append new algorithms; never reorder.
 enum ShadowAlgorithm {
 	## The classic estimated-penumbra march: fastest, stylized, hardness-driven.
 	RAYMARCHED,
@@ -43,6 +43,8 @@ const F_RX := 64
 # into the fast tier (the header promotes its define to LIT_SELF_EXCLUSION); the
 # full tier already has it and drops the flag.
 const F_RAMP := 128
+# Line-light code; only ever with F_STOCH, whose gate alone is the cone march, so F_CONE folds away.
+const F_LINE := 256
 
 const TIER_MASK := F_SELF_EXCL | F_YSORT
 
@@ -50,6 +52,7 @@ const TIER_MASK := F_SELF_EXCL | F_YSORT
 const AXES := [
 	{"flag": F_CONE, "define": "LIT_SHADOW_CONE", "token": "cone", "scope": "activity"},
 	{"flag": F_STOCH, "define": "LIT_SHADOW_STOCH", "token": "stoch", "scope": "activity"},
+	{"flag": F_LINE, "define": "LIT_LINE", "token": "line", "scope": "activity"},
 	{"flag": F_SELF_EXCL, "define": "LIT_SELF_EXCLUSION", "token": "", "absent_token": "fast", "scope": "tier"},
 	{"flag": F_YSORT, "define": "LIT_YSORT", "token": "ysort", "scope": "tier"},
 	{"flag": F_GX, "define": "LIT_OCC_GX", "token": "gx", "scope": "activity"},
@@ -97,6 +100,10 @@ static func resolve(tier: int, node_flags: int, activity: int) -> int:
 
 
 static func _prune(flags: int) -> int:
+	if flags & F_LINE != 0:
+		flags |= F_STOCH
+	if flags & F_STOCH != 0:
+		flags &= ~F_CONE
 	if flags & F_YSORT != 0:
 		flags |= F_SELF_EXCL
 	if flags & F_SELF_EXCL != 0:

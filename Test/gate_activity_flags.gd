@@ -5,7 +5,7 @@ extends SceneTree
 ## Run: godot --headless --path . --script res://Test/gate_activity_flags.gd
 
 const RegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
-const EXPECTED := 8
+const EXPECTED := 11
 
 var _registry
 var _frame := 0
@@ -14,6 +14,7 @@ var _fails := 0
 
 var _light: LitPointLight2D
 var _light2: LitPointLight2D
+var _line: LitLineLight2D
 
 
 func _initialize() -> void:
@@ -69,8 +70,23 @@ func _tick() -> void:
 			_light.shadow_algorithm = LitShaderLibrary.ShadowAlgorithm.RAYMARCHED
 		9:
 			_check(fl == 0, "raymarched with default masks publishes 0")
-			_add_occ(2)
+			_line = LitLineLight2D.new()
+			root.add_child.call_deferred(_line)
+		12:
+			_check(fl & (LitShaderLibrary.F_LINE | LitShaderLibrary.F_STOCH) == LitShaderLibrary.F_LINE | LitShaderLibrary.F_STOCH
+					and fl & LitShaderLibrary.F_CONE == 0, "a shadowless line publishes stoch+line")
+			_light.shadow_algorithm = LitShaderLibrary.ShadowAlgorithm.CONE_TRACED
 		15:
+			_check(fl & LitShaderLibrary.F_LINE != 0 and fl & LitShaderLibrary.F_CONE == 0,
+					"a cone light beside a line folds into stoch+line")
+			_line.enabled = false
+		18:
+			_check(fl & LitShaderLibrary.F_CONE != 0 and fl & (LitShaderLibrary.F_LINE | LitShaderLibrary.F_STOCH) == 0,
+					"a disabled line drops the line axis")
+			_line.queue_free()
+			_light.shadow_algorithm = LitShaderLibrary.ShadowAlgorithm.RAYMARCHED
+			_add_occ(2)
+		24:
 			_check(fl & LitShaderLibrary.F_GX != 0,
 					"occluder excluded from every light publishes F_GX")
 			_check(fl & LitShaderLibrary.F_MASKS == 0, "no per-light masks yet")
@@ -79,7 +95,7 @@ func _tick() -> void:
 			_light2.shadow_algorithm = LitShaderLibrary.ShadowAlgorithm.RAYMARCHED
 			_light2.shadow_mask = 3
 			root.add_child.call_deferred(_light2)
-		21:
+		30:
 			_check(fl & LitShaderLibrary.F_MASKS != 0,
 					"split shadow masks publish F_MASKS")
 			_check(fl & LitShaderLibrary.F_GX == 0, "gx tier folds away under masks")

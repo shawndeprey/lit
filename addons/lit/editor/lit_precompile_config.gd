@@ -26,7 +26,7 @@ const RECEIVER_SCRIPTS := {
 
 ## Every variant axis this scan knows how to detect. The test suite checks it against
 ## LitShaderLibrary.AXES, so a new axis fails there until the scan below handles it.
-const SCANNED_AXES := LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT 		| LitShaderLibrary.F_CONE | LitShaderLibrary.F_STOCH | LitShaderLibrary.F_GX 		| LitShaderLibrary.F_MASKS | LitShaderLibrary.F_RX | LitShaderLibrary.F_RAMP
+const SCANNED_AXES := LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT 		| LitShaderLibrary.F_CONE | LitShaderLibrary.F_STOCH | LitShaderLibrary.F_GX 		| LitShaderLibrary.F_MASKS | LitShaderLibrary.F_RX | LitShaderLibrary.F_RAMP 		| LitShaderLibrary.F_LINE
 
 
 ## Scan, write the settings, and return a summary:
@@ -40,6 +40,7 @@ static func generate() -> Dictionary:
 	var rx := false
 	var cone := false
 	var stoch := false
+	var lines := false
 	var masks := false
 	var ramp := false
 	for scene_path in scenes:
@@ -60,18 +61,15 @@ static func generate() -> Dictionary:
 				receivers = true
 			# Properties are checked by name, not just by script: overrides on instanced
 			# sub-scene nodes carry the property without the script.
-			# A line light marches Cone Traced as strata: the stochastic variant.
+			# A line light lives in the stoch+line variant whatever its algorithm.
 			var line := script_path.ends_with("lit_line_light_2d.gd")
+			lines = lines or line
 			if props.has("shadow_algorithm"):
 				var algo := int(props["shadow_algorithm"])
 				cone = cone or (algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED and not line)
-				stoch = stoch or algo == LitShaderLibrary.ShadowAlgorithm.STOCHASTIC \
-						or (line and algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED)
-			elif LIGHT_SCRIPTS.has(script_path):
-				if line:
-					stoch = true
-				else:
-					cone = true  # absent export = the CONE_TRACED default
+				stoch = stoch or (algo == LitShaderLibrary.ShadowAlgorithm.STOCHASTIC and not line)
+			elif LIGHT_SCRIPTS.has(script_path) and not line:
+				cone = true  # absent export = the CONE_TRACED default
 			if int(props.get("shadow_mask", 1)) != 1 \
 					or bool(props.get("exclude_scene_occluders", false)) \
 					or int(props.get("occluder_light_mask", 1)) != 1:
@@ -112,6 +110,8 @@ static func generate() -> Dictionary:
 		axes.append(LitShaderLibrary.F_CONE)
 	if stoch:
 		axes.append(LitShaderLibrary.F_STOCH)
+	if lines:
+		axes.append(LitShaderLibrary.F_LINE)
 	if masks:
 		axes.append(LitShaderLibrary.F_MASKS)
 		axes.append(LitShaderLibrary.F_GX)

@@ -30,12 +30,15 @@ func _gate_matrix() -> void:
 	var all: Array = Lib.all_variant_flags()
 	print("[gate 1] variant matrix: %d variants from %d axes" % [all.size(), Lib.AXES.size()])
 	_check(not all.is_empty(), "matrix non-empty")
+	_check(all.size() == 80, "matrix holds 80 variants")
 	var names := {}
 	var inv := 0
 	var src_ok := 0
 	for fl in all:
 		var f: String = Lib.variant_name(fl) + ".gdshader"
 		_check(Lib._prune(fl) == fl, "prune fixed point for flags %d" % fl)
+		_check(fl & Lib.F_LINE == 0 or fl & Lib.F_STOCH != 0, "line member carries stoch: %d" % fl)
+		_check(fl & (Lib.F_CONE | Lib.F_STOCH) != Lib.F_CONE | Lib.F_STOCH, "no cone+stoch member: %d" % fl)
 		_check(not names.has(f), "name unique: %s" % f)
 		names[f] = true
 		if _check(Lib.flags_from_path(SHADER_DIR + f) == fl, "name<->flags inverse for %s" % f):
@@ -96,6 +99,9 @@ func _gate_interaction_rules() -> void:
 	print("[gate 3] interaction rules (add a row per new axis interaction)")
 	var rules := [
 		[Lib.F_YSORT, Lib.F_SELF_EXCL, 0, "ysort implies self-exclusion"],
+		[Lib.F_LINE, Lib.F_LINE | Lib.F_STOCH, Lib.F_CONE, "line implies stoch"],
+		[Lib.F_CONE | Lib.F_STOCH, Lib.F_STOCH, Lib.F_CONE, "stoch folds cone"],
+		[Lib.F_CONE | Lib.F_LINE, Lib.F_STOCH | Lib.F_LINE, Lib.F_CONE, "line folds cone into stoch"],
 		[Lib.F_MASKS | Lib.F_GX, Lib.F_MASKS, Lib.F_GX, "masks folds gx"],
 		[Lib.F_RX | Lib.F_GX, Lib.F_RX, Lib.F_GX, "rx folds gx"],
 		[Lib.F_MASKS | Lib.F_RX | Lib.F_GX, Lib.F_MASKS | Lib.F_RX, Lib.F_GX, "masks+rx folds gx"],

@@ -43,14 +43,15 @@ const int LIT_MAX_SHADOW_SAMPLES = 32;
 // which the stochastic variant's register budget cannot absorb. n = 0 returns the
 // gate alone, which is the Cone Traced algorithm.
 float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, float t_cap, bool capped, float src,
-		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
-		vec2 seg, float src_r,
+		bool is_dir, int n, float jitter_amt, vec2 noise_px, int max_steps, float frag_d LIT_SEG_PARAMS,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
 	float w_gate = max(is_dir ? src : src / max(maxd, 1e-4), 1e-4);
 	float band = capped ? w_gate * t_cap : 0.0;
 	n = min(n, LIT_MAX_SHADOW_SAMPLES);
 	vec2 perp = vec2(-dir.y, dir.x);
+#ifdef LIT_LINE
 	bool line = dot(seg, seg) > 0.0;
+#endif
 	// Interleaved gradient noise gives the per-pixel base; the golden-ratio sequence
 	// decorrelates it across samples.
 	float ign = fract(52.9829189 * fract(dot(noise_px, vec2(0.06711056, 0.00583715))));
@@ -77,12 +78,14 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 			sdir = normalize(dir + perp * (u * src));
 			smaxd = maxd * cap_frac;
 			w_sub = max(half_stratum, 1e-4);
+#ifdef LIT_LINE
 		} else if (line) {
 			vec2 delta = (light_sdf + seg * u) - frag_sdf;
 			float len = length(delta);
 			sdir = delta / max(len, 1e-4);
 			smaxd = len * cap_frac;
 			w_sub = max((abs(seg.x * sdir.y - seg.y * sdir.x) / float(n) + src_r) / max(len, 1e-4), 1e-4);
+#endif
 		} else {
 			vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
 			float len = length(delta);
@@ -97,6 +100,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 	return sum / float(n);
 }
 
+#ifdef LIT_LINE
 // Strata of a curved line light: one sub-cone per shadow chord of its path row, each
 // covering its chord as seen from the fragment plus the tube's radius src_r, weighted
 // as the shading weights the chords (lit_line_chord): the visible share of the light
@@ -239,5 +243,6 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float ca
 	}
 	return wsum > 0.0 ? clamp(sum / wsum, 0.0, 1.0) : 1.0;
 }
+#endif
 #endif
 

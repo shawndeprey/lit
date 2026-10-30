@@ -14,7 +14,8 @@ const RANGED_TEXELS_PER_LIGHT := 10
 
 # Which shadow algorithms the shaders must support this frame, from the last refresh()
 # in this process (bit 0 = Cone Traced, bit 1 = Stochastic, among enabled shadow-casting
-# lights). Internal working state; nodes read activity_flags below instead.
+# lights; bit 2 = an enabled line light exists). Internal working state; nodes read
+# activity_flags below instead.
 static var active_algos: int = 0
 
 # The sole node-facing activity surface: LitShaderLibrary F_* bits derived from the
@@ -245,6 +246,7 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 	# shader). Computed over every enabled light in the tree, not just the view-culled
 	# set, so camera movement past a light's AABB never thrashes receiver shaders. Only
 	# shadow-casting lights count: an algorithm on a shadowless light is never marched.
+	# A line light counts by presence: its code lives in the stoch+line variant alone.
 	if _tileset_edited:
 		_tileset_edited = false
 		_note_tileset_masks(receiver_root if receiver_root != null else tree.root)
@@ -304,8 +306,10 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 
 	# The one activity publish point: everything the working state decided this
 	# refresh lands in the node-facing flags together.
-	var new_flags := (LitShaderLibrary.F_CONE if active_algos & 1 != 0 else 0) \
-			| (LitShaderLibrary.F_STOCH if active_algos & 2 != 0 else 0) \
+	var stoch: bool = active_algos & 6 != 0
+	var new_flags := (LitShaderLibrary.F_CONE if active_algos & 1 != 0 and not stoch else 0) \
+			| (LitShaderLibrary.F_STOCH if stoch else 0) \
+			| (LitShaderLibrary.F_LINE if active_algos & 4 != 0 else 0) \
 			| (LitShaderLibrary.F_MASKS if masks_active else 0) \
 			| (LitShaderLibrary.F_GX if gx_active else 0) \
 			| (LitShaderLibrary.F_RAMP if ramp_active else 0)

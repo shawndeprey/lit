@@ -51,9 +51,13 @@ func _matrix() -> void:
 	var ok_inverse := true
 	var ok_src := true
 	var ok_flags_of := true
+	var ok_line := true
+	var ok_cone := true
 	for fl in all:
 		var f: String = Lib.variant_name(fl) + ".gdshader"
 		ok_prune = ok_prune and Lib._prune(fl) == fl
+		ok_line = ok_line and (fl & Lib.F_LINE == 0 or fl & Lib.F_STOCH != 0)
+		ok_cone = ok_cone and fl & (Lib.F_CONE | Lib.F_STOCH) != Lib.F_CONE | Lib.F_STOCH
 		ok_unique = ok_unique and not names.has(f)
 		names[f] = true
 		ok_inverse = ok_inverse and Lib.flags_from_path(SHADER_DIR + f) == fl \
@@ -66,6 +70,9 @@ func _matrix() -> void:
 		ok_src = ok_src and p.defines == want and p.includes.size() == 1 and p.shader_type != "" and p.render_mode != ""
 		ok_flags_of = ok_flags_of and Lib.flags_of(Lib.get_receiver(fl)) == fl
 	check_true(case_name, "prune is a fixed point on every member", ok_prune)
+	check(case_name, "the matrix holds 80 variants", 80, all.size())
+	check_true(case_name, "every line member carries stoch", ok_line)
+	check_true(case_name, "no member carries cone with stoch", ok_cone)
 	check_true(case_name, "variant names are unique", ok_unique)
 	check_true(case_name, "name <-> flags inverse for every variant", ok_inverse)
 	check_true(case_name, "generated source: defines from the axes, one include", ok_src)
@@ -118,6 +125,9 @@ func _interaction_rules() -> void:
 	var case_name := "variant_rules"
 	var rules := [
 		[Lib.F_YSORT, Lib.F_SELF_EXCL, 0, "ysort implies self-exclusion"],
+		[Lib.F_LINE, Lib.F_LINE | Lib.F_STOCH, Lib.F_CONE, "line implies stoch"],
+		[Lib.F_CONE | Lib.F_STOCH, Lib.F_STOCH, Lib.F_CONE, "stoch folds cone"],
+		[Lib.F_CONE | Lib.F_LINE, Lib.F_STOCH | Lib.F_LINE, Lib.F_CONE, "line folds cone into stoch"],
 		[Lib.F_MASKS | Lib.F_GX, Lib.F_MASKS, Lib.F_GX, "masks folds gx"],
 		[Lib.F_RX | Lib.F_GX, Lib.F_RX, Lib.F_GX, "rx folds gx"],
 		[Lib.F_MASKS | Lib.F_RX | Lib.F_GX, Lib.F_MASKS | Lib.F_RX, Lib.F_GX, "masks+rx folds gx"],
@@ -291,7 +301,27 @@ func _precompiler() -> void:
 	if not cfg_present:
 		# The editor's "Generate Lit Precompile Config" is runtime-safe: scan the saved
 		# scenes, write the config, parse it back, remove it again.
+		# A saved fixture with a shadowless and a Cone Traced line light joins the scan.
+		var fixture := "res://Test/test_suite/shader_library/scan_fixture.tscn"
+		var fx_root := Node2D.new()
+		var dark := LitLineLight2D.new()
+		dark.name = "Shadowless"
+		dark.shadow_enabled = false
+		fx_root.add_child(dark)
+		dark.owner = fx_root
+		var cone := LitLineLight2D.new()
+		cone.name = "ConeTraced"
+		cone.shadow_enabled = true
+		cone.shadow_algorithm = Lib.ShadowAlgorithm.CONE_TRACED
+		fx_root.add_child(cone)
+		cone.owner = fx_root
+		var packed := PackedScene.new()
+		packed.pack(fx_root)
+		check(case_name, "line-light scan fixture saved", OK, ResourceSaver.save(packed, fixture))
+		fx_root.free()
 		var gen: Dictionary = Config.generate()
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+		check_true(case_name, "scan fixture removed again", not FileAccess.file_exists(fixture))
 		check_true(case_name, "Generate Lit Precompile Config writes lit_precompile.cfg",
 				bool(gen.get("saved", false)) and FileAccess.file_exists(Pre.CONFIG_PATH))
 		check_true(case_name, "generated config lists the fast receiver variant and the entry shaders",
@@ -300,6 +330,20 @@ func _precompiler() -> void:
 		for vname in Array(gen.get("variants", [])):
 			ramp_listed = ramp_listed or String(vname).ends_with("_ramp")
 		check_true(case_name, "generated config lists the ramp variants (a saved test scene uses shadow_ramp)", ramp_listed)
+		var members := {}
+		for fl in Lib.all_variant_flags():
+			members[fl] = true
+		var line_stoch := false
+		var cone_stoch := false
+		var all_members := true
+		for vname in Array(gen.get("variants", [])):
+			var s := String(vname)
+			line_stoch = line_stoch or (s.contains("_line") and s.contains("_stoch"))
+			cone_stoch = cone_stoch or (s.contains("_cone") and s.contains("_stoch"))
+			all_members = all_members and members.has(Lib.flags_from_variant_name(s))
+		check_true(case_name, "scanned line lights (shadowless and Cone Traced) list a stoch+line variant", line_stoch)
+		check_true(case_name, "no generated name carries cone with stoch", not cone_stoch)
+		check_true(case_name, "every generated name round-trips to a matrix member", all_members)
 		var listed = Pre.config_work_list()
 		check_true(case_name, "generated config parses back into a non-empty work list", listed is Array and listed.size() > 0)
 		DirAccess.remove_absolute(Pre.CONFIG_PATH)

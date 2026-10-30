@@ -15,19 +15,27 @@
 //    matching rx_mask are ignored, tested per sample against the occluder identity
 //    tiles (the _rx / _mask_rx wrappers).
 //  - LIT_SHADOW_CONE / LIT_SHADOW_STOCH: the Cone Traced and Stochastic per-light
-//    shadow algorithms (the _cone / _stoch / _cone_stoch wrappers). Base wrappers
-//    support only the Raymarched algorithm and compile byte-identical to the
-//    pre-algorithm-selection shader.
+//    shadow algorithms (the _cone / _stoch wrappers; a _stoch wrapper runs a Cone
+//    Traced light as the stochastic gate alone). Base wrappers support only the
+//    Raymarched algorithm and compile byte-identical to the pre-algorithm-selection
+//    shader.
+//  - LIT_LINE: line lights (the _stoch_line wrappers): their shading, marches and the
+//    path texture exist only here, so no other wrapper carries line code. Always with
+//    LIT_SHADOW_STOCH, whose strata march the tube.
 //  - LIT_OCC_RAMP: shadow ramps on a fast-tier receiver (the _ramp wrappers): the
 //    ramp weight rides the exclusion march, so it is LIT_SELF_EXCLUSION here.
 #if defined(LIT_OCC_RAMP) && !defined(LIT_SELF_EXCLUSION)
 #define LIT_SELF_EXCLUSION
+#endif
+#if defined(LIT_LINE) && !defined(LIT_SHADOW_STOCH)
+#define LIT_SHADOW_STOCH
 #endif
 
 // Transport: global uniforms plus the per-frame light-data texture, packed by the
 // manager. Read via texelFetch (integer coords, no filtering), so the texture's
 // filter mode doesn't matter here.
 global uniform sampler2D lit_light_data;
+#ifdef LIT_LINE
 global uniform sampler2D lit_light_path;                // curved line lights: one row each (see _pack_path)
 
 // A path row's texel columns: 0 the bounding circle (xyz, enclosing every arc) and the
@@ -191,6 +199,7 @@ float lit_line_weight(vec4 ch, vec2 p, vec3 N, float h, float w, vec2 free) {
 	float rD = inversesqrt(D2);
 	return alpha * atan(D2 * rD * (hi - lo), D2 + hi * lo) * rD + 0.5 * beta * log((D2 + hi * hi) / (D2 + lo * lo));
 }
+#endif
 global uniform int       lit_light_count;
 global uniform int       lit_directional_count;         // directionals occupy rows [0, this)
 global uniform vec2      lit_viewport_size;             // pixels
@@ -427,6 +436,24 @@ uniform float directional_horizontal_scale = 32.0;
 #define LIT_MK_PARAMS
 #define LIT_MK_ARGS
 #define LIT_MK_ON false
+#endif
+
+// Line light context (the _line variants): lit_shade's `positional` is a call-site
+// constant (the directional sweep passes false, so its inlined copy folds the line
+// blocks away), and the strata march takes the window's half-vector and the tube
+// radius. The macros erase both from every other variant.
+#ifdef LIT_LINE
+#define LIT_LINE_PARAMS , bool positional
+#define LIT_LINE_DIR_ARGS , false
+#define LIT_LINE_POS_ARGS , true
+#define LIT_SEG_PARAMS , vec2 seg, float src_r
+#define LIT_SEG_ARGS , line_seg, src_r
+#else
+#define LIT_LINE_PARAMS
+#define LIT_LINE_DIR_ARGS
+#define LIT_LINE_POS_ARGS
+#define LIT_SEG_PARAMS
+#define LIT_SEG_ARGS
 #endif
 
 // Fragment position in canvas space, for the self-shadow bounds test. Canvas space

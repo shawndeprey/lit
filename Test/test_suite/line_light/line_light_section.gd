@@ -461,6 +461,8 @@ func _shadows() -> void:
 	check_true(c, "a Cone Traced line light publishes F_STOCH (its cone is marched as strata)",
 			LitLightRegistry.activity_flags & LitShaderLibrary.F_STOCH != 0)
 	check_true(c, "and not F_CONE", LitLightRegistry.activity_flags & LitShaderLibrary.F_CONE == 0)
+	check_true(c, "and F_LINE (its code lives in the stoch+line variant)",
+			LitLightRegistry.activity_flags & LitShaderLibrary.F_LINE != 0)
 	# A tube of length 0 is the point light, shadows and all.
 	var pts := {"um": P_UM, "pen": P_PEN, "ref": P_REF, "near": P_NEAR}
 	_tube_b.length = 0.0
@@ -566,6 +568,7 @@ func _shadow_shape() -> void:
 	await frames(2)
 	check_true(c, "a stochastic line light publishes F_STOCH",
 			LitLightRegistry.activity_flags & LitShaderLibrary.F_STOCH != 0)
+	check_true(c, "with F_LINE", LitLightRegistry.activity_flags & LitShaderLibrary.F_LINE != 0)
 	# A wide source closes the umbra behind the thin end-on box (antumbra).
 	_tube_d.shadow_algorithm = ALGO.CONE_TRACED
 	_tube_d.source_radius = 60.0

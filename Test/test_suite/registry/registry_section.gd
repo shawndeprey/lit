@@ -161,6 +161,34 @@ func _activity_flags() -> void:
 	await frames(3)
 	check(case_name, "raymarched with default masks publishes 0", 0, RegistryScript.activity_flags)
 	check(case_name, "materials back on the base variant", 0, F.flags_of(_mat(plain).shader))
+	l.shadow_algorithm = F.ShadowAlgorithm.CONE_TRACED
+	var ls := point_light(Vector2(200, 800), 500.0, 0.5)
+	ls.shadow_enabled = true
+	ls.shadow_algorithm = F.ShadowAlgorithm.STOCHASTIC
+	await frames(3)
+	fl = RegistryScript.activity_flags
+	check_true(case_name, "cone and stochastic lights together take the stochastic variant alone",
+			fl & F.F_STOCH != 0 and fl & F.F_CONE == 0 and fl & F.F_LINE == 0)
+	ls.queue_free()
+	var tube := LitLineLight2D.new()
+	tube.position = Vector2(700, 700)
+	tube.range = 300.0
+	add_child(tube)
+	await frames(3)
+	fl = RegistryScript.activity_flags
+	check_true(case_name, "cone light + a shadowless line publish stoch+line, never cone",
+			fl & (F.F_STOCH | F.F_LINE) == F.F_STOCH | F.F_LINE and fl & F.F_CONE == 0)
+	check(case_name, "bare receiver material on the _stoch_line variant", F.F_STOCH | F.F_LINE,
+			F.flags_of(_mat(plain).shader))
+	tube.queue_free()
+	await frames(3)
+	fl = RegistryScript.activity_flags
+	check_true(case_name, "no line light: no line variant anywhere",
+			fl & F.F_LINE == 0 and F.flags_of(_mat(plain).shader) & F.F_LINE == 0)
+	check_true(case_name, "the cone light alone is back on F_CONE", fl & F.F_CONE != 0 and fl & F.F_STOCH == 0)
+	l.shadow_algorithm = F.ShadowAlgorithm.RAYMARCHED
+	await frames(3)
+	check(case_name, "raymarched again: flags 0", 0, RegistryScript.activity_flags)
 	lit.shadow_ramp = 50.0
 	occluder(Vector2(0, 40), Vector2(20, 20), lit)
 	await frames(6)

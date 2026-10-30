@@ -42,7 +42,8 @@ var _prects := PackedFloat32Array()    # a curved line's light-local chain bound
 var _visible_kinds := PackedByteArray()
 var _flags := PackedInt32Array()
 var _smasks := PackedInt32Array()
-var _algo_bits := PackedByteArray()    # shadow_scan's bit per light: 0 none, 1 cone, 2 stochastic or line strata
+var _algo_bits := PackedByteArray()    # shadow_scan's bit per light: 0 none, 1 cone, 2 stochastic
+var _line_on := 0                      # enabled line lights in the mirror
 var _index := {}
 
 # Lights whose mirrored state changed since the last consume (static: the lights
@@ -125,8 +126,9 @@ func visible_kinds() -> PackedByteArray:
 
 ## Tree-wide shadow state for the algo/mask gates in refresh(): [active algo bits,
 ## shadow_mask union, mask potential seen]. Only enabled, shadow-casting lights
-## count; visibility is deliberately ignored so camera motion never thrashes
-## receiver shaders. Mask fields are only read when read_masks is set.
+## count, except algo bit 2 (4), set while any enabled line light exists; visibility
+## is deliberately ignored so camera motion never thrashes receiver shaders. Mask
+## fields are only read when read_masks is set.
 func shadow_scan(tree: SceneTree, read_masks: bool) -> Array:
 	var lights := _get_cached_lights(tree)
 	if Engine.is_editor_hint():
@@ -144,6 +146,8 @@ func shadow_scan(tree: SceneTree, read_masks: bool) -> Array:
 			smask_union |= smask
 			if smask != 1 or f & F_EXCLUDE != 0:
 				potential = true
+	if _line_on > 0:
+		algos |= 4
 	return [algos, smask_union, potential]
 
 
@@ -192,11 +196,14 @@ func _shadow_scan_walk(lights: Array, read_masks: bool) -> Array:
 		# Untyped: enabled/shadow_enabled/shadow_algorithm live on each light class,
 		# not on a shared base.
 		var node = entry[0]
-		if not is_instance_valid(node) or not node.enabled or not node.shadow_enabled:
+		if not is_instance_valid(node) or not node.enabled:
+			continue
+		if entry[1] == 3:
+			algos |= 4
+		if not node.shadow_enabled:
 			continue
 		if node.shadow_algorithm != 0:
-			# A line light's Cone Traced marches strata: the stochastic variant.
-			algos |= 2 if entry[1] == 3 else 1 << (node.shadow_algorithm - 1)
+			algos |= 1 << (node.shadow_algorithm - 1)
 		if read_masks:
 			var smask: int = node.shadow_mask
 			smask_union |= smask
@@ -269,6 +276,8 @@ func _rebuild_light_cache(tree: SceneTree) -> void:
 	_flags.resize(n)
 	_smasks.resize(n)
 	_algo_bits.resize(n)
+	_flags.fill(0)
+	_line_on = 0
 	for i in n:
 		var entry: Array = _light_cache[i]
 		_nodes[i] = entry[0]
@@ -315,6 +324,7 @@ func _write_mirror(i: int, node: Node, kind: int) -> void:
 			_prects[i * 4 + 2] = r.end.x
 			_prects[i * 4 + 3] = r.end.y
 		_smasks[i] = line.shadow_mask
+		_line_on += int(f & F_ENABLED != 0) - int(_flags[i] & F_ENABLED != 0)
 	else:
 		var spot := node as LitSpotLight2D
 		if spot.enabled: f |= F_ENABLED
@@ -326,7 +336,7 @@ func _write_mirror(i: int, node: Node, kind: int) -> void:
 		_smasks[i] = spot.shadow_mask
 	_flags[i] = f
 	var algo := f >> ALGO_SHIFT
-	_algo_bits[i] = 0 if algo == 0 else (2 if kind == 3 else 1 << (algo - 1))
+	_algo_bits[i] = 0 if algo == 0 else 1 << (algo - 1)
 
 ## True if a light's node-scaled `range` AABB (grown by a line light's segment)
 ## intersects the visible world rect.
