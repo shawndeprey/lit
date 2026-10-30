@@ -5,6 +5,7 @@ extends SceneTree
 ## Run: godot --headless --path . --script res://Test/gate_shader_library.gd
 
 const Lib := preload("res://addons/lit/runtime/lit_shader_library.gd")
+const Pre := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const SHADER_DIR := "res://addons/lit/shaders/"
 
 var _fails := 0
@@ -15,6 +16,7 @@ func _initialize() -> void:
 	_gate_selection_closure()
 	_gate_interaction_rules()
 	_gate_entry_equivalence()
+	_gate_config_parse()
 	print("GATE RESULT: " + ("PASS" if _fails == 0 else "FAIL (%d failures)" % _fails))
 	quit(1 if _fails > 0 else 0)
 
@@ -128,6 +130,30 @@ func _gate_entry_equivalence() -> void:
 		else:
 			print("    file: %s\n    gen:  %s" % [a, b])
 	print("  entry files match generated source: %d/%d" % [matched, Lib.ENTRY_PATHS.size()])
+
+
+func _gate_config_parse() -> void:
+	print("[gate 5] config parse (stale and unknown names rejected, members kept; two Lit warnings expected)")
+	var before := _fails
+	var members := {}
+	for fl in Lib.all_variant_flags():
+		members[fl] = true
+	var cfg := ConfigFile.new()
+	cfg.set_value("lit", "shaders", PackedStringArray([]))
+	cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_stoch", "lit_receiver_bogus", "lit_receiver_stoch_line_fast", "lit_receiver_cone"]))
+	var work = Pre.parse_config(cfg)
+	var clean := work is Array
+	for item in (work if work is Array else []):
+		clean = clean and members.has(item)
+	_check(work is Array and work == [Lib.F_STOCH | Lib.F_LINE, Lib.F_CONE | Lib.F_SELF_EXCL],
+			"stale and unknown names skipped, current names kept in order")
+	_check(clean, "the work list holds matrix members only")
+	cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_stoch"]))
+	_check(Pre.parse_config(cfg) == null, "a config naming only stale variants means the full build")
+	cfg.set_value("lit", "variants", PackedStringArray([]))
+	var empty = Pre.parse_config(cfg)
+	_check(empty is Array and empty.is_empty(), "an empty variant list stays an empty build")
+	print("  rejection and fallback rules hold: %d/4" % (4 - (_fails - before)))
 
 
 func _parse(src: String) -> Dictionary:

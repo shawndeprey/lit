@@ -287,6 +287,18 @@ func _precompiler() -> void:
 					parsed is Array and parsed.size() == 3 and parsed[0] == Lib.ENTRY_PATHS[0]
 					and parsed[1] == 0 and parsed[2] == (Lib.F_CONE | Lib.F_SELF_EXCL))
 			check_true(case_name, "config file removed again", not FileAccess.file_exists(Pre.CONFIG_PATH))
+		var stale := ConfigFile.new()
+		stale.set_value("lit", "shaders", PackedStringArray([]))
+		stale.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_stoch", "lit_receiver_stoch_line_fast"]))
+		# (The stale name warns; the rejection is the check.)
+		var kept = Pre.parse_config(stale)
+		check_true(case_name, "a stale variant name (lit_receiver_cone_stoch) is rejected and the current one kept",
+				kept is Array and kept == [Lib.F_STOCH | Lib.F_LINE])
+		stale.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_stoch"]))
+		check_true(case_name, "a config naming only stale variants falls back to the full build (null)", Pre.parse_config(stale) == null)
+		if stale.save(Pre.CONFIG_PATH) == OK:
+			check_true(case_name, "config_work_list applies that fallback from the file", Pre.config_work_list() == null)
+			DirAccess.remove_absolute(Pre.CONFIG_PATH)
 		check_true(case_name, "no config file: config_work_list is null", Pre.config_work_list() == null)
 	var used = Pre.used_post_shaders()
 	var all_post := used is Array
@@ -315,13 +327,40 @@ func _precompiler() -> void:
 		cone.shadow_algorithm = Lib.ShadowAlgorithm.CONE_TRACED
 		fx_root.add_child(cone)
 		cone.owner = fx_root
+		# Subclassed nodes scan as their base class: a line light and a receiver.
+		var sub_line := "res://Test/test_suite/shader_library/scan_fixture_line.gd"
+		var sub_rx := "res://Test/test_suite/shader_library/scan_fixture_receiver.gd"
+		var fa := FileAccess.open(sub_line, FileAccess.WRITE)
+		fa.store_string("extends LitLineLight2D\n")
+		fa.close()
+		fa = FileAccess.open(sub_rx, FileAccess.WRITE)
+		fa.store_string("extends LitSprite2D\n")
+		fa.close()
+		var line_script := load(sub_line) as Script
+		var rx_script := load(sub_rx) as Script
+		check(case_name, "a LitLineLight2D subclass scans as its base", "res://addons/lit/nodes/lit_line_light_2d.gd", Config.lit_base_path(line_script))
+		check(case_name, "a LitSprite2D subclass scans as its base", "res://addons/lit/nodes/lit_sprite_2d.gd", Config.lit_base_path(rx_script))
+		check(case_name, "a non-Lit script scans as nothing", "", Config.lit_base_path(get_script()))
+		var sub := line_script.new() as LitLineLight2D
+		sub.name = "Subclassed"
+		sub.shadow_enabled = true
+		fx_root.add_child(sub)
+		sub.owner = fx_root
+		var sub_r := rx_script.new() as LitSprite2D
+		sub_r.name = "SubclassedReceiver"
+		sub_r.texture = tex_sized(Vector2(8, 8))
+		fx_root.add_child(sub_r)
+		sub_r.owner = fx_root
 		var packed := PackedScene.new()
 		packed.pack(fx_root)
 		check(case_name, "line-light scan fixture saved", OK, ResourceSaver.save(packed, fixture))
 		fx_root.free()
 		var gen: Dictionary = Config.generate()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
-		check_true(case_name, "scan fixture removed again", not FileAccess.file_exists(fixture))
+		for p in [sub_line, sub_rx, sub_line + ".uid", sub_rx + ".uid"]:
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
+		check_true(case_name, "scan fixture removed again", not FileAccess.file_exists(fixture)
+				and not FileAccess.file_exists(sub_line) and not FileAccess.file_exists(sub_rx))
 		check_true(case_name, "Generate Lit Precompile Config writes lit_precompile.cfg",
 				bool(gen.get("saved", false)) and FileAccess.file_exists(Pre.CONFIG_PATH))
 		check_true(case_name, "generated config lists the fast receiver variant and the entry shaders",
@@ -342,6 +381,8 @@ func _precompiler() -> void:
 			cone_stoch = cone_stoch or (s.contains("_cone") and s.contains("_stoch"))
 			all_members = all_members and members.has(Lib.flags_from_variant_name(s))
 		check_true(case_name, "scanned line lights (shadowless and Cone Traced) list a stoch+line variant", line_stoch)
+		check_true(case_name, "stoch+line is listed on the fast and full receiver tiers",
+				Array(gen.get("variants", [])).has("lit_receiver_stoch_line_fast") and Array(gen.get("variants", [])).has("lit_receiver_stoch_line"))
 		check_true(case_name, "no generated name carries cone with stoch", not cone_stoch)
 		check_true(case_name, "every generated name round-trips to a matrix member", all_members)
 		var listed = Pre.config_work_list()

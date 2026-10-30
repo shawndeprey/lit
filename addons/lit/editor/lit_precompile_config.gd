@@ -56,7 +56,7 @@ static func generate() -> Dictionary:
 			var script_path := ""
 			var script = props.get("script")
 			if script is Script:
-				script_path = (script as Script).resource_path
+				script_path = lit_base_path(script as Script)
 			if RECEIVER_SCRIPTS.has(script_path):
 				receivers = true
 			# Properties are checked by name, not just by script: overrides on instanced
@@ -163,3 +163,13 @@ static func generate() -> Dictionary:
 		"full": LitShaderLibrary.all_variant_flags().size(),
 		"saved": err == OK,
 	}
+
+## The Lit node script a script derives from (itself included), else "": a subclass
+## scans as its base class.
+static func lit_base_path(script: Script) -> String:
+	var s := script
+	while s != null:
+		if LIGHT_SCRIPTS.has(s.resource_path) or RECEIVER_SCRIPTS.has(s.resource_path):
+			return s.resource_path
+		s = s.get_base_script()
+	return ""

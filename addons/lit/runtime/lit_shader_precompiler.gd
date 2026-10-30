@@ -88,8 +88,8 @@ static func work_list() -> Array:
 
 ## A generated res://lit_precompile.cfg (Project > Tools > Generate Lit Precompile
 ## Config) replaces the full work list verbatim: exactly what it names, nothing more.
-## Returns null when the file is absent or unreadable, which means the full build
-## above; delete the file to get back there.
+## Returns null when the file is absent, unreadable or stale throughout, which means
+## the full build above; delete the file to get back there.
 static func config_work_list() -> Variant:
 	if not FileAccess.file_exists(CONFIG_PATH):
 		return null
@@ -97,18 +97,35 @@ static func config_work_list() -> Variant:
 	if cfg.load(CONFIG_PATH) != OK:
 		push_warning("Lit: precompile config '%s' failed to parse; running the full precompile" % CONFIG_PATH)
 		return null
+	return parse_config(cfg)
+
+## The work list a loaded config describes. A name whose flags are no longer a matrix
+## member (an older Lit wrote it) is skipped; null when every named variant was.
+static func parse_config(cfg: ConfigFile) -> Variant:
+	var members := {}
+	for fl in LitShaderLibrary.all_variant_flags():
+		members[fl] = true
 	var out: Array = []
 	for path in cfg.get_value("lit", "shaders", PackedStringArray()):
 		if ResourceLoader.exists(path):
 			out.append(String(path))
 		else:
 			push_warning("Lit: precompile config names a missing shader '%s'; regenerate the config" % path)
+	var named := 0
+	var kept := 0
 	for name in cfg.get_value("lit", "variants", PackedStringArray()):
+		named += 1
 		var flags := LitShaderLibrary.flags_from_variant_name(String(name))
-		if flags >= 0:
+		if flags >= 0 and members.has(flags):
 			out.append(flags)
+			kept += 1
+		elif flags >= 0:
+			push_warning("Lit: precompile config names the stale variant '%s' (written by an older Lit); regenerate it with Project > Tools > Generate Lit Precompile Config" % name)
 		else:
 			push_warning("Lit: precompile config names an unknown variant '%s'; regenerate the config" % name)
+	if named > 0 and kept == 0:
+		push_warning("Lit: precompile config names no current variant; running the full precompile")
+		return null
 	return out
 
 
