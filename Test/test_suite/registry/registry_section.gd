@@ -28,6 +28,7 @@ func run() -> void:
 	await _activity_flags()
 	await _rx_registry()
 	await _freed_node_keys()
+	await _screen_tiles()
 
 
 func _make_bare(pos: Vector2, size := Vector2(80, 80)) -> Sprite2D:
@@ -276,3 +277,107 @@ func _freed_node_keys() -> void:
 			rx.erase(key)
 	await frames(2)
 	check(case_name, "the pending set is consumed by the next refresh", 0, pending.size())
+
+
+## The published light-culling grid against a per-tile oracle (the circle's span per tile
+## row, then each spot's two half-plane tests per tile), light rows in ascending order.
+func _screen_tiles() -> void:
+	var case_name := "screen_tiles"
+	var lights: Array[Node2D] = []
+	lights.append(point_light(Vector2(300, 300), 260.0))
+	lights.append(point_light(Vector2(1890, 40), 330.0))
+	var scaled := point_light(Vector2(900, 620), 150.0)
+	scaled.scale = Vector2(1.5, 1.5)
+	lights.append(scaled)
+	lights.append(spot_light(Vector2(700, 300), 0.3, 520.0))
+	lights.append(spot_light(Vector2(1200, 800), -2.4, 600.0))
+	var narrow := spot_light(Vector2(1000, 200), 1.9, 700.0)
+	narrow.spot_angle = 12.0
+	lights.append(narrow)
+	# A curved line whose negative range shrinks its bounds to no column must bin nothing.
+	var bent := LitLineLight2D.new()
+	bent.position = Vector2(300, 540)
+	bent.range = -100.0
+	add_child(bent)
+	var path := Path2D.new()
+	var curve := Curve2D.new()
+	curve.add_point(Vector2(0, -250), Vector2.ZERO, Vector2(20, 100))
+	curve.add_point(Vector2(0, 250), Vector2(20, -100), Vector2.ZERO)
+	path.curve = curve
+	bent.add_child(path)
+	lights.append(bent)
+	await frames(2)
+	var reg = _mgr._registry
+	var ctx = reg._ctx
+	var bent_row: int = ctx.visible.find(bent)
+	check_true(case_name, "the narrow negative-range curved line is visible as a curved light",
+			bent_row >= 0 and ctx.kinds[bent_row] == 4)
+	var tiles = reg._screen_tiles
+	var ts := float(tiles.TILE_SIZE)
+	var tiles_x := maxi(int(ceil(ctx.vp_size.x / ts)), 1)
+	var tiles_y := maxi(int(ceil(ctx.vp_size.y / ts)), 1)
+	var expected: Array = []
+	expected.resize(tiles_x * tiles_y)
+	for t in expected.size():
+		expected[t] = PackedInt32Array()
+	var tiled := {}
+	for i in ctx.visible.size():
+		var kind: int = ctx.kinds[i]
+		if kind != 0 and kind != 2:
+			continue
+		tiled[i] = true
+		var light: Node2D = ctx.visible[i]
+		var xf := light.global_transform
+		var c: Vector2 = ctx.canvas_xform * xf.origin
+		var r: float = float(light.get("range")) * maxf(xf.x.length(), xf.y.length()) * ctx.canvas_scale + 2.0
+		var cone := false
+		var n_plus := Vector2.ZERO
+		var n_minus := Vector2.ZERO
+		if kind == 2:
+			var half := deg_to_rad((light as LitSpotLight2D).spot_angle) + 0.002
+			if half < PI * 0.5 - 0.001:
+				var aim: Vector2 = ctx.canvas_xform.basis_xform(Vector2.from_angle(light.global_rotation))
+				var phi := aim.angle()
+				n_plus = Vector2.from_angle(phi + half - PI * 0.5)
+				n_minus = Vector2.from_angle(phi - half + PI * 0.5)
+				cone = true
+		for ty in tiles_y:
+			var y0 := float(ty) * ts
+			var y1 := y0 + ts
+			var dy := c.y - clampf(c.y, y0, y1)
+			var rem := r * r - dy * dy
+			if rem < 0.0:
+				continue
+			var hw := sqrt(rem)
+			for tx in tiles_x:
+				var x0 := float(tx) * ts
+				var x1 := x0 + ts
+				var in_span := tx >= clampi(int(floor((c.x - hw) / ts)), 0, tiles_x - 1) \
+						and tx <= clampi(int(floor((c.x + hw) / ts)), 0, tiles_x - 1)
+				if not in_span:
+					continue
+				if cone:
+					var p := Vector2(x1 if n_plus.x > 0.0 else x0, y1 if n_plus.y > 0.0 else y0) - c
+					var m := Vector2(x1 if n_minus.x > 0.0 else x0, y1 if n_minus.y > 0.0 else y0) - c
+					if p.x * n_plus.x + p.y * n_plus.y < 0.0 or m.x * n_minus.x + m.y * n_minus.y < 0.0:
+						continue
+				expected[ty * tiles_x + tx].append(i)
+	var header: PackedFloat32Array = tiles._header_buf
+	var index: PackedFloat32Array = tiles._index_buf
+	var bad := 0
+	var pairs := 0
+	for t in expected.size():
+		var got := PackedInt32Array()
+		var off := int(header[t * 2])
+		for k in int(header[t * 2 + 1]):
+			var row := int(index[off + k])
+			if tiled.has(row):
+				got.append(row)
+		pairs += got.size()
+		if got != expected[t]:
+			bad += 1
+	check_gt(case_name, "the six lights bin into tiles", float(pairs), 6.0)
+	check(case_name, "every tile lists exactly the point and spot rows the per-tile oracle accepts, in row order", 0, bad)
+	for l in lights:
+		l.queue_free()
+	await frames(2)

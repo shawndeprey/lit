@@ -4,9 +4,8 @@
 // Compile-time ceiling on area-light samples; the packed count is clamped to this on
 // the CPU as well (lit/quality/shadow_samples_max).
 const int LIT_MAX_SHADOW_SAMPLES = 32;
-#ifdef LIT_LINE
 
-// Two line strata's cone marches in lockstep (dir xy | zw), so the SDF reads of each step
+// Two strata's cone marches in lockstep (dir xy | zw), so the SDF reads of each step
 // are in flight together: lit_shadow_cone's plain phases (steady, tail, source plane) for
 // a fragment outside every shape with no exclusions, sample for sample. Keep it aligned
 // with lit_shadow_cone. A march with maxd 0 is idle.
@@ -48,6 +47,7 @@ vec2 lit_shadow_cone2(vec2 frag_sdf, vec4 dir, vec2 maxd, vec2 tip_band, vec2 w,
 	}
 	return clamp(res, 0.0, 1.0);
 }
+#ifdef LIT_LINE
 
 // Stratum i of n of a straight line light's window: march direction (xy), length, cone tangent.
 vec4 lit_seg_stratum(vec2 frag_sdf, vec2 light_sdf, vec2 seg, float src_r, int i, int n, float jitter_amt, float ign,
@@ -58,6 +58,20 @@ vec4 lit_seg_stratum(vec2 frag_sdf, vec2 light_sdf, vec2 seg, float src_r, int i
 	float len = length(delta);
 	vec2 sdir = delta / max(len, 1e-4);
 	return vec4(sdir, len * cap_frac, max((abs(seg.x * sdir.y - seg.y * sdir.x) / float(n) + src_r) / max(len, 1e-4), 1e-4));
+}
+#else
+
+// Stratum i of n of a point, spot or directional source: march direction (xy), length, cone tangent.
+vec4 lit_pt_stratum(vec2 frag_sdf, vec2 light_sdf, vec2 dir, vec2 perp, float maxd, float src, bool is_dir, int i, int n,
+		float jitter_amt, float ign, float half_stratum, float cap_frac) {
+	float rnd = fract(ign + float(i) * 0.61803398875);
+	float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
+	if (is_dir) {
+		return vec4(normalize(dir + perp * (u * src)), maxd * cap_frac, max(half_stratum, 1e-4));
+	}
+	vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
+	float len = length(delta);
+	return vec4(delta / max(len, 1e-4), len * cap_frac, max(half_stratum / max(len, 1e-4), 1e-4));
 }
 #endif
 
@@ -132,6 +146,20 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 			vec4 b = i + 1 < n ? lit_seg_stratum(frag_sdf, light_sdf, seg, src_r, i + 1, n, jitter_amt, ign, cap_frac)
 					: vec4(0.0, 0.0, 0.0, 1.0);
 			vec2 c2 = lit_shadow_cone2(frag_sdf, vec4(a.xy, b.xy), vec2(a.z, b.z), vec2(band), vec2(a.w, b.w), max_steps, !capped);
+			sum += c2.x;
+			sum += i + 1 < n ? c2.y : 0.0;
+		}
+		return sum / float(n);
+	}
+#else
+	// Plain strata march in pairs.
+	if (frag_d >= 0.0 && !self_ex && !LIT_YS_ON && !LIT_RAMP_ON && !LIT_MK_ON && !LIT_RX_ON) {
+		for (int i = 0; i < n; i += 2) {
+			vec4 a = lit_pt_stratum(frag_sdf, light_sdf, dir, perp, maxd, src, is_dir, i, n, jitter_amt, ign, half_stratum, cap_frac);
+			vec4 b = i + 1 < n ? lit_pt_stratum(frag_sdf, light_sdf, dir, perp, maxd, src, is_dir, i + 1, n, jitter_amt, ign,
+					half_stratum, cap_frac) : vec4(0.0, 0.0, 0.0, 1.0);
+			vec2 c2 = lit_shadow_cone2(frag_sdf, vec4(a.xy, b.xy), vec2(a.z, b.z), vec2(band), vec2(a.w, b.w), max_steps,
+					!is_dir && !capped);
 			sum += c2.x;
 			sum += i + 1 < n ? c2.y : 0.0;
 		}

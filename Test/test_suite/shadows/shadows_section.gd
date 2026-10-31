@@ -175,6 +175,17 @@ func _point_shadows() -> void:
 	img = await capture()
 	check_gt("shadow_algorithms", "Stochastic: source_radius 150 with 16 samples lights inside the edge vs the tight cone",
 			lum(img, E_IN), tight_in, 0.05)
+	# Strata march in pairs; an odd count leaves the last pair's second lane idle.
+	_light.shadow_jitter = 0.0
+	img = await capture()
+	var in16 := lum(img, E_IN)
+	var out16 := lum(img, E_OUT)
+	_light.shadow_samples = 15
+	img = await capture()
+	check_approx("shadow_algorithms", "Stochastic 15 samples (odd), no jitter: matches 16 inside the edge", in16,
+			lum(img, E_IN), 0.01)
+	check_approx("shadow_algorithms", "Stochastic 15 samples (odd), no jitter: matches 16 outside the edge", out16,
+			lum(img, E_OUT), 0.01)
 	var band := Rect2(500, 150, 40, 100)   # penumbra column through E_OUT and E_IN
 	_light.shadow_samples = 4
 	_light.shadow_jitter = 0.0
