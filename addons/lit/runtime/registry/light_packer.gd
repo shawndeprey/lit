@@ -35,7 +35,8 @@ extends RefCounted
 ## Path texture (lit_light_path), one PATH_W-wide row per curved line light on screen:
 ## t0 = a circle enclosing every arc, center.xy (screen px) | radius | shading chord
 ## count, t1..t33 = arc points (xy screen px, z = the bulge tan(sweep / 4) of the arc
-## leaving the point), t33.z = 1 when the chain is closed, t33.w = the chain's length in
+## leaving the point, w = the radius of a disc about its chord's middle holding that arc),
+## t33.z = 1 when the chain is closed, t33.w = the chain's length in
 ## screen px, t34..t65 = the 32 shading chords, t66..t97 = the shadow chords, one per
 ## packed shadow sample, t98..t113 = the coarse shading chords (the shading chords
 ## merged in pairs, see _pack_coarse); chords are mid.xy | half.xy in screen px, of equal
@@ -424,11 +425,21 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 	var s := maxf(xf.x.length(), xf.y.length())
 	if absf(s - 1.0) < 1e-5:
 		s = 1.0
-	var curved := light.is_curved()
+	var pathed := light.is_curved()
+	var curved := pathed
 	var half_world := Vector2.ZERO if curved else xf.basis_xform(Vector2(light.length * 0.5, 0.0))
+	var half_px := canvas_xform.basis_xform(half_world)
+	# A one-arc straight path packs as the straight segment between its ends.
+	var mid_shift := Vector2.ZERO
+	if pathed and light.path_straight():
+		curved = false
+		var seg := (canvas_xform * xf) * light.path_segment()
+		half_px = (seg[1] - seg[0]) * 0.5
+		mid_shift = (seg[0] + seg[1]) * 0.5 - screen_px
+		uv = (screen_px + mid_shift) / vp_size
 	var fit_extra := Vector2.ZERO
 	if _cookies_active and light.texture != null:
-		fit_extra = light.path_extent(xf) if curved else Vector2(half_world.length(), 0.0)
+		fit_extra = light.path_extent(xf) if pathed else Vector2(half_world.length(), 0.0)
 
 	var o := row * _tpl * 4
 
@@ -439,8 +450,10 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 2] = float(light.light_mask & 1048575) + rp.y
 	if rp.z >= 4194304.0 and _read_ranges:
 		_pack_layer_range(o, light)
-	var flags := float(light.shadow_enabled) + 2.0 * subtractive + rp.z \
-			+ _pack_cookie(o, light, canvas_xform, xf, s, fit_extra) \
+	var cookie := _pack_cookie(o, light, canvas_xform, xf, s, fit_extra)
+	if cookie != 0.0 and mid_shift != Vector2.ZERO:
+		cookie = _shift_cookie(o, cookie, mid_shift)
+	var flags := float(light.shadow_enabled) + 2.0 * subtractive + rp.z + cookie \
 			+ 8.0 * float(light.shadow_algorithm) \
 			+ (_pack_excl(o, light) if _excl_active else 0.0) \
 			+ _pack_shadow_length(light.shadow_length) \
@@ -474,7 +487,6 @@ func _pack_line(row: int, light: LitLineLight2D, canvas_xform: Transform2D, vp_s
 		_pack_path(o, light, canvas_xform * xf * light.path_fit_inv(),
 				mini(light.shadow_samples, shadow_samples_max))
 	else:
-		var half_px := canvas_xform.basis_xform(half_world)
 		_pack_buf[o + 16] = half_px.x
 		_pack_buf[o + 17] = half_px.y
 	_pack_buf[o + 18] = light.glow
@@ -548,6 +560,14 @@ func _pack_cookie(o: int, light: Node2D, canvas_xform: Transform2D, xf: Transfor
 	_pack_buf[o + 33] = 0.5 - offset.y * sy
 	return 4.0 + 262144.0
 
+## Keep a packed cookie on the node while the light's center moves `shift` screen px:
+## the cookie-UV center (t8.xy, flags bit 18) absorbs the matrix times the shift.
+func _shift_cookie(o: int, cookie: float, shift: Vector2) -> float:
+	var c := Vector2(_pack_buf[o + 32], _pack_buf[o + 33]) if cookie > 4.0 else Vector2(0.5, 0.5)
+	_pack_buf[o + 32] = c.x + _pack_buf[o + 24] * shift.x + _pack_buf[o + 26] * shift.y
+	_pack_buf[o + 33] = c.y + _pack_buf[o + 25] * shift.x + _pack_buf[o + 27] * shift.y
+	return 4.0 + 262144.0
+
 ## Pack a curved line light's chain into the next path row: `pxf` maps its fit space to
 ## screen px (every point and apex through it, each bulge refitted through its apex, so
 ## a non-uniform node scale still lands on arcs), a circle enclosing every arc for the
@@ -591,7 +611,9 @@ func _pack_path(o: int, light: LitLineLight2D, pxf: Transform2D, n: int) -> void
 	for k in arcs:
 		var p := pts[k + 1]
 		var b := base + 4 * (k + 1)
-		_path_buf[b + 2] = LinePathScript.bulge_through(prev, p, apexes[k])
+		var bulge := LinePathScript.bulge_through(prev, p, apexes[k])
+		_path_buf[b + 2] = bulge
+		_path_buf[b + 3] = 0.5 * prev.distance_to(p) * maxf(absf(bulge), 1.0) * 1.0001 + 0.001
 		_path_buf[b + 4] = p.x
 		_path_buf[b + 5] = p.y
 		prev = p

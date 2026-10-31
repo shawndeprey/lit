@@ -1,7 +1,8 @@
 extends LitSuiteSection
 
 ## LitLineLight2D bent by a Path2D child against the rendered frame: a 2-point path
-## renders as the straight light pixel for pixel; a V path lights its bisector brighter
+## renders as the straight light pixel for pixel, and off the node (packed as its
+## segment) as a collinear 3-point path, its cookie still on the node; a V path lights its bisector brighter
 ## than one arm alone and dimmer than two separate lights, with no crease along it and
 ## no hot spot at the bend; a ring (closed 4-point curve) lights as a true circle
 ## (beam edge within a pixel of the circle, even around, no crease across the arc
@@ -223,6 +224,48 @@ func _straight_equivalence() -> void:
 	check_true(c, "removing the Path2D child returns the light to its segment", not l.is_curved())
 	img = await capture()
 	check_lt(c, "and the render returns to the straight capture", image_diff(straight, img, area, 2), 0.002)
+	# A one-arc straight path packs as its segment; a collinear 3-point path stays curved.
+	var reg = get_node("/root/LitManager")._registry
+	var packer = reg._light_packer
+	var two := [[Vector2(-40, 0), Vector2.ZERO, Vector2.ZERO], [Vector2(160, 0), Vector2.ZERO, Vector2.ZERO]]
+	var three := [two[0], [Vector2(60, 0), Vector2.ZERO, Vector2.ZERO], two[1]]
+	var half_tex := tex_fn(64, 64, func(x: int, _y: int) -> Color:
+		return Color.WHITE if x < 32 else Color.TRANSPARENT)
+	for cfg in [[null, Vector2.ZERO], [half_tex, Vector2.ZERO], [half_tex, Vector2(40, 10)]]:
+		l.texture = cfg[0]
+		l.texture_offset = cfg[1]
+		var tag: String = "no cookie" if cfg[0] == null else "cookie, texture_offset %s" % cfg[1]
+		p = path_child(l, three)
+		await frames(3)
+		check(c, "%s: the collinear 3-point path fits as two arcs" % tag, 2, l.path_chain().arc_count())
+		var ref := await capture()
+		p.free()
+		p = path_child(l, two)
+		await frames(3)
+		img = await capture()
+		check_lt(c, "%s: the off-node 2-point path renders as the 3-point path (mean abs diff)" % tag,
+				image_diff(ref, img, area, 2), 0.002)
+		if cfg[0] != null:
+			check_approx(c, "%s: the cookie stays on the node" % tag, lum(ref, CA + Vector2(-15, 0)), lum(img, CA + Vector2(-15, 0)), 0.01)
+		var row: int = reg._ctx.visible.find(l)
+		check_true(c, "%s: packed this frame" % tag, row >= 0)
+		if row >= 0 and cfg[0] == null:
+			var o: int = row * packer._tpl * 4
+			var cx: Transform2D = reg._ctx.canvas_xform
+			var mid: Vector2 = (cx * (CA + Vector2(60, 0))) / reg._ctx.vp_size
+			check(c, "packed straight: flags bit 23 clear", 0, (int(round(packer._pack_buf[o + 1])) >> 23) & 1)
+			check_approx(c, "texel 4.x = the segment's half vector", cx.basis_xform(Vector2(100, 0)).x, packer._pack_buf[o + 16], 0.01)
+			check_approx(c, "texel 1.x = the segment's midpoint", mid.x, packer._pack_buf[o + 4], 1e-5)
+		p.free()
+	l.texture = null
+	l.texture_offset = Vector2.ZERO
+	for rot in [0.37, 1.1, 2.5]:
+		l.rotation = rot
+		p = path_child(l, two)
+		await frames(1)
+		check_true(c, "rotated %.2f: the 2-point path still fits straight" % rot, l.path_straight())
+		p.free()
+	l.rotation = 0.0
 	l.queue_free()
 	face.queue_free()
 	await frames(1)

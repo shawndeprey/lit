@@ -77,6 +77,7 @@ var _fit_rect := Rect2()
 var _path_rect := Rect2()
 var _path_corners := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
 var _chords := {}
+var _seg := PackedVector2Array()
 # The packed path row the registry last built from this light, keyed by its inputs.
 var _row := PackedFloat32Array()
 var _row_pxf := Transform2D()
@@ -123,6 +124,14 @@ func path_fit_xf() -> Transform2D:
 ## The chain's fit space to light-local space.
 func path_fit_inv() -> Transform2D:
 	return _fit_inv
+
+## True while the chain is one straight arc; path_segment holds its ends.
+func path_straight() -> bool:
+	return not _seg.is_empty()
+
+## The ends of a straight chain in light-local space (empty while it bends).
+func path_segment() -> PackedVector2Array:
+	return _seg
 
 ## Bounds of the chain in fit space.
 func path_fit_rect() -> Rect2:
@@ -200,6 +209,7 @@ func _find_path(exclude: Node) -> void:
 	if _path == null:
 		_unsubscribe()
 		_chain = null
+		_seg = PackedVector2Array()
 	notify_property_list_changed()
 	update_configuration_warnings()
 	LitLightRegistry.light_state_changed(self)
@@ -237,6 +247,11 @@ func _refresh_path() -> void:
 	_fit_inv = _fit_xf.affine_inverse()
 	_chain = LinePathScript.fit(curve, closed, _fit_xf * _path_xf)
 	_chords.clear()
+	_seg = PackedVector2Array()
+	# Straight: the arc's sagitta under a tenth of the fit tolerance.
+	if _chain.arc_count() == 1 and absf(_chain.bulges[0]) * _chain.points[0].distance_to(_chain.points[1]) \
+			< 0.2 * LinePathScript.TOLERANCE:
+		_seg = _fit_inv * _chain.points
 	_row_dirty = true
 	_fit_rect = LinePathScript.bounds(_chain)
 	_path_rect = _rect_in(_fit_rect, _fit_inv)

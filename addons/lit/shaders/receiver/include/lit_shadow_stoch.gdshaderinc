@@ -101,13 +101,44 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 }
 
 #ifdef LIT_LINE
+// Sphere-trace a gate cone (half-width tangent w around axis) out to reach: false at the
+// first sample inside the cone, with t and d left there for the umbra walk.
+bool lit_path_walk(vec2 frag_sdf, vec2 axis, float w, float reach, bool capped, int max_steps,
+		inout float t, inout float d) {
+	float t_cov = lit_sdf_cov_exit(frag_sdf, axis);
+	bool plane = !capped && reach <= t_cov;
+	float maxd = min(reach, t_cov);
+	int steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+	t = shadow_min_step;
+	d = 0.0;
+	for (int s = 0; s < steps && t < maxd; s++) {
+		d = lit_sdf_sample(frag_sdf + axis * t);
+		if (d < w * t) {
+			return false;
+		}
+		t += max(d, shadow_min_step);
+	}
+	if (t < maxd) {
+		int tail = max(steps >> 2, 4);
+		for (int e = 0; e < tail && t < maxd; e++) {
+			d = lit_sdf_sample(frag_sdf + axis * t);
+			if (d < w * t) {
+				return false;
+			}
+			t += max(d, (maxd - t) / float(tail - e));
+		}
+	}
+	return !plane || maxd <= shadow_min_step || lit_sdf_sample(frag_sdf + axis * maxd) >= w * maxd;
+}
+
 // Strata of a curved line light: one sub-cone per shadow chord of its path row, each
 // covering its chord as seen from the fragment plus the tube's radius src_r, weighted
 // as the shading weights the chords (lit_line_chord): the visible share of the light
 // the fragment receives. Its own loop, so the straight strata loop above carries no
 // chord fetch. Each stratum closes its own tip band at the cap.
-// A prepass finds the strata's angular hull and the first eight weights; the clearance
-// test and a sphere-trace walk of the hull (clear = lit, spanned = dark) answer alone.
+// A walk of the cone over the bounding circle answers first (clear = lit); then a
+// prepass finds the strata's tighter angular hull, whose walk answers clear = lit and
+// spanned = dark, and each stratum's weight is taken as it is marched.
 float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float cap_frac, bool capped, float src_r,
 		float jitter_amt, vec2 noise_px, int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
@@ -122,10 +153,18 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float ca
 		return 1.0;
 	}
 	axis /= max(c_len, 1e-4);
+	float t = 0.0;
+	float d = 0.0;
+	// Every stratum's cone lies in the cone over the bounding circle grown by twice the
+	// longest shadow chord's half-length (its aim point and cross section) and src_r.
+	float rg = r_sdf * (1.0 + 1.1 * texelFetch(lit_light_path, ivec2(LIT_PATH_INFO, row), 0).w / (float(n) * max(c0.z, 1e-4))) + src_r;
+	if (c_len > rg * 1.001) {
+		float w_c = rg * inversesqrt(c_len * c_len - rg * rg);
+		if (w_c <= 4.0 && lit_path_walk(frag_sdf, axis, w_c, (c_len + rg) * cap_frac, capped, max_steps, t, d)) {
+			return 1.0;
+		}
+	}
 	float ign = fract(52.9829189 * fract(dot(noise_px, vec2(0.06711056, 0.00583715))));
-	vec4 w0 = vec4(0.0);
-	vec4 w1 = vec4(0.0);
-	float wsum0 = 0.0;
 	float w_gate = 0.0;
 	float t_far = 0.0;
 	float t_near = 1e30;
@@ -147,49 +186,12 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float ca
 		t_far = max(t_far, len * sqrt(1.0 + w_sub * w_sub));
 		t_near = min(t_near, len * along);
 		t_ball = max(t_ball, len * (1.0 + w_sub));
-		if (i < 8) {
-			vec2 free = vec2(i == 0 ? tube.z : 0.0, i == n - 1 ? tube.z : 0.0);
-			float w = lit_line_weight(ch, noise_px, N, tube.x, tube.y, free);
-			w0 += vec4(i == 0 ? w : 0.0, i == 1 ? w : 0.0, i == 2 ? w : 0.0, i == 3 ? w : 0.0);
-			w1 += vec4(i == 4 ? w : 0.0, i == 5 ? w : 0.0, i == 6 ? w : 0.0, i == 7 ? w : 0.0);
-			wsum0 += max(w, 0.0);
-		}
 	}
-	if ((n <= 8 && wsum0 <= 0.0) || frag_d >= t_ball * 1.05 + 0.5) {
+	if (frag_d >= t_ball * 1.05 + 0.5) {
 		return 1.0;
 	}
 	if (hull && w_gate <= 4.0) {
-		float reach = t_far * cap_frac;
-		float t_cov = lit_sdf_cov_exit(frag_sdf, axis);
-		bool plane = !capped && reach <= t_cov;
-		float maxd = min(reach, t_cov);
-		int steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
-		float t = shadow_min_step;
-		float d = 0.0;
-		bool clear = true;
-		for (int s = 0; s < steps && t < maxd; s++) {
-			d = lit_sdf_sample(frag_sdf + axis * t);
-			if (d < w_gate * t) {
-				clear = false;
-				break;
-			}
-			t += max(d, shadow_min_step);
-		}
-		if (clear && t < maxd) {
-			int tail = max(steps >> 2, 4);
-			for (int e = 0; e < tail && t < maxd; e++) {
-				d = lit_sdf_sample(frag_sdf + axis * t);
-				if (d < w_gate * t) {
-					clear = false;
-					break;
-				}
-				t += max(d, (maxd - t) / float(tail - e));
-			}
-		}
-		if (clear && plane && maxd > shadow_min_step) {
-			clear = lit_sdf_sample(frag_sdf + axis * maxd) >= w_gate * maxd;
-		}
-		if (clear) {
+		if (lit_path_walk(frag_sdf, axis, w_gate, t_far * cap_frac, capped, max_steps, t, d)) {
 			return 1.0;
 		}
 		if (!capped && !self_ex && !LIT_YS_ON && !LIT_RAMP_ON && !LIT_MK_ON && !LIT_RX_ON) {
@@ -207,39 +209,23 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float ca
 	}
 	float sum = 0.0;
 	float wsum = 0.0;
-	for (int b = 0; b < n; b += 8) {
-		if (b > 0) {
-			w0 = vec4(0.0);
-			w1 = vec4(0.0);
-			for (int i = b; i < min(b + 8, n); i++) {
-				vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
-				vec2 free = vec2(i == 0 ? tube.z : 0.0, i == n - 1 ? tube.z : 0.0);
-				float w = lit_line_weight(ch, noise_px, N, tube.x, tube.y, free);
-				int j = i - b;
-				w0 += vec4(j == 0 ? w : 0.0, j == 1 ? w : 0.0, j == 2 ? w : 0.0, j == 3 ? w : 0.0);
-				w1 += vec4(j == 4 ? w : 0.0, j == 5 ? w : 0.0, j == 6 ? w : 0.0, j == 7 ? w : 0.0);
-			}
+	for (int i = 0; i < n; i++) {
+		vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
+		float w = lit_line_weight(ch, noise_px, N, tube.x, tube.y, vec2(i == 0 ? tube.z : 0.0, i == n - 1 ? tube.z : 0.0));
+		if (w <= 0.0) {
+			continue;
 		}
-		for (int i = b; i < min(b + 8, n); i++) {
-			int j = i - b;
-			float w = j < 4 ? (j < 2 ? (j == 0 ? w0.x : w0.y) : (j == 2 ? w0.z : w0.w))
-					: (j < 6 ? (j == 4 ? w1.x : w1.y) : (j == 6 ? w1.z : w1.w));
-			if (w <= 0.0) {
-				continue;
-			}
-			vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
-			vec2 mid = screen_uv_to_sdf(ch.xy / lit_viewport_size);
-			vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / lit_viewport_size) - mid;
-			float rnd = fract(ign + float(i) * 0.61803398875);
-			vec2 delta = mid + hv * (2.0 * jitter_amt * (rnd - 0.5)) - frag_sdf;
-			float len = length(delta);
-			vec2 sdir = delta / max(len, 1e-4);
-			float w_sub = max((abs(hv.x * sdir.y - hv.y * sdir.x) + src_r) / max(len, 1e-4), 1e-4);
-			sum += w * lit_shadow_cone(frag_sdf, sdir, len * cap_frac, capped ? w_sub * len * cap_frac : 0.0, w_sub,
-					max_steps, frag_d,
-					!capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
-			wsum += w;
-		}
+		vec2 mid = screen_uv_to_sdf(ch.xy / lit_viewport_size);
+		vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / lit_viewport_size) - mid;
+		float rnd = fract(ign + float(i) * 0.61803398875);
+		vec2 delta = mid + hv * (2.0 * jitter_amt * (rnd - 0.5)) - frag_sdf;
+		float len = length(delta);
+		vec2 sdir = delta / max(len, 1e-4);
+		float w_sub = max((abs(hv.x * sdir.y - hv.y * sdir.x) + src_r) / max(len, 1e-4), 1e-4);
+		sum += w * lit_shadow_cone(frag_sdf, sdir, len * cap_frac, capped ? w_sub * len * cap_frac : 0.0, w_sub,
+				max_steps, frag_d,
+				!capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+		wsum += w;
 	}
 	return wsum > 0.0 ? clamp(sum / wsum, 0.0, 1.0) : 1.0;
 }

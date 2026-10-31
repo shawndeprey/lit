@@ -20,10 +20,18 @@ vec4 lit_line_window(vec4 t4, vec2 light_uv, vec2 frag_uv, float range) {
 // a quarter of the sweep) of the arc leaving it. Returns the point and its distance.
 vec3 lit_path_nearest(int row, int count, vec2 p) {
 	vec4 cur = texelFetch(lit_light_path, ivec2(1, row), 0);
-	float best = 1e30;
 	vec2 q = cur.xy;
+	float best = dot(p - q, p - q);
+	float bd = sqrt(best);
 	for (int k = 1; k <= count; k++) {
 		vec4 nxt = texelFetch(lit_light_path, ivec2(1 + k, row), 0);
+		// An arc whose bounding disc (w) lies wholly beyond the best distance cannot be nearer.
+		vec2 mo = p - 0.5 * (cur.xy + nxt.xy);
+		float reach = bd + cur.w;
+		if (dot(mo, mo) >= reach * reach) {
+			cur = nxt;
+			continue;
+		}
 		vec2 a = cur.xy;
 		vec2 ab = nxt.xy - a;
 		float bu = cur.z;
@@ -50,10 +58,11 @@ vec3 lit_path_nearest(int row, int count, vec2 p) {
 		if (d2 < best) {
 			best = d2;
 			q = cq;
+			bd = sqrt(best);
 		}
 		cur = nxt;
 	}
-	return vec3(q, sqrt(best));
+	return vec3(q, bd);
 }
 #endif
 
@@ -190,7 +199,6 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 			if (dist > range_px) {
 				return vec3(0.0);                // beyond range
 			}
-			Ldir = normalize(vec3(to_light_px, height_px));
 			atten = pow(clamp(1.0 - dist / range_px, 0.0, 1.0), falloff);
 			// The tube as a line source: its mean cosine at the pixel is the sum of its
 			// chords' line integrals of max(N.u, 0) / |u|^2 (lit_line_chord) over the angle
@@ -213,14 +221,46 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 				vec4 info = texelFetch(lit_light_path, ivec2(LIT_PATH_INFO, path_row), 0); // z 1 when closed | w length px
 				len = info.w;
 				line_tube.z = info.z < 0.5 ? 1.0 : 0.0;
-				// LOD: the coarse chords (pairs merged) past LIT_PATH_LOD_K bounding radii.
+				// LOD: the coarse chords (pairs merged) past LIT_PATH_LOD_K bounding radii, from
+				// LIT_PATH_LOD_K0 for a tube without width (its merged pairs read as the pair there).
 				int chord0 = LIT_PATH_CHORDS;
 				vec2 dc = p - circle.xy;
-				if (count > LIT_PATH_SHADE / 2 && dot(dc, dc) > LIT_PATH_LOD_K * LIT_PATH_LOD_K * circle.z * circle.z) {
+				float lod_k = half_w > 0.0 ? LIT_PATH_LOD_K : LIT_PATH_LOD_K0;
+				if (count > LIT_PATH_SHADE / 2 && dot(dc, dc) > lod_k * lod_k * circle.z * circle.z) {
 					chord0 = LIT_PATH_COARSE;
 					count = (count + 1) / 2;
 				}
+				// Far chords off the free ends, wholly above or below the horizon, inline (2-point
+				// Gauss-Legendre past six half-lengths, nothing below); the rest in the exact pass.
+				uint near = 0u;
 				for (int k = 0; k < count; k++) {
+					vec4 ch = texelFetch(lit_light_path, ivec2(chord0 + k, path_row), 0);
+					float q = dot(ch.zw, ch.zw);
+					vec2 d = ch.xy - p;
+					vec2 v = d - ch.zw * (dot(d, ch.zw) / max(q, 1e-8));
+					vec2 m = d - v * min(half_w * inversesqrt(max(dot(v, v), 1e-12)), 1.0);
+					float em = dot(N.xy, m) + N.z * height_px;
+					float eg = abs(dot(N.xy, ch.zw));
+					bool free_end = line_tube.z > 0.5 && (k == 0 || k == count - 1);
+					if (free_end || (em > -eg && (em < eg || dot(m, m) + height_px * height_px <= 36.0 * q))) {
+						near |= 1u << uint(k);
+					} else if (em >= eg) {
+						vec2 g = ch.zw * 0.5773502692;
+						float eo = dot(N.xy, g);
+						vec3 ua = vec3(m - g, height_px);
+						vec3 ub = vec3(m + g, height_px);
+						float ia = inversesqrt(dot(ua, ua));
+						float ib = inversesqrt(dot(ub, ub));
+						float hl = q * inversesqrt(max(q, 1e-8));
+						float fa = (em - eo) * ia * ia;
+						float fb = (em + eo) * ib * ib;
+						acc_l += hl * (fa * ia * ua + fb * ib * ub);
+						cosine += hl * (fa + fb);
+					}
+				}
+				while (near != 0u) {
+					int k = int(findLSB(near));
+					near &= near - 1u;
 					vec2 free = vec2(k == 0 ? line_tube.z : 0.0, k == count - 1 ? line_tube.z : 0.0);
 					cosine += lit_line_chord(texelFetch(lit_light_path, ivec2(chord0 + k, path_row), 0), p, N, height_px, half_w, free, acc_l);
 				}
@@ -228,6 +268,7 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 				len = 2.0 * length(line_t4.xy);
 				cosine = lit_line_chord(vec4(light_uv * lit_viewport_size, line_t4.xy), p, N, height_px, half_w, vec2(1.0), acc_l);
 			}
+			Ldir = normalize(vec3(to_light_px, height_px));
 			if (len > 1e-3) {
 				cosine /= 2.0 * atan(len, 2.0 * sqrt(dist * dist + height_px * height_px));
 				float body = half_w > 0.0 ? 1.0 - smoothstep(0.0, half_w, dist) : 0.0;
@@ -262,6 +303,16 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 #endif
 	}
 
+#ifdef LIT_LINE
+	// Re-read past the shading block (the index offset is always 0) so these stay out of
+	// the line loops' registers.
+	int i_late = i + (flags >> 30);
+	vec4 t1_late = texelFetch(lit_light_data, ivec2(1, i_late), 0);
+	light_uv = t1_late.xy;
+	range = t1_late.z;
+	light_color = texelFetch(lit_light_data, ivec2(2, i_late), 0).rgb;
+
+#endif
 	// Fully attenuated (out of range, or outside a spot's cone): nothing to add
 	// and no shadow to march.
 	if (atten <= 0.0) {
@@ -390,7 +441,11 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 			// toward-light dir. t1.z is the light's shadow_reach in world px, so the
 			// march length is zoom-invariant - never a screen-derived distance.
 			march_dir = normalize(screen_uv_to_sdf(frag_uv + shadow_dir_uv) - frag_sdf);
+#ifdef LIT_LINE
+			march_len = range * lit_canvas_scale * px_to_sdf;
+#else
 			march_len = t1.z * lit_canvas_scale * px_to_sdf;
+#endif
 #ifdef LIT_LINE
 		} else if (is_line) {
 			// A line light marches toward Q (its nearest point) when raymarched, and as

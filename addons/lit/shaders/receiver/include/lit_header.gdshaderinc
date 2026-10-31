@@ -39,17 +39,20 @@ global uniform sampler2D lit_light_data;
 global uniform sampler2D lit_light_path;                // curved line lights: one row each (see _pack_path)
 
 // A path row's texel columns: 0 the bounding circle (xyz, enclosing every arc) and the
-// shading chord count (w), 1 on the arc points (point.xy | bulge), LIT_PATH_INFO's z 1
+// shading chord count (w), 1 on the arc points (point.xy | bulge | the radius of a disc
+// about the chord's middle holding the arc leaving the point), LIT_PATH_INFO's z 1
 // when the chain is closed and w its length in screen px, then the shading chords from
 // LIT_PATH_CHORDS (up to LIT_PATH_SHADE), the shadow chords from LIT_PATH_SHADOW and
 // the coarse shading chords from LIT_PATH_COARSE (the shading chords merged in pairs,
-// read past LIT_PATH_LOD_K bounding radii), each chord mid.xy | half.xy in screen px.
+// read past LIT_PATH_LOD_K bounding radii, LIT_PATH_LOD_K0 for a tube without width),
+// each chord mid.xy | half.xy in screen px.
 const int LIT_PATH_INFO = 33;
 const int LIT_PATH_CHORDS = 34;
 const int LIT_PATH_SHADE = 32;
 const int LIT_PATH_SHADOW = 66;
 const int LIT_PATH_COARSE = 98;
 const float LIT_PATH_LOD_K = 4.25;
+const float LIT_PATH_LOD_K0 = 2.0;
 
 // A line light's chord `ch` (mid.xy | half.xy, screen px) seen from pixel `p` with
 // normal N: the chord's share of the tube's mean cosine at `p`, the line integral of

@@ -100,7 +100,12 @@ func build_and_publish(ctx: FrameContext) -> void:
 			# by r|n.x| (n the segment's unit normal): exact, like the circle. Its own
 			# loop, so the point loop below stays as lean as it was.
 			var line: LitLineLight2D = visible[i]
-			if kind == 4:
+			var half_px: Vector2
+			if kind == 4 and line.path_straight():
+				var seg := (canvas_xform * xf) * line.path_segment()
+				center = (seg[0] + seg[1]) * 0.5
+				half_px = (seg[1] - seg[0]) * 0.5
+			elif kind == 4:
 				# A curved line fills the tiles under its chain's screen bounds grown by range.
 				var sr := line.path_rect_in(canvas_xform * xf).grow(light_range)
 				var cy0 := clampi(int(floor(sr.position.y / float(TILE_SIZE))), 0, tiles_y - 1)
@@ -114,7 +119,8 @@ func build_and_publish(ctx: FrameContext) -> void:
 						_pair_rows.push_back(i)
 						_tile_counts[row_base + tx] += 1
 				continue
-			var half_px := canvas_xform.basis_xform(xf.basis_xform(Vector2(line.length * 0.5, 0.0)))
+			else:
+				half_px = canvas_xform.basis_xform(xf.basis_xform(Vector2(line.length * 0.5, 0.0)))
 			var ax := center.x - half_px.x
 			var ay := center.y - half_px.y
 			var bx := center.x + half_px.x

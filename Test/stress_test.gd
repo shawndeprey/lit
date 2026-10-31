@@ -65,7 +65,8 @@ const LIGHT_COUNT := 128
 #   linelen=N     every line light exactly N px long (0 = point-sized capsules: the
 #     line code path at the point light's footprint)
 #   linecurve=on  every line light bent into an S-curve (a Path2D child) spanning its
-#     length: the curved path (arcs for the look, chords for the shadows)
+#     length: the curved path (arcs for the look, chords for the shadows);
+#     linecurve=straight a 2-point straight path along the light's own segment
 #   props=off     no prop occluders: the Test scene's own casters only (sparse scene)
 #   linewall=N    an occluder wall N px behind every line light, riding with it (a
 #     light bar on a wall: the gate's hardest case, every open-side pixel sees the wall)
@@ -133,7 +134,7 @@ var _opt_receiver_count := 0
 var _opt_precompile := ""
 var _opt_lines := false
 var _opt_linelen := -1.0
-var _opt_linecurve := false
+var _opt_linecurve := "off"
 var _opt_props := true
 var _opt_linewall := 0.0
 var _pre_elapsed := -1.0
@@ -241,7 +242,7 @@ func _ready() -> void:
 			"linelen":
 				_opt_linelen = float(kv[1])
 			"linecurve":
-				_opt_linecurve = kv[1] == "on"
+				_opt_linecurve = kv[1]
 			"props":
 				_opt_props = kv[1] != "off"
 			"linewall":
@@ -775,13 +776,17 @@ func _spawn_light(kind: String, col: Color) -> void:
 			n.glow = _rng.randf_range(0.2, 1.0)
 			if _opt_linelen >= 0.0:
 				n.length = _opt_linelen
-			if _opt_linecurve:
+			if _opt_linecurve == "on" or _opt_linecurve == "straight":
 				var path := Path2D.new()
 				var curve := Curve2D.new()
 				var h: float = n.length * 0.5
-				curve.add_point(Vector2(-h, 0), Vector2.ZERO, Vector2(h * 0.6, 0))
-				curve.add_point(Vector2(0, h * 0.4), Vector2(-h * 0.25, -h * 0.25), Vector2(h * 0.25, h * 0.25))
-				curve.add_point(Vector2(h, 0), Vector2(-h * 0.6, 0), Vector2.ZERO)
+				if _opt_linecurve == "straight":
+					curve.add_point(Vector2(-h, 0))
+					curve.add_point(Vector2(h, 0))
+				else:
+					curve.add_point(Vector2(-h, 0), Vector2.ZERO, Vector2(h * 0.6, 0))
+					curve.add_point(Vector2(0, h * 0.4), Vector2(-h * 0.25, -h * 0.25), Vector2(h * 0.25, h * 0.25))
+					curve.add_point(Vector2(h, 0), Vector2(-h * 0.6, 0), Vector2.ZERO)
 				path.curve = curve
 				n.add_child(path)
 			if _opt_linewall > 0.0:
@@ -997,8 +1002,8 @@ func _report() -> void:
 		print("LITBENCH props=off")
 	if _opt_linewall > 0.0:
 		print("LITBENCH linewall=%.0f" % _opt_linewall)
-	if _opt_linecurve:
-		print("LITBENCH linecurve=on")
+	if _opt_linecurve != "off":
+		print("LITBENCH linecurve=%s" % _opt_linecurve)
 	if _opt_plain:
 		print("LITBENCH plain=on")
 	if _opt_receiver_count > 0:
