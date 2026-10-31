@@ -4,6 +4,62 @@
 // Compile-time ceiling on area-light samples; the packed count is clamped to this on
 // the CPU as well (lit/quality/shadow_samples_max).
 const int LIT_MAX_SHADOW_SAMPLES = 32;
+#ifdef LIT_LINE
+
+// Two line strata's cone marches in lockstep (dir xy | zw), so the SDF reads of each step
+// are in flight together: lit_shadow_cone's plain phases (steady, tail, source plane) for
+// a fragment outside every shape with no exclusions, sample for sample. Keep it aligned
+// with lit_shadow_cone. A march with maxd 0 is idle.
+vec2 lit_shadow_cone2(vec2 frag_sdf, vec4 dir, vec2 maxd, vec2 tip_band, vec2 w, int max_steps, bool src_plane) {
+	vec2 t_tip = maxd;
+	vec2 t_cov = vec2(lit_sdf_cov_exit(frag_sdf, dir.xy), lit_sdf_cov_exit(frag_sdf, dir.zw));
+	bvec2 plane = bvec2(src_plane && maxd.x <= t_cov.x, src_plane && maxd.y <= t_cov.y);
+	maxd = min(maxd, t_cov);
+	vec2 t = vec2(shadow_min_step);
+	vec2 res = vec2(1.0);
+	max_steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+	for (int s = 0; s < max_steps; s++) {
+		bvec2 live = bvec2(t.x < maxd.x && res.x > 0.0, t.y < maxd.y && res.y > 0.0);
+		if (!any(live)) {
+			break;
+		}
+		vec2 d = vec2(lit_sdf_sample(frag_sdf + dir.xy * t.x), lit_sdf_sample(frag_sdf + dir.zw * t.y));
+		vec2 cand = 0.5 + d / (2.0 * w * t);
+		vec2 tw = vec2(lit_tip_weight(t.x, t_tip.x, tip_band.x), lit_tip_weight(t.y, t_tip.y, tip_band.y));
+		res = mix(res, min(res, mix(vec2(1.0), max(cand, 0.0), tw)), live);
+		t = mix(t, t + max(abs(d), shadow_min_step), live);
+	}
+	int tail = max(max_steps >> 2, 4);
+	for (int e = 0; e < tail; e++) {
+		bvec2 live = bvec2(t.x < maxd.x && res.x > 0.0, t.y < maxd.y && res.y > 0.0);
+		if (!any(live)) {
+			break;
+		}
+		vec2 d = vec2(lit_sdf_sample(frag_sdf + dir.xy * t.x), lit_sdf_sample(frag_sdf + dir.zw * t.y));
+		vec2 cand = 0.5 + d / (2.0 * w * t);
+		vec2 tw = vec2(lit_tip_weight(t.x, t_tip.x, tip_band.x), lit_tip_weight(t.y, t_tip.y, tip_band.y));
+		res = mix(res, min(res, mix(vec2(1.0), max(cand, 0.0), tw)), live);
+		t = mix(t, t + max(abs(d), (maxd - t) / float(tail - e)), live);
+	}
+	bvec2 at_src = bvec2(plane.x && maxd.x > shadow_min_step && res.x > 0.0, plane.y && maxd.y > shadow_min_step && res.y > 0.0);
+	if (any(at_src)) {
+		vec2 d = vec2(lit_sdf_sample(frag_sdf + dir.xy * maxd.x), lit_sdf_sample(frag_sdf + dir.zw * maxd.y));
+		res = mix(res, min(res, max(0.5 + d / (2.0 * w * maxd), 0.0)), at_src);
+	}
+	return clamp(res, 0.0, 1.0);
+}
+
+// Stratum i of n of a straight line light's window: march direction (xy), length, cone tangent.
+vec4 lit_seg_stratum(vec2 frag_sdf, vec2 light_sdf, vec2 seg, float src_r, int i, int n, float jitter_amt, float ign,
+		float cap_frac) {
+	float rnd = fract(ign + float(i) * 0.61803398875);
+	float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
+	vec2 delta = (light_sdf + seg * u) - frag_sdf;
+	float len = length(delta);
+	vec2 sdir = delta / max(len, 1e-4);
+	return vec4(sdir, len * cap_frac, max((abs(seg.x * sdir.y - seg.y * sdir.x) / float(n) + src_r) / max(len, 1e-4), 1e-4));
+}
+#endif
 
 // Stochastic area-light visibility: split the source into n strata and cone-march a
 // narrow sub-cone covering each, averaging the fractional stratum coverages - true
@@ -68,6 +124,20 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 		return c;
 	}
 	float sum = 0.0;
+#ifdef LIT_LINE
+	// Plain line strata march in pairs.
+	if (line && frag_d >= 0.0 && !self_ex && !LIT_YS_ON && !LIT_RAMP_ON && !LIT_MK_ON && !LIT_RX_ON) {
+		for (int i = 0; i < n; i += 2) {
+			vec4 a = lit_seg_stratum(frag_sdf, light_sdf, seg, src_r, i, n, jitter_amt, ign, cap_frac);
+			vec4 b = i + 1 < n ? lit_seg_stratum(frag_sdf, light_sdf, seg, src_r, i + 1, n, jitter_amt, ign, cap_frac)
+					: vec4(0.0, 0.0, 0.0, 1.0);
+			vec2 c2 = lit_shadow_cone2(frag_sdf, vec4(a.xy, b.xy), vec2(a.z, b.z), vec2(band), vec2(a.w, b.w), max_steps, !capped);
+			sum += c2.x;
+			sum += i + 1 < n ? c2.y : 0.0;
+		}
+		return sum / float(n);
+	}
+#endif
 	for (int i = 0; i < n; i++) {
 		vec2 sdir;
 		float smaxd;
@@ -129,6 +199,32 @@ bool lit_path_walk(vec2 frag_sdf, vec2 axis, float w, float reach, bool capped, 
 		}
 	}
 	return !plane || maxd <= shadow_min_step || lit_sdf_sample(frag_sdf + axis * maxd) >= w * maxd;
+}
+
+// Stratum i of a path row: march direction (xy), length, cone tangent; band its tip band,
+// weight its shading share, 0 (and maxd 0, idle) when it casts nothing.
+vec4 lit_path_stratum(vec2 frag_sdf, int row, int i, int n, vec3 N, vec3 tube, float cap_frac, bool capped, float src_r,
+		float jitter_amt, vec2 noise_px, float ign, out float band, out float weight) {
+	band = 0.0;
+	weight = 0.0;
+	if (i >= n) {
+		return vec4(0.0, 0.0, 0.0, 1.0);
+	}
+	vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
+	float w = lit_line_weight(ch, noise_px, N, tube.x, tube.y, vec2(i == 0 ? tube.z : 0.0, i == n - 1 ? tube.z : 0.0));
+	if (w <= 0.0) {
+		return vec4(0.0, 0.0, 0.0, 1.0);
+	}
+	vec2 mid = screen_uv_to_sdf(ch.xy / lit_viewport_size);
+	vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / lit_viewport_size) - mid;
+	float rnd = fract(ign + float(i) * 0.61803398875);
+	vec2 delta = mid + hv * (2.0 * jitter_amt * (rnd - 0.5)) - frag_sdf;
+	float len = length(delta);
+	vec2 sdir = delta / max(len, 1e-4);
+	float w_sub = max((abs(hv.x * sdir.y - hv.y * sdir.x) + src_r) / max(len, 1e-4), 1e-4);
+	band = capped ? w_sub * len * cap_frac : 0.0;
+	weight = w;
+	return vec4(sdir, len * cap_frac, w_sub);
 }
 
 // Strata of a curved line light: one sub-cone per shadow chord of its path row, each
@@ -209,6 +305,22 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float ca
 	}
 	float sum = 0.0;
 	float wsum = 0.0;
+	if (frag_d >= 0.0 && !self_ex && !LIT_YS_ON && !LIT_RAMP_ON && !LIT_MK_ON && !LIT_RX_ON) {
+		for (int i = 0; i < n; i += 2) {
+			float ba;
+			float wa;
+			float bb;
+			float wb;
+			vec4 a = lit_path_stratum(frag_sdf, row, i, n, N, tube, cap_frac, capped, src_r, jitter_amt, noise_px, ign, ba, wa);
+			vec4 b = lit_path_stratum(frag_sdf, row, i + 1, n, N, tube, cap_frac, capped, src_r, jitter_amt, noise_px, ign, bb, wb);
+			vec2 c = lit_shadow_cone2(frag_sdf, vec4(a.xy, b.xy), vec2(a.z, b.z), vec2(ba, bb), vec2(a.w, b.w), max_steps, !capped);
+			sum += wa * c.x;
+			wsum += wa;
+			sum += wb * c.y;
+			wsum += wb;
+		}
+		return wsum > 0.0 ? clamp(sum / wsum, 0.0, 1.0) : 1.0;
+	}
 	for (int i = 0; i < n; i++) {
 		vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
 		float w = lit_line_weight(ch, noise_px, N, tube.x, tube.y, vec2(i == 0 ? tube.z : 0.0, i == n - 1 ? tube.z : 0.0));

@@ -563,6 +563,11 @@ func _shadow_shape() -> void:
 	img = await capture()
 	check_approx(c, "Stochastic 16 samples, no jitter: equals Cone Traced", results[ALGO.CONE_TRACED]["side"],
 			lum(img, P_SIDE), 0.01)
+	var side16 := lum(img, P_SIDE)
+	_tube_d.shadow_samples = 15
+	await frames(2)
+	img = await capture()
+	check_approx(c, "Stochastic 15 samples (odd), no jitter: matches 16 beside the box", side16, lum(img, P_SIDE), 0.01)
 	_tube_d.shadow_samples = 8
 	_tube_d.shadow_jitter = 0.35
 	await frames(2)

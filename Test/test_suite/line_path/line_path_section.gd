@@ -405,6 +405,11 @@ func _ring_shadows() -> void:
 	check_approx(c, "inside the ring: 60 px toward the left box, unshadowed", _ref(CB + Vector2(-60, 0), ringb, true, 250.0, 0.4, 0.3, 300.0),
 			lum(img, CB + Vector2(-60, 0)), TOL)
 	_ring_b.energy = 0.8
+	_ring_b.shadow_samples = 15
+	await frames(2)
+	img = await capture()
+	check_approx(c, "Cone Traced 15 samples (odd): matches 16 at the shadow edge", cone_pen, lum(img, P_PEN), 0.01)
+	_ring_b.shadow_samples = 16
 	await frames(2)
 	_ring_b.shadow_algorithm = ALGO.STOCHASTIC
 	await frames(2)
