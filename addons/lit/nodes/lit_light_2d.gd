@@ -35,18 +35,23 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## Height of the light above the surface; drives the normal-mapped shading direction.
 ## Lower values graze the surface (direction reads strongly), higher values face it
 ## head-on. Not affected by node scale (as in Godot).
-@export var height: float = 16.0
+@export var height: float = 16.0:
+	set(value):
+		height = value
+		_pack_version += 1
 
 @export_group("Shadow")
 @export var shadow_enabled: bool = false:
 	set(value):
 		shadow_enabled = value
+		_pack_version += 1
 		LitLightRegistry.light_state_changed(self)
 ## Occluders cast this light's shadows only if their Occluder Light Mask (tileset
 ## occlusion layers: Light Mask) shares a bit with this mask.
 @export_flags_2d_render var shadow_mask: int = 1:
 	set(value):
 		shadow_mask = value
+		_pack_version += 1
 		if value != 1:
 			LitLightRegistry.light_masks_seen = true
 		LitLightRegistry.light_state_changed(self)
@@ -64,12 +69,19 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 @export var shadow_algorithm: ShadowAlgorithm = ShadowAlgorithm.CONE_TRACED:
 	set(value):
 		shadow_algorithm = value
+		_pack_version += 1
 		notify_property_list_changed()
 		LitLightRegistry.light_state_changed(self)
-@export var shadow_color: Color = Color.BLACK
+@export var shadow_color: Color = Color.BLACK:
+	set(value):
+		shadow_color = value
+		_pack_version += 1
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
-@export_range(0.0, 1.0) var shadow_hardness: float = 0.5
+@export_range(0.0, 1.0) var shadow_hardness: float = 0.5:
+	set(value):
+		shadow_hardness = value
+		_pack_version += 1
 ## Length of cast shadows as a fraction; each shadow closes there through a natural
 ## penumbral tip. Point/spot lights: a fraction of the fragment's distance to the light,
 ## so shadows stretch with an occluder's distance from it, reading like a light hung
@@ -77,18 +89,30 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## `shadow_reach`, so a low sun reads as long evening shadows and a high sun as short
 ## noon ones (0 = none at all); animate it alongside the node's rotation for day/night
 ## cycles. 1 = full length (the default).
-@export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0
+@export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0:
+	set(value):
+		shadow_length = value
+		_pack_version += 1
 ## Shadow marches per fragment across the source (STOCHASTIC, and a line light's
 ## CONE_TRACED): more is smoother and slower. Clamped by lit/quality/shadow_samples_max.
-@export_range(1, 32) var shadow_samples: int = 8
+@export_range(1, 32) var shadow_samples: int = 8:
+	set(value):
+		shadow_samples = value
+		_pack_version += 1
 ## STOCHASTIC dither inside each stratum. Samples are fractional sub-cone coverages,
 ## so any setting is smooth (no binary noise); the default is just enough dither to
 ## erase the faint per-stratum wedges a very wide/near source can show. 0 = fully
 ## deterministic, 1 = maximum per-pixel dither (fine grain).
-@export_range(0.0, 1.0) var shadow_jitter: float = 0.35
+@export_range(0.0, 1.0) var shadow_jitter: float = 0.35:
+	set(value):
+		shadow_jitter = value
+		_pack_version += 1
 
 @export_group("Advanced")
-@export var blend_mode: BlendMode = BlendMode.ADD
+@export var blend_mode: BlendMode = BlendMode.ADD:
+	set(value):
+		blend_mode = value
+		_pack_version += 1
 ## Lowest z_index this light reaches. A receiver is lit only while its final z_index
 ## (z_as_relative offsets summed up its parents) lies between Range Z Min and Range Z
 ## Max. The default spans the whole canvas range (Godot's Light2D defaults to
@@ -120,11 +144,17 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 # Narrower than pass-all; the packer reads the ranges only then.
 var ranged: bool = false
 var range_pack := Vector3.ZERO
+# Bumped by every setter of a packed property; the packer reuses _pack_row while
+# _pack_seen still matches it.
+var _pack_version := 0
+var _pack_seen := -1
+var _pack_row := PackedFloat32Array()
 
 func _update_ranged() -> void:
 	range_pack = LitLightRegistry.LightPackerScript.range_pack(range_z_min, range_z_max,
 			range_layer_min, range_layer_max)
 	ranged = range_pack.z != 0.0
+	_pack_version += 1
 	if ranged:
 		LitLightRegistry.light_ranges_seen = true
 

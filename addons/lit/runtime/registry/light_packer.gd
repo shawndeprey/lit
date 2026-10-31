@@ -70,6 +70,12 @@ var _published_light_tex: Texture2D = null
 var _pack_buf: PackedFloat32Array = PackedFloat32Array()
 var _pack_img: Image
 var _pack_img_count: int = -1
+# Point, spot and directional rows are reused while a light's _pack_seen equals its
+# _pack_version plus _pack_epoch, which moves with the frame state baked into rows;
+# a reused row takes the transform, light_mask, energy and color live.
+var _pack_epoch := 0
+var _epoch_inputs := Vector4i(-1, -1, -1, -1)
+var _zero_row := PackedFloat32Array()
 # Curved line lights: PATH_W texels per row (circle, 33 arc points, 32 shading chords,
 # 32 shadow chords, 16 coarse shading chords), rows appended as the pack meets them,
 # each light's row rebuilt only when its inputs changed (the light keeps its last row).
@@ -131,10 +137,14 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 	_publish_cookie_atlas()
 
 	# Pack each light into one _tpl-wide row of the float buffer.
-	var floats_needed := count * _tpl * 4
-	if _pack_buf.size() != floats_needed:
-		_pack_buf.resize(floats_needed)
-	_pack_buf.fill(0.0)
+	var epoch_inputs := Vector4i(_tpl, shadow_samples_max, int(_rx_union_frame != 0), int(_read_ranges))
+	if epoch_inputs != _epoch_inputs:
+		_epoch_inputs = epoch_inputs
+		_pack_epoch += 1 << 40
+	if _zero_row.size() != _tpl * 4:
+		_zero_row.resize(_tpl * 4)
+		_zero_row.fill(0.0)
+	_pack_buf.clear()
 	_path_begin()
 	var kinds: PackedByteArray = ctx.kinds
 	for i in count:
@@ -146,6 +156,7 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 		elif kind == 2:
 			_pack_spot(i, visible[i] as LitSpotLight2D, canvas_xform, vp_size)
 		else:
+			_pack_buf.append_array(_zero_row)
 			_pack_line(i, visible[i] as LitLineLight2D, canvas_xform, vp_size)
 	_upload_pack_buffer(count)
 	_upload_path_buffer()
@@ -232,6 +243,20 @@ func _pack_shadow_length(frac: float) -> float:
 		return 0.0
 	return 64.0 * roundf(clampf(frac, 0.01, 1.0) * 4095.0)
 
+## Keep the row at `o` on the light under `key` (-1 keeps nothing) with texel 0.z free
+## of light_mask, which has no setter and is added each frame, and texels 1.z and 7.x
+## unscaled, so a reused row only rewrites its live fields.
+func _keep_row(o: int, light: Node2D, key: int, rp_z_high: float, s: float) -> void:
+	light._pack_seen = key
+	if key < 0:
+		return
+	var keep := _pack_buf.slice(o, o + _tpl * 4)
+	keep[2] = rp_z_high
+	if s != 1.0:
+		keep[6] = light.range
+		keep[28] = light.source_radius
+	light._pack_row = keep
+
 ## Pack one point light into the row starting at `row` in _pack_buf.
 func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
 	# Position to normalized screen UV, the one canonical space.
@@ -244,6 +269,23 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 
 	# Four floats per texel; o is the float offset of this light's first texel.
 	var o := row * _tpl * 4
+	var key: int = light._pack_version + _pack_epoch
+	var excl := _excl_active and _excl_info.has(light)
+	if light._pack_seen == key and not excl:
+		_pack_buf.append_array(light._pack_row)
+		_pack_buf[o + 2] += float(light.light_mask & 1048575)
+		_pack_buf[o + 7] = light.energy
+		var c := light.color
+		_pack_buf[o + 8] = c.r
+		_pack_buf[o + 9] = c.g
+		_pack_buf[o + 10] = c.b
+		_pack_buf[o + 4] = uv.x
+		_pack_buf[o + 5] = uv.y
+		if s != 1.0:
+			_pack_buf[o + 6] = light.range * s
+			_pack_buf[o + 28] = light.source_radius * s
+		return
+	_pack_buf.append_array(_zero_row)
 
 	# Integer fields stored as plain floats, decoded with int(round(...)) in the shader.
 	var subtractive := 1.0 if light.blend_mode == LitPointLight2D.BlendMode.SUBTRACT else 0.0
@@ -286,6 +328,7 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	_pack_buf[o + 30] = light.shadow_jitter
 	if _rx_union_frame != 0:
 		_pack_buf[o + 31] = float(light.shadow_mask)
+	_keep_row(o, light, -1 if excl or (_cookies_active and light.texture != null) else key, rp.y, s)
 
 ## Pack one directional light. Texel 1 carries a normalized direction toward the light
 ## in screen-pixel space instead of a UV position; range and falloff are unused.
@@ -298,8 +341,23 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	if dir_px.length() > 0.0:
 		dir_px = dir_px.normalized()
 
-	var subtractive := 1.0 if light.blend_mode == LitDirectionalLight2D.BlendMode.SUBTRACT else 0.0
 	var o := row * _tpl * 4
+	var key: int = light._pack_version + _pack_epoch
+	var excl := _excl_active and _excl_info.has(light)
+	if light._pack_seen == key and not excl:
+		_pack_buf.append_array(light._pack_row)
+		_pack_buf[o + 2] += float(light.light_mask & 1048575)
+		_pack_buf[o + 7] = light.energy
+		var c := light.color
+		_pack_buf[o + 8] = c.r
+		_pack_buf[o + 9] = c.g
+		_pack_buf[o + 10] = c.b
+		_pack_buf[o + 4] = dir_px.x
+		_pack_buf[o + 5] = dir_px.y
+		return
+	_pack_buf.append_array(_zero_row)
+
+	var subtractive := 1.0 if light.blend_mode == LitDirectionalLight2D.BlendMode.SUBTRACT else 0.0
 	# Texel 0: z code | flags + type | light_mask + z code high bits | (falloff unused)
 	var rp: Vector3 = light.range_pack
 	_pack_buf[o + 0] = rp.x
@@ -341,6 +399,7 @@ func _pack_directional(row: int, light: LitDirectionalLight2D, canvas_xform: Tra
 	_pack_buf[o + 30] = light.shadow_jitter
 	if _rx_union_frame != 0:
 		_pack_buf[o + 31] = float(light.shadow_mask)
+	_keep_row(o, light, -1 if excl else key, rp.y, 1.0)
 
 ## Pack one spot light: a point light (texels 0 to 3) plus a cone (texel 4). The node's
 ## local +X (its rotation) is the direction the cone aims.
@@ -357,6 +416,27 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	if aim_px.length() > 0.0:
 		aim_px = aim_px.normalized()
 
+	var o := row * _tpl * 4
+	var key: int = light._pack_version + _pack_epoch
+	var excl := _excl_active and _excl_info.has(light)
+	if light._pack_seen == key and not excl:
+		_pack_buf.append_array(light._pack_row)
+		_pack_buf[o + 2] += float(light.light_mask & 1048575)
+		_pack_buf[o + 7] = light.energy
+		var c := light.color
+		_pack_buf[o + 8] = c.r
+		_pack_buf[o + 9] = c.g
+		_pack_buf[o + 10] = c.b
+		_pack_buf[o + 4] = uv.x
+		_pack_buf[o + 5] = uv.y
+		if s != 1.0:
+			_pack_buf[o + 6] = light.range * s
+			_pack_buf[o + 28] = light.source_radius * s
+		_pack_buf[o + 16] = aim_px.x
+		_pack_buf[o + 17] = aim_px.y
+		return
+	_pack_buf.append_array(_zero_row)
+
 	# Cone as cosines: cos(outer) is the edge, cos(inner) the fully-lit core.
 	# spot_softness feathers the core inward; keep inner strictly inside outer so the
 	# shader's smoothstep never divides by zero.
@@ -364,8 +444,6 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	var cos_inner := cos(deg_to_rad(light.spot_angle * (1.0 - light.spot_softness)))
 	if cos_inner <= cos_outer:
 		cos_inner = cos_outer + 0.0001
-
-	var o := row * _tpl * 4
 
 	var subtractive := 1.0 if light.blend_mode == LitSpotLight2D.BlendMode.SUBTRACT else 0.0
 	# Texel 0: z code | flags + type | light_mask + z code high bits | falloff
@@ -413,6 +491,7 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 30] = light.shadow_jitter
 	if _rx_union_frame != 0:
 		_pack_buf[o + 31] = float(light.shadow_mask)
+	_keep_row(o, light, -1 if excl or (_cookies_active and light.texture != null) else key, rp.y, s)
 
 ## Pack one line light: a point light (texels 0 to 3, 7) at the node plus its segment
 ## (texel 4). The segment is centered on the node along its local +X and takes the full

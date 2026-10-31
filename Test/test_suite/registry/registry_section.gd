@@ -29,6 +29,7 @@ func run() -> void:
 	await _rx_registry()
 	await _freed_node_keys()
 	await _screen_tiles()
+	await _pack_rows()
 
 
 func _make_bare(pos: Vector2, size := Vector2(80, 80)) -> Sprite2D:
@@ -381,3 +382,77 @@ func _screen_tiles() -> void:
 	for l in lights:
 		l.queue_free()
 	await frames(2)
+
+
+## Reused light rows against full repacks: each probe changes one packed input, packs a
+## frame (the reused row unless the change moved the light's version), then forces a full
+## repack and compares; a setter missing its version bump leaves the stale row.
+func _pack_rows() -> void:
+	var case_name := "pack_rows"
+	var reg = _mgr._registry
+	var pt := point_light(Vector2(400, 300), 220.0)
+	var sp := spot_light(Vector2(900, 400), 0.4, 400.0)
+	var dl := directional_light(0.7)
+	await frames(2)
+	check_true(case_name, "an unchanged light reuses its packed row",
+			pt._pack_seen == pt._pack_version + reg._light_packer._pack_epoch)
+	var probes := [
+		[pt, "color", func(): pt.color = Color(0.2, 0.6, 0.9)],
+		[pt, "color.r", func(): pt.color.r = 0.7],
+		[pt, "energy", func(): pt.energy = 2.5],
+		[pt, "height", func(): pt.height = 40.0],
+		[pt, "shadow_enabled", func(): pt.shadow_enabled = true],
+		[pt, "shadow_color", func(): pt.shadow_color = Color(0.3, 0.1, 0.2)],
+		[pt, "shadow_hardness", func(): pt.shadow_hardness = 0.8],
+		[pt, "shadow_length", func(): pt.shadow_length = 0.5],
+		[pt, "shadow_samples", func(): pt.shadow_samples = 5],
+		[pt, "shadow_jitter", func(): pt.shadow_jitter = 0.9],
+		[pt, "shadow_algorithm", func(): pt.shadow_algorithm = LitLight2D.ShadowAlgorithm.STOCHASTIC],
+		[pt, "blend_mode", func(): pt.blend_mode = LitLight2D.BlendMode.SUBTRACT],
+		[pt, "range", func(): pt.range = 260.0],
+		[pt, "falloff", func(): pt.falloff = 2.0],
+		[pt, "source_radius", func(): pt.source_radius = 12.0],
+		[pt, "range_z_min", func(): pt.range_z_min = -50],
+		[pt, "light_mask", func(): pt.light_mask = 3],
+		[pt, "position", func(): pt.position = Vector2(420, 320)],
+		[pt, "scale", func(): pt.scale = Vector2(1.5, 1.5)],
+		[pt, "energy while scaled", func(): pt.energy = 1.5],
+		[pt, "position while scaled", func(): pt.position = Vector2(440, 300)],
+		[pt, "scale back to 1", func(): pt.scale = Vector2.ONE],
+		[sp, "spot_angle", func(): sp.spot_angle = 20.0],
+		[sp, "spot_softness", func(): sp.spot_softness = 0.2],
+		[sp, "spot rotation", func(): sp.rotation = 1.1],
+		[dl, "shadow_reach", func(): dl.shadow_reach = 2000.0],
+		[dl, "source_angle", func(): dl.source_angle = 12.0],
+		[dl, "shadow_length (directional)", func(): dl.shadow_length = 0.4],
+		[dl, "directional rotation", func(): dl.rotation = 1.3],
+		[pt, "texture", func(): pt.texture = tex_sized(Vector2(32, 32))],
+	]
+	var stale := []
+	var unmoved := []
+	for probe in probes:
+		var l: LitLight2D = probe[0]
+		var before := _light_row(reg, l)
+		probe[2].call()
+		await frames(1)
+		var reused := _light_row(reg, l)
+		l._pack_seen = -1
+		await frames(1)
+		var fresh := _light_row(reg, l)
+		if reused != fresh or fresh.is_empty():
+			stale.append(probe[1])
+		if fresh == before:
+			unmoved.append(probe[1])
+	check(case_name, "every probed input changes its light's packed row", [], unmoved)
+	check(case_name, "a reused row matches a full repack after every packed input change", [], stale)
+	for l in [pt, sp, dl]:
+		l.queue_free()
+	await frames(2)
+
+
+func _light_row(reg, l: Node2D) -> PackedFloat32Array:
+	var row: int = reg._ctx.visible.find(l)
+	if row < 0:
+		return PackedFloat32Array()
+	var n: int = reg._ctx.texels_per_light * 4
+	return reg._light_packer._pack_buf.slice(row * n, row * n + n)
