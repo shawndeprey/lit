@@ -25,7 +25,8 @@ const TOOL_MENU_PRECOMPILE := "Generate Lit Precompile Config"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
-const LitReceiverInspectorScript := preload("res://addons/lit/editor/lit_receiver_inspector.gd")
+const LitLineInspectorScript := preload("res://addons/lit/editor/lit_line_inspector.gd")
+const LitReceiverInspectorScript :=preload("res://addons/lit/editor/lit_receiver_inspector.gd")
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
 const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
@@ -44,6 +45,7 @@ var _registry: LitLightRegistry
 var _refresh_accum := 0.0
 var _warm_pending: Array[int] = []
 var _post_inspector: EditorInspectorPlugin
+var _line_inspector: EditorInspectorPlugin
 var _receiver_inspector: EditorInspectorPlugin
 # Last-seen values of the project settings that gate receiver exports; see _process.
 var _gating_key := ""
@@ -79,6 +81,10 @@ func _enter_tree() -> void:
 	_post_inspector = LitPostInspectorScript.new()
 	_post_inspector.undo_redo = get_undo_redo()
 	add_inspector_plugin(_post_inspector)
+	# The "Add Path" button on the LitLineLight2D inspector.
+	_line_inspector = LitLineInspectorScript.new()
+	_line_inspector.undo_redo = get_undo_redo()
+	add_inspector_plugin(_line_inspector)
 	# Notes on receiver inspectors for exports the project settings make inert.
 	_receiver_inspector = LitReceiverInspectorScript.new()
 	add_inspector_plugin(_receiver_inspector)
@@ -102,6 +108,8 @@ func _exit_tree() -> void:
 	remove_tool_menu_item(_update_menu_label)
 	remove_inspector_plugin(_post_inspector)
 	_post_inspector = null
+	remove_inspector_plugin(_line_inspector)
+	_line_inspector = null
 	remove_inspector_plugin(_receiver_inspector)
 	_receiver_inspector = null
 	remove_export_plugin(_export_plugin)

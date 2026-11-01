@@ -17,6 +17,8 @@ extends LitSuiteSection
 ## kept, inactive on a path with no curve, rendered as the same hand-drawn polyline); tiny
 ## curves beside a long one keep the shading chords within the row's 32; a path past 32
 ## arcs reports one runtime error each time it goes past, and extra Path2D children warn.
+## The Add Path starter shapes fit the light's length centered on it in a handful of arcs,
+## and a closed polygon lights its seam corner as its other corners.
 ##
 ## Numeric expectations come from _ref: the shader's line integral summed over 0.25 px
 ## elements of the path, albedo x ambient + energy x integral x diffuse_scale().
@@ -25,6 +27,7 @@ const AMBIENT := 0.1
 const TOL := 0.03
 const ALGO := LitShaderLibrary.ShadowAlgorithm
 const KAPPA := 0.5522847498
+const Shapes := preload("res://addons/lit/editor/lit_line_shapes.gd")
 
 # A: geometry. A ring of radius 120 centered on CA.
 const CA := Vector2(350, 305)
@@ -90,6 +93,7 @@ func run() -> void:
 	await _tessellation()
 	await _shade_budget()
 	await _limits()
+	await _starter_shapes()
 
 
 func line_light(pos: Vector2, p_range: float, energy: float, height: float,
@@ -1090,6 +1094,54 @@ func _limits() -> void:
 	check_true(c, "and dirties the light's warning again", l in pings)
 	tree.node_configuration_warning_changed.disconnect(on_changed)
 	tree.edited_scene_root = null
+	l.queue_free()
+	await frames(1)
+
+
+func _starter_shapes() -> void:
+	var c := "path_starter_shapes"
+	var names := Shapes.names()
+	check(c, "17 starter shapes", 17, names.size())
+	var l := line_light(Vector2(590, 640), 100.0, 0.5, 100.0)
+	for s in names:
+		var p := Shapes.make_path(s, 128.0)
+		check(c, "%s: the Path2D is named after it" % s, s.replace(" ", ""), String(p.name))
+		var pc := p.curve.point_count
+		var loops := p.curve.get_point_position(0).distance_to(p.curve.get_point_position(pc - 1)) < 1e-3
+		check(c, "%s: repeats its first point last only when closed" % s, Shapes.is_closed(s), loops)
+		l.closed = Shapes.is_closed(s)
+		l.add_child(p)
+		check_true(c, "%s: curved" % s, l.is_curved())
+		var chain := l.path_chain()
+		check_true(c, "%s: not truncated" % s, not chain.truncated)
+		check_between(c, "%s: a handful of arcs" % s, chain.arc_count(), 1, 10)
+		var r := l.path_rect()
+		check_approx(c, "%s: one length wide" % s, 128.0, r.size.x, 0.5)
+		check_approx(c, "%s: centered on the light (x)" % s, 0.0, r.get_center().x, 0.5)
+		check_approx(c, "%s: centered on the light (y)" % s, 0.0, r.get_center().y, 0.5)
+		p.free()
+
+	# A closed starter square under a wide tube lights its seam corner (the first point) as
+	# the others, on the corner and just outside it.
+	l.free()
+	await frames(2)
+	var before := await capture()
+	l = line_light(Vector2(590, 640), 25.0, 0.2, 100.0)
+	l.width = 12.0
+	l.closed = true
+	l.add_child(Shapes.make_path("Square", 80.0))
+	await frames(2)
+	var img := await capture()
+	var corners := [Vector2(550, 600), Vector2(630, 600), Vector2(630, 680), Vector2(550, 680)]
+	var seam := lum(img, corners[0]) - lum(before, corners[0])
+	var out0: Vector2 = corners[0] + (corners[0] - Vector2(590, 640)).normalized() * 6.0
+	var seam_out := lum(img, out0, 1) - lum(before, out0, 1)
+	check_gt(c, "the square's seam corner is lit", seam, 0.0, 0.1)
+	for k in range(1, 4):
+		var out: Vector2 = corners[k] + (corners[k] - Vector2(590, 640)).normalized() * 6.0
+		check_approx(c, "corner %d lights as the seam corner" % k, seam, lum(img, corners[k]) - lum(before, corners[k]), 0.02)
+		check_approx(c, "outside corner %d lights as outside the seam corner" % k, seam_out, lum(img, out, 1) - lum(before, out, 1), 0.02)
+	check_approx(c, "the square's middle (past range) stays dark", 0.0, lum(img, Vector2(590, 640)) - lum(before, Vector2(590, 640)), 0.01)
 	l.queue_free()
 	await frames(1)
 
