@@ -14,7 +14,9 @@ extends LitSuiteSection
 ## ellipse) and normal-mapped receivers (no seam across a V's bisector, a ring's center
 ## lit from all around, a tilted face beside a 2-point path identical to the straight
 ## light); tessellation (curves as straight segments shared by length, straight stretches
-## kept, inactive on a path with no curve, rendered as the same hand-drawn polyline).
+## kept, inactive on a path with no curve, rendered as the same hand-drawn polyline); tiny
+## curves beside a long one keep the shading chords within the row's 32; a path past 32
+## arcs reports one runtime error each time it goes past, and extra Path2D children warn.
 ##
 ## Numeric expectations come from _ref: the shader's line integral summed over 0.25 px
 ## elements of the path, albedo x ambient + energy x integral x diffuse_scale().
@@ -54,6 +56,14 @@ var _ring_b: LitLineLight2D
 var _cam: Camera2D
 
 
+# Records the runtime path errors instead of pushing them.
+class _ErrorProbe extends LitLineLight2D:
+	var errors: Array = []
+
+	func _report_error(message: String) -> void:
+		errors.append(message)
+
+
 func run() -> void:
 	env(Color(AMBIENT, AMBIENT, AMBIENT))
 	_props = group("Props")
@@ -78,11 +88,13 @@ func run() -> void:
 	await _scale()
 	await _normals()
 	await _tessellation()
+	await _shade_budget()
+	await _limits()
 
 
 func line_light(pos: Vector2, p_range: float, energy: float, height: float,
-		parent: Node = null) -> LitLineLight2D:
-	var l := LitLineLight2D.new()
+		parent: Node = null, cls: GDScript = LitLineLight2D) -> LitLineLight2D:
+	var l: LitLineLight2D = cls.new()
 	l.position = pos
 	l.range = p_range
 	l.energy = energy
@@ -461,7 +473,7 @@ func _ring_shadows() -> void:
 func _api() -> void:
 	var c := "path_api"
 	var reg = get_node("/root/LitManager")._registry
-	var l := line_light(CC, 100.0, 0.5, 100.0)
+	var l := line_light(CC, 100.0, 0.5, 100.0, null, _ErrorProbe)
 	check(c, "fresh closed false", false, l.closed)
 	check_true(c, "fresh light is not curved", not l.is_curved())
 	check_true(c, "length is editable without a Path2D child", not _read_only(l, "length"))
@@ -975,6 +987,110 @@ func _tessellation() -> void:
 	check_true(c, "the octagon closes on its first point", ch.points[8].distance_to(ch.points[0]) < 1e-3)
 	check_approx(c, "its vertices sit on the circle", 60.0, ch.points[3].length(), 0.5)
 	ring.queue_free()
+	await frames(1)
+
+
+func _shade_budget() -> void:
+	var c := "path_shade_budget"
+	var reg = get_node("/root/LitManager")._registry
+	var packer = reg._light_packer
+	var l := line_light(Vector2(130, 200), 100.0, 0.5, 100.0)
+	# Eight tiny wiggles beside a long curve: each wiggle's one chord comes out of the
+	# long curve's share, never past the row's 32.
+	var pts: Array = []
+	for i in 8:
+		var s := 1.0 if i % 2 == 0 else -1.0
+		pts.append([Vector2(i * 2.0, 0), Vector2(-1, s), Vector2(1, s)])
+	pts.append([Vector2(16, 0), Vector2(-1, 1), Vector2(100, 0)])
+	pts.append([Vector2(400, 100), Vector2(-100, 0), Vector2.ZERO])
+	path_child(l, pts)
+	await frames(2)
+	var ch = l.path_chain()
+	check_gt(c, "the wiggles fit to more arcs than half the chords", ch.arc_count(), 16, 0)
+	check(c, "the shading chords stay at 32", 32, l.path_shade_chords(packer.PATH_SHADE).size() - 1)
+	var row: int = reg._ctx.visible.find(l)
+	check_true(c, "packed this frame", row >= 0)
+	if row >= 0:
+		var pb: int = int(round(packer._pack_buf[row * packer._tpl * 4 + 16])) * packer.PATH_W * 4
+		check(c, "path row texel 0.w: 32 shading chords", 32, int(round(packer._path_buf[pb + 3])))
+		var b: int = pb + 4 * (packer.PATH_CHORDS + 31)
+		var end := Vector2(packer._path_buf[b] + packer._path_buf[b + 2], packer._path_buf[b + 1] + packer._path_buf[b + 3])
+		var want: Vector2 = l._row_pxf * ch.points[ch.points.size() - 1]
+		check_true(c, "the 32nd shading chord ends on the path's last point", end.distance_to(want) < 0.01)
+	l.queue_free()
+	await frames(1)
+
+
+func _limits() -> void:
+	var c := "path_limits"
+	var l: _ErrorProbe = line_light(Vector2(130, 200), 100.0, 0.5, 100.0, null, _ErrorProbe)
+	l.name = "LimitsLight"
+	var zig: Array = []
+	for i in 40:
+		zig.append([Vector2(i * 10.0, (i % 2) * 20.0), Vector2(-3, 3), Vector2(3, -3)])
+	var p := path_child(l, zig)
+	await frames(2)
+	check(c, "a path past 32 arcs reports one runtime error", 1, l.errors.size())
+	check_true(c, "naming the light and the limit", l.errors.size() == 1
+			and str(l.get_path()) in l.errors[0] and "32" in l.errors[0])
+	p.curve.set_point_position(39, Vector2(400, 40))
+	l.rotation = 0.3
+	await frames(2)
+	check(c, "refits while still past the limit report nothing new", 1, l.errors.size())
+	p.curve = Curve2D.new()
+	p.curve.add_point(Vector2.ZERO)
+	p.curve.add_point(Vector2(200, 0))
+	await frames(2)
+	check_true(c, "a simple path is not truncated", not l.path_chain().truncated)
+	check(c, "and reports nothing", 1, l.errors.size())
+	p.free()
+	p = path_child(l, zig)
+	await frames(2)
+	check(c, "going past the limit again reports again", 2, l.errors.size())
+	p.free()
+	await frames(1)
+	p = path_child(l, zig)
+	await frames(2)
+	check(c, "so does a new Path2D child past the limit after the old one left", 3, l.errors.size())
+	p.free()
+	l.rotation = 0.0
+
+	# More than one Path2D child: the first shapes the light, the node warns, and the
+	# warning refreshes as Path2D children come and go.
+	var tree := get_tree()
+	var pings: Array = []
+	var on_changed := func(n: Node) -> void: pings.append(n)
+	tree.edited_scene_root = self
+	tree.node_configuration_warning_changed.connect(on_changed)
+	var first := path_child(l, [[Vector2.ZERO, Vector2.ZERO, Vector2(60, -60)], [Vector2(200, 0), Vector2(-60, -60), Vector2.ZERO]])
+	await frames(2)
+	check(c, "one Path2D child: no warning", 0, l._get_configuration_warnings().size())
+	pings.clear()
+	var second := path_child(l, [[Vector2.ZERO, Vector2.ZERO, Vector2.ZERO], [Vector2(0, 200), Vector2.ZERO, Vector2.ZERO]])
+	await frames(2)
+	var warns := l._get_configuration_warnings()
+	check_true(c, "a second Path2D child warns that only the first shapes the light",
+			warns.size() == 1 and "first Path2D" in warns[0])
+	check_true(c, "and dirties the light's warning", l in pings)
+	check_approx(c, "the first child still shapes the light (its end x)", 200.0,
+			(l.path_fit_xf().affine_inverse() * l.path_chain().points[-1]).x, 0.01)
+	pings.clear()
+	var plain := Node2D.new()
+	l.add_child(plain)
+	await frames(1)
+	check_true(c, "an unrelated child does not dirty it", not (l in pings))
+	l.move_child(second, 0)
+	await frames(2)
+	check_approx(c, "reordered: the new first child shapes the light (its end y)", 200.0,
+			(l.path_fit_xf().affine_inverse() * l.path_chain().points[-1]).y, 0.01)
+	pings.clear()
+	second.free()
+	await frames(1)
+	check(c, "removing the extra Path2D clears the warning", 0, l._get_configuration_warnings().size())
+	check_true(c, "and dirties the light's warning again", l in pings)
+	tree.node_configuration_warning_changed.disconnect(on_changed)
+	tree.edited_scene_root = null
+	l.queue_free()
 	await frames(1)
 
 

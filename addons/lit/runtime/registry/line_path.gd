@@ -351,6 +351,13 @@ static func shade_chords(chain: Chain, n: int) -> PackedVector2Array:
 		counts[best] += 1
 		rem[best] = -1.0
 		left -= 1
+	while left < 0:
+		var most := 0
+		for k in arcs:
+			if counts[k] > counts[most]:
+				most = k
+		counts[most] -= 1
+		left += 1
 	out.append(chain.points[0])
 	for k in arcs:
 		for j in counts[k]:
