@@ -13,7 +13,8 @@ extends LitSuiteSection
 ## bounds, the luminance mirror, camera zoom invariance, a non-uniform node scale (an
 ## ellipse) and normal-mapped receivers (no seam across a V's bisector, a ring's center
 ## lit from all around, a tilted face beside a 2-point path identical to the straight
-## light).
+## light); tessellation (curves as straight segments shared by length, straight stretches
+## kept, inactive on a path with no curve, rendered as the same hand-drawn polyline).
 ##
 ## Numeric expectations come from _ref: the shader's line integral summed over 0.25 px
 ## elements of the path, albedo x ambient + energy x integral x diffuse_scale().
@@ -76,6 +77,7 @@ func run() -> void:
 	await _camera()
 	await _scale()
 	await _normals()
+	await _tessellation()
 
 
 func line_light(pos: Vector2, p_range: float, energy: float, height: float,
@@ -538,10 +540,14 @@ func _api() -> void:
 
 
 func _read_only(obj: Object, prop: String) -> bool:
+	return _prop(obj, prop).get("usage", 0) & PROPERTY_USAGE_READ_ONLY != 0
+
+
+func _prop(obj: Object, prop: String) -> Dictionary:
 	for p in obj.get_property_list():
 		if p.name == prop:
-			return p.usage & PROPERTY_USAGE_READ_ONLY != 0
-	return false
+			return p
+	return {}
 
 
 # --- C: luminance mirror -------------------------------------------------------------------------
@@ -772,6 +778,204 @@ func _normals() -> void:
 	for k in 8:
 		mirror = maxf(mirror, absf(plus[k] - lum(img, CR + Vector2.from_angle(k * PI / 4.0 + PI) * 12.0, 1)))
 	check_lt(c, "and mirrors it around the center (the ring has no preferred side)", mirror, 0.015)
+
+
+# --- A: tessellation ---------------------------------------------------------------------------------
+
+## `tessellate` lights the curves as straight segments: the bending stretches share
+## `tessellation_segments` by length (at least one each), a straight stretch stays one
+## piece, the path points stay exact, a path with no curve ignores it until one returns,
+## and the light renders, packs and samples as the same polyline drawn by hand.
+func _tessellation() -> void:
+	var c := "path_tessellation"
+	var reg = get_node("/root/LitManager")._registry
+	var packer = reg._light_packer
+	var mgr := get_node("/root/LitManager")
+	var at := Vector2(130, 200)
+	var area := Rect2(40, 110, 620, 390)
+	get_node("RingA").queue_free()
+	var l := line_light(at, 100.0, 0.5, 100.0)
+	check(c, "fresh tessellate false", false, l.tessellate)
+	check(c, "fresh tessellation_segments 16", 16, l.tessellation_segments)
+	check_true(c, "tessellate is greyed without a Path2D child", _read_only(l, "tessellate"))
+	check_true(c, "tessellation_segments is hidden while tessellate is off",
+			_prop(l, "tessellation_segments").usage & PROPERTY_USAGE_EDITOR == 0)
+	var p := path_child(l, [
+		[Vector2(0, 0), Vector2.ZERO, Vector2(150, 0)],
+		[Vector2(200, 100), Vector2(-60, -60), Vector2(60, 60)],
+		[Vector2(400, 200), Vector2(-150, 0), Vector2.ZERO],
+	])
+	await frames(2)
+	var arcs_off: int = l.path_chain().arc_count()
+	var off := await capture()
+	check_true(c, "tessellate becomes editable with a Path2D child", not _read_only(l, "tessellate"))
+	check_true(c, "tessellate off: the S-curve is not tessellated", not l.path_tessellated())
+	l.tessellate = true
+	await frames(2)
+	check_true(c, "tessellation_segments shows while tessellate is on",
+			_prop(l, "tessellation_segments").usage & PROPERTY_USAGE_EDITOR != 0)
+	check_true(c, "the S-curve tessellates", l.path_tessellated())
+	var ch = l.path_chain()
+	check(c, "into 16 segments", 16, ch.arc_count())
+	var bent := 0
+	for b in ch.bulges:
+		bent += 1 if b != 0.0 else 0
+	check(c, "every segment straight", 0, bent)
+	check_approx(c, "cut by length across the smooth middle point: point 8 lands on it (the S is symmetric) (x)", 200.0, ch.points[8].x, 0.01)
+	check_approx(c, "point 8 (y)", 100.0, ch.points[8].y, 0.01)
+	check_approx(c, "the last point is the path's last (x)", 400.0, ch.points[16].x, 1e-3)
+	var row: int = reg._ctx.visible.find(l)
+	check_true(c, "packed this frame", row >= 0)
+	var pb := -1
+	if row >= 0:
+		var o: int = row * packer._tpl * 4
+		check(c, "texel 4.y = 16 arcs", 16, int(round(packer._pack_buf[o + 17])))
+		pb = int(round(packer._pack_buf[o + 16])) * packer.PATH_W * 4
+		check(c, "path row texel 0.w: one shading chord per segment", 16, int(round(packer._path_buf[pb + 3])))
+	var tess := await capture()
+	var poly: Array = []
+	for q in ch.points:
+		poly.append([q, Vector2.ZERO, Vector2.ZERO])
+	l.tessellate = false
+	p.free()
+	p = path_child(l, poly)
+	await frames(2)
+	var hand := await capture()
+	check_lt(c, "renders as the same polyline drawn by hand (mean abs diff)", image_diff(tess, hand, area, 2), 0.002)
+	for q in [Vector2(200, 100), Vector2(100, 20), Vector2(300, 190), Vector2(200, 140)]:
+		check_approx(c, "probe %s matches the hand-drawn polyline" % q, lum(hand, at + q), lum(tess, at + q), 0.005)
+	l.tessellate = true
+	await frames(2)
+	check_true(c, "the hand-drawn polyline has no curve: tessellation is inactive", not l.path_tessellated())
+	check(c, "and keeps its 16 pieces", 16, l.path_chain().arc_count())
+	check_lt(c, "and renders as with tessellate off", image_diff(hand, await capture(), area, 2), 0.0005)
+	p.free()
+	p = path_child(l, [
+		[Vector2(0, 0), Vector2.ZERO, Vector2(150, 0)],
+		[Vector2(200, 100), Vector2(-60, -60), Vector2(60, 60)],
+		[Vector2(400, 200), Vector2(-150, 0), Vector2.ZERO],
+	])
+	l.tessellation_segments = 2
+	await frames(2)
+	check(c, "2 segments: a V through the middle path point", 2, l.path_chain().arc_count())
+	var v := await capture()
+	var sag := at + Vector2(133.75, 27.5)
+	check_gt(c, "the curve's own point dims once the V cuts across it", lum(off, sag), lum(v, sag), 0.05)
+	for q in [Vector2(200, 100), Vector2(133.75, 27.5), Vector2(100, 50), Vector2(300, 150)]:
+		check_approx(c, "sample_luminance %s follows the V" % q, lum(v, at + q), mgr.sample_luminance(at + q), TOL)
+	l.tessellate = false
+	await frames(2)
+	check(c, "tessellate off: the fitted arcs return", arcs_off, l.path_chain().arc_count())
+	check_lt(c, "and the render returns to the untessellated capture", image_diff(off, await capture(), area, 2), 0.0005)
+	l.tessellate = true
+	l.tessellation_segments = 8
+	await frames(2)
+	row = reg._ctx.visible.find(l)
+	if row >= 0:
+		check(c, "changing the count repacks: texel 4.y = 8", 8, int(round(packer._pack_buf[row * packer._tpl * 4 + 17])))
+	l.tessellation_segments = 1
+	check(c, "the count never drops below 2", 2, l.tessellation_segments)
+	# The curve goes straight and comes back: inactive, then active again, the bool kept.
+	var curve := p.curve
+	curve.set_point_out(0, Vector2.ZERO)
+	curve.set_point_in(1, Vector2.ZERO)
+	curve.set_point_out(1, Vector2.ZERO)
+	curve.set_point_in(2, Vector2.ZERO)
+	await frames(2)
+	check_true(c, "handles flattened (collinear points): inactive", not l.path_tessellated())
+	check(c, "tessellate stays on", true, l.tessellate)
+	check(c, "the straight path keeps its own fit (two arcs)", 2, l.path_chain().arc_count())
+	curve.set_point_out(1, Vector2(60, 60))
+	await frames(2)
+	check_true(c, "a handle bends it again: active", l.path_tessellated())
+	# A straight stretch stays one piece; the count is capped at TESSELLATION_MAX.
+	p.free()
+	p = path_child(l, [
+		[Vector2(0, 0), Vector2.ZERO, Vector2.ZERO],
+		[Vector2(150, 0), Vector2.ZERO, Vector2(60, 0)],
+		[Vector2(300, 100), Vector2(0, -60), Vector2.ZERO],
+	])
+	l.tessellate = true
+	l.tessellation_segments = 16
+	await frames(2)
+	ch = l.path_chain()
+	check(c, "straight stretch + curve: 1 + 16 pieces", 17, ch.arc_count())
+	check_approx(c, "the straight stretch is one exact piece (x)", 150.0, ch.points[1].x, 1e-3)
+	check(c, "the most segments is 31 (32 less the straight stretch)", 31, l.path_tessellation_max())
+	check(c, "the slider's range follows it", "2,31,1,prefer_slider", _prop(l, "tessellation_segments").hint_string)
+	l.tessellation_segments = 32
+	await frames(2)
+	check(c, "32 asked: the stored value stays 32", 32, l.tessellation_segments)
+	check(c, "and 31 are used: 32 pieces in all", 32, l.path_chain().arc_count())
+	# 14 straight stretches leave room for 18 in the path row's 32.
+	p.free()
+	var zig: Array = []
+	for i in 15:
+		zig.append([Vector2(i * 20.0, (i % 2) * 20.0), Vector2.ZERO, Vector2.ZERO])
+	zig[14][2] = Vector2(60, 0)
+	zig.append([Vector2(400, 100), Vector2(0, -60), Vector2.ZERO])
+	p = path_child(l, zig)
+	await frames(2)
+	check(c, "14 straight stretches: the most is 18", 18, l.path_tessellation_max())
+	check(c, "and the path fills the row's 32 pieces", 32, l.path_chain().arc_count())
+	check(c, "the slider's range follows it", "2,18,1,prefer_slider", _prop(l, "tessellation_segments").hint_string)
+	# A wave of 9 points meeting smoothly is one run: the count is the whole wave's.
+	p.free()
+	var wave: Array = []
+	for i in 9:
+		var h := Vector2(20, 40 if i % 2 == 0 else -40)
+		wave.append([Vector2(i * 50.0, 0), -h, h])
+	p = path_child(l, wave)
+	l.tessellation_segments = 2
+	await frames(2)
+	check(c, "a smooth 9-point wave, 2 asked: 2 pieces", 2, l.path_chain().arc_count())
+	check(c, "and the most is 32 however many points it has", 32, l.path_tessellation_max())
+	l.tessellation_segments = 6
+	await frames(2)
+	check(c, "6 asked: 6 pieces", 6, l.path_chain().arc_count())
+	# Three scallops meeting at corners: the corners stay, one piece each at least.
+	p.free()
+	p = path_child(l, [
+		[Vector2(0, 0), Vector2.ZERO, Vector2(30, -60)],
+		[Vector2(100, 0), Vector2(-30, -60), Vector2(30, -60)],
+		[Vector2(200, 0), Vector2(-30, -60), Vector2(30, -60)],
+		[Vector2(300, 0), Vector2(-30, -60), Vector2.ZERO],
+	])
+	l.tessellation_segments = 2
+	await frames(2)
+	ch = l.path_chain()
+	check(c, "three scallops meeting at corners, 2 asked: one piece each", 3, ch.arc_count())
+	check_approx(c, "the corners stay exact (x)", 100.0, ch.points[1].x, 1e-3)
+	l.tessellation_segments = 9
+	await frames(2)
+	check_approx(c, "9 asked: 3 per scallop, the second corner still exact (x)", 200.0, l.path_chain().points[6].x, 1e-3)
+	# Four tiny scallops beside a long curve at the most: their one piece each comes out
+	# of the long curve's share, never past the count.
+	p.free()
+	path_child(l, [
+		[Vector2(0, 0), Vector2.ZERO, Vector2(0.5, -1)],
+		[Vector2(2, 0), Vector2(-0.5, -1), Vector2(0.5, -1)],
+		[Vector2(4, 0), Vector2(-0.5, -1), Vector2(0.5, -1)],
+		[Vector2(6, 0), Vector2(-0.5, -1), Vector2(0.5, -1)],
+		[Vector2(8, 0), Vector2(-0.5, -1), Vector2(100, 0)],
+		[Vector2(300, 100), Vector2(-100, 0), Vector2.ZERO],
+	])
+	l.tessellation_segments = 32
+	await frames(2)
+	check(c, "four tiny scallops and a long curve, 32 asked: 32 pieces", 32, l.path_chain().arc_count())
+	l.queue_free()
+	# A closed ring: the closing arc is a curve too, and the loop stays closed.
+	var ring := line_light(at + Vector2(200, 100), 100.0, 0.5, 100.0)
+	ring_child(ring, 60.0)
+	ring.tessellate = true
+	ring.tessellation_segments = 8
+	await frames(2)
+	ch = ring.path_chain()
+	check(c, "a closed ring in 8 segments", 8, ch.arc_count())
+	check_true(c, "the octagon closes on its first point", ch.points[8].distance_to(ch.points[0]) < 1e-3)
+	check_approx(c, "its vertices sit on the circle", 60.0, ch.points[3].length(), 0.5)
+	ring.queue_free()
+	await frames(1)
 
 
 func _exit_tree() -> void:

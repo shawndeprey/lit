@@ -6,6 +6,7 @@ extends Node2D
 ##   shadows=off   (disable shadows on every light, for an unshadowed baseline)
 ##   light=off   hardness=X   (zero every light's energy / set its shadow_hardness)
 ##   measure=S   (after the warmup frames, time S seconds of frames and print INTEGRATION BENCH)
+##   linetess=N   (tessellate every line light into N segments)
 
 const ALGO_IDS := {"raymarch": 0, "cone": 1, "stochastic": 2}
 
@@ -19,6 +20,7 @@ var _shadows_off := false
 var _light_off := false
 var _hardness := -1.0
 var _measure := 0.0
+var _linetess := 0
 
 
 func _ready() -> void:
@@ -47,6 +49,8 @@ func _ready() -> void:
 				_hardness = float(kv[1])
 			"measure":
 				_measure = float(kv[1])
+			"linetess":
+				_linetess = int(kv[1])
 	var win := get_window()
 	win.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
@@ -63,6 +67,9 @@ func _ready() -> void:
 			n.energy = 0.0
 		if _hardness >= 0.0:
 			n.shadow_hardness = _hardness
+		if _linetess > 0 and n is LitLineLight2D:
+			n.tessellate = true
+			n.tessellation_segments = _linetess
 	for n in root.find_children("*", "CanvasItem", true, false):
 		var m := n.material as ShaderMaterial
 		if m == null:

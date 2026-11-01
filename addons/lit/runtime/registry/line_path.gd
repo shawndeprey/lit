@@ -14,6 +14,8 @@ class Chain:
 	var bulges := PackedFloat32Array()   # tan(sweep / 4) per arc, 0 = straight
 	var apexes := PackedVector2Array()
 	var lengths := PackedFloat32Array()
+	var stretches := PackedInt32Array()  # first arc of each stretch between two path points, then arc_count
+	var bends := PackedByteArray()  # 1 per stretch whose handles pull it off the line between its points
 	var truncated := false
 
 	func arc_count() -> int:
@@ -32,13 +34,20 @@ static func fit(curve: Curve2D, closed: bool, xf := Transform2D()) -> Chain:
 	var tol := TOLERANCE
 	var pts := PackedVector2Array()
 	var bul := PackedFloat32Array()
+	var starts := PackedInt32Array()
+	var bends := PackedByteArray()
+	for s in segs:
+		bends.append(0 if _straight(s) else 1)
 	for attempt in 9:
 		pts = PackedVector2Array([segs[0][0]])
 		bul = PackedFloat32Array()
+		starts = PackedInt32Array([0])
 		for s in segs:
 			_fit_bezier(s, tol, pts, bul, 0)
+			starts.append(bul.size())
 		if closed:
 			_close(segs, pts, bul)
+			starts.append(bul.size())
 		if bul.size() <= MAX_ARCS:
 			break
 		tol *= 2.0
@@ -46,7 +55,16 @@ static func fit(curve: Curve2D, closed: bool, xf := Transform2D()) -> Chain:
 		chain.truncated = true
 		bul.resize(MAX_ARCS)
 		pts.resize(MAX_ARCS + 1)
+		for i in starts.size():
+			starts[i] = mini(starts[i], MAX_ARCS)
 	chain.points = pts
+	chain.stretches = starts
+	if closed:
+		var sag := 0.0
+		for k in range(starts[starts.size() - 2], starts[starts.size() - 1]):
+			sag = maxf(sag, absf(bul[k]) * pts[k].distance_to(pts[k + 1]))
+		bends.append(1 if sag >= 0.2 * TOLERANCE else 0)
+	chain.bends = bends
 	chain.bulges = bul
 	for k in bul.size():
 		chain.apexes.append(apex(pts[k], pts[k + 1], bul[k]))
@@ -91,6 +109,16 @@ static func _fit_bezier(b: PackedVector2Array, tol: float, pts: PackedVector2Arr
 	var halves := _split(b)
 	_fit_bezier(halves[0], tol, pts, bul, depth + 1)
 	_fit_bezier(halves[1], tol, pts, bul, depth + 1)
+
+
+## True when the Bezier's handles stay within a tenth of TOLERANCE of the line between its ends.
+static func _straight(b: PackedVector2Array) -> bool:
+	var d := b[3] - b[0]
+	var l := d.length()
+	if l < 1e-6:
+		return b[1].distance_to(b[0]) < 1e-6 and b[2].distance_to(b[3]) < 1e-6
+	var n := Vector2(-d.y, d.x) / l
+	return absf(n.dot(b[1] - b[0])) <= 0.1 * TOLERANCE and absf(n.dot(b[2] - b[0])) <= 0.1 * TOLERANCE
 
 
 static func _close(segs: Array[PackedVector2Array], pts: PackedVector2Array, bul: PackedFloat32Array) -> void:
@@ -168,6 +196,10 @@ static func bulge_through(a: Vector2, b: Vector2, x: Vector2) -> float:
 	if l2 < 1e-10:
 		return 0.0
 	return (x - a - h).dot(Vector2(-h.y, h.x)) / l2
+
+
+static func start_tangent(a: Vector2, b: Vector2, bulge: float) -> Vector2:
+	return (b - a).normalized().rotated(2.0 * atan(bulge))
 
 
 static func end_tangent(a: Vector2, b: Vector2, bulge: float) -> Vector2:
@@ -323,6 +355,112 @@ static func shade_chords(chain: Chain, n: int) -> PackedVector2Array:
 	for k in arcs:
 		for j in counts[k]:
 			out.append(arc_point(chain.points[k], chain.points[k + 1], chain.bulges[k], float(j + 1) / float(counts[k])))
+	return out
+
+
+## The chain's tessellation groups as [first arc, end arc, bends]: each straight stretch
+## alone, and each run of bending stretches meeting without a corner together.
+static func runs(chain: Chain) -> Array:
+	var out := []
+	for s in chain.stretches.size() - 1:
+		var a := chain.stretches[s]
+		var b := chain.stretches[s + 1]
+		if a == b:
+			continue
+		var bends := chain.bends[s] != 0
+		if bends and not out.is_empty() and out[-1][2] and end_tangent(chain.points[a - 1], chain.points[a],
+				chain.bulges[a - 1]).dot(start_tangent(chain.points[a], chain.points[a + 1], chain.bulges[a])) >= COS_JOINT:
+			out[-1][1] = b
+		else:
+			out.append([a, b, bends])
+	return out
+
+
+## Vector2i(bending runs, straight stretches) (see runs).
+static func run_counts(chain: Chain) -> Vector2i:
+	var out := Vector2i.ZERO
+	for r in runs(chain):
+		if r[2]:
+			out.x += 1
+		else:
+			out.y += 1
+	return out
+
+
+## The chain as straight pieces: each straight stretch one piece, and the bending runs
+## sharing max(`n`, their count) pieces by arc length, at least one each, cut at equal arc
+## length. Corners and the ends of straight stretches stay exact.
+static func tessellated(chain: Chain, n: int) -> Chain:
+	var out := Chain.new()
+	out.truncated = chain.truncated
+	if chain.arc_count() == 0:
+		return out
+	var groups := runs(chain)
+	var count := groups.size()
+	var lens := PackedFloat32Array()
+	lens.resize(count)
+	lens.fill(-1.0)
+	var curved := 0
+	var curved_len := 0.0
+	for g in count:
+		if not groups[g][2]:
+			continue
+		lens[g] = 0.0
+		for k in range(groups[g][0], groups[g][1]):
+			lens[g] += chain.lengths[k]
+		curved += 1
+		curved_len += lens[g]
+	var budget := maxi(n, curved)
+	var pieces := PackedInt32Array()
+	pieces.resize(count)
+	var rem := PackedFloat32Array()
+	rem.resize(count)
+	rem.fill(-1.0)
+	var left := budget
+	for g in count:
+		if lens[g] < 0.0:
+			continue
+		var share := float(budget) * lens[g] / maxf(curved_len, 1e-6)
+		pieces[g] = maxi(int(floor(share)), 1)
+		rem[g] = share - floor(share)
+		left -= pieces[g]
+	while left > 0:
+		var best := -1
+		for g in count:
+			if rem[g] >= 0.0 and (best < 0 or rem[g] > rem[best]):
+				best = g
+		if best < 0:
+			break
+		pieces[best] += 1
+		rem[best] = -1.0
+		left -= 1
+	while left < 0:
+		var most := 0
+		for g in count:
+			if pieces[g] > pieces[most]:
+				most = g
+		pieces[most] -= 1
+		left += 1
+	out.points.append(chain.points[0])
+	for g in count:
+		var a: int = groups[g][0]
+		var b: int = groups[g][1]
+		var arc := a
+		var start := 0.0
+		for j in range(1, pieces[g]):
+			var at := lens[g] * float(j) / float(pieces[g])
+			while arc < b - 1 and at > start + chain.lengths[arc]:
+				start += chain.lengths[arc]
+				arc += 1
+			var f := clampf((at - start) / maxf(chain.lengths[arc], 1e-6), 0.0, 1.0)
+			out.points.append(arc_point(chain.points[arc], chain.points[arc + 1], chain.bulges[arc], f))
+		out.points.append(chain.points[b])
+	for k in out.points.size() - 1:
+		var p := out.points[k]
+		var q := out.points[k + 1]
+		out.bulges.append(0.0)
+		out.apexes.append(apex(p, q, 0.0))
+		out.lengths.append(p.distance_to(q))
 	return out
 
 

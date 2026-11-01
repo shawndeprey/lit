@@ -27,6 +27,7 @@ class_name LitLineLight2D
 ## Everything else is inherited from LitPositionalLight2D and LitLight2D.
 
 const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd")
+const TESSELLATION_MAX := 32
 
 @export_group("Line")
 ## Length of the emitting segment in local pixels, centered on the node along its local
@@ -63,6 +64,26 @@ const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd"
 		closed = value
 		_path_dirty = true
 		LitLightRegistry.light_state_changed(self)
+## Lights the Path2D child's curves as straight segments instead of true arcs: cheaper,
+## and it follows the curves less closely. Straight stretches and corners stay as they
+## are, and a path with no curve ignores it until a curve returns. Nothing without a
+## Path2D child.
+@export var tessellate: bool = false:
+	set(value):
+		tessellate = value
+		_path_dirty = true
+		notify_property_list_changed()
+		LitLightRegistry.light_state_changed(self)
+## Total straight segments the path's curves are cut into, by length: smooth points are
+## cut across, while corners and straight stretches keep at least one segment between
+## them. Fewer is cheaper and follows the curves less closely. The most is 32, less one
+## for each straight stretch of the path.
+@export_range(2, TESSELLATION_MAX, 1, "prefer_slider") var tessellation_segments: int = 16:
+	set(value):
+		tessellation_segments = maxi(value, 2)
+		if tessellate:
+			_path_dirty = true
+			LitLightRegistry.light_state_changed(self)
 
 var _path: Path2D
 var _path_curve: Curve2D
@@ -78,6 +99,8 @@ var _path_rect := Rect2()
 var _path_corners := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
 var _chords := {}
 var _seg := PackedVector2Array()
+var _tess_active := false
+var _tess_max := TESSELLATION_MAX
 # The packed path row the registry last built from this light, keyed by its inputs.
 var _row := PackedFloat32Array()
 var _row_pxf := Transform2D()
@@ -93,8 +116,13 @@ func _init() -> void:
 func _validate_property(property: Dictionary) -> void:
 	if property.name == "shadow_samples" and shadow_algorithm == ShadowAlgorithm.CONE_TRACED:
 		return
-	if (property.name == "length" and _path != null) or (property.name == "closed" and _path == null):
+	if (property.name == "length" and _path != null) or (property.name in ["closed", "tessellate"] and _path == null):
 		property.usage |= PROPERTY_USAGE_READ_ONLY
+	if property.name == "tessellation_segments":
+		if tessellate:
+			property.hint_string = "2,%d,1,prefer_slider" % maxi(_tess_max, 2)
+		else:
+			property.usage &= ~PROPERTY_USAGE_EDITOR
 	super(property)
 
 func _get_configuration_warnings() -> PackedStringArray:
@@ -124,6 +152,16 @@ func path_fit_xf() -> Transform2D:
 ## The chain's fit space to light-local space.
 func path_fit_inv() -> Transform2D:
 	return _fit_inv
+
+## True while `tessellate` has replaced the path's curves with straight segments.
+func path_tessellated() -> bool:
+	_refresh_path()
+	return _tess_active
+
+## The most segments `tessellation_segments` uses on the current path.
+func path_tessellation_max() -> int:
+	_refresh_path()
+	return _tess_max
 
 ## True while the chain is one straight arc; path_segment holds its ends.
 func path_straight() -> bool:
@@ -210,6 +248,7 @@ func _find_path(exclude: Node) -> void:
 		_unsubscribe()
 		_chain = null
 		_seg = PackedVector2Array()
+		_tess_active = false
 	notify_property_list_changed()
 	update_configuration_warnings()
 	LitLightRegistry.light_state_changed(self)
@@ -246,6 +285,16 @@ func _refresh_path() -> void:
 	_fit_xf = basis if absf(basis.determinant()) > 1e-8 else Transform2D()
 	_fit_inv = _fit_xf.affine_inverse()
 	_chain = LinePathScript.fit(curve, closed, _fit_xf * _path_xf)
+	_tess_active = false
+	if tessellate:
+		var counts := LinePathScript.run_counts(_chain)
+		var most := maxi(mini(TESSELLATION_MAX, LinePathScript.MAX_ARCS - counts.y), counts.x)
+		if most != _tess_max:
+			_tess_max = most
+			notify_property_list_changed()
+		if counts.x > 0:
+			_tess_active = true
+			_chain = LinePathScript.tessellated(_chain, mini(tessellation_segments, most))
 	_chords.clear()
 	_seg = PackedVector2Array()
 	# Straight: the arc's sagitta under a tenth of the fit tolerance.

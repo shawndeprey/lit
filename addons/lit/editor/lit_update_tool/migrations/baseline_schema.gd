@@ -91,6 +91,8 @@ const BASELINE_SCHEMA := {
 			&"shadow_mask": {"type": TYPE_INT, "default": 1},
 			&"shadow_samples": {"type": TYPE_INT, "default": 8},
 			&"source_radius": {"type": TYPE_FLOAT, "default": 32.0},
+			&"tessellate": {"type": TYPE_BOOL, "default": false},
+			&"tessellation_segments": {"type": TYPE_INT, "default": 16},
 			&"texture": {"type": TYPE_OBJECT, "default": null},
 			&"texture_offset": {"type": TYPE_VECTOR2, "default": Vector2(0, 0)},
 			&"texture_scale": {"type": TYPE_FLOAT, "default": 1.0},
