@@ -9,8 +9,8 @@ extends RefCounted
 ##                 texel 4 adds the segment's half-vector from the node to one end in
 ##                 screen px, the glow and the tube's half width (see _pack_line). A
 ##                 curved line (flags bit 23) packs its arc chain and shadow chords into
-##                 a row of the path texture instead, and texel 4.xy holds that row and
-##                 the arc count (see _pack_path).
+##                 rows of the path texture instead, and texel 4.xy holds its first row
+##                 and the arc count, -1 for a tree (see _pack_path).
 ## Layout per row: t0 = z code | flags | mask + z code high bits | falloff, t1 = uv/dir | range (directional:
 ## shadow_reach, world px) | energy, t2 = color.rgb | height,
 ## t3 = shadow_color.rgb | shadow_hardness, t4 = spot cone / line segment,
@@ -32,15 +32,18 @@ extends RefCounted
 ## cookie offset, bit 19 z range narrower than +-4096 (texel 0 code), bits 20-21 type,
 ## bit 22 layer range set (texel 9 written and read), bit 23 curved line (path row).
 ##
-## Path texture (lit_light_path), one PATH_W-wide row per curved line light on screen:
-## t0 = a circle enclosing every arc, center.xy (screen px) | radius | shading chord
-## count, t1..t33 = arc points (xy screen px, z = the bulge tan(sweep / 4) of the arc
-## leaving the point, w = the radius of a disc about its chord's middle holding that arc),
-## t33.z = 1 when the chain is closed, t33.w = the chain's length in
-## screen px, t34..t65 = the 32 shading chords, t66..t97 = the shadow chords, one per
-## packed shadow sample, t98..t113 = the coarse shading chords (the shading chords
-## merged in pairs, see _pack_coarse); chords are mid.xy | half.xy in screen px, of equal
-## arc length.
+## Path texture (lit_light_path), PATH_W texels a row, positions relative to the light's
+## node in world px at screen orientation except texel 0's circle, t33.w and the shadow
+## chords, which are screen px (see _pack_path). A curved line light of up to
+## LinePath.ROW_ARCS arcs takes one row:
+## t0 = a circle enclosing every arc, center.xy | radius | shading chord count, t1..t33 =
+## arc points (xy, z = the bulge tan(sweep / 4) of the arc leaving the point, w = the
+## radius of a disc about its chord's middle holding that arc), t33.z = 1 when the chain is
+## closed, t33.w = the chain's length, t34..t65 = the 32 shading chords, t66..t97 = the
+## shadow chords, one per packed shadow sample, t98..t113 = the coarse shading chords (the
+## shading chords merged in pairs, see _pack_coarse); chords are mid.xy | half.xy, of
+## equal arc length. A longer one packs as a tree (_pack_tree): this row with t0.w 0, t1.x
+## its node count and no arcs or shading chords, then its nodes, then its leaves.
 ##
 ## Node scale: range, source_radius, width and the FIT_RANGE cookie footprint pack multiplied
 ## by the node's global scale (larger basis axis, snapped to 1 for unscaled nodes);
@@ -77,11 +80,11 @@ var _pack_epoch := 0
 var _epoch_inputs := Vector4i(-1, -1, -1, -1)
 var _zero_row := PackedFloat32Array()
 # Curved line lights: PATH_W texels per row (circle, 33 arc points, 32 shading chords,
-# 32 shadow chords, 16 coarse shading chords), rows appended as the pack meets them,
-# each light's row rebuilt only when its inputs changed (the light keeps its last row).
-# The texture keeps its high-water height and is uploaded only when a row or the row
-# order changed.
-const PATH_W := 114
+# 32 shadow chords, 16 coarse shading chords, or a tree's rows), rows appended as the
+# pack meets them, each light's rows rebuilt only when its inputs changed (the light keeps
+# its last ones). The texture keeps its high-water height and is uploaded only when a
+# row or the row order changed.
+const PATH_W := 128
 const PATH_INFO := 33
 const PATH_CHORDS := 34
 const PATH_SHADE := 32
@@ -107,6 +110,7 @@ var _excl_info := {}
 var _excl_lists := {}
 var _rx_union_frame := 0
 var shadow_samples_max := 32
+var _canvas_scale := 1.0
 
 
 ## Pack ctx.visible (ordered directionals-first) into the data texture and publish it.
@@ -124,6 +128,7 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 	_excl_lists = excl_lists
 	_rx_union_frame = ctx.rx_union
 	shadow_samples_max = samples_max
+	_canvas_scale = ctx.canvas_scale
 	var count := visible.size()
 
 	# Refresh and publish the cookie atlas before packing, which reads its rects.
@@ -647,42 +652,67 @@ func _shift_cookie(o: int, cookie: float, shift: Vector2) -> float:
 	_pack_buf[o + 33] = c.y + _pack_buf[o + 25] * shift.x + _pack_buf[o + 27] * shift.y
 	return 4.0 + 262144.0
 
-## Pack a curved line light's chain into the next path row: `pxf` maps its fit space to
-## screen px (every point and apex through it, each bulge refitted through its apex, so
-## a non-uniform node scale still lands on arcs), a circle enclosing every arc for the
-## range reject and the shadow gates and its `n` equal-length chords for the strata.
-## Texel 4.xy of the light's own row holds the path row and the arc count. A row whose
-## inputs match the light's memo is appended from it instead of rebuilt.
+## Pack a curved line light's chain into the next path rows. Its arcs, shading chords and
+## tree sit relative to the node in world px at screen orientation (`m`, `pxf`'s basis
+## over the canvas scale, every point and apex through it, each bulge refitted through its
+## apex, so a non-uniform node scale still lands on arcs), so only a rotation or a
+## reshape repacks them. The shadow code's texels stay in screen px under `pxf` (it maps
+## the fit space to screen px), refreshed whenever it changes: texel 0's circle enclosing
+## every arc for the range reject and the shadow gates, the length and the `n`
+## equal-length shadow chords for the strata. Texel 4.xy of the light's own row holds the
+## first path row and the arc count (-1: a tree). Rows whose inputs match the light's memo
+## are appended from it instead of rebuilt.
 func _pack_path(o: int, light: LitLineLight2D, pxf: Transform2D, n: int) -> void:
+	var m := Transform2D(pxf.x / _canvas_scale, pxf.y / _canvas_scale, Vector2.ZERO)
 	var row := _path_rows
-	_path_rows += 1
+	var base := row * PATH_W * 4
 	_path_ids.append(light.get_instance_id())
 	_pack_buf[o + 16] = float(row)
-	if light.path_row_same(pxf, n):
-		_path_buf.append_array(light.path_row())
-		_pack_buf[o + 17] = float(light.path_row_arcs())
-		return
+	var rows := 1
+	var arcs: int
+	var circle: Vector3
+	var length: float
+	if light.path_row_same(m, n):
+		var memo: PackedFloat32Array = light.path_row()
+		_path_buf.append_array(memo)
+		@warning_ignore("integer_division")
+		rows = memo.size() / (PATH_W * 4)
+		_path_rows += rows
+		arcs = light.path_row_arcs()
+		_pack_buf[o + 17] = float(arcs)
+		if light.path_row_head_same(pxf):
+			return
+		circle = light.path_row_circle()
+		length = light.path_row_length()
+	else:
+		var tree = light.path_tree()
+		var built: Array = _pack_tree(light, tree, m, row) if tree != null else _pack_row(light, m, row)
+		rows = built[0]
+		circle = built[1]
+		length = built[2]
+		arcs = -1 if tree != null else light.path_chain().arc_count()
+		_pack_buf[o + 17] = float(arcs)
 	_path_changed = true
+	var s := _canvas_scale
+	_path_buf[base] = pxf.origin.x + circle.x * s
+	_path_buf[base + 1] = pxf.origin.y + circle.y * s
+	_path_buf[base + 2] = circle.z * s
+	_path_buf[base + 4 * PATH_INFO + 3] = length * s
+	_pack_chords(base + 4 * PATH_SHADOW, light.path_chords(n), pxf)
+	light.path_row_store(_path_buf.slice(base, base + rows * PATH_W * 4), m, n, arcs, pxf, circle, length)
+
+## One path row for a chain of up to LinePath.ROW_ARCS arcs under `m`, appended as row
+## `row` (all but the screen px texels _pack_path adds). Returns [1, its circle, its
+## shading chords' length] in `m`'s space.
+func _pack_row(light: LitLineLight2D, m: Transform2D, row: int) -> Array:
+	_path_rows += 1
 	_path_buf.append_array(_path_zero_row)
-	var chain = light.path_chain()
 	var base := row * PATH_W * 4
-	var fit_rect: Rect2 = light.path_fit_rect()
-	var center := pxf * fit_rect.get_center()
-	var radius := pxf.basis_xform(fit_rect.size * 0.5).length()
-	var sx := pxf.x.length_squared()
-	var sy := pxf.y.length_squared()
-	var smax := maxf(sx, sy)
-	if smax <= 0.0 or absf(sx - sy) > 1e-5 * smax or absf(pxf.x.dot(pxf.y)) > 1e-5 * smax:
-		var sr: Rect2 = LinePathScript.bounds(LinePathScript.transformed(chain, pxf))
-		center = sr.get_center()
-		radius = (sr.size * 0.5).length()
-	_path_buf[base] = center.x
-	_path_buf[base + 1] = center.y
-	_path_buf[base + 2] = radius
+	var chain = light.path_chain()
 	var fit_pts: PackedVector2Array = chain.points
 	var fit_apexes: PackedVector2Array = chain.apexes
-	var pts := pxf * fit_pts
-	var apexes := pxf * fit_apexes
+	var pts := m * fit_pts
+	var apexes := m * fit_apexes
 	var arcs: int = chain.arc_count()
 	var prev := pts[0]
 	_path_buf[base + 4] = prev.x
@@ -699,15 +729,97 @@ func _pack_path(o: int, light: LitLineLight2D, pxf: Transform2D, n: int) -> void
 	var shade: PackedVector2Array = light.path_shade_chords(PATH_SHADE)
 	_path_buf[base + 3] = float(shade.size() - 1)
 	_path_buf[base + 4 * PATH_INFO + 2] = 1.0 if light.closed else 0.0
-	_path_buf[base + 4 * PATH_INFO + 3] = _pack_chords(base + 4 * PATH_CHORDS, shade, pxf)
+	var length := _pack_chords(base + 4 * PATH_CHORDS, shade, m)
 	_pack_coarse(base + 4 * PATH_CHORDS, shade.size() - 1, base + 4 * PATH_COARSE)
-	_pack_chords(base + 4 * PATH_SHADOW, light.path_chords(n), pxf)
-	_pack_buf[o + 17] = float(arcs)
-	light.path_row_store(_path_buf.slice(base, base + PATH_W * 4), pxf, n, arcs)
+	return [1, _path_circle(light, m), length]
 
-## Chords mid | half in screen px from `cuts`; returns their total length.
-func _pack_chords(at: int, cuts: PackedVector2Array, pxf: Transform2D) -> float:
-	var pts := pxf * cuts
+## A circle enclosing the chain under `m` (center.xy, radius): the fit bounds mapped, or
+## the mapped chain's bounds when `m` is not a similarity.
+func _path_circle(light: LitLineLight2D, m: Transform2D) -> Vector3:
+	var fit_rect: Rect2 = light.path_fit_rect()
+	var center := m * fit_rect.get_center()
+	var radius := m.basis_xform(fit_rect.size * 0.5).length()
+	var sx := m.x.length_squared()
+	var sy := m.y.length_squared()
+	var smax := maxf(sx, sy)
+	if smax <= 0.0 or absf(sx - sy) > 1e-5 * smax or absf(m.x.dot(m.y)) > 1e-5 * smax:
+		var sr: Rect2 = LinePathScript.bounds(LinePathScript.transformed(light.path_chain(), m))
+		center = sr.get_center()
+		radius = (sr.size * 0.5).length()
+	return Vector3(center.x, center.y, radius)
+
+## Pack a chain longer than LinePath.ROW_ARCS as a tree from path row `row` under `m`
+## (see LinePath.PathTree): its first row as a path row without arcs or shading chords
+## (t0.w 0, t1.x the node count), then its nodes from the next row, four texels each in
+## preorder, 32 a row: A = circle center.xy | radius | the node after its subtree (-1 for
+## a leaf), B = chord length | second moment about the center xx, xy, yy, C = direction
+## moment xx, xy | a leaf's block offset from the first row's texel 0 (PATH_W texels a
+## row) | its item count, + 8 when it holds the chain's free start, + 16 its free end.
+## Then the leaves' blocks, none across a row: its count + 1 points (as a path row's arc
+## points) and its count chords. Returns [its row count, its circle, its chords' length].
+func _pack_tree(light: LitLineLight2D, tree, m: Transform2D, row: int) -> Array:
+	var sp = LinePathScript.tree_space(tree, m)
+	var nodes: int = tree.lo.size()
+	var off := PATH_W * (1 + ceili(float(nodes) / 32.0))
+	var offsets := PackedInt32Array()
+	offsets.resize(nodes)
+	for j in nodes:
+		if tree.leaf[j] == 0:
+			continue
+		var size: int = 2 * (tree.hi[j] - tree.lo[j]) + 1
+		if off % PATH_W + size > PATH_W:
+			off += PATH_W - off % PATH_W
+		offsets[j] = off
+		off += size
+	var rows := ceili(float(off) / float(PATH_W))
+	var base := row * PATH_W * 4
+	_path_rows += rows
+	var zeros := PackedFloat32Array()
+	zeros.resize(rows * PATH_W * 4)
+	zeros.fill(0.0)
+	_path_buf.append_array(zeros)
+	_path_buf[base + 4] = float(nodes)
+	var items: int = tree.bulges.size()
+	var open := not light.closed
+	_path_buf[base + 4 * PATH_INFO + 2] = 0.0 if open else 1.0
+	for j in nodes:
+		var a := base + 4 * (PATH_W * (1 + (j >> 5)) + ((j & 31) << 2))
+		var c: Vector2 = sp.centers[j]
+		_path_buf[a] = c.x
+		_path_buf[a + 1] = c.y
+		_path_buf[a + 2] = sp.radii[j]
+		_path_buf[a + 3] = -1.0 if tree.leaf[j] != 0 else float(tree.skip[j])
+		_path_buf[a + 4] = sp.lengths[j]
+		for q in 5:
+			_path_buf[a + 5 + q] = sp.moments[j * 5 + q]
+		if tree.leaf[j] == 0:
+			continue
+		var lo: int = tree.lo[j]
+		var count: int = tree.hi[j] - lo
+		_path_buf[a + 10] = float(offsets[j])
+		_path_buf[a + 11] = float(count + (8 if open and lo == 0 else 0) + (16 if open and lo + count == items else 0))
+		var b := base + 4 * offsets[j]
+		for k in count + 1:
+			var p: Vector2 = sp.points[lo + k]
+			_path_buf[b] = p.x
+			_path_buf[b + 1] = p.y
+			if k < count:
+				_path_buf[b + 2] = sp.bulges[lo + k]
+				_path_buf[b + 3] = sp.discs[lo + k]
+			b += 4
+		for k in count:
+			var p: Vector2 = sp.points[lo + k]
+			var q: Vector2 = sp.points[lo + k + 1]
+			_path_buf[b] = (p.x + q.x) * 0.5
+			_path_buf[b + 1] = (p.y + q.y) * 0.5
+			_path_buf[b + 2] = (q.x - p.x) * 0.5
+			_path_buf[b + 3] = (q.y - p.y) * 0.5
+			b += 4
+	return [rows, _path_circle(light, m), sp.lengths[0]]
+
+## Chords mid | half from `cuts` under `xf`; returns their total length.
+func _pack_chords(at: int, cuts: PackedVector2Array, xf: Transform2D) -> float:
+	var pts := xf * cuts
 	var prev := pts[0]
 	var total := 0.0
 	for k in pts.size() - 1:

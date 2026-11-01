@@ -69,6 +69,10 @@ const LIGHT_COUNT := 128
 #     linecurve=straight a 2-point straight path along the light's own segment
 #     linecurve=bend one shallow C-bend (fits in a couple of arcs)
 #   linetess=N    tessellate every line light's path into N segments (with linecurve=on)
+#   rope=N        no spawned lights: one static serpentine squiggle of ropearcs quarter
+#     circles (and straight row connectors) split across N curved line lights at arc
+#     boundaries; ropearcs=A total arcs (default 256, A divisible by N); ropemove=on
+#     slides the rope sideways every frame so every path row repacks
 #   props=off     no prop occluders: the Test scene's own casters only (sparse scene)
 #   linewall=N    an occluder wall N px behind every line light, riding with it (a
 #     light bar on a wall: the gate's hardest case, every open-side pixel sees the wall)
@@ -138,6 +142,10 @@ var _opt_lines := false
 var _opt_linelen := -1.0
 var _opt_linecurve := "off"
 var _opt_linetess := 0
+var _opt_rope := 0
+var _opt_ropearcs := 256
+var _opt_ropemove := false
+var _rope_root: Node2D
 var _opt_props := true
 var _opt_linewall := 0.0
 var _pre_elapsed := -1.0
@@ -248,6 +256,12 @@ func _ready() -> void:
 				_opt_linecurve = kv[1]
 			"linetess":
 				_opt_linetess = int(kv[1])
+			"rope":
+				_opt_rope = int(kv[1])
+			"ropearcs":
+				_opt_ropearcs = int(kv[1])
+			"ropemove":
+				_opt_ropemove = kv[1] == "on"
 			"props":
 				_opt_props = kv[1] != "off"
 			"linewall":
@@ -363,9 +377,13 @@ func _setup() -> void:
 		var rx_target := scene.find_child(_opt_rxnode, true, false)
 		if rx_target is LitSprite2D:
 			rx_target.shadow_ignore_mask = 1
+	if _opt_rope > 0:
+		_opt_light_count = 0
 	for i in _opt_light_count:
 		var kind: String = _opt_kinds[i % _opt_kinds.size()]
 		_spawn_light(kind, Color.from_hsv(_rng.randf(), 0.85, 1.0))
+	if _opt_rope > 0:
+		_spawn_rope()
 	if _opt_masks == "split" and not _lights.is_empty():
 		_lights[0].node.shadow_mask = 3
 	for d in _lights:
@@ -832,7 +850,82 @@ func _spawn_light(kind: String, col: Color) -> void:
 	})
 
 
+const ROPE_CHORD := 24.0
+const ROPE_ROW_GAP := 170.0
+
+## rope=N: the squiggle as [start, out, in, end] Bezier pieces, each one quarter circle or
+## one straight row connector, so each fits as exactly one arc.
+func _rope_pieces(arcs: int) -> Array:
+	var pieces := []
+	var width := _area_half.x * 1.9
+	var x0 := _area_center.x - width * 0.5
+	var x := x0
+	var y := _area_center.y - ROPE_ROW_GAP
+	var dir := 1.0
+	var k := 0
+	while pieces.size() < arcs:
+		if (dir > 0.0 and x + ROPE_CHORD > x0 + width) or (dir < 0.0 and x - ROPE_CHORD < x0):
+			pieces.append([Vector2(x, y), Vector2.ZERO, Vector2.ZERO, Vector2(x, y + ROPE_ROW_GAP)])
+			y += ROPE_ROW_GAP
+			dir = -dir
+			k = 0
+			continue
+		var c := Vector2(x + dir * ROPE_CHORD * 0.5, y)
+		var r := ROPE_CHORD * 0.5
+		var a0 := PI if dir > 0.0 else 0.0
+		var step := (PI if (dir > 0.0) == (k % 2 == 0) else -PI) * 0.5
+		var h := 4.0 / 3.0 * tan(step / 4.0) * r
+		for j in 2:
+			if pieces.size() >= arcs:
+				break
+			var a := a0 + step * j
+			var b := a + step
+			pieces.append([c + Vector2.from_angle(a) * r, Vector2(-sin(a), cos(a)) * h,
+					-Vector2(-sin(b), cos(b)) * h, c + Vector2.from_angle(b) * r])
+		x += dir * ROPE_CHORD
+		k += 1
+	return pieces
+
+
+func _spawn_rope() -> void:
+	var pieces := _rope_pieces(_opt_ropearcs)
+	@warning_ignore("integer_division")
+	var per := _opt_ropearcs / _opt_rope
+	_rope_root = Node2D.new()
+	add_child(_rope_root)
+	var arc_counts := []
+	for li in _opt_rope:
+		var group := pieces.slice(li * per, (li + 1) * per)
+		var box := Rect2(group[0][0], Vector2.ZERO)
+		for pc in group:
+			box = box.expand(pc[3])
+		var center := box.get_center()
+		var curve := Curve2D.new()
+		curve.add_point(group[0][0] - center, Vector2.ZERO, group[0][1])
+		for j in group.size():
+			var out: Vector2 = group[j + 1][1] if j + 1 < group.size() else Vector2.ZERO
+			curve.add_point(group[j][3] - center, group[j][2], out)
+		var n := LitLineLight2D.new()
+		n.position = center
+		n.range = 90.0
+		n.height = 16.0
+		n.width = 3.0
+		n.glow = 0.6
+		n.energy = 1.6
+		n.color = Color(1.0, 0.55, 0.25)
+		n.shadow_enabled = _opt_shadows
+		_configure_shadow_algo(n, "line")
+		var path := Path2D.new()
+		path.curve = curve
+		n.add_child(path)
+		_rope_root.add_child(n)
+		arc_counts.append(n.path_chain().arc_count() if n.is_curved() else 0)
+	print("LITBENCH rope lights=%d arcs_per_light=%s" % [_opt_rope, str(arc_counts)])
+
+
 func _update_lights() -> void:
+	if _rope_root != null and _opt_ropemove:
+		_rope_root.position.x = sin(_clock * 0.7) * 24.0
 	for d in _lights:
 		var n = d.node
 		if d.kind == "dir":

@@ -15,16 +15,14 @@ vec4 lit_line_window(vec4 t4, vec2 light_uv, vec2 frag_uv, float range) {
 	return vec4(light_uv + t4.xy * (0.5 * (u0 + u1)) / lit_viewport_size, t4.xy * (0.5 * (u1 - u0)));
 }
 
-// Nearest point of a curved line light's arc chain to `p` (screen px): path texture row
-// `row`, `count` arcs from texel 1 on, each texel a point and the bulge (the tangent of
-// a quarter of the sweep) of the arc leaving it. Returns the point and its distance.
-vec3 lit_path_nearest(int row, int count, vec2 p) {
-	vec4 cur = texelFetch(lit_light_path, ivec2(1, row), 0);
-	vec2 q = cur.xy;
-	float best = dot(p - q, p - q);
-	float bd = sqrt(best);
+// Nearest point to `p` of the arcs from the point at `at` on, `count` of them, each texel
+// a point and the bulge (the tangent of a quarter of the sweep) of the arc leaving it and
+// the radius of a disc about its chord's middle holding that arc: q and its distance bd
+// (best = bd^2) where one is nearer than the q passed in.
+void lit_arcs_nearest(ivec2 at, int count, vec2 p, inout vec2 q, inout float best, inout float bd) {
+	vec4 cur = texelFetch(lit_light_path, at, 0);
 	for (int k = 1; k <= count; k++) {
-		vec4 nxt = texelFetch(lit_light_path, ivec2(1 + k, row), 0);
+		vec4 nxt = texelFetch(lit_light_path, at + ivec2(k, 0), 0);
 		// An arc whose bounding disc (w) lies wholly beyond the best distance cannot be nearer.
 		vec2 mo = p - 0.5 * (cur.xy + nxt.xy);
 		float reach = bd + cur.w;
@@ -62,7 +60,100 @@ vec3 lit_path_nearest(int row, int count, vec2 p) {
 		}
 		cur = nxt;
 	}
+}
+
+// Nearest point of a curved line light's arc chain to `p`: path texture row `row`,
+// `count` arcs from texel 1 on. Returns the point and its distance.
+vec3 lit_path_nearest(int row, int count, vec2 p) {
+	vec2 q = texelFetch(lit_light_path, ivec2(1, row), 0).xy;
+	float best = dot(p - q, p - q);
+	float bd = sqrt(best);
+	lit_arcs_nearest(ivec2(1, row), count, p, q, best, bd);
 	return vec3(q, bd);
+}
+
+// A tree path's node `j` (see _pack_tree): its texel A, then B and C after it.
+ivec2 lit_tree_at(int row, int j) {
+	return ivec2((j & 31) << 2, row + 1 + (j >> 5));
+}
+
+// Nearest point of a tree path (path row `row`, `count` nodes) to `p` within `cut`, its
+// nodes' circles pruning the walk past the best distance so far. Returns the point and
+// its distance, or a point past `cut` when none lies within it.
+vec3 lit_tree_nearest(int row, int count, vec2 p, float cut) {
+	vec2 q = p + vec2(2.0 * cut + 1.0, 0.0);
+	float best = cut * cut;
+	float bd = cut;
+	int j = 0;
+	while (j < count) {
+		ivec2 at = lit_tree_at(row, j);
+		vec4 a = texelFetch(lit_light_path, at, 0); // center.xy | radius | the node after its subtree (-1: a leaf)
+		vec2 v = p - a.xy;
+		float reach = bd + a.z;
+		if (dot(v, v) >= reach * reach) {
+			j = max(int(a.w), j + 1);
+			continue;
+		}
+		j++;
+		if (a.w < 0.0) {
+			vec4 c = texelFetch(lit_light_path, at + ivec2(2, 0), 0); // | block offset | count + free ends
+			int off = int(c.z);
+			lit_arcs_nearest(ivec2(off & (LIT_PATH_W - 1), row + (off >> LIT_PATH_W_SHIFT)), int(c.w) & 7, p, q, best, bd);
+		}
+	}
+	return vec3(q, bd);
+}
+
+// A tree path's chords' shares at `p` (lit_line_chord) added to cosine and acc_l, a
+// Barnes-Hut walk of its nodes: a node wholly below the horizon adds nothing, one past
+// LIT_PATH_TREE_OPEN radii and wholly above adds its moments' share (its chords' length at
+// their centroid with the second moment's correction, shrunk toward p by the tube's
+// width across its chords' mean direction), any other opens, a leaf into its chords.
+void lit_tree_shade(int row, int count, vec2 p, vec3 N, float h, float w, inout float cosine, inout vec3 acc_l) {
+	float nxy = length(N.xy);
+	int j = 0;
+	while (j < count) {
+		ivec2 at = lit_tree_at(row, j);
+		vec4 a = texelFetch(lit_light_path, at, 0);
+		vec2 v = a.xy - p;
+		float nu = dot(N, vec3(v, h));
+		float span = (a.z + w) * nxy;
+		int skip = max(int(a.w), j + 1);
+		if (nu <= -span) {
+			j = skip;
+			continue;
+		}
+		float vv = dot(v, v);
+		float ro = a.z * LIT_PATH_TREE_OPEN + w;
+		if (nu > span && vv > ro * ro) {
+			vec4 b = texelFetch(lit_light_path, at + ivec2(1, 0), 0); // length | second moment xx, xy, yy
+			vec4 c = texelFetch(lit_light_path, at + ivec2(2, 0), 0); // direction moment xx, xy
+			float iv = inversesqrt(vv);
+			vec2 u = v * iv;
+			float across = 1.0 - c.x * u.x * u.x - 2.0 * c.y * u.x * u.y - (1.0 - c.x) * u.y * u.y;
+			v *= max(1.0 - w * sqrt(max(across, 0.0)) * iv, 0.0);
+			float iu = 1.0 / (dot(v, v) + h * h);
+			float nv = dot(N, vec3(v, h));
+			vec2 qv = vec2(b.y * v.x + b.z * v.y, b.z * v.x + b.w * v.y);
+			float f = (b.x * nv + (4.0 * nv * dot(v, qv) * iu - 2.0 * dot(N.xy, qv) - nv * (b.y + b.w)) * iu) * iu;
+			cosine += f;
+			acc_l += f * sqrt(iu) * vec3(v, h);
+			j = skip;
+			continue;
+		}
+		j++;
+		if (a.w < 0.0) {
+			vec4 c = texelFetch(lit_light_path, at + ivec2(2, 0), 0);
+			int off = int(c.z);
+			int code = int(c.w);
+			int n = code & 7;
+			ivec2 ch = ivec2((off & (LIT_PATH_W - 1)) + n + 1, row + (off >> LIT_PATH_W_SHIFT));
+			for (int k = 0; k < n; k++) {
+				vec2 free = vec2(k == 0 && (code & 8) != 0 ? 1.0 : 0.0, k == n - 1 && (code & 16) != 0 ? 1.0 : 0.0);
+				cosine += lit_line_chord(texelFetch(lit_light_path, ch + ivec2(k, 0), 0), p, N, h, w, free, acc_l);
+			}
+		}
+	}
 }
 #endif
 
@@ -122,9 +213,10 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 	}
 
 #ifdef LIT_LINE
-	// A curved line light's Q, the nearest point of its arc chain, found in the line block;
-	// the shadow block marches from it, the cookie keeps the node's position.
-	vec2 q_px = vec2(0.0);
+	// A curved line light's Q, the nearest point of its arc chain (relative to the node in
+	// world px, as its arcs), found in the line block; the shadow block marches from it, the
+	// cookie keeps the node's position.
+	vec2 q_path = vec2(0.0);
 	int path_row = -1;                       // a curved line light's path texture row
 	vec4 line_t4 = vec4(0.0);                // a line light's texel 4
 	vec3 line_tube = vec3(0.0);              // its tube: height px | half width px | 1 when its chain is open
@@ -173,6 +265,7 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 			line_t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
 			vec2 p = frag_uv * lit_viewport_size;
 			vec4 circle = vec4(0.0);                 // a curved line's path texel 0: center.xy | radius | shading chord count
+			vec2 pr = vec2(0.0);                     // and the pixel in its arcs' space
 			if ((flags & 8388608) != 0) {
 				path_row = int(round(line_t4.x));
 				// Path texel 0's circle encloses every arc: a pixel farther from it than the
@@ -181,8 +274,13 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 				if (length(p - circle.xy) - circle.z > range_px + 1.0) {
 					return vec3(0.0);
 				}
-				q_px = lit_path_nearest(path_row, int(round(line_t4.y)), p).xy;
-				to_light_px = q_px - p;
+				// The arcs and shading chords sit relative to the node in world px.
+				pr = to_light_px * (-1.0 / lit_canvas_scale);
+				q_path = line_t4.y < 0.0
+						? lit_tree_nearest(path_row, int(round(texelFetch(lit_light_path, ivec2(1, path_row), 0).x)), pr,
+								range + 1.0 / lit_canvas_scale).xy
+						: lit_path_nearest(path_row, int(round(line_t4.y)), pr).xy;
+				to_light_px = (q_path - pr) * lit_canvas_scale;
 			} else {
 				float u = clamp(-dot(to_light_px, line_t4.xy) / max(dot(line_t4.xy, line_t4.xy), 1e-6), -1.0, 1.0);
 				to_light_px += line_t4.xy * u;
@@ -216,7 +314,13 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 			vec3 acc_l = vec3(0.0);
 			float cosine = 0.0;
 			float len;
-			if (path_row >= 0) {
+			if (path_row >= 0 && line_t4.y < 0.0) {
+				vec4 info = texelFetch(lit_light_path, ivec2(LIT_PATH_INFO, path_row), 0); // z 1 when closed | w length px
+				len = info.w;
+				line_tube.z = info.z < 0.5 ? 1.0 : 0.0;
+				lit_tree_shade(path_row, int(round(texelFetch(lit_light_path, ivec2(1, path_row), 0).x)), pr, N, height,
+						line_t4.w, cosine, acc_l);
+			} else if (path_row >= 0) {
 				int count = int(round(circle.w));
 				vec4 info = texelFetch(lit_light_path, ivec2(LIT_PATH_INFO, path_row), 0); // z 1 when closed | w length px
 				len = info.w;
@@ -236,19 +340,19 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 				for (int k = 0; k < count; k++) {
 					vec4 ch = texelFetch(lit_light_path, ivec2(chord0 + k, path_row), 0);
 					float q = dot(ch.zw, ch.zw);
-					vec2 d = ch.xy - p;
+					vec2 d = ch.xy - pr;
 					vec2 v = d - ch.zw * (dot(d, ch.zw) / max(q, 1e-8));
-					vec2 m = d - v * min(half_w * inversesqrt(max(dot(v, v), 1e-12)), 1.0);
-					float em = dot(N.xy, m) + N.z * height_px;
+					vec2 m = d - v * min(line_t4.w * inversesqrt(max(dot(v, v), 1e-12)), 1.0);
+					float em = dot(N.xy, m) + N.z * height;
 					float eg = abs(dot(N.xy, ch.zw));
 					bool free_end = line_tube.z > 0.5 && (k == 0 || k == count - 1);
-					if (free_end || (em > -eg && (em < eg || dot(m, m) + height_px * height_px <= 36.0 * q))) {
+					if (free_end || (em > -eg && (em < eg || dot(m, m) + height * height <= 36.0 * q))) {
 						near |= 1u << uint(k);
 					} else if (em >= eg) {
 						vec2 g = ch.zw * 0.5773502692;
 						float eo = dot(N.xy, g);
-						vec3 ua = vec3(m - g, height_px);
-						vec3 ub = vec3(m + g, height_px);
+						vec3 ua = vec3(m - g, height);
+						vec3 ub = vec3(m + g, height);
 						float ia = inversesqrt(dot(ua, ua));
 						float ib = inversesqrt(dot(ub, ub));
 						float hl = q * inversesqrt(max(q, 1e-8));
@@ -262,7 +366,7 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 					int k = int(findLSB(near));
 					near &= near - 1u;
 					vec2 free = vec2(k == 0 ? line_tube.z : 0.0, k == count - 1 ? line_tube.z : 0.0);
-					cosine += lit_line_chord(texelFetch(lit_light_path, ivec2(chord0 + k, path_row), 0), p, N, height_px, half_w, free, acc_l);
+					cosine += lit_line_chord(texelFetch(lit_light_path, ivec2(chord0 + k, path_row), 0), pr, N, height, line_t4.w, free, acc_l);
 				}
 			} else {
 				len = 2.0 * length(line_t4.xy);
@@ -454,7 +558,7 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 			// keep the branch below unchanged.
 			vec2 target_uv = light_uv;
 			if ((flags & 8388608) != 0) {
-				target_uv = q_px / lit_viewport_size;
+				target_uv = light_uv + q_path * (lit_canvas_scale / lit_viewport_size);
 			} else {
 				vec4 t4 = texelFetch(lit_light_data, ivec2(4, i), 0); // half.xy | glow | half width
 				vec2 d = (light_uv - frag_uv) * lit_viewport_size;

@@ -312,7 +312,13 @@ func _positional(light, pos: Vector2,
 	if light is LitLineLight2D:
 		half_w = minf(light.width * 0.5, light.range * 0.9) * s
 		glow = light.glow
-		if light.is_curved():
+		if light.is_curved() and light.path_tree() != null:
+			var to_world: Transform2D = xf * light.path_fit_xf().affine_inverse()
+			chain = light.path_tree_space(to_world)
+			shadow_cuts = to_world * light.path_chords(maxi(light.shadow_samples, 1))
+			open = not light.closed
+			fit_extra = light.path_extent(xf)
+		elif light.is_curved():
 			chain = LinePathScript.transformed(light.path_chain(), xf * light.path_fit_xf().affine_inverse())
 			cuts = LinePathScript.shade_chords(chain, 32)
 			shadow_cuts = LinePathScript.chords(chain, maxi(light.shadow_samples, 1))
@@ -327,6 +333,9 @@ func _positional(light, pos: Vector2,
 	var tube_len := 0.0
 	for j in cuts.size() - 1:
 		tube_len += cuts[j].distance_to(cuts[j + 1])
+	var tree = chain if chain is LinePathScript.PathTreeSpace else null
+	if tree != null:
+		tube_len = tree.lengths[0]
 	if range_px <= 0.0 or energy <= 0.0 \
 			or _nearest(xf.origin, half, len2, pos, chain).distance_to(pos) > range_px:
 		return 0.0
@@ -423,6 +432,8 @@ func _positional(light, pos: Vector2,
 			# where it falls short under the body and out to a half width past its surface.
 			var mean := 0.0
 			var m := cuts.size() - 1
+			if tree != null:
+				mean = _tree_share(tree, points[i], n, height, half_w, open)
 			for j in m:
 				mean += _chord_share(cuts[j], cuts[j + 1], points[i], n, height, half_w, open and j == 0, open and j == m - 1)
 			mean /= 2.0 * atan2(tube_len, 2.0 * slant)
@@ -485,10 +496,80 @@ static func _chord_share(a: Vector2, b: Vector2, p: Vector2, n: Vector3, height:
 	return alpha * atan2(d * (hi - lo), d2 + hi * lo) / d + 0.5 * beta * log((d2 + hi * hi) / (d2 + lo * lo))
 
 
+## A tree path's chords' shares at `p` on a face with normal `n` (`tree` a world space
+## LinePath.PathTreeSpace), as the shader's lit_tree_shade walks them: a node wholly below the
+## horizon adds nothing, one past LinePath.TREE_OPEN radii and wholly above adds its
+## moments' share, any other opens, a leaf into its chords (_chord_share).
+static func _tree_share(tree, p: Vector2, n: Vector3, height: float, half_w: float, open: bool) -> float:
+	var t = tree.tree
+	var items: int = t.bulges.size()
+	var nxy := Vector2(n.x, n.y).length()
+	var sum := 0.0
+	var j := 0
+	while j < t.lo.size():
+		var v: Vector2 = tree.centers[j] - p
+		var nu := n.x * v.x + n.y * v.y + n.z * height
+		var span: float = (tree.radii[j] + half_w) * nxy
+		if nu <= -span:
+			j = t.skip[j]
+			continue
+		var vv := v.length_squared()
+		var ro: float = tree.radii[j] * LinePathScript.TREE_OPEN + half_w
+		if nu > span and vv > ro * ro:
+			var o := j * 5
+			var iv := 1.0 / sqrt(vv)
+			var u := v * iv
+			var sxx: float = tree.moments[o + 3]
+			var sxy: float = tree.moments[o + 4]
+			var across := 1.0 - sxx * u.x * u.x - 2.0 * sxy * u.x * u.y - (1.0 - sxx) * u.y * u.y
+			v *= maxf(1.0 - half_w * sqrt(maxf(across, 0.0)) * iv, 0.0)
+			var iu := 1.0 / (v.length_squared() + height * height)
+			var nv := n.x * v.x + n.y * v.y + n.z * height
+			var qxx: float = tree.moments[o]
+			var qxy: float = tree.moments[o + 1]
+			var qyy: float = tree.moments[o + 2]
+			var qv := Vector2(qxx * v.x + qxy * v.y, qxy * v.x + qyy * v.y)
+			sum += (tree.lengths[j] * nv + (4.0 * nv * v.dot(qv) * iu - 2.0 * (n.x * qv.x + n.y * qv.y)
+					- nv * (qxx + qyy)) * iu) * iu
+			j = t.skip[j]
+			continue
+		if t.leaf[j] != 0:
+			for k in range(t.lo[j], t.hi[j]):
+				sum += _chord_share(tree.points[k], tree.points[k + 1], p, n, height, half_w,
+						open and k == 0, open and k == items - 1)
+		j += 1
+	return sum
+
+
+## The point of a tree path (a LinePath.PathTreeSpace) nearest `p`, its nodes' circles
+## pruning the walk past the best distance so far (the shader's lit_tree_nearest).
+static func _tree_nearest(tree, p: Vector2) -> Vector2:
+	var t = tree.tree
+	var best := INF
+	var q := p
+	var j := 0
+	while j < t.lo.size():
+		var reach: float = sqrt(best) + tree.radii[j]
+		if best < INF and p.distance_squared_to(tree.centers[j]) >= reach * reach:
+			j = t.skip[j]
+			continue
+		if t.leaf[j] != 0:
+			for k in range(t.lo[j], t.hi[j]):
+				var cq := LinePathScript.nearest_on_arc(tree.points[k], tree.points[k + 1], tree.bulges[k], p)
+				var d2 := p.distance_squared_to(cq)
+				if d2 < best:
+					best = d2
+					q = cq
+		j += 1
+	return q
+
+
 ## The point of the segment `origin` +- `half` (`len2` = |half|^2) nearest `p`; the
 ## origin itself for a point or spot light; the nearest point of a curved line's world
-## space `chain`.
+## space `chain` (or LinePath.PathTreeSpace).
 static func _nearest(origin: Vector2, half: Vector2, len2: float, p: Vector2, chain = null) -> Vector2:
+	if chain is LinePathScript.PathTreeSpace:
+		return _tree_nearest(chain, p)
 	if chain != null:
 		return LinePathScript.nearest(chain, p)
 	if len2 <= 0.0:

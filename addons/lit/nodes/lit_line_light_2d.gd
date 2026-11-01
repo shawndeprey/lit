@@ -21,9 +21,10 @@ class_name LitLineLight2D
 ##
 ## Add a Path2D child to bend the light: it follows the child's curve instead of
 ## `length` (select the Path2D to draw and edit the curve with Godot's pen gizmo), and
-## `closed` joins the curve's ends into a loop. The curve is lit as true arcs, up to 32
-## of them, each straight stretch as one piece and the bends as up to 32 chords; Cone
-## Traced and Stochastic shadows march it as `shadow_samples` chords of equal length.
+## `closed` joins the curve's ends into a loop. The curve is lit as true arcs, as many as
+## it needs, each straight stretch as one piece and the bends as up to 32 chords per 32
+## arcs; Cone Traced and Stochastic shadows march it as `shadow_samples` chords of equal
+## length.
 ## Everything else is inherited from LitPositionalLight2D and LitLight2D.
 
 const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd")
@@ -77,7 +78,8 @@ const TESSELLATION_MAX := 32
 ## Total straight segments the path's curves are cut into, by length: smooth points are
 ## cut across, while corners and straight stretches keep at least one segment between
 ## them. Fewer is cheaper and follows the curves less closely. The most is 32, less one
-## for each straight stretch of the path.
+## for each straight stretch of the path, or the number of arcs the curves are lit as
+## where that is more.
 @export_range(2, TESSELLATION_MAX, 1, "prefer_slider") var tessellation_segments: int = 16:
 	set(value):
 		tessellation_segments = maxi(value, 2)
@@ -102,13 +104,19 @@ var _chords := {}
 var _seg := PackedVector2Array()
 var _tess_active := false
 var _tess_max := TESSELLATION_MAX
-var _truncated := false
+var _fit_cache := {}
+var _tree: LinePathScript.PathTree
+var _tree_space: LinePathScript.PathTreeSpace
+var _tree_space_xf := Transform2D()
 # The packed path row the registry last built from this light, keyed by its inputs.
 var _row := PackedFloat32Array()
 var _row_pxf := Transform2D()
 var _row_n := -1
 var _row_arcs := 0
 var _row_dirty := true
+var _row_head := Transform2D()
+var _row_circle := Vector3.ZERO
+var _row_len := 0.0
 
 func _init() -> void:
 	child_entered_tree.connect(_on_child_entered)
@@ -136,8 +144,6 @@ func _get_configuration_warnings() -> PackedStringArray:
 	_refresh_path()
 	if _path.curve == null or _path.curve.point_count < 2:
 		out.append("The Path2D child needs a curve with at least 2 points; until then the light is its straight segment.")
-	elif _chain != null and _chain.truncated:
-		out.append("The path needs more than %d arcs; only the first %d light. Simplify the curve." % [LinePathScript.MAX_ARCS, LinePathScript.MAX_ARCS])
 	return out
 
 ## True while a Path2D child with a curve of at least 2 points shapes the light.
@@ -148,6 +154,21 @@ func is_curved() -> bool:
 ## The fitted arc chain, in fit space (see path_fit_xf).
 func path_chain() -> LinePathScript.Chain:
 	return _chain
+
+## The chain as a PathTree while it is longer than LinePath.ROW_ARCS arcs (else null).
+func path_tree() -> LinePathScript.PathTree:
+	if _tree == null and _chain != null and _chain.arc_count() > LinePathScript.ROW_ARCS:
+		_tree = LinePathScript.tree(_chain)
+	return _tree
+
+## path_tree under `xf` (applied to fit space), kept for the last `xf` asked.
+func path_tree_space(xf: Transform2D) -> LinePathScript.PathTreeSpace:
+	if path_tree() == null:
+		return null
+	if _tree_space == null or _tree_space.tree != _tree or xf != _tree_space_xf:
+		_tree_space = LinePathScript.tree_space(_tree, xf)
+		_tree_space_xf = xf
+	return _tree_space
 
 ## Light-local space to the chain's fit space.
 func path_fit_xf() -> Transform2D:
@@ -211,22 +232,37 @@ func path_shade_chords(n: int) -> PackedVector2Array:
 		_chords[-n] = LinePathScript.shade_chords(_chain, n)
 	return _chords[-n]
 
-## True while the packed row memo was built from `pxf` and `n` on the current chain.
-func path_row_same(pxf: Transform2D, n: int) -> bool:
-	return not _row_dirty and n == _row_n and pxf == _row_pxf
+## True while the packed rows memo was built from `m` and `n` on the current chain.
+func path_row_same(m: Transform2D, n: int) -> bool:
+	return not _row_dirty and n == _row_n and m == _row_pxf
 
-## The packed row memo (light_packer.gd _pack_path) and the arc count it packed.
+## True while its screen px texels were packed under `pxf`.
+func path_row_head_same(pxf: Transform2D) -> bool:
+	return pxf == _row_head
+
+## The packed rows memo (light_packer.gd _pack_path), the arc count it packed (-1: a
+## tree), and its circle and length in the rows' space.
 func path_row() -> PackedFloat32Array:
 	return _row
 
 func path_row_arcs() -> int:
 	return _row_arcs
 
-func path_row_store(row: PackedFloat32Array, pxf: Transform2D, n: int, arcs: int) -> void:
-	_row = row
-	_row_pxf = pxf
+func path_row_circle() -> Vector3:
+	return _row_circle
+
+func path_row_length() -> float:
+	return _row_len
+
+func path_row_store(rows: PackedFloat32Array, m: Transform2D, n: int, arcs: int, pxf: Transform2D,
+		circle: Vector3, length: float) -> void:
+	_row = rows
+	_row_pxf = m
 	_row_n = n
 	_row_arcs = arcs
+	_row_head = pxf
+	_row_circle = circle
+	_row_len = length
 	_row_dirty = false
 
 func _on_child_entered(_node: Node) -> void:
@@ -258,7 +294,9 @@ func _find_path(exclude: Node) -> void:
 		_chain = null
 		_seg = PackedVector2Array()
 		_tess_active = false
-		_truncated = false
+		_tree = null
+		_tree_space = null
+		_fit_cache.clear()
 	notify_property_list_changed()
 	update_configuration_warnings()
 	LitLightRegistry.light_state_changed(self)
@@ -294,19 +332,25 @@ func _refresh_path() -> void:
 	_path_dirty = false
 	_fit_xf = basis if absf(basis.determinant()) > 1e-8 else Transform2D()
 	_fit_inv = _fit_xf.affine_inverse()
-	_chain = LinePathScript.fit(curve, closed, _fit_xf * _path_xf)
-	if _chain.truncated and not _truncated and not Engine.is_editor_hint():
-		_report_error("Lit: %s's path needs more than %d arcs; only the first %d light. Simplify the curve."
-				% [get_path() if is_inside_tree() else name, LinePathScript.MAX_ARCS, LinePathScript.MAX_ARCS])
-	_truncated = _chain.truncated
+	_chain = LinePathScript.fit(curve, closed, _fit_xf * _path_xf, _fit_cache)
+	_tree = null
+	_tree_space = null
 	_tess_active = false
 	if tessellate:
-		var counts := LinePathScript.run_counts(_chain)
-		var most := maxi(mini(TESSELLATION_MAX, LinePathScript.MAX_ARCS - counts.y), counts.x)
+		var curved := 0
+		var bending := 0
+		var straight := 0
+		for r in LinePathScript.runs(_chain):
+			if r[2]:
+				curved += r[1] - r[0]
+				bending += 1
+			else:
+				straight += 1
+		var most := maxi(maxi(TESSELLATION_MAX - straight, curved), bending)
 		if most != _tess_max:
 			_tess_max = most
 			notify_property_list_changed()
-		if counts.x > 0:
+		if bending > 0:
 			_tess_active = true
 			_chain = LinePathScript.tessellated(_chain, mini(tessellation_segments, most))
 	_chords.clear()
@@ -321,9 +365,6 @@ func _refresh_path() -> void:
 	_path_corners = PackedVector2Array(_corners(_path_rect))
 	update_configuration_warnings()
 	LitLightRegistry.light_state_changed(self)
-
-func _report_error(message: String) -> void:
-	push_error(message)
 
 static func _similar(q: Transform2D) -> bool:
 	var xx := q.x.length_squared()

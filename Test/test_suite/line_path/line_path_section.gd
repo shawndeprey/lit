@@ -16,7 +16,9 @@ extends LitSuiteSection
 ## light); tessellation (curves as straight segments shared by length, straight stretches
 ## kept, inactive on a path with no curve, rendered as the same hand-drawn polyline); tiny
 ## curves beside a long one keep the shading chords within the row's 32; a path past 32
-## arcs reports one runtime error each time it goes past, and extra Path2D children warn.
+## arcs packs as a tree and lights as one tube (a 40-arc straight path as the straight
+## light, a long wave as its chords' reference and the luminance mirror, shadows), its
+## rows kept through a camera pan and zoom, and extra Path2D children warn.
 ## The Add Path starter shapes fit the light's length centered on it in a handful of arcs,
 ## and a closed polygon lights its seam corner as its other corners. Points on arcs fitted
 ## with a noise-level bulge (straight diagonal edges) stay on the edge.
@@ -59,14 +61,6 @@ var _props: Node2D
 var _floor_a: LitSprite2D
 var _ring_b: LitLineLight2D
 var _cam: Camera2D
-
-
-# Records the runtime path errors instead of pushing them.
-class _ErrorProbe extends LitLineLight2D:
-	var errors: Array = []
-
-	func _report_error(message: String) -> void:
-		errors.append(message)
 
 
 func run() -> void:
@@ -480,7 +474,7 @@ func _ring_shadows() -> void:
 func _api() -> void:
 	var c := "path_api"
 	var reg = get_node("/root/LitManager")._registry
-	var l := line_light(CC, 100.0, 0.5, 100.0, null, _ErrorProbe)
+	var l := line_light(CC, 100.0, 0.5, 100.0)
 	check(c, "fresh closed false", false, l.closed)
 	check_true(c, "fresh light is not curved", not l.is_curved())
 	check_true(c, "length is editable without a Path2D child", not _read_only(l, "length"))
@@ -499,9 +493,8 @@ func _api() -> void:
 		zig.append([Vector2(i * 30.0, (i % 2) * 40.0), Vector2(-10, 10), Vector2(10, -10)])
 	var big := path_child(l, zig)
 	check_true(c, "a 40-point zigzag is curved", l.is_curved())
-	check(c, "and truncates to 32 arcs", 32, l.path_chain().arc_count())
-	check_true(c, "with the truncation warning", l._get_configuration_warnings().size() == 1
-			and "32" in l._get_configuration_warnings()[0])
+	check_gt(c, "and keeps every arc, past 32", l.path_chain().arc_count(), 32, 0)
+	check(c, "with no warning", 0, l._get_configuration_warnings().size())
 	big.free()
 	ring_child(l, RC)
 	await frames(2)
@@ -529,13 +522,13 @@ func _api() -> void:
 		var pb: int = prow * packer.PATH_W * 4
 		check_approx(c, "path row texel 0: the bounding circle sits on the node (x)", CC.x, packer._path_buf[pb], 0.5)
 		check_approx(c, "path row texel 0: its radius is the chain box's half diagonal", RC * sqrt(2.0), packer._path_buf[pb + 2], 0.5)
-		check_approx(c, "path row texel 1: the first arc point is the curve's first point (x)", CC.x + RC, packer._path_buf[pb + 4], 0.5)
+		check_approx(c, "path row texel 1: the first arc point is the curve's first point (x)", RC, packer._path_buf[pb + 4], 0.5)
 		var chord_len := Vector2(packer._path_buf[pb + 4 * packer.PATH_SHADOW + 2], packer._path_buf[pb + 4 * packer.PATH_SHADOW + 3]).length() * 2.0
 		check_approx(c, "the first shadow chord spans 1/8 of the ring (8 samples)", 2.0 * RC * sin(PI / 8.0), chord_len, 1.0)
 		check(c, "path row texel 0.w: the ring's arcs share all 32 shading chords", 32, int(round(packer._path_buf[pb + 3])))
 		l.rotation = PI / 2.0
 		await frames(1)
-		check_approx(c, "rotated 90: the first arc point turns to +y", CC.y + RC, packer._path_buf[pb + 5], 0.5)
+		check_approx(c, "rotated 90: the first arc point turns to +y", RC, packer._path_buf[pb + 5], 0.5)
 		check(c, "rotation keeps the arc count (no refit)", arcs, int(round(packer._pack_buf[o + 17])))
 		l.rotation = 0.0
 		await frames(1)
@@ -948,7 +941,7 @@ func _tessellation() -> void:
 	l.tessellation_segments = 2
 	await frames(2)
 	check(c, "a smooth 9-point wave, 2 asked: 2 pieces", 2, l.path_chain().arc_count())
-	check(c, "and the most is 32 however many points it has", 32, l.path_tessellation_max())
+	check(c, "and the most is its curves' arcs, 32 at least", maxi(32, LinePath.fit(p.curve, false).arc_count()), l.path_tessellation_max())
 	l.tessellation_segments = 6
 	await frames(2)
 	check(c, "6 asked: 6 pieces", 6, l.path_chain().arc_count())
@@ -1030,37 +1023,103 @@ func _shade_budget() -> void:
 
 func _limits() -> void:
 	var c := "path_limits"
-	var l: _ErrorProbe = line_light(Vector2(130, 200), 100.0, 0.5, 100.0, null, _ErrorProbe)
+	var reg = get_node("/root/LitManager")._registry
+	var packer = reg._light_packer
+	var mgr := get_node("/root/LitManager")
+	var at := Vector2(340, 300)
+	var area := Rect2(40, 110, 620, 390)
+	# 41 collinear points: 40 straight arcs, a tree, lit as the straight light of the same
+	# length (its far chords summarized, none dropped).
+	var l := line_light(at, 120.0, 0.5, 60.0)
 	l.name = "LimitsLight"
-	var zig: Array = []
-	for i in 40:
-		zig.append([Vector2(i * 10.0, (i % 2) * 20.0), Vector2(-3, 3), Vector2(3, -3)])
-	var p := path_child(l, zig)
+	l.length = 400.0
+	l.width = 4.0
 	await frames(2)
-	check(c, "a path past 32 arcs reports one runtime error", 1, l.errors.size())
-	check_true(c, "naming the light and the limit", l.errors.size() == 1
-			and str(l.get_path()) in l.errors[0] and "32" in l.errors[0])
-	p.curve.set_point_position(39, Vector2(400, 40))
-	l.rotation = 0.3
+	var straight := await capture()
+	var line: Array = []
+	for i in 41:
+		line.append([Vector2(-200.0 + i * 10.0, 0), Vector2.ZERO, Vector2.ZERO])
+	var p := path_child(l, line)
 	await frames(2)
-	check(c, "refits while still past the limit report nothing new", 1, l.errors.size())
-	p.curve = Curve2D.new()
-	p.curve.add_point(Vector2.ZERO)
-	p.curve.add_point(Vector2(200, 0))
-	await frames(2)
-	check_true(c, "a simple path is not truncated", not l.path_chain().truncated)
-	check(c, "and reports nothing", 1, l.errors.size())
+	check(c, "41 collinear points fit as 40 arcs", 40, l.path_chain().arc_count())
+	check(c, "with no warning past 32 arcs", 0, l._get_configuration_warnings().size())
+	check_true(c, "a chain past 32 arcs is a tree", l.path_tree() != null)
+	var row: int = reg._ctx.visible.find(l)
+	check_true(c, "packed this frame", row >= 0)
+	if row >= 0:
+		var o: int = row * packer._tpl * 4
+		check(c, "texel 4.y = -1 marks the tree", -1, int(round(packer._pack_buf[o + 17])))
+		var pb: int = int(round(packer._pack_buf[o + 16])) * packer.PATH_W * 4
+		check(c, "its first row's texel 1.x = its node count", l.path_tree().lo.size(), int(round(packer._path_buf[pb + 4])))
+		check_approx(c, "and LIT_PATH_INFO.w its length (screen px)", 400.0, packer._path_buf[pb + 4 * packer.PATH_INFO + 3], 0.01)
+	var img := await capture()
+	check_lt(c, "the 40-arc path renders as the straight light (mean abs diff)", image_diff(straight, img, area, 2), 0.002)
+	for pt in [at, at + Vector2(0, 30), at + Vector2(150, 50), at + Vector2(-190, -40), at + Vector2(230, 0), at + Vector2(0, -100)]:
+		check_approx(c, "probe %s matches the straight light" % pt, lum(straight, pt), lum(img, pt), 0.008)
+	# Shortened back under 33 arcs it packs as one row again.
 	p.free()
-	p = path_child(l, zig)
+	p = path_child(l, line.slice(0, 20))
 	await frames(2)
-	check(c, "going past the limit again reports again", 2, l.errors.size())
+	row = reg._ctx.visible.find(l)
+	check_true(c, "19 arcs: one path row again", l.path_tree() == null and row >= 0
+			and int(round(packer._pack_buf[row * packer._tpl * 4 + 17])) == 19)
 	p.free()
+	# A 48-point wave (a tree of wiggly arcs) against the reference over its own shading
+	# chords, and the luminance mirror against the render.
+	l.length = 0.0
+	var wave: Array = []
+	for i in 48:
+		var h := Vector2(4, 12 if i % 2 == 0 else -12)
+		wave.append([Vector2(-240.0 + i * 10.0, 0), -h, h])
+	p = path_child(l, wave)
+	l.range = 90.0
+	l.energy = 0.4
+	await frames(2)
+	check_gt(c, "the wave fits past 32 arcs", l.path_chain().arc_count(), 32, 0)
+	var path_tree: LinePath.PathTree = l.path_tree()
+	var chords := l.global_transform * l.path_fit_inv() * path_tree.points
+	img = await capture()
+	for pt in [at + Vector2(0, 20), at + Vector2(-200, -30), at + Vector2(120, 45), at + Vector2(250, 10), at + Vector2(37, -70)]:
+		check_approx(c, "wave probe %s matches the reference" % pt, _ref(pt, chords, false, 90.0, 0.4, 1.0, 60.0, 2.0), lum(img, pt, 1), TOL)
+		check_approx(c, "sample_luminance %s matches the render" % pt, lum(img, pt), mgr.sample_luminance(pt), TOL)
+	# Shadows: a box above the wave casts an umbra the open side does not see.
+	l.shadow_enabled = true
+	for algo in [ALGO.RAYMARCHED, ALGO.CONE_TRACED, ALGO.STOCHASTIC]:
+		l.shadow_algorithm = algo
+		var box := occluder(at + Vector2(0, -45), Vector2(80, 10), _props)
+		await frames(3)
+		img = await capture()
+		check_lt(c, "algorithm %d: behind the box is darker than beside it" % algo, lum(img, at + Vector2(0, -75)),
+				lum(img, at + Vector2(160, -75)), 0.02)
+		box.free()
+	l.shadow_enabled = false
+	# A camera pan and zoom keep the rows (node-relative, world px) and the look.
+	await frames(2)
+	img = await capture()
+	var probes := [at + Vector2(0, 20), at + Vector2(120, 45)]
+	var before := probes.map(func(pt: Vector2) -> float: return lum(img, pt))
+	var key: Transform2D = l._row_pxf
+	var cam := Camera2D.new()
+	cam.position = Vector2(960 + 37, 540 + 11)
+	add_child(cam)
+	cam.make_current()
+	cam.zoom = Vector2(1.25, 1.25)
+	await frames(3)
+	check_true(c, "pan and zoom: the rows are kept, not repacked", l._row_pxf == key)
+	var moved := await capture()
+	for k in probes.size():
+		check_approx(c, "pan and zoom: %s reads as without the camera" % probes[k], before[k], lum(moved, probes[k]), TOL)
+	cam.enabled = false
+	cam.queue_free()
 	await frames(1)
-	p = path_child(l, zig)
-	await frames(2)
-	check(c, "so does a new Path2D child past the limit after the old one left", 3, l.errors.size())
+	get_viewport().canvas_transform = Transform2D()
+	await frames(1)
 	p.free()
-	l.rotation = 0.0
+	l.range = 100.0
+	l.energy = 0.5
+	l.width = 0.0
+	l.position = Vector2(130, 200)
+	l.length = 128.0
 
 	# More than one Path2D child: the first shapes the light, the node warns, and the
 	# warning refreshes as Path2D children come and go.
@@ -1116,7 +1175,6 @@ func _starter_shapes() -> void:
 		l.add_child(p)
 		check_true(c, "%s: curved" % s, l.is_curved())
 		var chain := l.path_chain()
-		check_true(c, "%s: not truncated" % s, not chain.truncated)
 		check_between(c, "%s: a handful of arcs" % s, chain.arc_count(), 1, 10)
 		var r := l.path_rect()
 		check_approx(c, "%s: one length wide" % s, 128.0, r.size.x, 0.5)
