@@ -18,7 +18,8 @@ extends LitSuiteSection
 ## curves beside a long one keep the shading chords within the row's 32; a path past 32
 ## arcs reports one runtime error each time it goes past, and extra Path2D children warn.
 ## The Add Path starter shapes fit the light's length centered on it in a handful of arcs,
-## and a closed polygon lights its seam corner as its other corners.
+## and a closed polygon lights its seam corner as its other corners. Points on arcs fitted
+## with a noise-level bulge (straight diagonal edges) stay on the edge.
 ##
 ## Numeric expectations come from _ref: the shader's line integral summed over 0.25 px
 ## elements of the path, albedo x ambient + energy x integral x diffuse_scale().
@@ -28,6 +29,7 @@ const TOL := 0.03
 const ALGO := LitShaderLibrary.ShadowAlgorithm
 const KAPPA := 0.5522847498
 const Shapes := preload("res://addons/lit/editor/lit_line_shapes.gd")
+const LinePath := preload("res://addons/lit/runtime/registry/line_path.gd")
 
 # A: geometry. A ring of radius 120 centered on CA.
 const CA := Vector2(350, 305)
@@ -94,6 +96,7 @@ func run() -> void:
 	await _shade_budget()
 	await _limits()
 	await _starter_shapes()
+	_near_straight()
 
 
 func line_light(pos: Vector2, p_range: float, energy: float, height: float,
@@ -1144,6 +1147,35 @@ func _starter_shapes() -> void:
 	check_approx(c, "the square's middle (past range) stays dark", 0.0, lum(img, Vector2(590, 640)) - lum(before, Vector2(590, 640)), 0.01)
 	l.queue_free()
 	await frames(1)
+
+
+func _near_straight() -> void:
+	var c := "path_near_straight_arcs"
+	var a := Vector2(0, -64.9519)
+	var b := Vector2(75, 64.9519)
+	for bulge in [2e-6, -1.4e-5, 4e-5]:
+		var worst := 0.0
+		for j in 9:
+			var f := j / 8.0
+			worst = maxf(worst, LinePath.arc_point(a, b, bulge, f).distance_to(a.lerp(b, f)))
+		check_lt(c, "bulge %s: arc_point stays on the chord" % bulge, worst, 0.01)
+	var chain = LinePath.fit(Shapes.curve("Triangle", 150.0), true)
+	var pts: PackedVector2Array = chain.points
+	var off := func(q: Vector2) -> float:
+		var best := INF
+		for k in pts.size() - 1:
+			best = minf(best, q.distance_to(Geometry2D.get_closest_point_to_segment(q, pts[k], pts[k + 1])))
+		return best
+	var worst := 0.0
+	for q in LinePath.chords(chain, 64):
+		worst = maxf(worst, off.call(q))
+	check_lt(c, "a fitted triangle's shadow chords stay on its edges", worst, 0.01)
+	var sc: PackedVector2Array = LinePath.shade_chords(chain, 16)
+	worst = 0.0
+	for k in sc.size():
+		worst = maxf(worst, sc[k].distance_to(pts[k]))
+	check(c, "its shading chords are its corners", pts.size(), sc.size())
+	check_lt(c, "at the corners exactly", worst, 0.001)
 
 
 func _exit_tree() -> void:

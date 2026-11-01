@@ -230,9 +230,11 @@ static func arc_circle(a: Vector2, b: Vector2, bulge: float) -> Array:
 static func arc_point(a: Vector2, b: Vector2, bulge: float, f: float) -> Vector2:
 	if absf(bulge) < STRAIGHT:
 		return a.lerp(b, f)
-	var cr := arc_circle(a, b, bulge)
-	var c: Vector2 = cr[0]
-	return c + Vector2.from_angle((a - c).angle() - f * 4.0 * atan(bulge)) * cr[1]
+	# Along the chord, never through the center: a near-straight arc's center is too far for float32.
+	var half := 2.0 * atan(bulge)
+	var s := sin(half)
+	var k := f if absf(s) < 1e-12 else sin(f * half) / s
+	return a + (b - a).rotated((1.0 - f) * half) * k
 
 
 ## The point of the arc nearest `p` (the shader's lit_path_nearest, per arc).
