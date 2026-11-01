@@ -2,7 +2,9 @@ extends RefCounted
 
 ## Arc chain of a curved line light: a Path2D curve fitted with biarcs, in the curve's local space.
 
-const MAX_ARCS := 32
+const ROW_ARCS := 32  # a chain this long packs in one path row; a longer one packs as a PathTree
+const TREE_LEAF := 4
+const TREE_OPEN := 3.3333333  # a node this many radii away stands for its chords (the shader's LIT_PATH_TREE_OPEN)
 const TOLERANCE := 0.1
 const MAX_DEPTH := 6
 const STRAIGHT := 1e-6
@@ -16,47 +18,70 @@ class Chain:
 	var lengths := PackedFloat32Array()
 	var stretches := PackedInt32Array()  # first arc of each stretch between two path points, then arc_count
 	var bends := PackedByteArray()  # 1 per stretch whose handles pull it off the line between its points
-	var truncated := false
 
 	func arc_count() -> int:
 		return bulges.size()
 
 
-## Fit `curve` under `xf` within TOLERANCE where MAX_ARCS allows, else within the loosest
-## tolerance that fits, else the first MAX_ARCS arcs (truncated).
-static func fit(curve: Curve2D, closed: bool, xf := Transform2D()) -> Chain:
+## A chain longer than ROW_ARCS as shading items and a binary tree over them (the shader's
+## Barnes-Hut walk, light_packer.gd _pack_tree). Each item is the piece of one arc between
+## two shading cuts, the arcs cut as shade_chords cuts each run of up to ROW_ARCS of them;
+## each node holds a contiguous item range, in preorder.
+class PathTree:
+	var points := PackedVector2Array()   # items + 1, in path order
+	var bulges := PackedFloat32Array()   # per item
+	var lo := PackedInt32Array()         # per node: its first item
+	var hi := PackedInt32Array()         # its end item
+	var skip := PackedInt32Array()       # the node after its subtree
+	var leaf := PackedByteArray()
+
+
+## A PathTree's items and nodes under a transform: per item its bulge and the radius of a
+## disc about its chord's middle holding it; per node its circle (center the chords'
+## length-weighted centroid), chord length, second moment about the center (xx, xy, yy)
+## and direction moment (xx, xy of the length-weighted mean of t t^T).
+class PathTreeSpace:
+	var tree: PathTree
+	var points := PackedVector2Array()
+	var bulges := PackedFloat32Array()
+	var discs := PackedFloat32Array()
+	var centers := PackedVector2Array()
+	var radii := PackedFloat32Array()
+	var lengths := PackedFloat32Array()
+	var moments := PackedFloat32Array()  # 5 per node: Q xx, xy, yy, S xx, xy
+
+
+## Fit `curve` under `xf` within TOLERANCE. `cache` maps each Bezier stretch (its four
+## points under `xf`) to its arcs from the last fit; it is refilled with this fit's, so an
+## edit refits only the stretches it moved.
+static func fit(curve: Curve2D, closed: bool, xf := Transform2D(), cache := {}) -> Chain:
 	var chain := Chain.new()
 	if curve == null or curve.point_count < 2:
 		return chain
 	var segs: Array[PackedVector2Array] = []
 	for i in curve.point_count - 1:
 		segs.append(_bezier(curve, i, i + 1, xf))
-	var tol := TOLERANCE
-	var pts := PackedVector2Array()
+	var pts := PackedVector2Array([segs[0][0]])
 	var bul := PackedFloat32Array()
-	var starts := PackedInt32Array()
+	var starts := PackedInt32Array([0])
 	var bends := PackedByteArray()
+	var old := cache.duplicate()
+	cache.clear()
 	for s in segs:
 		bends.append(0 if _straight(s) else 1)
-	for attempt in 9:
-		pts = PackedVector2Array([segs[0][0]])
-		bul = PackedFloat32Array()
-		starts = PackedInt32Array([0])
-		for s in segs:
-			_fit_bezier(s, tol, pts, bul, 0)
-			starts.append(bul.size())
-		if closed:
-			_close(segs, pts, bul)
-			starts.append(bul.size())
-		if bul.size() <= MAX_ARCS:
-			break
-		tol *= 2.0
-	if bul.size() > MAX_ARCS:
-		chain.truncated = true
-		bul.resize(MAX_ARCS)
-		pts.resize(MAX_ARCS + 1)
-		for i in starts.size():
-			starts[i] = mini(starts[i], MAX_ARCS)
+		var arcs: Array = old.get(s, [])
+		if arcs.is_empty():
+			var sp := PackedVector2Array([s[0]])
+			var sb := PackedFloat32Array()
+			_fit_bezier(s, TOLERANCE, sp, sb, 0)
+			arcs = [sp.slice(1), sb]
+		cache[s] = arcs
+		pts.append_array(arcs[0])
+		bul.append_array(arcs[1])
+		starts.append(bul.size())
+	if closed:
+		_close(segs, pts, bul)
+		starts.append(bul.size())
 	chain.points = pts
 	chain.stretches = starts
 	if closed:
@@ -321,50 +346,78 @@ static func shade_chords(chain: Chain, n: int) -> PackedVector2Array:
 	var arcs := chain.arc_count()
 	if arcs == 0:
 		return out
-	var curved_len := 0.0
-	var straight := 0
-	for k in arcs:
-		if absf(chain.bulges[k]) < 1e-3:
-			straight += 1
-		else:
-			curved_len += chain.lengths[k]
-	var budget := maxi(n - straight, arcs - straight)
-	var counts := PackedInt32Array()
-	counts.resize(arcs)
-	var rem := PackedFloat32Array()
-	rem.resize(arcs)
-	var left := budget
-	for k in arcs:
-		if absf(chain.bulges[k]) < 1e-3:
-			counts[k] = 1
-			rem[k] = -1.0
-		else:
-			var share := float(budget) * chain.lengths[k] / maxf(curved_len, 1e-6)
-			counts[k] = maxi(int(floor(share)), 1)
-			rem[k] = share - floor(share)
-			left -= counts[k]
-	while left > 0:
-		var best := -1
-		for k in arcs:
-			if rem[k] >= 0.0 and (best < 0 or rem[k] > rem[best]):
-				best = k
-		if best < 0:
-			break
-		counts[best] += 1
-		rem[best] = -1.0
-		left -= 1
-	while left < 0:
-		var most := 0
-		for k in arcs:
-			if counts[k] > counts[most]:
-				most = k
-		counts[most] -= 1
-		left += 1
+	var counts := _chord_counts(chain, 0, arcs, n)
 	out.append(chain.points[0])
 	for k in arcs:
 		for j in counts[k]:
 			out.append(arc_point(chain.points[k], chain.points[k + 1], chain.bulges[k], float(j + 1) / float(counts[k])))
 	return out
+
+
+## Shading chords per arc of `a0`..`a1` (see shade_chords).
+static func _chord_counts(chain: Chain, a0: int, a1: int, n: int) -> PackedInt32Array:
+	var arcs := a1 - a0
+	var lens := PackedFloat32Array()
+	lens.resize(arcs)
+	var curved_len := 0.0
+	var straight := 0
+	for k in arcs:
+		if absf(chain.bulges[a0 + k]) < 1e-3:
+			straight += 1
+			lens[k] = -1.0
+		else:
+			lens[k] = chain.lengths[a0 + k]
+			curved_len += lens[k]
+	var counts := _apportion(lens, curved_len, maxi(n - straight, arcs - straight))
+	for k in arcs:
+		if lens[k] < 0.0:
+			counts[k] = 1
+	return counts
+
+
+## `budget` pieces shared by the entries of `lens` (negative: left out, 0 pieces) by
+## length, at least one each: floors of the shares, then one more to the largest
+## fractions (ties to the first), then one fewer from the largest counts (ties to the
+## first) while over, as one piece at a time would deal them.
+static func _apportion(lens: PackedFloat32Array, total: float, budget: int) -> PackedInt32Array:
+	var count := lens.size()
+	var pieces := PackedInt32Array()
+	pieces.resize(count)
+	var rem := PackedFloat32Array()
+	rem.resize(count)
+	var left := budget
+	var order := []
+	for g in count:
+		if lens[g] < 0.0:
+			continue
+		var share := float(budget) * lens[g] / maxf(total, 1e-6)
+		pieces[g] = maxi(int(floor(share)), 1)
+		rem[g] = share - floor(share)
+		left -= pieces[g]
+		order.append(g)
+	if left > 0:
+		order.sort_custom(func(x: int, y: int) -> bool: return rem[x] > rem[y] or (rem[x] == rem[y] and x < y))
+		for g in mini(left, order.size()):
+			pieces[order[g]] += 1
+	elif left < 0:
+		order.sort_custom(func(x: int, y: int) -> bool: return pieces[x] > pieces[y] or (pieces[x] == pieces[y] and x < y))
+		var level := []
+		var i := 0
+		while left < 0:
+			var top: int = pieces[order[i]] if i < order.size() else 0
+			while i < order.size() and pieces[order[i]] == top:
+				level.append(order[i])
+				i += 1
+			level.sort()
+			var floor_to: int = pieces[order[i]] if i < order.size() else 0
+			while left < 0 and top > floor_to:
+				for g in level:
+					pieces[g] -= 1
+					left += 1
+					if left == 0:
+						break
+				top -= 1
+	return pieces
 
 
 ## The chain's tessellation groups as [first arc, end arc, bends]: each straight stretch
@@ -401,7 +454,6 @@ static func run_counts(chain: Chain) -> Vector2i:
 ## length. Corners and the ends of straight stretches stay exact.
 static func tessellated(chain: Chain, n: int) -> Chain:
 	var out := Chain.new()
-	out.truncated = chain.truncated
 	if chain.arc_count() == 0:
 		return out
 	var groups := runs(chain)
@@ -419,37 +471,7 @@ static func tessellated(chain: Chain, n: int) -> Chain:
 			lens[g] += chain.lengths[k]
 		curved += 1
 		curved_len += lens[g]
-	var budget := maxi(n, curved)
-	var pieces := PackedInt32Array()
-	pieces.resize(count)
-	var rem := PackedFloat32Array()
-	rem.resize(count)
-	rem.fill(-1.0)
-	var left := budget
-	for g in count:
-		if lens[g] < 0.0:
-			continue
-		var share := float(budget) * lens[g] / maxf(curved_len, 1e-6)
-		pieces[g] = maxi(int(floor(share)), 1)
-		rem[g] = share - floor(share)
-		left -= pieces[g]
-	while left > 0:
-		var best := -1
-		for g in count:
-			if rem[g] >= 0.0 and (best < 0 or rem[g] > rem[best]):
-				best = g
-		if best < 0:
-			break
-		pieces[best] += 1
-		rem[best] = -1.0
-		left -= 1
-	while left < 0:
-		var most := 0
-		for g in count:
-			if pieces[g] > pieces[most]:
-				most = g
-		pieces[most] -= 1
-		left += 1
+	var pieces := _apportion(lens, curved_len, maxi(n, curved))
 	out.points.append(chain.points[0])
 	for g in count:
 		var a: int = groups[g][0]
@@ -476,7 +498,6 @@ static func tessellated(chain: Chain, n: int) -> Chain:
 ## The chain under `xf`: points mapped, each bulge refitted through its mapped apex.
 static func transformed(chain: Chain, xf: Transform2D) -> Chain:
 	var out := Chain.new()
-	out.truncated = chain.truncated
 	for p in chain.points:
 		out.points.append(xf * p)
 	for k in chain.bulges.size():
@@ -487,3 +508,161 @@ static func transformed(chain: Chain, xf: Transform2D) -> Chain:
 		out.apexes.append(apex(a, b, bulge))
 		out.lengths.append(arc_length(a, b, bulge))
 	return out
+
+
+## The chain's PathTree: its arcs in runs of up to ROW_ARCS (near-equal runs), each run cut
+## into items as shade_chords cuts a chain of ROW_ARCS shading chords.
+static func tree(chain: Chain) -> PathTree:
+	var t := PathTree.new()
+	var arcs := chain.arc_count()
+	if arcs == 0:
+		return t
+	t.points.append(chain.points[0])
+	var groups := ceili(float(arcs) / float(ROW_ARCS))
+	for g in groups:
+		@warning_ignore("integer_division")
+		var a0 := arcs * g / groups
+		@warning_ignore("integer_division")
+		var a1 := arcs * (g + 1) / groups
+		var counts := _chord_counts(chain, a0, a1, ROW_ARCS)
+		for k in range(a0, a1):
+			var m := counts[k - a0]
+			var sub := tan(atan(chain.bulges[k]) / float(m))
+			for j in m:
+				t.points.append(chain.points[k + 1] if j == m - 1
+						else arc_point(chain.points[k], chain.points[k + 1], chain.bulges[k], float(j + 1) / float(m)))
+				t.bulges.append(sub)
+	var n := t.bulges.size()
+	var lows := PackedVector2Array()
+	var highs := PackedVector2Array()
+	lows.resize(n)
+	highs.resize(n)
+	for k in n:
+		var a := t.points[k]
+		var b := t.points[k + 1]
+		var r := Vector2.ONE * (0.5 * a.distance_to(b) * maxf(absf(t.bulges[k]), 1.0))
+		lows[k] = (a + b) * 0.5 - r
+		highs[k] = (a + b) * 0.5 + r
+	_tree_node(t, lows, highs, 0, n)
+	return t
+
+
+static func _tree_node(t: PathTree, lows: PackedVector2Array, highs: PackedVector2Array, lo: int, hi: int) -> void:
+	var j := t.lo.size()
+	t.lo.append(lo)
+	t.hi.append(hi)
+	t.skip.append(0)
+	t.leaf.append(1 if hi - lo <= TREE_LEAF else 0)
+	if hi - lo > TREE_LEAF:
+		var k := _tree_split(lows, highs, lo, hi)
+		_tree_node(t, lows, highs, lo, k)
+		_tree_node(t, lows, highs, k, hi)
+	t.skip[j] = t.lo.size()
+
+
+## The cut of `lo`..`hi` into two contiguous ranges that minimizes the sum over both of
+## their box's half diagonal times their item count, each keeping at least an eighth.
+static func _tree_split(lows: PackedVector2Array, highs: PackedVector2Array, lo: int, hi: int) -> int:
+	var m := hi - lo
+	var keep := maxi(m >> 3, 1)
+	var suffix := PackedFloat32Array()
+	suffix.resize(m)
+	var l := lows[hi - 1]
+	var h := highs[hi - 1]
+	for k in range(m - 1, 0, -1):
+		l = l.min(lows[lo + k])
+		h = h.max(highs[lo + k])
+		suffix[k] = 0.5 * l.distance_to(h) * float(m - k)
+	l = lows[lo]
+	h = highs[lo]
+	var best := lo + (m >> 1)
+	var best_cost := INF
+	for k in range(1, m):
+		if k >= keep and m - k >= keep:
+			var cost := 0.5 * l.distance_to(h) * float(k) + suffix[k]
+			if cost < best_cost:
+				best_cost = cost
+				best = lo + k
+		l = l.min(lows[lo + k])
+		h = h.max(highs[lo + k])
+	return best
+
+
+## The tree's items and nodes under `xf` (see PathTreeSpace).
+static func tree_space(t: PathTree, xf: Transform2D) -> PathTreeSpace:
+	var s := PathTreeSpace.new()
+	s.tree = t
+	s.points = xf * t.points
+	var n := t.bulges.size()
+	var sx := xf.x.length_squared()
+	var sy := xf.y.length_squared()
+	var smax := maxf(sx, sy)
+	var similar := smax > 0.0 and absf(sx - sy) <= 1e-5 * smax and absf(xf.x.dot(xf.y)) <= 1e-5 * smax
+	var flip := -1.0 if xf.determinant() < 0.0 else 1.0
+	s.bulges.resize(n)
+	s.discs.resize(n)
+	var lens := PackedFloat32Array()
+	lens.resize(n)
+	for k in n:
+		var a := s.points[k]
+		var b := s.points[k + 1]
+		var bulge := t.bulges[k] * flip if similar \
+				else bulge_through(a, b, xf * apex(t.points[k], t.points[k + 1], t.bulges[k]))
+		s.bulges[k] = bulge
+		var l := a.distance_to(b)
+		lens[k] = l
+		s.discs[k] = 0.5 * l * maxf(absf(bulge), 1.0) * 1.0001 + 0.001
+	var nodes := t.lo.size()
+	s.centers.resize(nodes)
+	s.radii.resize(nodes)
+	s.lengths.resize(nodes)
+	s.moments.resize(nodes * 5)
+	for j in range(nodes - 1, -1, -1):
+		var c := Vector2.ZERO
+		var total := 0.0
+		var qxx := 0.0
+		var qxy := 0.0
+		var qyy := 0.0
+		var dxx := 0.0
+		var dxy := 0.0
+		var r := 0.0
+		if t.leaf[j] != 0:
+			for k in range(t.lo[j], t.hi[j]):
+				c += (s.points[k] + s.points[k + 1]) * (0.5 * lens[k])
+				total += lens[k]
+			c = c / total if total > 1e-9 else (s.points[t.lo[j]] + s.points[t.hi[j]]) * 0.5
+			for k in range(t.lo[j], t.hi[j]):
+				var d := (s.points[k] + s.points[k + 1]) * 0.5 - c
+				var hv := (s.points[k + 1] - s.points[k]) * 0.5
+				var l := lens[k]
+				qxx += l * (d.x * d.x + hv.x * hv.x / 3.0)
+				qxy += l * (d.x * d.y + hv.x * hv.y / 3.0)
+				qyy += l * (d.y * d.y + hv.y * hv.y / 3.0)
+				if l > 1e-9:
+					dxx += 4.0 * hv.x * hv.x / l
+					dxy += 4.0 * hv.x * hv.y / l
+				r = maxf(r, d.length() + s.discs[k])
+		else:
+			for kid in [j + 1, t.skip[j + 1]]:
+				c += s.centers[kid] * s.lengths[kid]
+				total += s.lengths[kid]
+			c = c / total if total > 1e-9 else s.centers[j + 1]
+			for kid in [j + 1, t.skip[j + 1]]:
+				var d: Vector2 = s.centers[kid] - c
+				var l: float = s.lengths[kid]
+				var o: int = kid * 5
+				qxx += s.moments[o] + l * d.x * d.x
+				qxy += s.moments[o + 1] + l * d.x * d.y
+				qyy += s.moments[o + 2] + l * d.y * d.y
+				dxx += s.moments[o + 3] * l
+				dxy += s.moments[o + 4] * l
+				r = maxf(r, d.length() + s.radii[kid])
+		s.centers[j] = c
+		s.radii[j] = r
+		s.lengths[j] = total
+		s.moments[j * 5] = qxx
+		s.moments[j * 5 + 1] = qxy
+		s.moments[j * 5 + 2] = qyy
+		s.moments[j * 5 + 3] = dxx / total if total > 1e-9 else 1.0
+		s.moments[j * 5 + 4] = dxy / total if total > 1e-9 else 0.0
+	return s

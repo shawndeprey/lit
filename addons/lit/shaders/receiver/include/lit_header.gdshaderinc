@@ -36,16 +36,23 @@
 // filter mode doesn't matter here.
 global uniform sampler2D lit_light_data;
 #ifdef LIT_LINE
-global uniform sampler2D lit_light_path;                // curved line lights: one row each (see _pack_path)
+global uniform sampler2D lit_light_path;                // curved line lights: rows each (see _pack_path)
 
-// A path row's texel columns: 0 the bounding circle (xyz, enclosing every arc) and the
-// shading chord count (w), 1 on the arc points (point.xy | bulge | the radius of a disc
-// about the chord's middle holding the arc leaving the point), LIT_PATH_INFO's z 1
-// when the chain is closed and w its length in screen px, then the shading chords from
-// LIT_PATH_CHORDS (up to LIT_PATH_SHADE), the shadow chords from LIT_PATH_SHADOW and
-// the coarse shading chords from LIT_PATH_COARSE (the shading chords merged in pairs,
-// read past LIT_PATH_LOD_K bounding radii, LIT_PATH_LOD_K0 for a tube without width),
-// each chord mid.xy | half.xy in screen px.
+// A path row's texel columns, positions relative to the light's node in world px at
+// screen orientation: 0 the bounding circle (xyz, enclosing every arc) and the shading
+// chord count (w), 1 on the arc points (point.xy | bulge | the radius of a disc about the
+// chord's middle holding the arc leaving the point), LIT_PATH_INFO's z 1 when the chain
+// is closed and w its length, then the shading chords from LIT_PATH_CHORDS (up to
+// LIT_PATH_SHADE), the shadow chords from LIT_PATH_SHADOW and the coarse shading chords
+// from LIT_PATH_COARSE (the shading chords merged in pairs, read past LIT_PATH_LOD_K
+// bounding radii, LIT_PATH_LOD_K0 for a tube without width), each chord mid.xy |
+// half.xy. A tree path (texel 4.y -1, see _pack_tree) keeps the circle, LIT_PATH_INFO
+// and the shadow chords, its node count in texel 1.x, and its nodes and leaves in the
+// rows after it, LIT_PATH_W texels a row; LIT_PATH_TREE_OPEN radii away a node stands
+// for its chords.
+const int LIT_PATH_W = 128;
+const int LIT_PATH_W_SHIFT = 7;
+const float LIT_PATH_TREE_OPEN = 3.3333333;
 const int LIT_PATH_INFO = 33;
 const int LIT_PATH_CHORDS = 34;
 const int LIT_PATH_SHADE = 32;
