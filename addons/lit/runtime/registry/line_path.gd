@@ -98,6 +98,11 @@ static func fit(curve: Curve2D, closed: bool, xf := Transform2D(), cache := {}) 
 	return chain
 
 
+## True when `curve` is two points with a straight line between them under `xf`.
+static func straight_pair(curve: Curve2D, xf := Transform2D()) -> bool:
+	return curve != null and curve.point_count == 2 and _straight(_bezier(curve, 0, 1, xf))
+
+
 static func _bezier(curve: Curve2D, i: int, j: int, xf: Transform2D) -> PackedVector2Array:
 	var a := xf * curve.get_point_position(i)
 	var d := xf * curve.get_point_position(j)

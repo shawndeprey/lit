@@ -316,13 +316,13 @@ func _positional(light, pos: Vector2,
 			var to_world: Transform2D = xf * light.path_fit_xf().affine_inverse()
 			chain = light.path_tree_space(to_world)
 			shadow_cuts = to_world * light.path_chords(maxi(light.shadow_samples, 1))
-			open = not light.closed
+			open = not light.path_closed()
 			fit_extra = light.path_extent(xf)
 		elif light.is_curved():
 			chain = LinePathScript.transformed(light.path_chain(), xf * light.path_fit_xf().affine_inverse())
 			cuts = LinePathScript.shade_chords(chain, 32)
 			shadow_cuts = LinePathScript.chords(chain, maxi(light.shadow_samples, 1))
-			open = not light.closed
+			open = not light.path_closed()
 			fit_extra = light.path_extent(xf)
 		else:
 			half = xf.basis_xform(Vector2(light.length * 0.5, 0.0))

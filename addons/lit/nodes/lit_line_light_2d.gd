@@ -59,7 +59,8 @@ const TESSELLATION_MAX := 32
 		glow = clampf(value, 0.0, 1.0)
 		LitLightRegistry.light_state_changed(self)
 ## Joins the Path2D child's last point back to its first with an arc that matches both
-## tangents: a ring or a closed loop. Nothing without a Path2D child.
+## tangents: a ring or a closed loop. Nothing without a Path2D child, or on a straight
+## 2-point path.
 @export var closed: bool = false:
 	set(value):
 		closed = value
@@ -92,6 +93,7 @@ var _path_count := 0
 var _path_curve: Curve2D
 var _path_xf := Transform2D()
 var _path_dirty := true
+var _closable := true
 # The chain is fitted under the node's basis at fit time (so rotation and uniform scale
 # never refit it); _fit_xf maps light-local space to that fit space.
 var _fit_xf := Transform2D()
@@ -126,7 +128,8 @@ func _init() -> void:
 func _validate_property(property: Dictionary) -> void:
 	if property.name == "shadow_samples" and shadow_algorithm == ShadowAlgorithm.CONE_TRACED:
 		return
-	if (property.name == "length" and _path != null) or (property.name in ["closed", "tessellate"] and _path == null):
+	if (property.name == "length" and _path != null) or (property.name in ["closed", "tessellate"] and _path == null) \
+			or (property.name == "closed" and not _closable):
 		property.usage |= PROPERTY_USAGE_READ_ONLY
 	if property.name == "tessellation_segments":
 		if tessellate:
@@ -150,6 +153,10 @@ func _get_configuration_warnings() -> PackedStringArray:
 func is_curved() -> bool:
 	_refresh_path()
 	return _chain != null and _chain.arc_count() > 0
+
+## True while `closed` joins the path (never on a straight 2-point path).
+func path_closed() -> bool:
+	return closed and _closable
 
 ## The fitted arc chain, in fit space (see path_fit_xf).
 func path_chain() -> LinePathScript.Chain:
@@ -332,7 +339,11 @@ func _refresh_path() -> void:
 	_path_dirty = false
 	_fit_xf = basis if absf(basis.determinant()) > 1e-8 else Transform2D()
 	_fit_inv = _fit_xf.affine_inverse()
-	_chain = LinePathScript.fit(curve, closed, _fit_xf * _path_xf, _fit_cache)
+	var closable := not LinePathScript.straight_pair(curve, _fit_xf * _path_xf)
+	if closable != _closable:
+		_closable = closable
+		notify_property_list_changed()
+	_chain = LinePathScript.fit(curve, path_closed(), _fit_xf * _path_xf, _fit_cache)
 	_tree = null
 	_tree_space = null
 	_tess_active = false

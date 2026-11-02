@@ -1,7 +1,7 @@
 extends LitSuiteSection
 
 ## LitLineLight2D bent by a Path2D child against the rendered frame: a 2-point path
-## renders as the straight light pixel for pixel, and off the node (packed as its
+## renders as the straight light pixel for pixel (closed greyed and ignored on it), and off the node (packed as its
 ## segment) as a collinear 3-point path, its cookie still on the node; a V path lights its bisector brighter
 ## than one arm alone and dimmer than two separate lights, with no crease along it and
 ## no hot spot at the bend; a ring (closed 4-point curve) lights as a true circle
@@ -234,6 +234,21 @@ func _straight_equivalence() -> void:
 		check_approx(c, "probe %s matches" % pt, lum(straight, pt), lum(img, pt), 0.005)
 	check_gt(c, "the face tilted across the tube is lit", lum(straight, CA + Vector2(0, 60)), AMBIENT, 0.05)
 	check_approx(c, "and reads as under the straight light", lum(straight, CA + Vector2(0, 60)), lum(img, CA + Vector2(0, 60)), 0.01)
+	l.closed = true
+	await frames(2)
+	check_true(c, "closed greys out on a straight 2-point path", _read_only(l, "closed"))
+	check_true(c, "and is ignored there", not l.path_closed())
+	check(c, "the closed straight 2-point path still fits as one arc", 1, l.path_chain().arc_count())
+	img = await capture()
+	check_lt(c, "and still renders as the straight light (mean abs diff)", image_diff(straight, img, area, 2), 0.002)
+	p.curve.set_point_out(0, Vector2(60, -60))
+	await frames(2)
+	check_true(c, "a handle bending the path makes closed editable", not _read_only(l, "closed"))
+	check_true(c, "and joins the path", l.path_closed())
+	p.curve.set_point_out(0, Vector2.ZERO)
+	await frames(2)
+	check_true(c, "straightening it greys closed again", _read_only(l, "closed"))
+	l.closed = false
 	p.queue_free()
 	await frames(2)
 	check_true(c, "removing the Path2D child returns the light to its segment", not l.is_curved())

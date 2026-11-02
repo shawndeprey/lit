@@ -731,7 +731,7 @@ func _pack_row(light: LitLineLight2D, m: Transform2D, row: int) -> Array:
 		prev = p
 	var shade: PackedVector2Array = light.path_shade_chords(PATH_SHADE)
 	_path_buf[base + 3] = float(shade.size() - 1)
-	_path_buf[base + 4 * PATH_INFO + 2] = 1.0 if light.closed else 0.0
+	_path_buf[base + 4 * PATH_INFO + 2] = 1.0 if light.path_closed() else 0.0
 	var length := _pack_chords(base + 4 * PATH_CHORDS, shade, m)
 	_pack_coarse(base + 4 * PATH_CHORDS, shade.size() - 1, base + 4 * PATH_COARSE)
 	_pack_root(base + 4 * PATH_CHORDS, shade.size() - 1, base + 4 * PATH_W)
@@ -784,7 +784,7 @@ func _pack_tree(light: LitLineLight2D, tree, m: Transform2D, row: int) -> Array:
 	_path_buf.append_array(zeros)
 	_path_buf[base + 4] = float(nodes)
 	var items: int = tree.bulges.size()
-	var open := not light.closed
+	var open := not light.path_closed()
 	_path_buf[base + 4 * PATH_INFO + 2] = 0.0 if open else 1.0
 	for j in nodes:
 		var a := base + 4 * (PATH_W * (1 + (j >> 5)) + ((j & 31) << 2))
