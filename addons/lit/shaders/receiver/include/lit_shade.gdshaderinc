@@ -150,12 +150,13 @@ void lit_tree_shade(int row, int count, vec2 p, vec3 N, float h, float w, inout 
 			vec2 u = v * iv;
 			float across = 1.0 - c.x * u.x * u.x - 2.0 * c.y * u.x * u.y - (1.0 - c.x) * u.y * u.y;
 			v *= max(1.0 - w * sqrt(max(across, 0.0)) * iv, 0.0);
-			float iu = 1.0 / (dot(v, v) + h * h);
+			float ri = inversesqrt(dot(v, v) + h * h);
+			float iu = ri * ri;
 			float nv = dot(N, vec3(v, h));
 			vec2 qv = vec2(b.y * v.x + b.z * v.y, b.z * v.x + b.w * v.y);
 			float f = (b.x * nv + (4.0 * nv * dot(v, qv) * iu - 2.0 * dot(N.xy, qv) - nv * (b.y + b.w)) * iu) * iu;
 			cosine += f;
-			acc_l += f * sqrt(iu) * vec3(v, h);
+			acc_l += f * ri * vec3(v, h);
 			j = skip;
 			continue;
 		}
@@ -332,11 +333,20 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 			vec3 acc_l = vec3(0.0);
 			float cosine = 0.0;
 			float len;
-			if (path_row >= 0 && line_t4.y < 0.0) {
+			// A curved light whose root node (the next row) passes the walk's far test, with a
+			// margin, is shaded by the walk over that one node.
+			bool far_root = false;
+			if (path_row >= 0 && line_t4.y >= 0.0) {
+				vec4 ra = texelFetch(lit_light_path, ivec2(0, path_row + 1), 0);
+				vec2 rv = ra.xy - pr;
+				float ro = (ra.z * LIT_PATH_TREE_OPEN + line_t4.w) * 1.001;
+				far_root = dot(N, vec3(rv, height)) > (ra.z + line_t4.w) * length(N.xy) * 1.001 + 1e-4 && dot(rv, rv) > ro * ro;
+			}
+			if (path_row >= 0 && (line_t4.y < 0.0 || far_root)) {
 				vec4 info = texelFetch(lit_light_path, ivec2(LIT_PATH_INFO, path_row), 0); // z 1 when closed | w length px
 				len = info.w;
 				line_tube.z = info.z < 0.5 ? 1.0 : 0.0;
-				lit_tree_shade(path_row, int(round(texelFetch(lit_light_path, ivec2(1, path_row), 0).x)), pr, N, height,
+				lit_tree_shade(path_row, far_root ? 1 : int(round(texelFetch(lit_light_path, ivec2(1, path_row), 0).x)), pr, N, height,
 						line_t4.w, cosine, acc_l);
 			} else if (path_row >= 0) {
 				int count = int(round(circle.w));
@@ -358,8 +368,9 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 				for (int k = 0; k < count; k++) {
 					vec4 ch = texelFetch(lit_light_path, ivec2(chord0 + k, path_row), 0);
 					float q = dot(ch.zw, ch.zw);
+					float iq = inversesqrt(max(q, 1e-8));
 					vec2 d = ch.xy - pr;
-					vec2 v = d - ch.zw * (dot(d, ch.zw) / max(q, 1e-8));
+					vec2 v = d - ch.zw * (dot(d, ch.zw) * iq * iq);
 					vec2 m = d - v * min(line_t4.w * inversesqrt(max(dot(v, v), 1e-12)), 1.0);
 					float em = dot(N.xy, m) + N.z * height;
 					float eg = abs(dot(N.xy, ch.zw));
@@ -373,7 +384,7 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 						vec3 ub = vec3(m + g, height);
 						float ia = inversesqrt(dot(ua, ua));
 						float ib = inversesqrt(dot(ub, ub));
-						float hl = q * inversesqrt(max(q, 1e-8));
+						float hl = q * iq;
 						float fa = (em - eo) * ia * ia;
 						float fb = (em + eo) * ib * ib;
 						acc_l += hl * (fa * ia * ua + fb * ib * ub);
@@ -392,7 +403,7 @@ vec3 lit_shade(int i LIT_LINE_PARAMS, vec3 albedo, vec3 N, vec3 spec_shin, float
 			}
 			Ldir = normalize(vec3(to_light_px, height_px));
 			if (len > 1e-3) {
-				cosine /= 2.0 * atan(len, 2.0 * sqrt(dist * dist + height_px * height_px));
+				cosine /= 2.0 * lit_atan_pos(len, 2.0 * sqrt(dist * dist + height_px * height_px));
 				float body = half_w > 0.0 ? 1.0 - smoothstep(0.0, half_w, dist) : 0.0;
 				cosine += body * max(max(dot(N, Ldir), 0.0) - cosine, 0.0);
 				if (dot(acc_l, acc_l) > 1e-12) {

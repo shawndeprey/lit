@@ -518,7 +518,7 @@ func _api() -> void:
 		check(c, "texel 4.y = the arc count", arcs, int(round(packer._pack_buf[o + 17])))
 		var prow := int(round(packer._pack_buf[o + 16]))
 		check_true(c, "texel 4.x = a path row under the rows packed", prow >= 0 and prow < packer._path_rows)
-		check_true(c, "path rows this frame = the curved lights on screen (3)", packer._path_rows == 3)
+		check_true(c, "path rows this frame = two per curved light on screen (3)", packer._path_rows == 6)
 		var pb: int = prow * packer.PATH_W * 4
 		check_approx(c, "path row texel 0: the bounding circle sits on the node (x)", CC.x, packer._path_buf[pb], 0.5)
 		check_approx(c, "path row texel 0: its radius is the chain box's half diagonal", RC * sqrt(2.0), packer._path_buf[pb + 2], 0.5)
@@ -526,6 +526,30 @@ func _api() -> void:
 		var chord_len := Vector2(packer._path_buf[pb + 4 * packer.PATH_SHADOW + 2], packer._path_buf[pb + 4 * packer.PATH_SHADOW + 3]).length() * 2.0
 		check_approx(c, "the first shadow chord spans 1/8 of the ring (8 samples)", 2.0 * RC * sin(PI / 8.0), chord_len, 1.0)
 		check(c, "path row texel 0.w: the ring's arcs share all 32 shading chords", 32, int(round(packer._path_buf[pb + 3])))
+		# Root node (next row): its moments stand for the 32 shading chords past 2.5 radii.
+		var rb: int = pb + 4 * packer.PATH_W
+		var rc := Vector2(packer._path_buf[rb], packer._path_buf[rb + 1])
+		check_approx(c, "root node: centered on the ring (the node)", 0.0, rc.length(), 0.5)
+		check(c, "root node: the walk ends after it", 1, int(round(packer._path_buf[rb + 3])))
+		check_approx(c, "root node: its radius encloses the chords, times PATH_ROOT_SCALE",
+				RC * (cos(PI / 32.0) + sin(PI / 32.0)) * packer.PATH_ROOT_SCALE,
+				packer._path_buf[rb + 2], 0.5)
+		var h := 40.0
+		var p := rc + Vector2(2.6 * packer._path_buf[rb + 2], 0.0)
+		var direct := 0.0
+		for k in 32:
+			var at: int = pb + 4 * (packer.PATH_CHORDS + k)
+			var mid := Vector2(packer._path_buf[at], packer._path_buf[at + 1])
+			var hv := Vector2(packer._path_buf[at + 2], packer._path_buf[at + 3])
+			for e in 64:
+				var u := mid + hv * ((e + 0.5) / 32.0 - 1.0) - p
+				direct += h / (u.length_squared() + h * h) * hv.length() / 32.0
+		var v := rc - p
+		var iu := 1.0 / (v.length_squared() + h * h)
+		var qv := Vector2(packer._path_buf[rb + 5] * v.x + packer._path_buf[rb + 6] * v.y,
+				packer._path_buf[rb + 6] * v.x + packer._path_buf[rb + 7] * v.y)
+		var far_f: float = (packer._path_buf[rb + 4] * h + (4.0 * h * v.dot(qv) * iu - h * (packer._path_buf[rb + 5] + packer._path_buf[rb + 7])) * iu) * iu
+		check_approx(c, "root node: its far-field share matches the chords' within 1 percent", direct, far_f, direct * 0.01)
 		l.rotation = PI / 2.0
 		await frames(1)
 		check_approx(c, "rotated 90: the first arc point turns to +y", RC, packer._path_buf[pb + 5], 0.5)

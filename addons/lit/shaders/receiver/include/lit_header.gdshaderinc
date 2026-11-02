@@ -46,7 +46,8 @@ global uniform sampler2D lit_light_path;                // curved line lights: r
 // LIT_PATH_SHADE), the shadow chords from LIT_PATH_SHADOW and the coarse shading chords
 // from LIT_PATH_COARSE (the shading chords merged in pairs, read past LIT_PATH_LOD_K
 // bounding radii, LIT_PATH_LOD_K0 for a tube without width), each chord mid.xy |
-// half.xy. A tree path (texel 4.y -1, see _pack_tree) keeps the circle, LIT_PATH_INFO
+// half.xy; the next row holds its shading chords as one tree node (see _pack_root). A
+// tree path (texel 4.y -1, see _pack_tree) keeps the circle, LIT_PATH_INFO
 // and the shadow chords, its node count in texel 1.x, and its nodes and leaves in the
 // rows after it, LIT_PATH_W texels a row; LIT_PATH_TREE_OPEN radii away a node stands
 // for its chords.
@@ -60,6 +61,16 @@ const int LIT_PATH_SHADOW = 66;
 const int LIT_PATH_COARSE = 98;
 const float LIT_PATH_LOD_K = 4.25;
 const float LIT_PATH_LOD_K0 = 2.0;
+
+// atan(y, x) for y >= 0 (A&S 4.4.47, 1e-5 rad).
+float lit_atan_pos(float y, float x) {
+	float ax = abs(x);
+	float a = min(y, ax) / max(max(y, ax), 1e-30);
+	float s = a * a;
+	float r = a * (0.9998660 + s * (-0.3302995 + s * (0.1801410 + s * (-0.0851330 + s * 0.0208351))));
+	r = y > ax ? 1.5707963268 - r : r;
+	return x < 0.0 ? 3.1415926536 - r : r;
+}
 
 // A line light's chord `ch` (mid.xy | half.xy, screen px) seen from pixel `p` with
 // normal N: the chord's share of the tube's mean cosine at `p`, the line integral of
@@ -136,19 +147,16 @@ float lit_line_chord(vec4 ch, vec2 p, vec3 N, float h, float w, vec2 free, inout
 		hi = e1 < 0.0 ? root : hi;
 	}
 	float rD = inversesqrt(D2);
-	float c = alpha * atan(D2 * rD * (hi - lo), D2 + hi * lo) * rD + 0.5 * beta * log((D2 + hi * hi) / (D2 + lo * lo));
 	float qh = D2 + hi * hi;
 	float irh = inversesqrt(qh);
-	float eh = hi * irh;
-	float th = sign(hi) * log((abs(hi) + qh * irh) * rD);
-	float cpo = alpha * eh * rD * rD - beta * irh;
-	float ct = beta * (th - eh) - alpha * irh;
 	float ql = D2 + lo * lo;
 	float irl = inversesqrt(ql);
-	float el = lo * irl;
-	float tl = sign(lo) * log((abs(lo) + ql * irl) * rD);
-	cpo += beta * irl - alpha * el * rD * rD;
-	ct += alpha * irl - beta * (tl - el);
+	float c = alpha * lit_atan_pos(D2 * rD * (hi - lo), D2 + hi * lo) * rD + 0.5 * beta * log(qh * irl * irl);
+	float sh = abs(hi) + qh * irh;
+	float sl = abs(lo) + ql * irl;
+	float dt = log((hi >= 0.0 ? sh : D2) * (lo >= 0.0 ? 1.0 : sl) / ((hi >= 0.0 ? 1.0 : sh) * (lo >= 0.0 ? sl : D2)));
+	float cpo = alpha * (hi * irh - lo * irl) * rD * rD + beta * (irl - irh);
+	float ct = beta * (dt - hi * irh + lo * irl) + alpha * (irl - irh);
 	vec3 lv = vec3(cpo * v + ct * t, cpo * h);
 	acc_l += c * lv * inversesqrt(max(dot(lv, lv), 1e-12));
 	return c;
@@ -207,7 +215,7 @@ float lit_line_weight(vec4 ch, vec2 p, vec3 N, float h, float w, vec2 free) {
 		hi = e1 < 0.0 ? root : hi;
 	}
 	float rD = inversesqrt(D2);
-	return alpha * atan(D2 * rD * (hi - lo), D2 + hi * lo) * rD + 0.5 * beta * log((D2 + hi * hi) / (D2 + lo * lo));
+	return alpha * lit_atan_pos(D2 * rD * (hi - lo), D2 + hi * lo) * rD + 0.5 * beta * log((D2 + hi * hi) / (D2 + lo * lo));
 }
 #endif
 global uniform int       lit_light_count;

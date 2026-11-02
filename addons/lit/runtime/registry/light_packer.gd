@@ -35,14 +35,15 @@ extends RefCounted
 ## Path texture (lit_light_path), PATH_W texels a row, positions relative to the light's
 ## node in world px at screen orientation except texel 0's circle, t33.w and the shadow
 ## chords, which are screen px (see _pack_path). A curved line light of up to
-## LinePath.ROW_ARCS arcs takes one row:
+## LinePath.ROW_ARCS arcs takes two rows:
 ## t0 = a circle enclosing every arc, center.xy | radius | shading chord count, t1..t33 =
 ## arc points (xy, z = the bulge tan(sweep / 4) of the arc leaving the point, w = the
 ## radius of a disc about its chord's middle holding that arc), t33.z = 1 when the chain is
 ## closed, t33.w = the chain's length, t34..t65 = the 32 shading chords, t66..t97 = the
 ## shadow chords, one per packed shadow sample, t98..t113 = the coarse shading chords (the
 ## shading chords merged in pairs, see _pack_coarse); chords are mid.xy | half.xy, of
-## equal arc length. A longer one packs as a tree (_pack_tree): this row with t0.w 0, t1.x
+## equal arc length; the next row's t0..t2 = its shading chords as one tree node (see
+## _pack_root). A longer one packs as a tree (_pack_tree): this row with t0.w 0, t1.x
 ## its node count and no arcs or shading chords, then its nodes, then its leaves.
 ##
 ## Node scale: range, source_radius, width and the FIT_RANGE cookie footprint pack multiplied
@@ -90,6 +91,7 @@ const PATH_CHORDS := 34
 const PATH_SHADE := 32
 const PATH_SHADOW := 66
 const PATH_COARSE := 98
+const PATH_ROOT_SCALE := 1.25  # the root node's radius scale: the shader opens it past 2.5 radii
 const PATH_SHRINK_FRAMES := 120
 var _path_buf: PackedFloat32Array = PackedFloat32Array()
 var _path_rows := 0
@@ -702,10 +704,11 @@ func _pack_path(o: int, light: LitLineLight2D, pxf: Transform2D, n: int) -> void
 	light.path_row_store(_path_buf.slice(base, base + rows * PATH_W * 4), m, n, arcs, pxf, circle, length)
 
 ## One path row for a chain of up to LinePath.ROW_ARCS arcs under `m`, appended as row
-## `row` (all but the screen px texels _pack_path adds). Returns [1, its circle, its
-## shading chords' length] in `m`'s space.
+## `row` and its root node row (all but the screen px texels _pack_path adds). Returns
+## [2, its circle, its shading chords' length] in `m`'s space.
 func _pack_row(light: LitLineLight2D, m: Transform2D, row: int) -> Array:
-	_path_rows += 1
+	_path_rows += 2
+	_path_buf.append_array(_path_zero_row)
 	_path_buf.append_array(_path_zero_row)
 	var base := row * PATH_W * 4
 	var chain = light.path_chain()
@@ -731,7 +734,8 @@ func _pack_row(light: LitLineLight2D, m: Transform2D, row: int) -> Array:
 	_path_buf[base + 4 * PATH_INFO + 2] = 1.0 if light.closed else 0.0
 	var length := _pack_chords(base + 4 * PATH_CHORDS, shade, m)
 	_pack_coarse(base + 4 * PATH_CHORDS, shade.size() - 1, base + 4 * PATH_COARSE)
-	return [1, _path_circle(light, m), length]
+	_pack_root(base + 4 * PATH_CHORDS, shade.size() - 1, base + 4 * PATH_W)
+	return [2, _path_circle(light, m), length]
 
 ## A circle enclosing the chain under `m` (center.xy, radius): the fit bounds mapped, or
 ## the mapped chain's bounds when `m` is not a similarity.
@@ -873,6 +877,57 @@ func _pack_coarse(from: int, count: int, at: int) -> void:
 		var b := at + 4 * (count >> 1)
 		for j in 4:
 			_path_buf[b + j] = _path_buf[a + j]
+
+## The `count` shading chords at `from` as one tree node at `at` (see _pack_tree), the
+## walk's only node: A = their length-weighted center.xy | the radius enclosing them times
+## PATH_ROOT_SCALE | 1 (the node after it), B = length | second moment about the center
+## xx, xy, yy, C = direction moment xx, xy. The shader shades a pixel far enough from it by
+## its moments alone (see lit_shade).
+func _pack_root(from: int, count: int, at: int) -> void:
+	var total := 0.0
+	var cx := 0.0
+	var cy := 0.0
+	for k in count:
+		var a := from + 4 * k
+		var l := 2.0 * sqrt(_path_buf[a + 2] * _path_buf[a + 2] + _path_buf[a + 3] * _path_buf[a + 3])
+		cx += _path_buf[a] * l
+		cy += _path_buf[a + 1] * l
+		total += l
+	if total <= 1e-9:
+		_path_buf[at + 2] = 1e30
+		return
+	cx /= total
+	cy /= total
+	var qxx := 0.0
+	var qxy := 0.0
+	var qyy := 0.0
+	var dxx := 0.0
+	var dxy := 0.0
+	var r := 0.0
+	for k in count:
+		var a := from + 4 * k
+		var dx := _path_buf[a] - cx
+		var dy := _path_buf[a + 1] - cy
+		var hx := _path_buf[a + 2]
+		var hy := _path_buf[a + 3]
+		var l := 2.0 * sqrt(hx * hx + hy * hy)
+		qxx += l * (dx * dx + hx * hx / 3.0)
+		qxy += l * (dx * dy + hx * hy / 3.0)
+		qyy += l * (dy * dy + hy * hy / 3.0)
+		if l > 1e-9:
+			dxx += 4.0 * hx * hx / l
+			dxy += 4.0 * hx * hy / l
+		r = maxf(r, sqrt(dx * dx + dy * dy) + 0.5 * l)
+	_path_buf[at] = cx
+	_path_buf[at + 1] = cy
+	_path_buf[at + 2] = r * PATH_ROOT_SCALE
+	_path_buf[at + 3] = 1.0
+	_path_buf[at + 4] = total
+	_path_buf[at + 5] = qxx
+	_path_buf[at + 6] = qxy
+	_path_buf[at + 7] = qyy
+	_path_buf[at + 8] = dxx / total
+	_path_buf[at + 9] = dxy / total
 
 ## Start a frame's path rows.
 func _path_begin() -> void:
