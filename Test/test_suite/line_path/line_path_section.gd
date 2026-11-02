@@ -1082,6 +1082,21 @@ func _limits() -> void:
 	for pt in [at + Vector2(0, 20), at + Vector2(-200, -30), at + Vector2(120, 45), at + Vector2(250, 10), at + Vector2(37, -70)]:
 		check_approx(c, "wave probe %s matches the reference" % pt, _ref(pt, chords, false, 90.0, 0.4, 1.0, 60.0, 2.0), lum(img, pt, 1), TOL)
 		check_approx(c, "sample_luminance %s matches the render" % pt, lum(img, pt), mgr.sample_luminance(pt), TOL)
+	# The nearest walk prunes on each node's box (texel D): it must hold every arc below it.
+	var space := LinePath.tree_space(path_tree, Transform2D())
+	var boxed := true
+	for j in path_tree.lo.size():
+		var box: Vector4 = space.boxes[j]
+		for k in range(path_tree.lo[j], path_tree.hi[j]):
+			var mid := (space.points[k] + space.points[k + 1]) * 0.5
+			var r: float = space.discs[k] - 0.001
+			boxed = boxed and mid.x - r >= box.x and mid.y - r >= box.y and mid.x + r <= box.z and mid.y + r <= box.w
+	check_true(c, "every node's box holds its arcs' discs", boxed)
+	row = reg._ctx.visible.find(l)
+	if row >= 0:
+		var pb: int = int(round(packer._pack_buf[row * packer._tpl * 4 + 16])) * packer.PATH_W * 4
+		check_approx(c, "the root's packed box (texel D) half width", (space.boxes[0].z - space.boxes[0].x) * 0.5,
+				packer._path_buf[pb + 4 * packer.PATH_W + 14], 0.01)
 	# Shadows: a box above the wave casts an umbra the open side does not see.
 	l.shadow_enabled = true
 	for algo in [ALGO.RAYMARCHED, ALGO.CONE_TRACED, ALGO.STOCHASTIC]:

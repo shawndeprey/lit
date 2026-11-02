@@ -4,7 +4,7 @@ extends RefCounted
 
 const ROW_ARCS := 32  # a chain this long packs in one path row; a longer one packs as a PathTree
 const TREE_LEAF := 4
-const TREE_OPEN := 3.3333333  # a node this many radii away stands for its chords (the shader's LIT_PATH_TREE_OPEN)
+const TREE_OPEN := 2.0  # a node this many radii away stands for its chords (the shader's LIT_PATH_TREE_OPEN)
 const TOLERANCE := 0.1
 const MAX_DEPTH := 6
 const STRAIGHT := 1e-6
@@ -38,8 +38,8 @@ class PathTree:
 
 ## A PathTree's items and nodes under a transform: per item its bulge and the radius of a
 ## disc about its chord's middle holding it; per node its circle (center the chords'
-## length-weighted centroid), chord length, second moment about the center (xx, xy, yy)
-## and direction moment (xx, xy of the length-weighted mean of t t^T).
+## length-weighted centroid), chord length, second moment about the center (xx, xy, yy),
+## direction moment (xx, xy of the length-weighted mean of t t^T) and box of its arcs.
 class PathTreeSpace:
 	var tree: PathTree
 	var points := PackedVector2Array()
@@ -49,6 +49,7 @@ class PathTreeSpace:
 	var radii := PackedFloat32Array()
 	var lengths := PackedFloat32Array()
 	var moments := PackedFloat32Array()  # 5 per node: Q xx, xy, yy, S xx, xy
+	var boxes := PackedVector4Array()  # per node: min xy, max xy of its arcs' discs
 
 
 ## Fit `curve` under `xf` within TOLERANCE. `cache` maps each Bezier stretch (its four
@@ -617,6 +618,7 @@ static func tree_space(t: PathTree, xf: Transform2D) -> PathTreeSpace:
 	s.radii.resize(nodes)
 	s.lengths.resize(nodes)
 	s.moments.resize(nodes * 5)
+	s.boxes.resize(nodes)
 	for j in range(nodes - 1, -1, -1):
 		var c := Vector2.ZERO
 		var total := 0.0
@@ -626,10 +628,14 @@ static func tree_space(t: PathTree, xf: Transform2D) -> PathTreeSpace:
 		var dxx := 0.0
 		var dxy := 0.0
 		var r := 0.0
+		var box := Vector4(INF, INF, -INF, -INF)
 		if t.leaf[j] != 0:
 			for k in range(t.lo[j], t.hi[j]):
-				c += (s.points[k] + s.points[k + 1]) * (0.5 * lens[k])
+				var mid := (s.points[k] + s.points[k + 1]) * 0.5
+				c += mid * lens[k]
 				total += lens[k]
+				box = Vector4(minf(box.x, mid.x - s.discs[k]), minf(box.y, mid.y - s.discs[k]),
+						maxf(box.z, mid.x + s.discs[k]), maxf(box.w, mid.y + s.discs[k]))
 			c = c / total if total > 1e-9 else (s.points[t.lo[j]] + s.points[t.hi[j]]) * 0.5
 			for k in range(t.lo[j], t.hi[j]):
 				var d := (s.points[k] + s.points[k + 1]) * 0.5 - c
@@ -646,6 +652,8 @@ static func tree_space(t: PathTree, xf: Transform2D) -> PathTreeSpace:
 			for kid in [j + 1, t.skip[j + 1]]:
 				c += s.centers[kid] * s.lengths[kid]
 				total += s.lengths[kid]
+				var kb := s.boxes[kid]
+				box = Vector4(minf(box.x, kb.x), minf(box.y, kb.y), maxf(box.z, kb.z), maxf(box.w, kb.w))
 			c = c / total if total > 1e-9 else s.centers[j + 1]
 			for kid in [j + 1, t.skip[j + 1]]:
 				var d: Vector2 = s.centers[kid] - c
@@ -660,6 +668,7 @@ static func tree_space(t: PathTree, xf: Transform2D) -> PathTreeSpace:
 		s.centers[j] = c
 		s.radii[j] = r
 		s.lengths[j] = total
+		s.boxes[j] = box
 		s.moments[j * 5] = qxx
 		s.moments[j * 5 + 1] = qxy
 		s.moments[j * 5 + 2] = qyy

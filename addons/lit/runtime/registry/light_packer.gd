@@ -754,8 +754,8 @@ func _path_circle(light: LitLineLight2D, m: Transform2D) -> Vector3:
 ## preorder, 32 a row: A = circle center.xy | radius | the node after its subtree (-1 for
 ## a leaf), B = chord length | second moment about the center xx, xy, yy, C = direction
 ## moment xx, xy | a leaf's block offset from the first row's texel 0 (PATH_W texels a
-## row) | its item count, + 8 when it holds the chain's free start, + 16 its free end.
-## Then the leaves' blocks, none across a row: its count + 1 points (as a path row's arc
+## row) | its item count, + 8 when it holds the chain's free start, + 16 its free end,
+## D = the box of its arcs center.xy | half extents.xy. Then the leaves' blocks, none across a row: its count + 1 points (as a path row's arc
 ## points) and its count chords. Returns [its row count, its circle, its chords' length].
 func _pack_tree(light: LitLineLight2D, tree, m: Transform2D, row: int) -> Array:
 	var sp = LinePathScript.tree_space(tree, m)
@@ -792,6 +792,11 @@ func _pack_tree(light: LitLineLight2D, tree, m: Transform2D, row: int) -> Array:
 		_path_buf[a + 4] = sp.lengths[j]
 		for q in 5:
 			_path_buf[a + 5 + q] = sp.moments[j * 5 + q]
+		var box: Vector4 = sp.boxes[j]
+		_path_buf[a + 12] = (box.x + box.z) * 0.5
+		_path_buf[a + 13] = (box.y + box.w) * 0.5
+		_path_buf[a + 14] = (box.z - box.x) * 0.5
+		_path_buf[a + 15] = (box.w - box.y) * 0.5
 		if tree.leaf[j] == 0:
 			continue
 		var lo: int = tree.lo[j]

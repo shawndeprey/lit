@@ -56,6 +56,7 @@ position = Vector2(953, 532)
 script = ExtResource("4_saber")
 width = 3.0
 glow = 0.6
+tessellation_segments = 101
 lit_version = "1.1.7"
 color = Color(1.6, 0.88, 0.4, 1)
 shadow_enabled = true

@@ -72,31 +72,49 @@ vec3 lit_path_nearest(int row, int count, vec2 p) {
 	return vec3(q, bd);
 }
 
-// A tree path's node `j` (see _pack_tree): its texel A, then B and C after it.
+// A tree path's node `j` (see _pack_tree): its texel A, then B, C and D after it.
 ivec2 lit_tree_at(int row, int j) {
 	return ivec2((j & 31) << 2, row + 1 + (j >> 5));
 }
 
-// Nearest point of a tree path (path row `row`, `count` nodes) to `p` within `cut`, its
-// nodes' circles pruning the walk past the best distance so far. Returns the point and
+// Nearest point of a tree path (path row `row`, `count` nodes) to `p` within `cut`: down
+// the nearer child's box to one leaf, whose box's far corner bounds the distance, then a
+// walk whose nodes' boxes prune it past the best distance so far. Returns the point and
 // its distance, or a point past `cut` when none lies within it.
 vec3 lit_tree_nearest(int row, int count, vec2 p, float cut) {
 	vec2 q = p + vec2(2.0 * cut + 1.0, 0.0);
-	float best = cut * cut;
-	float bd = cut;
 	int j = 0;
+	vec4 box = texelFetch(lit_light_path, lit_tree_at(row, 0) + ivec2(3, 0), 0); // center.xy | half extents.xy
+	float link = texelFetch(lit_light_path, lit_tree_at(row, 0), 0).w;
+	while (link >= 0.0) {
+		int l = j + 1;
+		ivec2 at_l = lit_tree_at(row, l);
+		vec4 a_l = texelFetch(lit_light_path, at_l, 0);
+		ivec2 at_r = lit_tree_at(row, max(a_l.w < 0.0 ? l + 1 : int(a_l.w), l + 1));
+		vec4 box_l = texelFetch(lit_light_path, at_l + ivec2(3, 0), 0);
+		vec4 box_r = texelFetch(lit_light_path, at_r + ivec2(3, 0), 0);
+		vec2 el = max(abs(p - box_l.xy) - box_l.zw, 0.0);
+		vec2 er = max(abs(p - box_r.xy) - box_r.zw, 0.0);
+		bool left = dot(el, el) <= dot(er, er);
+		j = left ? l : max(a_l.w < 0.0 ? l + 1 : int(a_l.w), l + 1);
+		box = left ? box_l : box_r;
+		link = left ? a_l.w : texelFetch(lit_light_path, at_r, 0).w;
+	}
+	float bd = min(cut, length(abs(p - box.xy) + box.zw) * 1.0001 + 0.01);
+	float best = bd * bd;
+	j = 0;
 	while (j < count) {
 		ivec2 at = lit_tree_at(row, j);
-		vec4 a = texelFetch(lit_light_path, at, 0); // center.xy | radius | the node after its subtree (-1: a leaf)
-		vec2 v = p - a.xy;
-		float reach = bd + a.z;
-		if (dot(v, v) >= reach * reach) {
+		vec4 a = texelFetch(lit_light_path, at, 0); // | the node after its subtree (-1: a leaf)
+		vec4 c = texelFetch(lit_light_path, at + ivec2(3, 0), 0);
+		vec2 e = max(abs(p - c.xy) - c.zw, 0.0);
+		if (dot(e, e) >= best) {
 			j = max(int(a.w), j + 1);
 			continue;
 		}
 		j++;
 		if (a.w < 0.0) {
-			vec4 c = texelFetch(lit_light_path, at + ivec2(2, 0), 0); // | block offset | count + free ends
+			c = texelFetch(lit_light_path, at + ivec2(2, 0), 0); // | block offset | count + free ends
 			int off = int(c.z);
 			lit_arcs_nearest(ivec2(off & (LIT_PATH_W - 1), row + (off >> LIT_PATH_W_SHIFT)), int(c.w) & 7, p, q, best, bd);
 		}

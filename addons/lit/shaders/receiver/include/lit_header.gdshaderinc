@@ -52,7 +52,7 @@ global uniform sampler2D lit_light_path;                // curved line lights: r
 // for its chords.
 const int LIT_PATH_W = 128;
 const int LIT_PATH_W_SHIFT = 7;
-const float LIT_PATH_TREE_OPEN = 3.3333333;
+const float LIT_PATH_TREE_OPEN = 2.0;
 const int LIT_PATH_INFO = 33;
 const int LIT_PATH_CHORDS = 34;
 const int LIT_PATH_SHADE = 32;
