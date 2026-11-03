@@ -30,6 +30,34 @@ class_name LitLineLight2D
 const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd")
 const TESSELLATION_MAX := 32
 
+## How `closed` joins the path's last point back to its first. The values match
+## line_path.gd's CLOSE_ constants.
+enum CloseMode {
+	## The default. Closes the way the rest of the path asks for, after the science of
+	## symmetry. Where a rotation or mirror carries a piece of the path exactly onto the gap
+	## and maps the whole shape onto itself, it repeats that piece (structural regularity,
+	## van Lier, van der Helm & Leeuwenberg 1994; partial symmetry detection, Mitra, Guibas &
+	## Pauly 2006). Otherwise it takes the close between Curvature Arc and Biarc that best
+	## weighs corners, S-bends (Singh & Hoffman 1999) and size against how symmetric it makes
+	## the whole shape (Zabrodsky, Peleg & Avnir 1995), with corners costing less the more
+	## cornered the path is. A path that already covers its gap gets nothing added, and ends
+	## that run past each other get a straight link.
+	SYMMETRIC = 3,
+	## Always closes smoothly: the biarc of Ullman's "Filling-in the gaps" (1976), two
+	## circular arcs leaving the last point along its direction and reaching the first along
+	## its own (Bolton 1975). It rounds every gap, even between two corners.
+	BIARC = 1,
+	## One circular arc carrying the path's average curvature (its smooth turn over its
+	## length; corners do not count) across the gap, bending the same way, with corners
+	## where it meets the path (after Singh & Fulvio 2005). A polygon closes straight.
+	CURVATURE_ARC = 4,
+	## Halfway between Curvature Arc and Biarc: two arcs that leave and arrive halfway
+	## between the curvature arc's directions and the path's own, halving its corners.
+	SOFT_ARC = 5,
+	## Always closes with a straight edge, as closepath does in PostScript, PDF and SVG.
+	STRAIGHT = 2,
+}
+
 @export_group("Line")
 ## Length of the emitting segment in local pixels, centered on the node along its local
 ## +X; it stretches with the node's x scale. `range` and `source_radius` follow the
@@ -58,12 +86,20 @@ const TESSELLATION_MAX := 32
 	set(value):
 		glow = clampf(value, 0.0, 1.0)
 		LitLightRegistry.light_state_changed(self)
-## Joins the Path2D child's last point back to its first with an arc that matches both
-## tangents: a ring or a closed loop. Nothing without a Path2D child, or on a straight
-## 2-point path.
+## Joins the Path2D child's last point back to its first: a ring or a closed loop.
+## `close_mode` picks how, from Symmetric (the default, which repeats and balances the
+## path's own shapes) through the biarc and curvature arcs to a plain straight edge.
+## Nothing without a Path2D child, or on a straight 2-point path.
 @export var closed: bool = false:
 	set(value):
 		closed = value
+		_path_dirty = true
+		notify_property_list_changed()
+		LitLightRegistry.light_state_changed(self)
+## How `closed` shapes the join; hover each mode for its method and sources.
+@export var close_mode: CloseMode = CloseMode.SYMMETRIC:
+	set(value):
+		close_mode = value
 		_path_dirty = true
 		LitLightRegistry.light_state_changed(self)
 ## Lights the Path2D child's curves as straight segments instead of true arcs: cheaper,
@@ -128,9 +164,11 @@ func _init() -> void:
 func _validate_property(property: Dictionary) -> void:
 	if property.name == "shadow_samples" and shadow_algorithm == ShadowAlgorithm.CONE_TRACED:
 		return
-	if (property.name == "length" and _path != null) or (property.name in ["closed", "tessellate"] and _path == null) \
-			or (property.name == "closed" and not _closable):
+	if (property.name == "length" and _path != null) or (property.name in ["closed", "close_mode", "tessellate"] and _path == null) \
+			or (property.name in ["closed", "close_mode"] and not _closable):
 		property.usage |= PROPERTY_USAGE_READ_ONLY
+	if property.name == "close_mode" and not closed:
+		property.usage &= ~PROPERTY_USAGE_EDITOR
 	if property.name == "tessellation_segments":
 		if tessellate:
 			property.hint_string = "2,%d,1,prefer_slider" % maxi(_tess_max, 2)
@@ -343,7 +381,7 @@ func _refresh_path() -> void:
 	if closable != _closable:
 		_closable = closable
 		notify_property_list_changed()
-	_chain = LinePathScript.fit(curve, path_closed(), _fit_xf * _path_xf, _fit_cache)
+	_chain = LinePathScript.fit(curve, path_closed(), _fit_xf * _path_xf, _fit_cache, close_mode)
 	_tree = null
 	_tree_space = null
 	_tess_active = false

@@ -51,6 +51,12 @@ shader_parameter/directional_horizontal_scale = 32.0
 [sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
 polygon = PackedVector2Array(1920, 0, 1903.8984, 1079.9999, 1437, 1079.9999, 1437, 0)
 
+[sub_resource type="Curve2D" id="Curve2D_qx7ev"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 135.5, -135.5, 0, 0, 0, 0, 135.5, 135.5, 0, 0, 0, 0, -135.5, 135.5, 0, 0, 0, 0, -135.5, -135.5)
+}
+point_count = 4
+
 [sub_resource type="Curve2D" id="Curve2D_pitca"]
 _data = {
 "points": PackedVector2Array(0, 0, 0, 0, 154, 0, 0, 0, 0, 0, -171, 0)
@@ -168,6 +174,23 @@ lit_version = "1.1.7"
 color = Color(1.6197081, 0, 1.6197081, 1)
 shadow_enabled = true
 
+[node name="Square" type="Node2D" parent="Lights" unique_id=2111086312]
+position = Vector2(1515, 882)
+rotation = -1.5707964
+script = ExtResource("4_saber")
+length = 271.0
+width = 12.5
+glow = 0.96
+closed = true
+close_mode = 2
+range = 1024.0
+lit_version = "1.1.7"
+color = Color(1.9612501, 1.3097818, 0, 1)
+shadow_enabled = true
+
+[node name="Square" type="Path2D" parent="Lights/Square" unique_id=227804579]
+curve = SubResource("Curve2D_qx7ev")
+
 [node name="PathLine" type="Node2D" parent="Lights" unique_id=1417204964]
 position = Vector2(965, 865)
 rotation = -1.5707964
@@ -254,7 +277,6 @@ curve = SubResource("Curve2D_vmv5v")
 [node name="ThreePointPath" type="Node2D" parent="Lights" unique_id=1282219292]
 position = Vector2(475, 404)
 script = ExtResource("4_saber")
-width = 11.0
 tessellation_segments = 13
 range = 1024.0
 lit_version = "1.1.7"
@@ -268,6 +290,7 @@ curve = SubResource("Curve2D_0vvki")
 [node name="TwoPointCurve" type="Node2D" parent="Lights" unique_id=777304227]
 position = Vector2(683, 377)
 script = ExtResource("4_saber")
+closed = true
 range = 2048.0
 lit_version = "1.1.7"
 color = Color(3.1681983, 2.0419812, 1.9341518, 1)

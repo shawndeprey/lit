@@ -9,6 +9,12 @@ const TOLERANCE := 0.1
 const MAX_DEPTH := 6
 const STRAIGHT := 1e-6
 const COS_JOINT := 0.99985  # 1 degree
+const CLOSE_BIARC := 1  # LitLineLight2D.CloseMode
+const CLOSE_STRAIGHT := 2
+const CLOSE_SYMMETRIC := 3
+const CLOSE_CURVATURE_ARC := 4
+const CLOSE_SOFT_ARC := 5
+const LineClose := preload("res://addons/lit/runtime/registry/line_close.gd")
 
 
 class Chain:
@@ -54,8 +60,10 @@ class PathTreeSpace:
 
 ## Fit `curve` under `xf` within TOLERANCE. `cache` maps each Bezier stretch (its four
 ## points under `xf`) to its arcs from the last fit; it is refilled with this fit's, so an
-## edit refits only the stretches it moved.
-static func fit(curve: Curve2D, closed: bool, xf := Transform2D(), cache := {}) -> Chain:
+## edit refits only the stretches it moved. `close_mode` (a CLOSE_ constant) shapes the
+## closing stretch.
+static func fit(curve: Curve2D, closed: bool, xf := Transform2D(), cache := {},
+		close_mode := CLOSE_SYMMETRIC) -> Chain:
 	var chain := Chain.new()
 	if curve == null or curve.point_count < 2:
 		return chain
@@ -81,7 +89,7 @@ static func fit(curve: Curve2D, closed: bool, xf := Transform2D(), cache := {}) 
 		bul.append_array(arcs[1])
 		starts.append(bul.size())
 	if closed:
-		_close(segs, pts, bul)
+		_close(segs, pts, bul, close_mode)
 		starts.append(bul.size())
 	chain.points = pts
 	chain.stretches = starts
@@ -152,16 +160,28 @@ static func _straight(b: PackedVector2Array) -> bool:
 	return absf(n.dot(b[1] - b[0])) <= 0.1 * TOLERANCE and absf(n.dot(b[2] - b[0])) <= 0.1 * TOLERANCE
 
 
-static func _close(segs: Array[PackedVector2Array], pts: PackedVector2Array, bul: PackedFloat32Array) -> void:
+static func _close(segs: Array[PackedVector2Array], pts: PackedVector2Array, bul: PackedFloat32Array,
+		mode: int) -> void:
 	var a := pts[pts.size() - 1]
 	var d := pts[0]
 	if a.distance_squared_to(d) < 1e-6:
 		return
-	var bi := biarc(a, _tangent(segs[segs.size() - 1], 1.0), d, _tangent(segs[0], 0.0))
-	pts.append(bi[0])
-	bul.append(bi[1])
+	var ta := _tangent(segs[segs.size() - 1], 1.0)
+	var td := _tangent(segs[0], 0.0)
+	if mode >= CLOSE_SYMMETRIC:
+		LineClose.close(pts, bul, ta, td, mode)
+		return
+	var bulge := 0.0
+	if mode == CLOSE_BIARC:
+		var bi := biarc(a, ta, d, td)
+		var b1: float = bi[1]
+		var b2: float = bi[2]
+		if is_finite(b1) and is_finite(b2) and absf(b1) <= 1e4 and absf(b2) <= 1e4:
+			pts.append(bi[0])
+			bul.append(b1)
+			bulge = b2
 	pts.append(d)
-	bul.append(bi[2])
+	bul.append(bulge)
 
 
 static func _split(b: PackedVector2Array) -> Array[PackedVector2Array]:

@@ -21,7 +21,9 @@ extends LitSuiteSection
 ## rows kept through a camera pan and zoom, and extra Path2D children warn.
 ## The Add Path starter shapes fit the light's length centered on it in a handful of arcs,
 ## and a closed polygon lights its seam corner as its other corners. Points on arcs fitted
-## with a noise-level bulge (straight diagonal edges) stay on the edge.
+## with a noise-level bulge (straight diagonal edges) stay on the edge. close_mode shapes the
+## closing stretch (Symmetric, Biarc, Curvature Arc, Soft Arc, Straight) on the
+## line_light_test.tscn and line_light_closing_test.tscn paths, rendered too.
 ##
 ## Numeric expectations come from _ref: the shader's line integral summed over 0.25 px
 ## elements of the path, albedo x ambient + energy x integral x diffuse_scale().
@@ -91,6 +93,8 @@ func run() -> void:
 	await _limits()
 	await _starter_shapes()
 	_near_straight()
+	await _close_modes()
+	await _close_symmetric()
 
 
 func line_light(pos: Vector2, p_range: float, energy: float, height: float,
@@ -1288,6 +1292,210 @@ func _near_straight() -> void:
 		worst = maxf(worst, sc[k].distance_to(pts[k]))
 	check(c, "its shading chords are its corners", pts.size(), sc.size())
 	check_lt(c, "at the corners exactly", worst, 0.001)
+
+
+## The Biarc and Straight close modes on line_light_test.tscn's paths: Biarc always rounds
+## (circles stay circles), Straight never does; the inspector and the rendered close.
+func _close_modes() -> void:
+	var c := "path_close_modes"
+	var z := Vector2.ZERO
+	var square := [[Vector2(135.5, -135.5), z, z], [Vector2(135.5, 135.5), z, z],
+			[Vector2(-135.5, 135.5), z, z], [Vector2(-135.5, -135.5), z, z]]
+	var three := [[Vector2(-103, -1), z, z], [Vector2(451, 231), z, z], [Vector2(396, -207), z, z]]
+	var two := [[Vector2(94, -317), Vector2(281.40152, 36.19971), Vector2(-281.40152, -36.19971)],
+			[Vector2(-80, 44), Vector2(-183.04759, -363.36313), Vector2(183.04759, 363.36313)]]
+	var curved := [[Vector2(-24, -2), Vector2(152.40793, 25.657907), Vector2(-152.40793, -25.657907)],
+			[Vector2(-146, -171), Vector2(-2.565792, 41.052643), Vector2(2.565792, -41.052643)],
+			[Vector2(-48, -337), Vector2(-57.98686, 41.05264), Vector2(57.98686, -41.05264)],
+			[Vector2(79, -392), z, z],
+			[Vector2(213, -312), Vector2(-29.250004, -85.69739), Vector2(29.250004, 85.69739)]]
+	var circle := [[Vector2(160, 0), Vector2(0, -88.37), Vector2(0, 88.37)],
+			[Vector2(0, 160), Vector2(88.37, 0), Vector2(-88.37, 0)],
+			[Vector2(-160, 0), Vector2(0, 88.37), Vector2(0, -88.37)],
+			[Vector2(0, -160), Vector2(-88.37, 0), Vector2(88.37, 0)]]
+	var m_bi := LinePath.CLOSE_BIARC
+	var m_st := LinePath.CLOSE_STRAIGHT
+	for cfg in [["Square", square, 135.5], ["ThreePointPath", three, 448.0], ["TwoPointCurve", two, 327.3], ["Curved", curved, 110.9]]:
+		check_lt(c, "%s: Straight closes straight" % cfg[0], _close_sag(cfg[1], m_st), 0.01)
+		check_approx(c, "%s: Biarc rounds the gap" % cfg[0], cfg[2], _close_sag(cfg[1], m_bi), 1.0)
+	check_lt(c, "Circle: Biarc closes on the circle", _close_off_circle(circle, 160.0, m_bi), 0.01)
+	var semi := [[Vector2(0, -100), z, Vector2(133.33, 0)], [Vector2(0, 100), Vector2(133.33, 0), z]]
+	check_lt(c, "a 2-point semicircle: Biarc closes on its circle", _close_off_circle(semi, 100.0, m_bi), 0.01)
+	var missing := [[Vector2(0, 50), z, z], [Vector2(0, 100), z, z], [Vector2(100, 100), z, z], [Vector2(100, 0), z, z],
+			[Vector2(50, 0), z, z]]
+	check_lt(c, "a square missing a corner: Straight bevels it", _close_sag(missing, m_st), 0.01)
+	check_gt(c, "where Biarc rounds it", _close_sag(missing, m_bi), 5.0)
+
+	var l := line_light(Vector2(560, 700), 25.0, 0.5, 100.0)
+	l.width = 12.0
+	check(c, "close_mode defaults to Symmetric", LitLineLight2D.CloseMode.SYMMETRIC, l.close_mode)
+	var p := path_child(l, [[Vector2(40, -40), z, z], [Vector2(40, 40), z, z], [Vector2(-40, 40), z, z], [Vector2(-40, -40), z, z]])
+	check_true(c, "close_mode is hidden while open", _prop(l, "close_mode").get("usage", 0) & PROPERTY_USAGE_EDITOR == 0)
+	l.closed = true
+	await frames(2)
+	check_true(c, "and shown once closed", _prop(l, "close_mode").get("usage", 0) & PROPERTY_USAGE_EDITOR != 0)
+	check_true(c, "editable on a path", not _read_only(l, "close_mode"))
+	var sym := await capture()
+	l.close_mode = LitLineLight2D.CloseMode.BIARC
+	await frames(2)
+	var bi := await capture()
+	l.close_mode = LitLineLight2D.CloseMode.STRAIGHT
+	await frames(2)
+	var st := await capture()
+	check_gt(c, "rendered: Straight lights the square's straight top edge", lum(st, Vector2(560, 660), 1), lum(bi, Vector2(560, 660), 1), 0.05)
+	check_gt(c, "rendered: Biarc lights the rounded cap above it", lum(bi, Vector2(560, 620), 1), lum(st, Vector2(560, 620), 1), 0.05)
+	check_lt(c, "rendered: Symmetric closes the square straight too", image_diff(sym, st, Rect2(500, 600, 120, 140), 2), 0.002)
+	p.curve.remove_point(3)
+	p.curve.remove_point(2)
+	await frames(2)
+	check_true(c, "greyed with closed on a straight 2-point path", _read_only(l, "close_mode"))
+	l.queue_free()
+	await frames(1)
+
+
+## Symmetric (the default close_mode) on line_light_closing_test.tscn's paths, as picked by
+## hand: polygons close straight, exact copies of a piece of the path fill a missing corner,
+## circles close on their circle, a shallow bow mirrors into a lens, smooth paths take the
+## close between the curvature arc and the biarc, a path already covering its gap gains
+## nothing; and the Curvature Arc and Soft Arc modes.
+func _close_symmetric() -> void:
+	var c := "path_close_symmetric"
+	var z := Vector2.ZERO
+	var sym := LinePath.CLOSE_SYMMETRIC
+	var square := [[Vector2(135.5, -135.5), z, z], [Vector2(135.5, 135.5), z, z],
+			[Vector2(-135.5, 135.5), z, z], [Vector2(-135.5, -135.5), z, z]]
+	var three := [[Vector2(-103, -1), z, z], [Vector2(451, 231), z, z], [Vector2(396, -207), z, z]]
+	var two := [[Vector2(94, -317), Vector2(281.40152, 36.19971), Vector2(-281.40152, -36.19971)],
+			[Vector2(-80, 44), Vector2(-183.04759, -363.36313), Vector2(183.04759, 363.36313)]]
+	var curved := [[Vector2(-24, -2), Vector2(152.40793, 25.657907), Vector2(-152.40793, -25.657907)],
+			[Vector2(-146, -171), Vector2(-2.565792, 41.052643), Vector2(2.565792, -41.052643)],
+			[Vector2(-48, -337), Vector2(-57.98686, 41.05264), Vector2(57.98686, -41.05264)],
+			[Vector2(79, -392), z, z],
+			[Vector2(213, -312), Vector2(-29.250004, -85.69739), Vector2(29.250004, 85.69739)]]
+	var circle := [[Vector2(160, 0), Vector2(0, -88.37), Vector2(0, 88.37)],
+			[Vector2(0, 160), Vector2(88.37, 0), Vector2(-88.37, 0)],
+			[Vector2(-160, 0), Vector2(0, 88.37), Vector2(0, -88.37)],
+			[Vector2(0, -160), Vector2(-88.37, 0), Vector2(88.37, 0)]]
+	var corner := [[Vector2(-100, 0), z, z], [Vector2(-100, 100), z, z], [Vector2(100, 100), z, z],
+			[Vector2(100, -100), z, z], [Vector2(0, -100), z, z]]
+	var h := 0.5523 * 34.0
+	var rounded := [[Vector2(-60, -90), z, z], [Vector2(96, -90), z, Vector2(h, 0)], [Vector2(130, -56), Vector2(0, -h), z],
+			[Vector2(130, 56), z, Vector2(0, h)], [Vector2(96, 90), Vector2(h, 0), z], [Vector2(-96, 90), z, Vector2(-h, 0)],
+			[Vector2(-130, 56), Vector2(0, h), z], [Vector2(-130, -40), z, z]]
+	var loops := [[Vector2(-42, 70), z, Vector2(38.66, 0)], [Vector2(28, 0), Vector2(0, 38.66), Vector2(0, -38.66)],
+			[Vector2(-42, -70), Vector2(38.66, 0), Vector2(-38.66, 0)], [Vector2(-112, 0), Vector2(0, -38.66), Vector2(0, 38.66)],
+			[Vector2(-42, 70), Vector2(-38.66, 0), z], [Vector2(42, 70), z, Vector2(38.66, 0)],
+			[Vector2(112, 0), Vector2(0, 38.66), Vector2(0, -38.66)], [Vector2(42, -70), Vector2(38.66, 0), Vector2(-38.66, 0)],
+			[Vector2(-28, 0), Vector2(0, -38.66), Vector2(0, 38.66)], [Vector2(42, 70), Vector2(-38.66, 0), z]]
+	var bow := []
+	for k in 3:
+		var t := deg_to_rad(-120.0 + 30.0 * k)
+		var tv := Vector2(-sin(t), cos(t)) * (4.0 / 3.0 * tan(deg_to_rad(30.0) / 4.0) * 300.0)
+		bow.append([Vector2(0, 260) + Vector2(cos(t), sin(t)) * 300.0, -tv, tv])
+	var overshoot := []
+	for k in 12:
+		var t := deg_to_rad(-90.0 + k * 400.0 / 11.0)
+		overshoot.append([Vector2(cos(t), sin(t)) * (110.0 + 40.0 * k / 11.0), z, z])
+	for k in 12:
+		var prev: Vector2 = overshoot[maxi(k - 1, 0)][0]
+		var next: Vector2 = overshoot[mini(k + 1, 11)][0]
+		var m := (next - prev) * (1.0 / 3.0 if k == 0 or k == 11 else 1.0 / 6.0)
+		overshoot[k][1] = -m
+		overshoot[k][2] = m
+	check_lt(c, "Square: closes straight", _close_sag(square, sym), 0.05)
+	check_lt(c, "ThreePointPath: closes straight", _close_sag(three, sym), 0.05)
+	check_between(c, "TwoPointCurve: between the curvature arc and the biarc", _close_sag(two, sym),
+			_close_sag(two, LinePath.CLOSE_CURVATURE_ARC) + 1.0, _close_sag(two, LinePath.CLOSE_BIARC) - 1.0)
+	check_lt(c, "Curved: the biarc", _close_diff(curved, sym, LinePath.CLOSE_BIARC), 1e-3)
+	check_lt(c, "Circle: closes on the circle", _close_off_circle(circle, 160.0, sym), 0.05)
+	var nearest := INF
+	for q in _close_samples(corner, sym):
+		nearest = minf(nearest, q.distance_to(Vector2(-100, -100)))
+	check_lt(c, "square missing a corner: the copied corner fills it", nearest, 0.05)
+	var drawn := _curve(rounded).tessellate(6, 2.0)
+	var off := 0.0
+	for q in _close_samples(rounded, sym):
+		var mq := Vector2(-q.x, q.y)
+		var best := INF
+		for k in drawn.size() - 1:
+			best = minf(best, mq.distance_to(Geometry2D.get_closest_point_to_segment(mq, drawn[k], drawn[k + 1])))
+		off = maxf(off, best)
+	check_lt(c, "rounded rectangle missing a corner: a mirror copy of the opposite corner", off, 0.1)
+	check(c, "Loops: already covering its gap, gains no closing arcs",
+			LinePath.fit(_curve(loops), false).arc_count(), LinePath.fit(_curve(loops), true).arc_count())
+	check_lt(c, "Ends overshoot: ends running past each other link straight", _close_sag(overshoot, sym), 0.05)
+	var y0: float = bow[0][0].y
+	check_lt(c, "Shallow bow: closes as the lens, its mirror across the gap",
+			_close_off_circle(bow, 300.0, sym, Vector2(0, 2.0 * y0 - 260.0)), 0.05)
+	check_lt(c, "Curvature Arc: a polygon closes straight", _close_sag(square, LinePath.CLOSE_CURVATURE_ARC), 0.05)
+	check_lt(c, "Curvature Arc: the circle closes on itself", _close_off_circle(circle, 160.0, LinePath.CLOSE_CURVATURE_ARC), 0.05)
+	var ch = LinePath.fit(_curve(two), true, Transform2D(), {}, LinePath.CLOSE_SOFT_ARC)
+	check(c, "Soft Arc: two arcs", 2, ch.arc_count() - LinePath.fit(_curve(two), false).arc_count())
+	check_between(c, "Soft Arc: between the curvature arc and the biarc", _close_sag(two, LinePath.CLOSE_SOFT_ARC),
+			_close_sag(two, LinePath.CLOSE_CURVATURE_ARC) + 1.0, _close_sag(two, LinePath.CLOSE_BIARC) - 1.0)
+	var lb = LinePath.fit(_curve(loops), true, Transform2D(), {}, LinePath.CLOSE_BIARC)
+	var finite := true
+	for b in lb.bulges:
+		finite = finite and is_finite(b) and absf(b) < 1e4
+	check_true(c, "Biarc on ends pointing away along the gap stays finite", finite)
+
+	var l := line_light(Vector2(560, 700), 25.0, 0.5, 100.0)
+	l.width = 12.0
+	path_child(l, [[Vector2(-50, 0), z, z], [Vector2(-50, 50), z, z], [Vector2(50, 50), z, z], [Vector2(50, -50), z, z], [Vector2(0, -50), z, z]])
+	l.closed = true
+	await frames(2)
+	var on := await capture()
+	l.close_mode = LitLineLight2D.CloseMode.STRAIGHT
+	await frames(2)
+	var st := await capture()
+	check_gt(c, "rendered: Symmetric lights the filled corner", lum(on, Vector2(510, 650), 1), lum(st, Vector2(510, 650), 1), 0.05)
+	l.queue_free()
+	await frames(1)
+
+
+func _curve(points: Array) -> Curve2D:
+	var cv := Curve2D.new()
+	for pt in points:
+		cv.add_point(pt[0], pt[1], pt[2])
+	return cv
+
+
+## Closing arcs' sample points (the chain's last stretch) for `points` closed by `mode`.
+func _close_samples(points: Array, mode: int) -> PackedVector2Array:
+	var ch = LinePath.fit(_curve(points), true, Transform2D(), {}, mode)
+	var out := PackedVector2Array()
+	for k in range(ch.stretches[ch.stretches.size() - 2], ch.arc_count()):
+		for j in 17:
+			out.append(LinePath.arc_point(ch.points[k], ch.points[k + 1], ch.bulges[k], j / 16.0))
+	return out
+
+
+## Furthest the closing stretch strays from the chord between the path's ends.
+func _close_sag(points: Array, mode: int) -> float:
+	var a: Vector2 = points[points.size() - 1][0]
+	var d: Vector2 = points[0][0]
+	var worst := 0.0
+	for q in _close_samples(points, mode):
+		worst = maxf(worst, q.distance_to(Geometry2D.get_closest_point_to_segment(q, a, d)))
+	return worst
+
+
+func _close_diff(points: Array, m1: int, m2: int) -> float:
+	var s1 := _close_samples(points, m1)
+	var s2 := _close_samples(points, m2)
+	if s1.size() != s2.size():
+		return INF
+	var worst := 0.0
+	for k in s1.size():
+		worst = maxf(worst, s1[k].distance_to(s2[k]))
+	return worst
+
+
+func _close_off_circle(points: Array, r: float, mode: int, center := Vector2.ZERO) -> float:
+	var worst := 0.0
+	for q in _close_samples(points, mode):
+		worst = maxf(worst, absf(q.distance_to(center) - r))
+	return worst
 
 
 func _exit_tree() -> void:
