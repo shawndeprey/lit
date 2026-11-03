@@ -445,15 +445,18 @@ uniform float directional_horizontal_scale = 32.0;
 
 // Per-light shadow exclusion context (the _mask variants): the light's exempt-occluder
 // rects live in its own data row (texels 10-15), so the march carries only a row index
-// and the coarse union rect.
+// and the coarse union rect. LIT_MK_EXEMPT runs the test only in a loop whose mk_in
+// is set (the mask pre-pass).
 #ifdef LIT_OCC_MASKS
 #define LIT_MK_PARAMS , bool mk_on, int mk_row, vec4 mk_rect
 #define LIT_MK_ARGS , mk_on, mk_row, mk_rect
 #define LIT_MK_ON mk_on
+#define LIT_MK_EXEMPT(p_canvas, reach) (mk_in && lit_mk_exempt(mk_row, p_canvas, reach))
 #else
 #define LIT_MK_PARAMS
 #define LIT_MK_ARGS
 #define LIT_MK_ON false
+#define LIT_MK_EXEMPT(p_canvas, reach) false
 #endif
 
 // Line light context (the _line variants): lit_shade's `positional` is a call-site

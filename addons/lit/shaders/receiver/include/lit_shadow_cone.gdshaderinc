@@ -50,7 +50,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 
 	// Mask pre-pass: exempt casters can only matter within this march's crossing of the
 	// exempt bounds, so the exclusion tests live in this loop alone and the untouched
-	// phases below run at full speed. Keep the body aligned with the slow phase below;
+	// phases below run at full speed. Its body is the slow phase's below with mk_in set;
 	// the alignment contract is gated behaviorally by Test/march_matrix.md.
 	if (mk_on) {
 		vec2 dir_canvas = sdf_to_canvas * dir;
@@ -64,63 +64,71 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float ad = abs(d);
 			float floor_t = s < max_steps ? shadow_min_step : max(shadow_min_step, (min(t_mk_end, maxd) - t) / float(s_end - s));
-			if (grace) {
-				if (d < 0.0) {
-					t += max(-d, floor_t);
-					continue;
-				}
-				grace = false;
+			bool mk_in = true;
+			// Inside the containing shape: march out of it. Its footprint shadow applies
+			// once, at the exit sample, unless the shape is an owned occluder.
+			if (grace && d < 0.0) {
+				t += max(-d, floor_t);
+				continue;
+			}
+			bool at_exit = grace;
+			grace = false;
+			// Half-plane coverage of the cone's cross-section (half-width w*t at
+			// distance t): an edge at signed distance d from the cone's center leaves
+			// the fraction 0.5 + d/(2*w*t) unblocked, hitting 0 only when the edge is
+			// a full half-width past center - which is what lets the umbra close
+			// behind small occluders.
+			float cand = 0.5 + d / (2.0 * w * t);
+			// The exit sample, a crossed shape's flush and a penumbra sample share one
+			// evaluation of each exemption test and weight.
+			bool flush = in_min < 1.0 && d >= 0.0;
+			bool test = at_exit || cand < res;
+			if (test || flush) {
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				if (lit_self_dist2(self_canvas + dir_canvas * t) > own_r * own_r
-						&& !lit_mk_exempt(mk_row, self_canvas + dir_canvas * t, own_r)
-						&& !LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r)) {
-					float yw = 1.0;
+				bool exempt = false;
+				float yw = 1.0;
+				if (test) {
+					exempt = lit_self_dist2(self_canvas + dir_canvas * t) <= own_r * own_r
+							|| LIT_MK_EXEMPT(self_canvas + dir_canvas * t, own_r)
+							|| LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r);
 #ifdef LIT_YSORT
-					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
-							frag_px + dir_px * t, own_r) : 1.0;
+					if (!exempt) {
+						yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
+								frag_px + dir_px * t, own_r) : 1.0;
+					}
 #endif
-					res = 1.0 - LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)
-						* yw * lit_tip_weight(t, t_tip, tip_band);
+				}
+				float rw = 1.0;
+				if (flush || (test && !exempt && !(d < 0.0 && LIT_RAMP_ON))) {
+					rw = LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t);
+				}
+				if (flush) {
+					res = min(res, mix(1.0, in_min, rw));
+					in_min = 1.0;
 					if (res <= 0.0) {
 						return 0.0;
 					}
 				}
-				t += max(ad, floor_t);
-				continue;
-			}
-			if (in_min < 1.0 && d >= 0.0) {
-				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				res = min(res, mix(1.0, in_min, LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)));
-				in_min = 1.0;
-				if (res <= 0.0) {
-					return 0.0;
-				}
-			}
-			float cand = 0.5 + d / (2.0 * w * t);
-			if (cand < res) {
-				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				if (lit_self_dist2(self_canvas + dir_canvas * t) <= own_r * own_r
-						|| lit_mk_exempt(mk_row, self_canvas + dir_canvas * t, own_r)
-						|| LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r)) {
-					t += max(ad, floor_t);
-					continue;
-				}
-				float yw = 1.0;
-#ifdef LIT_YSORT
-				yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
-						frag_px + dir_px * t, own_r) : 1.0;
-#endif
-				float cw = yw * lit_tip_weight(t, t_tip, tip_band);
-				float faded = 1.0;
-				if (d < 0.0 && LIT_RAMP_ON) {
-					in_min = min(in_min, mix(1.0, max(cand, 0.0), cw));
-				} else {
-					faded = mix(1.0, max(cand, 0.0), cw * LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t));
-				}
-				if (faded < res) {
-					res = faded;
-					if (res <= 0.0) {
-						return 0.0;
+				if (test && !exempt) {
+					if (at_exit) {
+						res = 1.0 - rw * yw * lit_tip_weight(t, t_tip, tip_band);
+						if (res <= 0.0) {
+							return 0.0;
+						}
+					} else if (cand < res) {
+						float cw = yw * lit_tip_weight(t, t_tip, tip_band);
+						float faded = 1.0;
+						if (d < 0.0 && LIT_RAMP_ON) {
+							in_min = min(in_min, mix(1.0, max(cand, 0.0), cw));
+						} else {
+							faded = mix(1.0, max(cand, 0.0), cw * rw);
+						}
+						if (faded < res) {
+							res = faded;
+							if (res <= 0.0) {
+								return 0.0;                  // cone fully blocked; can't recover
+							}
+						}
 					}
 				}
 			}
@@ -160,68 +168,73 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float ad = abs(d);
 			float floor_t = s < max_steps ? shadow_min_step : max(shadow_min_step, (min(t_slow_end, maxd) - t) / float(s_end - s));
-			if (grace) {
-				// March out of the containing shape; apply its footprint shadow once,
-				// at the exit sample, unless the shape is an owned occluder.
-				if (d < 0.0) {
-					t += max(-d, floor_t);
-					continue;
-				}
-				grace = false;
-				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				if (lit_self_dist2(self_canvas + dir_canvas * t) > own_r * own_r
-						&& !LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r)) {
-					float yw = 1.0;
-#ifdef LIT_YSORT
-					yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
-							frag_px + dir_px * t, own_r) : 1.0;
+#ifdef LIT_OCC_MASKS
+			bool mk_in = false;
 #endif
-					res = 1.0 - LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)
-						* yw * lit_tip_weight(t, t_tip, tip_band);
-					if (res <= 0.0) {
-						return 0.0;
-					}
-				}
-				t += max(ad, floor_t);
+			// Inside the containing shape: march out of it. Its footprint shadow applies
+			// once, at the exit sample, unless the shape is an owned occluder.
+			if (grace && d < 0.0) {
+				t += max(-d, floor_t);
 				continue;
 			}
+			bool at_exit = grace;
+			grace = false;
 			// Half-plane coverage of the cone's cross-section (half-width w*t at
 			// distance t): an edge at signed distance d from the cone's center leaves
 			// the fraction 0.5 + d/(2*w*t) unblocked, hitting 0 only when the edge is
 			// a full half-width past center - which is what lets the umbra close
 			// behind small occluders.
-			if (in_min < 1.0 && d >= 0.0) {
-				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				res = min(res, mix(1.0, in_min, LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t)));
-				in_min = 1.0;
-				if (res <= 0.0) {
-					return 0.0;
-				}
-			}
 			float cand = 0.5 + d / (2.0 * w * t);
-			if (cand < res) {
+			// The exit sample, a crossed shape's flush and a penumbra sample share one
+			// evaluation of each exemption test and weight.
+			bool flush = in_min < 1.0 && d >= 0.0;
+			bool test = at_exit || cand < res;
+			if (test || flush) {
 				float own_r = (ad + LIT_SELF_PAD_SDF) * self_scale;
-				if (lit_self_dist2(self_canvas + dir_canvas * t) <= own_r * own_r
-						|| LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r)) {
-					t += max(ad, floor_t);   // owned occluder: contributes nothing
-					continue;
-				}
+				bool exempt = false;
 				float yw = 1.0;
+				if (test) {
+					exempt = lit_self_dist2(self_canvas + dir_canvas * t) <= own_r * own_r
+							|| LIT_MK_EXEMPT(self_canvas + dir_canvas * t, own_r)
+							|| LIT_RX_EXEMPT(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r);
 #ifdef LIT_YSORT
-				yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
-						frag_px + dir_px * t, own_r) : 1.0;
+					if (!exempt) {
+						yw = ys_on ? lit_ysort_weight(self_canvas + dir_canvas * t,
+								frag_px + dir_px * t, own_r) : 1.0;
+					}
 #endif
-				float cw = yw * lit_tip_weight(t, t_tip, tip_band);
-				float faded = 1.0;
-				if (d < 0.0 && LIT_RAMP_ON) {
-					in_min = min(in_min, mix(1.0, max(cand, 0.0), cw));
-				} else {
-					faded = mix(1.0, max(cand, 0.0), cw * LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t));
 				}
-				if (faded < res) {
-					res = faded;
+				float rw = 1.0;
+				if (flush || (test && !exempt && !(d < 0.0 && LIT_RAMP_ON))) {
+					rw = LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t);
+				}
+				if (flush) {
+					res = min(res, mix(1.0, in_min, rw));
+					in_min = 1.0;
 					if (res <= 0.0) {
-						return 0.0;                  // cone fully blocked; can't recover
+						return 0.0;
+					}
+				}
+				if (test && !exempt) {
+					if (at_exit) {
+						res = 1.0 - rw * yw * lit_tip_weight(t, t_tip, tip_band);
+						if (res <= 0.0) {
+							return 0.0;
+						}
+					} else if (cand < res) {
+						float cw = yw * lit_tip_weight(t, t_tip, tip_band);
+						float faded = 1.0;
+						if (d < 0.0 && LIT_RAMP_ON) {
+							in_min = min(in_min, mix(1.0, max(cand, 0.0), cw));
+						} else {
+							faded = mix(1.0, max(cand, 0.0), cw * rw);
+						}
+						if (faded < res) {
+							res = faded;
+							if (res <= 0.0) {
+								return 0.0;                  // cone fully blocked; can't recover
+							}
+						}
 					}
 				}
 			}

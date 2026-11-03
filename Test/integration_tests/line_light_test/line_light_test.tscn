@@ -290,7 +290,6 @@ curve = SubResource("Curve2D_0vvki")
 [node name="TwoPointCurve" type="Node2D" parent="Lights" unique_id=777304227]
 position = Vector2(683, 377)
 script = ExtResource("4_saber")
-closed = true
 range = 2048.0
 lit_version = "1.1.7"
 color = Color(3.1681983, 2.0419812, 1.9341518, 1)
