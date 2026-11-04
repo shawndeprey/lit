@@ -265,6 +265,8 @@ script = ExtResource("4_saber")
 length = 214.0
 width = 11.0
 glow = 0.7
+tessellate = true
+tessellation_segments = 8
 range = 1024.0
 lit_version = "1.1.7"
 color = Color(2.055, 0, 0, 1)
@@ -290,6 +292,8 @@ curve = SubResource("Curve2D_0vvki")
 [node name="TwoPointCurve" type="Node2D" parent="Lights" unique_id=777304227]
 position = Vector2(683, 377)
 script = ExtResource("4_saber")
+closed = true
+close_mode = 4
 range = 2048.0
 lit_version = "1.1.7"
 color = Color(3.1681983, 2.0419812, 1.9341518, 1)
