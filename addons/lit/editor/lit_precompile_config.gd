@@ -30,75 +30,122 @@ const RECEIVER_SCRIPTS := {
 const SCANNED_AXES := LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT 		| LitShaderLibrary.F_CONE | LitShaderLibrary.F_STOCH | LitShaderLibrary.F_GX 		| LitShaderLibrary.F_MASKS | LitShaderLibrary.F_RX | LitShaderLibrary.F_RAMP 		| LitShaderLibrary.F_LINE
 
 
-## Scan, write the settings, and return a summary:
-## {scenes, variants: PackedStringArray, shaders: Array, full: int}.
-static func generate() -> Dictionary:
+## Scan (unless a finished scan is passed in), write the settings, and return a
+## summary: {scenes, variants: PackedStringArray, shaders: Array, full: int}.
+static func generate(found: Dictionary = {}) -> Dictionary:
+	if found.is_empty():
+		found = scan()
+	var names := PackedStringArray()
+	for f in found.flags:
+		names.append(LitShaderLibrary.variant_name(f))
+	var cfg := ConfigFile.new()
+	cfg.set_value("lit", "variants", names)
+	cfg.set_value("lit", "shaders", PackedStringArray(found.shaders))
+	var err := cfg.save(LitShaderPrecompilerScript.CONFIG_PATH)
+	if err != OK:
+		push_warning("Lit: could not write '%s' (error %d)" % [LitShaderPrecompilerScript.CONFIG_PATH, err])
+	elif Engine.is_editor_hint():
+		# The write bypasses the editor's filesystem tracking: rescan so the file
+		# shows up in the FileSystem dock, and refresh any open tab showing it
+		# (respects the user's auto-reload setting; untouched files are no-ops).
+		EditorInterface.get_resource_filesystem().scan()
+		EditorInterface.get_script_editor().reload_open_files()
+	return {
+		"scenes": found.scenes,
+		"variants": names,
+		"shaders": found.shaders,
+		"full": LitShaderLibrary.all_variant_flags().size(),
+		"saved": err == OK,
+	}
+
+## What a config's work list leaves out of a scan, as {variants: names, shaders:
+## paths}; both empty when the config falls back to the full build.
+static func config_gaps(found: Dictionary, cfg: ConfigFile) -> Dictionary:
+	var gaps := {"variants": PackedStringArray(), "shaders": PackedStringArray()}
+	var listed: Variant = LitShaderPrecompilerScript.parse_config(cfg)
+	if listed == null:
+		return gaps
+	for f in found.flags:
+		if not listed.has(f):
+			gaps.variants.append(LitShaderLibrary.variant_name(f))
+	for path in found.shaders:
+		if not listed.has(path):
+			gaps.shaders.append(path)
+	return gaps
+
+## The saved scenes' Lit use without writing anything:
+## {scenes: int, flags: sorted variant flags, shaders: static shader paths}.
+static func scan() -> Dictionary:
+	var acc := scan_begin()
+	for scene_path in acc.scene_paths:
+		scan_scene(acc, scene_path)
+	return scan_finish(acc)
+
+## The scan in steps, so a caller can report progress between scenes: scan_begin,
+## then scan_scene for each of acc.scene_paths, then scan_finish for the result.
+static func scan_begin() -> Dictionary:
 	var scenes: Array[String] = []
 	LitShaderPrecompilerScript._collect_scenes("res://", scenes)
+	return {"scene_paths": scenes, "tiers": {}, "receivers": false, "rx": false, "cone": false,
+			"stoch": false, "lines": false, "masks": false, "ramp": false}
 
-	var tiers := {}
-	var receivers := false
-	var rx := false
-	var cone := false
-	var stoch := false
-	var lines := false
-	var masks := false
-	var ramp := false
-	for scene_path in scenes:
-		var packed := load(scene_path) as PackedScene
-		if packed == null:
-			push_warning("Lit: precompile scan could not load '%s'; skipped" % scene_path)
-			continue
-		var state := packed.get_state()
-		for i in state.get_node_count():
-			var props := {}
-			for p in state.get_node_property_count(i):
-				props[state.get_node_property_name(i, p)] = state.get_node_property_value(i, p)
-			var script_path := ""
-			var script = props.get("script")
-			if script is Script:
-				script_path = lit_base_path(script as Script)
-			if RECEIVER_SCRIPTS.has(script_path):
-				receivers = true
-			# Properties are checked by name, not just by script: overrides on instanced
-			# sub-scene nodes carry the property without the script.
-			# A line light lives in the stoch+line variant whatever its algorithm.
-			var line := script_path.ends_with("lit_line_light_2d.gd")
-			lines = lines or line
-			if props.has("shadow_algorithm"):
-				var algo := int(props["shadow_algorithm"])
-				cone = cone or (algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED and not line)
-				stoch = stoch or (algo == LitShaderLibrary.ShadowAlgorithm.STOCHASTIC and not line)
-			elif LIGHT_SCRIPTS.has(script_path) and not line:
-				cone = true  # absent export = the CONE_TRACED default
-			if int(props.get("shadow_mask", 1)) != 1 \
-					or bool(props.get("exclude_scene_occluders", false)) \
-					or int(props.get("occluder_light_mask", 1)) != 1:
-				masks = true
-			if int(props.get("shadow_ignore_mask", 0)) != 0:
-				rx = true
-			if float(props.get("shadow_ramp", 0.0)) > 0.0:
-				ramp = true
-			var ts = props.get("tile_set")
-			if ts is TileSet:
-				for l in (ts as TileSet).get_occlusion_layers_count():
-					if (ts as TileSet).get_occlusion_layer_light_mask(l) != 1:
-						masks = true
-			var mat = props.get("material")
-			if mat is ShaderMaterial:
-				var flags := LitShaderLibrary.flags_of((mat as ShaderMaterial).shader)
-				if flags >= 0:
-					receivers = true
-					tiers[flags & LitShaderLibrary.TIER_MASK] = true
-					# A bare receiver carries its ramp on the material only.
-					var mat_ramp = (mat as ShaderMaterial).get_shader_parameter("shadow_ramp")
-					if mat_ramp != null and float(mat_ramp) > 0.0:
-						ramp = true
+static func scan_scene(acc: Dictionary, scene_path: String) -> void:
+	var packed := load(scene_path) as PackedScene
+	if packed == null:
+		push_warning("Lit: precompile scan could not load '%s'; skipped" % scene_path)
+		return
+	var state := packed.get_state()
+	for i in state.get_node_count():
+		var props := {}
+		for p in state.get_node_property_count(i):
+			props[state.get_node_property_name(i, p)] = state.get_node_property_value(i, p)
+		var script_path := ""
+		var script = props.get("script")
+		if script is Script:
+			script_path = lit_base_path(script as Script)
+		if RECEIVER_SCRIPTS.has(script_path):
+			acc.receivers = true
+		# Properties are checked by name, not just by script: overrides on instanced
+		# sub-scene nodes carry the property without the script.
+		# A line light lives in the stoch+line variant whatever its algorithm.
+		var line := script_path.ends_with("lit_line_light_2d.gd")
+		acc.lines = acc.lines or line
+		if props.has("shadow_algorithm"):
+			var algo := int(props["shadow_algorithm"])
+			acc.cone = acc.cone or (algo == LitShaderLibrary.ShadowAlgorithm.CONE_TRACED and not line)
+			acc.stoch = acc.stoch or (algo == LitShaderLibrary.ShadowAlgorithm.STOCHASTIC and not line)
+		elif LIGHT_SCRIPTS.has(script_path) and not line:
+			acc.cone = true  # absent export = the CONE_TRACED default
+		if int(props.get("shadow_mask", 1)) != 1 \
+				or bool(props.get("exclude_scene_occluders", false)) \
+				or int(props.get("occluder_light_mask", 1)) != 1:
+			acc.masks = true
+		if int(props.get("shadow_ignore_mask", 0)) != 0:
+			acc.rx = true
+		if float(props.get("shadow_ramp", 0.0)) > 0.0:
+			acc.ramp = true
+		var ts = props.get("tile_set")
+		if ts is TileSet:
+			for l in (ts as TileSet).get_occlusion_layers_count():
+				if (ts as TileSet).get_occlusion_layer_light_mask(l) != 1:
+					acc.masks = true
+		var mat = props.get("material")
+		if mat is ShaderMaterial:
+			var flags := LitShaderLibrary.flags_of((mat as ShaderMaterial).shader)
+			if flags >= 0:
+				acc.receivers = true
+				acc.tiers[flags & LitShaderLibrary.TIER_MASK] = true
+				# A bare receiver carries its ramp on the material only.
+				var mat_ramp = (mat as ShaderMaterial).get_shader_parameter("shadow_ramp")
+				if mat_ramp != null and float(mat_ramp) > 0.0:
+					acc.ramp = true
 
+static func scan_finish(acc: Dictionary) -> Dictionary:
+	var tiers: Dictionary = acc.tiers
 	# Receiver tiers fluctuate at runtime (LitReceiverHelper re-tiers per frame): any
 	# receiver can sit on fast or full, and on the y-sort tier while the project
 	# setting is on. Authored material tiers are merged on top.
-	if receivers:
+	if acc.receivers:
 		tiers[0] = true
 		tiers[LitShaderLibrary.F_SELF_EXCL] = true
 		if bool(ProjectSettings.get_setting("lit/render/y_sorting", false)):
@@ -107,19 +154,19 @@ static func generate() -> Dictionary:
 	# Every subset of the observed activity axes is runtime-reachable (algorithms and
 	# masks toggle with scene state), so the powerset goes in; resolve() prunes.
 	var axes: Array[int] = []
-	if cone:
+	if acc.cone:
 		axes.append(LitShaderLibrary.F_CONE)
-	if stoch:
+	if acc.stoch:
 		axes.append(LitShaderLibrary.F_STOCH)
-	if lines:
+	if acc.lines:
 		axes.append(LitShaderLibrary.F_LINE)
-	if masks:
+	if acc.masks:
 		axes.append(LitShaderLibrary.F_MASKS)
 		axes.append(LitShaderLibrary.F_GX)
-	if ramp:
+	if acc.ramp:
 		axes.append(LitShaderLibrary.F_RAMP)
 	var node_opts: Array[int] = [0]
-	if rx:
+	if acc.rx:
 		node_opts.append(LitShaderLibrary.F_RX)
 	var seen := {}
 	for tier in tiers:
@@ -141,29 +188,7 @@ static func generate() -> Dictionary:
 		statics.append(WorldSdfScript.ENCODE_SHADER_PATH)
 	LitShaderPrecompilerScript._post_scan = null
 	statics.append_array(LitShaderPrecompilerScript.used_post_shaders())
-
-	var names := PackedStringArray()
-	for f in flags_list:
-		names.append(LitShaderLibrary.variant_name(f))
-	var cfg := ConfigFile.new()
-	cfg.set_value("lit", "variants", names)
-	cfg.set_value("lit", "shaders", PackedStringArray(statics))
-	var err := cfg.save(LitShaderPrecompilerScript.CONFIG_PATH)
-	if err != OK:
-		push_warning("Lit: could not write '%s' (error %d)" % [LitShaderPrecompilerScript.CONFIG_PATH, err])
-	elif Engine.is_editor_hint():
-		# The write bypasses the editor's filesystem tracking: rescan so the file
-		# shows up in the FileSystem dock, and refresh any open tab showing it
-		# (respects the user's auto-reload setting; untouched files are no-ops).
-		EditorInterface.get_resource_filesystem().scan()
-		EditorInterface.get_script_editor().reload_open_files()
-	return {
-		"scenes": scenes.size(),
-		"variants": names,
-		"shaders": statics,
-		"full": LitShaderLibrary.all_variant_flags().size(),
-		"saved": err == OK,
-	}
+	return {"scenes": acc.scene_paths.size(), "flags": flags_list, "shaders": statics}
 
 ## The Lit node script a script derives from (itself included), else "": a subclass
 ## scans as its base class.

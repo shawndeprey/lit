@@ -92,7 +92,7 @@ static var _warmed := {}  # precompiled work list; dev builds log builds outside
 
 static func _log_miss(flags: int) -> void:
 	if OS.is_debug_build() and not _warmed.is_empty() and not _warmed.has(flags):
-		push_warning("Lit: shader variant %d compiled outside the precompiled work list" % flags)
+		push_warning("Lit: shader variant '%s' compiled mid-game, outside the precompile list; regenerate res://lit_precompile.cfg with Project > Tools > Generate Lit Precompile Config" % variant_name(flags))
 
 
 static func resolve(tier: int, node_flags: int, activity: int) -> int:

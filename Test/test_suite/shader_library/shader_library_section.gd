@@ -269,6 +269,19 @@ func _precompiler() -> void:
 	ys_cfg.set_value("lit", "variants", PackedStringArray(["lit_receiver_cone_fast_ramp"]))
 	check(case_name, "one fast variant with y_sorting on yields itself then its y-sort counterpart only",
 			[Lib.F_CONE | Lib.F_RAMP, Lib.F_SELF_EXCL | Lib.F_YSORT | Lib.F_CONE], Pre.parse_config(ys_cfg))
+	var cone_full: int = Lib.resolve(Lib.F_SELF_EXCL, 0, Lib.F_CONE)
+	var found := {"flags": [0, Lib.F_SELF_EXCL, cone_full, Lib.F_SELF_EXCL | Lib.F_YSORT], "shaders": [Lib.ENTRY_PATHS[0]]}
+	var gap_cfg := ConfigFile.new()
+	gap_cfg.set_value("lit", "variants", PackedStringArray([Lib.variant_name(0), Lib.variant_name(Lib.F_SELF_EXCL), Lib.variant_name(cone_full)]))
+	gap_cfg.set_value("lit", "shaders", PackedStringArray([Lib.ENTRY_PATHS[0]]))
+	var gaps: Dictionary = Config.config_gaps(found, gap_cfg)
+	check_true(case_name, "config gaps: a config covering the scan has none (y-sort tier follows the setting)",
+			gaps.variants.is_empty() and gaps.shaders.is_empty())
+	gap_cfg.set_value("lit", "variants", PackedStringArray([Lib.variant_name(0), Lib.variant_name(Lib.F_SELF_EXCL)]))
+	gap_cfg.set_value("lit", "shaders", PackedStringArray([]))
+	gaps = Config.config_gaps(found, gap_cfg)
+	check(case_name, "config gaps name a scanned variant the config leaves out", PackedStringArray([Lib.variant_name(cone_full)]), gaps.variants)
+	check(case_name, "config gaps name a scanned shader the config leaves out", PackedStringArray([Lib.ENTRY_PATHS[0]]), gaps.shaders)
 	set_setting("lit/render/y_sorting", ysort_was)
 	var h1: String = Pre.bundle_hash(work)
 	check_true(case_name, "bundle hash is a 32-char md5", h1.length() == 32)
