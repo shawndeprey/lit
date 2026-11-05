@@ -28,6 +28,8 @@ func run() -> void:
 	await _activity_flags()
 	await _rx_registry()
 	await _freed_node_keys()
+	await _screen_tiles()
+	await _pack_rows()
 
 
 func _make_bare(pos: Vector2, size := Vector2(80, 80)) -> Sprite2D:
@@ -161,6 +163,34 @@ func _activity_flags() -> void:
 	await frames(3)
 	check(case_name, "raymarched with default masks publishes 0", 0, RegistryScript.activity_flags)
 	check(case_name, "materials back on the base variant", 0, F.flags_of(_mat(plain).shader))
+	l.shadow_algorithm = F.ShadowAlgorithm.CONE_TRACED
+	var ls := point_light(Vector2(200, 800), 500.0, 0.5)
+	ls.shadow_enabled = true
+	ls.shadow_algorithm = F.ShadowAlgorithm.STOCHASTIC
+	await frames(3)
+	fl = RegistryScript.activity_flags
+	check_true(case_name, "cone and stochastic lights together take the stochastic variant alone",
+			fl & F.F_STOCH != 0 and fl & F.F_CONE == 0 and fl & F.F_LINE == 0)
+	ls.queue_free()
+	var tube := LitLineLight2D.new()
+	tube.position = Vector2(700, 700)
+	tube.range = 300.0
+	add_child(tube)
+	await frames(3)
+	fl = RegistryScript.activity_flags
+	check_true(case_name, "cone light + a shadowless line publish stoch+line, never cone",
+			fl & (F.F_STOCH | F.F_LINE) == F.F_STOCH | F.F_LINE and fl & F.F_CONE == 0)
+	check(case_name, "bare receiver material on the _stoch_line variant", F.F_STOCH | F.F_LINE,
+			F.flags_of(_mat(plain).shader))
+	tube.queue_free()
+	await frames(3)
+	fl = RegistryScript.activity_flags
+	check_true(case_name, "no line light: no line variant anywhere",
+			fl & F.F_LINE == 0 and F.flags_of(_mat(plain).shader) & F.F_LINE == 0)
+	check_true(case_name, "the cone light alone is back on F_CONE", fl & F.F_CONE != 0 and fl & F.F_STOCH == 0)
+	l.shadow_algorithm = F.ShadowAlgorithm.RAYMARCHED
+	await frames(3)
+	check(case_name, "raymarched again: flags 0", 0, RegistryScript.activity_flags)
 	lit.shadow_ramp = 50.0
 	occluder(Vector2(0, 40), Vector2(20, 20), lit)
 	await frames(6)
@@ -248,3 +278,181 @@ func _freed_node_keys() -> void:
 			rx.erase(key)
 	await frames(2)
 	check(case_name, "the pending set is consumed by the next refresh", 0, pending.size())
+
+
+## The published light-culling grid against a per-tile oracle (the circle's span per tile
+## row, then each spot's two half-plane tests per tile), light rows in ascending order.
+func _screen_tiles() -> void:
+	var case_name := "screen_tiles"
+	var lights: Array[Node2D] = []
+	lights.append(point_light(Vector2(300, 300), 260.0))
+	lights.append(point_light(Vector2(1890, 40), 330.0))
+	var scaled := point_light(Vector2(900, 620), 150.0)
+	scaled.scale = Vector2(1.5, 1.5)
+	lights.append(scaled)
+	lights.append(spot_light(Vector2(700, 300), 0.3, 520.0))
+	lights.append(spot_light(Vector2(1200, 800), -2.4, 600.0))
+	var narrow := spot_light(Vector2(1000, 200), 1.9, 700.0)
+	narrow.spot_angle = 12.0
+	lights.append(narrow)
+	# A curved line whose negative range shrinks its bounds to no column must bin nothing.
+	var bent := LitLineLight2D.new()
+	bent.position = Vector2(300, 540)
+	bent.range = -100.0
+	add_child(bent)
+	var path := Path2D.new()
+	var curve := Curve2D.new()
+	curve.add_point(Vector2(0, -250), Vector2.ZERO, Vector2(20, 100))
+	curve.add_point(Vector2(0, 250), Vector2(20, -100), Vector2.ZERO)
+	path.curve = curve
+	bent.add_child(path)
+	lights.append(bent)
+	await frames(2)
+	var reg = _mgr._registry
+	var ctx = reg._ctx
+	var bent_row: int = ctx.visible.find(bent)
+	check_true(case_name, "the narrow negative-range curved line is visible as a curved light",
+			bent_row >= 0 and ctx.kinds[bent_row] == 4)
+	var tiles = reg._screen_tiles
+	var ts := float(tiles.TILE_SIZE)
+	var tiles_x := maxi(int(ceil(ctx.vp_size.x / ts)), 1)
+	var tiles_y := maxi(int(ceil(ctx.vp_size.y / ts)), 1)
+	var expected: Array = []
+	expected.resize(tiles_x * tiles_y)
+	for t in expected.size():
+		expected[t] = PackedInt32Array()
+	var tiled := {}
+	for i in ctx.visible.size():
+		var kind: int = ctx.kinds[i]
+		if kind != 0 and kind != 2:
+			continue
+		tiled[i] = true
+		var light: Node2D = ctx.visible[i]
+		var xf := light.global_transform
+		var c: Vector2 = ctx.canvas_xform * xf.origin
+		var r: float = float(light.get("range")) * maxf(xf.x.length(), xf.y.length()) * ctx.canvas_scale + 2.0
+		var cone := false
+		var n_plus := Vector2.ZERO
+		var n_minus := Vector2.ZERO
+		if kind == 2:
+			var half := deg_to_rad((light as LitSpotLight2D).spot_angle) + 0.002
+			if half < PI * 0.5 - 0.001:
+				var aim: Vector2 = ctx.canvas_xform.basis_xform(Vector2.from_angle(light.global_rotation))
+				var phi := aim.angle()
+				n_plus = Vector2.from_angle(phi + half - PI * 0.5)
+				n_minus = Vector2.from_angle(phi - half + PI * 0.5)
+				cone = true
+		for ty in tiles_y:
+			var y0 := float(ty) * ts
+			var y1 := y0 + ts
+			var dy := c.y - clampf(c.y, y0, y1)
+			var rem := r * r - dy * dy
+			if rem < 0.0:
+				continue
+			var hw := sqrt(rem)
+			for tx in tiles_x:
+				var x0 := float(tx) * ts
+				var x1 := x0 + ts
+				var in_span := tx >= clampi(int(floor((c.x - hw) / ts)), 0, tiles_x - 1) \
+						and tx <= clampi(int(floor((c.x + hw) / ts)), 0, tiles_x - 1)
+				if not in_span:
+					continue
+				if cone:
+					var p := Vector2(x1 if n_plus.x > 0.0 else x0, y1 if n_plus.y > 0.0 else y0) - c
+					var m := Vector2(x1 if n_minus.x > 0.0 else x0, y1 if n_minus.y > 0.0 else y0) - c
+					if p.x * n_plus.x + p.y * n_plus.y < 0.0 or m.x * n_minus.x + m.y * n_minus.y < 0.0:
+						continue
+				expected[ty * tiles_x + tx].append(i)
+	var header: PackedFloat32Array = tiles._header_buf
+	var index: PackedFloat32Array = tiles._index_buf
+	var bad := 0
+	var pairs := 0
+	for t in expected.size():
+		var got := PackedInt32Array()
+		var off := int(header[t * 2])
+		for k in int(header[t * 2 + 1]):
+			var row := int(index[off + k])
+			if tiled.has(row):
+				got.append(row)
+		pairs += got.size()
+		if got != expected[t]:
+			bad += 1
+	check_gt(case_name, "the six lights bin into tiles", float(pairs), 6.0)
+	check(case_name, "every tile lists exactly the point and spot rows the per-tile oracle accepts, in row order", 0, bad)
+	for l in lights:
+		l.queue_free()
+	await frames(2)
+
+
+## Reused light rows against full repacks: each probe changes one packed input, packs a
+## frame (the reused row unless the change moved the light's version), then forces a full
+## repack and compares; a setter missing its version bump leaves the stale row.
+func _pack_rows() -> void:
+	var case_name := "pack_rows"
+	var reg = _mgr._registry
+	var pt := point_light(Vector2(400, 300), 220.0)
+	var sp := spot_light(Vector2(900, 400), 0.4, 400.0)
+	var dl := directional_light(0.7)
+	await frames(2)
+	check_true(case_name, "an unchanged light reuses its packed row",
+			pt._pack_seen == pt._pack_version + reg._light_packer._pack_epoch)
+	var probes := [
+		[pt, "color", func(): pt.color = Color(0.2, 0.6, 0.9)],
+		[pt, "color.r", func(): pt.color.r = 0.7],
+		[pt, "energy", func(): pt.energy = 2.5],
+		[pt, "height", func(): pt.height = 40.0],
+		[pt, "shadow_enabled", func(): pt.shadow_enabled = true],
+		[pt, "shadow_color", func(): pt.shadow_color = Color(0.3, 0.1, 0.2)],
+		[pt, "shadow_hardness", func(): pt.shadow_hardness = 0.8],
+		[pt, "shadow_length", func(): pt.shadow_length = 0.5],
+		[pt, "shadow_samples", func(): pt.shadow_samples = 5],
+		[pt, "shadow_jitter", func(): pt.shadow_jitter = 0.9],
+		[pt, "shadow_algorithm", func(): pt.shadow_algorithm = LitLight2D.ShadowAlgorithm.STOCHASTIC],
+		[pt, "blend_mode", func(): pt.blend_mode = LitLight2D.BlendMode.SUBTRACT],
+		[pt, "range", func(): pt.range = 260.0],
+		[pt, "falloff", func(): pt.falloff = 2.0],
+		[pt, "source_radius", func(): pt.source_radius = 12.0],
+		[pt, "range_z_min", func(): pt.range_z_min = -50],
+		[pt, "light_mask", func(): pt.light_mask = 3],
+		[pt, "position", func(): pt.position = Vector2(420, 320)],
+		[pt, "scale", func(): pt.scale = Vector2(1.5, 1.5)],
+		[pt, "energy while scaled", func(): pt.energy = 1.5],
+		[pt, "position while scaled", func(): pt.position = Vector2(440, 300)],
+		[pt, "scale back to 1", func(): pt.scale = Vector2.ONE],
+		[sp, "spot_angle", func(): sp.spot_angle = 20.0],
+		[sp, "spot_softness", func(): sp.spot_softness = 0.2],
+		[sp, "spot rotation", func(): sp.rotation = 1.1],
+		[dl, "shadow_reach", func(): dl.shadow_reach = 2000.0],
+		[dl, "source_angle", func(): dl.source_angle = 12.0],
+		[dl, "shadow_length (directional)", func(): dl.shadow_length = 0.4],
+		[dl, "directional rotation", func(): dl.rotation = 1.3],
+		[pt, "texture", func(): pt.texture = tex_sized(Vector2(32, 32))],
+	]
+	var stale := []
+	var unmoved := []
+	for probe in probes:
+		var l: LitLight2D = probe[0]
+		var before := _light_row(reg, l)
+		probe[2].call()
+		await frames(1)
+		var reused := _light_row(reg, l)
+		l._pack_seen = -1
+		await frames(1)
+		var fresh := _light_row(reg, l)
+		if reused != fresh or fresh.is_empty():
+			stale.append(probe[1])
+		if fresh == before:
+			unmoved.append(probe[1])
+	check(case_name, "every probed input changes its light's packed row", [], unmoved)
+	check(case_name, "a reused row matches a full repack after every packed input change", [], stale)
+	for l in [pt, sp, dl]:
+		l.queue_free()
+	await frames(2)
+
+
+func _light_row(reg, l: Node2D) -> PackedFloat32Array:
+	var row: int = reg._ctx.visible.find(l)
+	if row < 0:
+		return PackedFloat32Array()
+	var n: int = reg._ctx.texels_per_light * 4
+	return reg._light_packer._pack_buf.slice(row * n, row * n + n)

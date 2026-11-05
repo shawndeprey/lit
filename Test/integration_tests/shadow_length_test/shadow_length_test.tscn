@@ -1,0 +1,97 @@
+[gd_scene format=4 uid="uid://d2u8ch4h00615"]
+
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="1_d671p"]
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="2_4uy4s"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="3_kudt1"]
+[ext_resource type="Script" uid="uid://blronx1n8oliq" path="res://addons/lit/nodes/lit_spot_light_2d.gd" id="4_wo1t7"]
+[ext_resource type="Script" uid="uid://cmsiurxidcqsf" path="res://addons/lit/nodes/lit_line_light_2d.gd" id="5_wo1t7"]
+[ext_resource type="Script" uid="uid://ucsc5rijsb2g" path="res://Test/integration_tests/line_light_test/line_light_camera.gd" id="6_cam"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_kudt1"]
+shader = ExtResource("2_4uy4s")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_ywxc3"]
+polygon = PackedVector2Array(-10, -10, 10, -10, 10, 10, -10, 10)
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_51go7"]
+polygon = PackedVector2Array(-10, -10, 10, -10, 10, 10, -10, 10)
+
+[sub_resource type="OccluderPolygon2D" id="OccluderPolygon2D_t13uy"]
+polygon = PackedVector2Array(-10, -10, 10, -10, 10, 10, -10, 10)
+
+[node name="ShadowLengthTest" type="Node2D" unique_id=1006774492]
+
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=961688297]
+script = ExtResource("1_d671p")
+lit_version = "1.1.6"
+color = Color(0.18359044, 0.18359044, 0.18359044, 1)
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="Floor" type="Polygon2D" parent="." unique_id=1415009018]
+material = SubResource("ShaderMaterial_kudt1")
+polygon = PackedVector2Array(0, 0, 1920, 0, 1920, 1080, 0, 1080)
+
+[node name="Lights" type="Node2D" parent="." unique_id=536774218]
+
+[node name="LitPointLight2D" type="Node2D" parent="Lights" unique_id=1856591862]
+position = Vector2(667, 495)
+script = ExtResource("3_kudt1")
+source_radius = 12.0
+lit_version = "1.1.7"
+shadow_enabled = true
+shadow_length = 0.097
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="LightOccluder2D" type="LightOccluder2D" parent="Lights/LitPointLight2D" unique_id=1444134044]
+position = Vector2(0, 80)
+occluder = SubResource("OccluderPolygon2D_ywxc3")
+
+[node name="LitSpotLight2D" type="Node2D" parent="Lights" unique_id=79222217]
+position = Vector2(963, 495)
+rotation = 1.5707964
+script = ExtResource("4_wo1t7")
+source_radius = 12.0
+lit_version = "1.1.7"
+shadow_enabled = true
+shadow_length = 0.12
+metadata/_custom_type_script = "uid://blronx1n8oliq"
+
+[node name="LightOccluder2D" type="LightOccluder2D" parent="Lights/LitSpotLight2D" unique_id=1460272119]
+position = Vector2(80, 0)
+rotation = -1.5707964
+occluder = SubResource("OccluderPolygon2D_51go7")
+
+[node name="LitLineLight2D" type="Node2D" parent="Lights" unique_id=665349017]
+position = Vector2(1283, 495)
+rotation = 1.5707964
+script = ExtResource("5_wo1t7")
+source_radius = 12.0
+lit_version = "1.1.7"
+shadow_enabled = true
+shadow_length = 0.12
+metadata/_custom_type_script = "uid://cmsiurxidcqsf"
+
+[node name="LightOccluder2D" type="LightOccluder2D" parent="Lights/LitLineLight2D" unique_id=748538918]
+position = Vector2(80, 0)
+rotation = -1.5707964
+occluder = SubResource("OccluderPolygon2D_t13uy")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1729384651]
+position = Vector2(960, 540)
+script = ExtResource("6_cam")

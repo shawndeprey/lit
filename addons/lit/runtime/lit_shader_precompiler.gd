@@ -30,8 +30,8 @@ const BUILD_BUDGET_MS := 8.0
 const SILENT_PER_FRAME := 4
 const QUAD_POOL := 16
 const SETTING_MAX_WORKERS := "lit/startup/precompile_max_workers"
-const DEFAULT_MAX_WORKERS := 4
-const THREADS_PER_WORKER := 6
+const DEFAULT_MAX_WORKERS := 8
+const THREADS_PER_WORKER := 3
 const HEARTBEAT_STALE_SEC := 5.0
 const WORKER_BOOT_SEC := 15.0
 const FOLLOW_POLL_MSEC := 250
@@ -71,25 +71,58 @@ func _init() -> void:
 
 
 ## Work items: int = receiver variant flags (compiled from generated source); String =
-## a static shader path warmed verbatim. The authored entry files and the world-SDF
-## encoder hash to their own cache entries (their source text differs from the
-## generated variants), so skipping them here would leave unwarmed PSOs for the first
-## frames of async/API runs.
+## a static shader path warmed verbatim. Twins are folded: a fast ramp variant is the
+## same program as its full-tier sibling (lit_header promotes LIT_OCC_RAMP to
+## LIT_SELF_EXCLUSION), and an entry file is its tier's base variant, so one of each
+## pair bakes and the other is a cache hit in every process that loads it.
 static func work_list() -> Array:
 	var configured: Variant = config_work_list()
 	if configured != null:
-		return configured
+		return dedupe(configured)
 	var out: Array = []
 	out.append_array(static_shaders())
 	out.append_array(used_post_shaders())
-	out.append_array(LitShaderLibrary.all_variant_flags())
+	out.append_array(default_variant_flags())
+	return dedupe(out)
+
+## The list without its twins: a ramp variant whose full-tier sibling is listed, and
+## an entry file whose base variant is listed, are dropped.
+static func dedupe(work: Array) -> Array:
+	var flags := {}
+	for item in work:
+		if item is int:
+			flags[item] = true
+	var out: Array = []
+	for item in work:
+		if item is int:
+			if item & LitShaderLibrary.F_RAMP != 0 \
+					and flags.has((item & ~LitShaderLibrary.F_RAMP) | LitShaderLibrary.F_SELF_EXCL):
+				continue
+		else:
+			var tier: Variant = LitShaderLibrary.ENTRY_PATHS.find_key(item)
+			if tier != null and flags.has(tier):
+				continue
+		out.append(item)
+	return out
+
+## The variants a build without a config covers (the editor warm too): every matrix
+## member, less the y-sort tier while lit/render/y_sorting is off, since the setting is
+## read at process start and that tier is never requested then.
+static func default_variant_flags() -> Array[int]:
+	if bool(ProjectSettings.get_setting("lit/render/y_sorting", false)):
+		return LitShaderLibrary.all_variant_flags()
+	var out: Array[int] = []
+	for fl in LitShaderLibrary.all_variant_flags():
+		if fl & LitShaderLibrary.F_YSORT == 0:
+			out.append(fl)
 	return out
 
 
 ## A generated res://lit_precompile.cfg (Project > Tools > Generate Lit Precompile
-## Config) replaces the full work list verbatim: exactly what it names, nothing more.
-## Returns null when the file is absent or unreadable, which means the full build
-## above; delete the file to get back there.
+## Config) replaces the full work list: exactly what it names, nothing more, with the
+## y-sort tier following lit/render/y_sorting at build time. Returns null when the file
+## is absent, unreadable or stale throughout, which means the full build above; delete
+## the file to get back there.
 static func config_work_list() -> Variant:
 	if not FileAccess.file_exists(CONFIG_PATH):
 		return null
@@ -97,18 +130,49 @@ static func config_work_list() -> Variant:
 	if cfg.load(CONFIG_PATH) != OK:
 		push_warning("Lit: precompile config '%s' failed to parse; running the full precompile" % CONFIG_PATH)
 		return null
+	return parse_config(cfg)
+
+## The work list a loaded config describes. A name whose flags are no longer a matrix
+## member (an older Lit wrote it) is skipped; null when every named variant was. The
+## y-sort tier follows lit/render/y_sorting now, not at generate time: on, every kept
+## variant brings its y-sort counterpart; off, listed y-sort variants are left out.
+static func parse_config(cfg: ConfigFile) -> Variant:
+	var members := {}
+	for fl in LitShaderLibrary.all_variant_flags():
+		members[fl] = true
 	var out: Array = []
 	for path in cfg.get_value("lit", "shaders", PackedStringArray()):
 		if ResourceLoader.exists(path):
 			out.append(String(path))
 		else:
 			push_warning("Lit: precompile config names a missing shader '%s'; regenerate the config" % path)
+	var named := 0
+	var kept := 0
+	var ysort := bool(ProjectSettings.get_setting("lit/render/y_sorting", false))
+	var listed: Array[int] = []
+	var seen := {}
 	for name in cfg.get_value("lit", "variants", PackedStringArray()):
+		named += 1
 		var flags := LitShaderLibrary.flags_from_variant_name(String(name))
-		if flags >= 0:
-			out.append(flags)
+		if flags >= 0 and members.has(flags):
+			kept += 1
+			if (ysort or flags & LitShaderLibrary.F_YSORT == 0) and not seen.has(flags):
+				seen[flags] = true
+				listed.append(flags)
+		elif flags >= 0:
+			push_warning("Lit: precompile config names the stale variant '%s' (written by an older Lit); regenerate it with Project > Tools > Generate Lit Precompile Config" % name)
 		else:
 			push_warning("Lit: precompile config names an unknown variant '%s'; regenerate the config" % name)
+	if named > 0 and kept == 0:
+		push_warning("Lit: precompile config names no current variant; running the full precompile")
+		return null
+	out.append_array(listed)
+	if ysort:
+		for flags in listed:
+			var ys: int = LitShaderLibrary.resolve(LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_YSORT, 0, flags)
+			if not seen.has(ys):
+				seen[ys] = true
+				out.append(ys)
 	return out
 
 
@@ -244,10 +308,10 @@ static func item_label(item: Variant) -> String:
 
 
 ## How many worker processes bake a list of this size: one per THREADS_PER_WORKER
-## hardware threads (a shader's backend compile runs six engine variants in parallel),
-## up to the lit/startup/precompile_max_workers setting. Each is a whole engine
-## instance, and measured scaling is well short of linear (about 1.5x for two, 2x for
-## four), so the default cap stays low.
+## hardware threads, up to the lit/startup/precompile_max_workers setting. The GPU
+## driver builds one pipeline at a time per process and that is nearly all of a cold
+## shader's cost, so the farm scales with processes: on a 24-thread CPU the same list
+## took 95 s with 4 workers, 75 s with 6 and 55 s with 8.
 static func worker_count(work_size: int) -> int:
 	var cap := clampi(int(ProjectSettings.get_setting(SETTING_MAX_WORKERS, DEFAULT_MAX_WORKERS)), 1, 16)
 	return clampi(mini(OS.get_processor_count() / THREADS_PER_WORKER, work_size), 1, cap)

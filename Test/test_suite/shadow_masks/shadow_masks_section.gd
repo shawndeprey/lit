@@ -71,6 +71,20 @@ func _self_exclusion() -> void:
 	await frames(2)
 	img = await capture()
 	check_gt(case_name, "self_shadow = false again: exempt again", lum(img, on_wall), AMBIENT, 0.25)
+	var in_own := Vector2(320, 300)   # inside its own occluder, 60 px past its lit edge
+	l.shadow_length = 0.1
+	await frames(2)
+	img = await capture()
+	check_gt(case_name, "shadow_length 0.1 (cap short of the footprint): own footprint stays exempt",
+			lum(img, in_own), AMBIENT, 0.25)
+	wall.self_shadow = true
+	await frames(2)
+	img = await capture()
+	check_approx(case_name, "self_shadow = true, shadow_length 0.1: its own footprint is dark", AMBIENT,
+			lum(img, in_own), 0.06)
+	wall.self_shadow = false
+	l.shadow_length = 1.0
+	await frames(2)
 	# A sibling occluder (same parent) is owned too.
 	var holder := group("Holder")
 	var wall2 := box_receiver(Vector2(330, 450), Vector2(160, 60), Color.WHITE, holder)

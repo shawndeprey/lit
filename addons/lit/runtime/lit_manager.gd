@@ -65,6 +65,9 @@ func _ready() -> void:
 	if bool(ProjectSettings.get_setting(SETTING_PRECOMPILE, true)):
 		precompiler = LitShaderPrecompilerScript.new()
 		add_child(precompiler)
+		if OS.is_debug_build() and not FileAccess.file_exists(LitShaderPrecompilerScript.CONFIG_PATH):
+			push_warning("Lit: no res://lit_precompile.cfg, so players compile all %d shader variants on first launch; generate one with Project > Tools > Generate Lit Precompile Config" \
+					% LitShaderPrecompilerScript.default_variant_flags().size())
 		var fresh: bool = LitShaderPrecompilerScript.marker_fresh(LitShaderPrecompilerScript.work_list())
 		if not fresh:
 			var overlay: Node = LitPrecompileOverlayScript.new()

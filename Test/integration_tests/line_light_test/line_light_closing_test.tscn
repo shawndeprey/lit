@@ -1,0 +1,718 @@
+[gd_scene format=4 uid="uid://vesntvduewx1"]
+
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="1_rx"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="2_mod"]
+[ext_resource type="Script" uid="uid://cmsiurxidcqsf" path="res://addons/lit/nodes/lit_line_light_2d.gd" id="3_line"]
+[ext_resource type="Script" uid="uid://ucsc5rijsb2g" path="res://Test/integration_tests/line_light_test/line_light_camera.gd" id="4_cam"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_floor"]
+shader = ExtResource("1_rx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.0
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="Curve2D" id="Curve2D_c01"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 135.5, -135.5, 0, 0, 0, 0, 135.5, 135.5, 0, 0, 0, 0, -135.5, 135.5, 0, 0, 0, 0, -135.5, -135.5)
+}
+point_count = 4
+
+[sub_resource type="Curve2D" id="Curve2D_c02"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, -277, -13, 0, 0, 0, 0, 277, 219, 0, 0, 0, 0, 222, -219)
+}
+point_count = 3
+
+[sub_resource type="Curve2D" id="Curve2D_c03"]
+_data = {
+"points": PackedVector2Array(281.4015, 36.1997, -281.4015, -36.1997, 87, -180.5, -183.0476, -363.3631, 183.0476, 363.3631, -87, 180.5)
+}
+point_count = 2
+
+[sub_resource type="Curve2D" id="Curve2D_c04"]
+_data = {
+"points": PackedVector2Array(152.4079, 25.6579, -152.4079, -25.6579, -57.5, 195, -2.5658, 41.0526, 2.5658, -41.0526, -179.5, 26, -57.9869, 41.0526, 57.9869, -41.0526, -81.5, -140, 0, 0, 0, 0, 45.5, -195, -29.25, -85.6974, 29.25, 85.6974, 179.5, -115)
+}
+point_count = 5
+
+[sub_resource type="Curve2D" id="Curve2D_c05"]
+_data = {
+"points": PackedVector2Array(0, -88.37, 0, 88.37, 160, 0, 88.37, 0, -88.37, 0, 0, 160, 0, 88.37, 0, -88.37, -160, 0, -88.37, 0, 88.37, 0, 0, -160)
+}
+point_count = 4
+
+[sub_resource type="Curve2D" id="Curve2D_c06"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 162.5, 0, 174.3802, 106.6116, -174.3802, -106.6116, -162.5, 0)
+}
+point_count = 2
+
+[sub_resource type="Curve2D" id="Curve2D_c07"]
+_data = {
+"points": PackedVector2Array(-2.01, -7.59, 2.01, 7.59, 17.5, 12.5, 5.12, -7.99, -5.12, 7.99, 13.13, 38.13, 10.94, -2.05, -10.94, 2.05, -12.5, 55, 10.36, 7.45, -10.36, -7.45, -46.97, 46.97, 2.06, 14.25, -2.06, -14.25, -67.5, 12.5, -9.78, 12.7, 9.78, -12.7, -55.81, -30.81, -17.55, 2.07, 17.55, -2.07, -12.5, -55, -15.04, -12.11, 15.04, 12.11, 39.65, -39.65, -2.07, -20.84, 2.07, 20.84, 67.5, 12.5, 14.43, -17.37, -14.43, 17.37, 48.49, 73.49, 24.13, -2.08, -24.13, 2.08, -12.5, 105, 19.69, 16.75, -19.69, -16.75, -82.33, 82.33, 2.08, 27.41, -2.08, -27.41, -117.5, 12.5, -19.07, 22.01, 19.07, -22.01, -91.17, -66.17, -30.69, 2.08, 30.69, -2.08, -12.5, -105, -24.33, -21.39, 24.33, 21.39, 75, -75, -2.08, -33.97, 2.08, 33.97, 117.5, 12.5, 23.71, -26.65, -23.71, 26.65, 83.84, 108.84, 37.25, -2.08, -37.25, 2.08, -12.5, 155, 28.97, 26.03, -28.97, -26.03, -117.68, 117.68, 2.08, 40.53, -2.08, -40.53, -167.5, 12.5, -28.34, 31.29, 28.34, -31.29, -126.52, -101.52, -43.8, 2.08, 43.8, -2.08, -12.5, -155, -33.6, -30.66, 33.6, 30.66, 110.36, -110.36, -2.08, -47.08, 2.08, 47.08, 167.5, 12.5)
+}
+point_count = 25
+
+[sub_resource type="Curve2D" id="Curve2D_c08"]
+_data = {
+"points": PackedVector2Array(0, 0, 38.66, 0, -42, 70, 0, 38.66, 0, -38.66, 28, 0, 38.66, 0, -38.66, 0, -42, -70, 0, -38.66, 0, 38.66, -112, 0, -38.66, 0, 0, 0, -42, 70, 0, 0, 38.66, 0, 42, 70, 0, 38.66, 0, -38.66, 112, 0, 38.66, 0, -38.66, 0, 42, -70, 0, -38.66, 0, 38.66, -28, 0, -38.66, 0, 0, 0, 42, 70)
+}
+point_count = 10
+
+[sub_resource type="Curve2D" id="Curve2D_c09"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 0, -117.5861, 0, 0, 0, 0, 123.6373, -27.7583, 0, 0, 0, 0, 76.4121, 117.5861, 0, 0, 0, 0, -76.4121, 117.5861, 0, 0, 0, 0, -123.6373, -27.7583)
+}
+point_count = 5
+
+[sub_resource type="Curve2D" id="Curve2D_c10"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, -100, 0, 0, 0, 0, 0, -100, 100, 0, 0, 0, 0, 100, 100, 0, 0, 0, 0, 100, -100, 0, 0, 0, 0, 0, -100)
+}
+point_count = 5
+
+[sub_resource type="Curve2D" id="Curve2D_c11"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, -90, -100, 0, 0, 0, 120, -90, 100, 0, 120, 0, 0, 90, 100, 0, 0, 0, 0, 90, -100)
+}
+point_count = 4
+
+[sub_resource type="Curve2D" id="Curve2D_c12"]
+_data = {
+"points": PackedVector2Array(-8.3333, -56.6667, 8.3333, 56.6667, -120, -125, -20, -41.6667, 20, 41.6667, -95, 45, -31.6667, 0, 31.6667, 0, 0, 125, -20, 41.6667, 20, -41.6667, 95, 45, -8.3333, 56.6667, 8.3333, -56.6667, 120, -125)
+}
+point_count = 5
+
+[sub_resource type="Curve2D" id="Curve2D_c13"]
+_data = {
+"points": PackedVector2Array(40, 0, -40, 0, 102.5, -142.5, 34.1667, -15, -34.1667, 15, -17.5, -142.5, 13.3333, -33.3333, -13.3333, 33.3333, -102.5, -52.5, -12.5, -30.8333, 12.5, 30.8333, -97.5, 57.5, -28.3333, -14.1667, 28.3333, 14.1667, -27.5, 132.5, -33.3333, -3.3333, 33.3333, 3.3333, 72.5, 142.5)
+}
+point_count = 6
+
+[sub_resource type="Curve2D" id="Curve2D_c14"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, -150, -160, 0, 0, -150, 0, 0, 160, 0)
+}
+point_count = 2
+
+[sub_resource type="Curve2D" id="Curve2D_c15"]
+_data = {
+"points": PackedVector2Array(-45.6058, 26.3305, 45.6058, -26.3305, -150, 20.0962, -52.661, 0, 52.661, 0, 0, -20.0962, -45.6058, -26.3305, 45.6058, 26.3305, 150, 20.0962)
+}
+point_count = 3
+
+[sub_resource type="Curve2D" id="Curve2D_c16"]
+_data = {
+"points": PackedVector2Array(0, -77.3199, 0, 77.3199, 140, 0, 77.3199, 0, -77.3199, 0, 0, 140, 0, 77.3199, 0, -77.3199, -140, 0, -77.3199, 0, 77.3199, 0, 0, -140)
+}
+point_count = 4
+
+[sub_resource type="Curve2D" id="Curve2D_c17"]
+_data = {
+"points": PackedVector2Array(-30, 36.6667, 30, -36.6667, -210, 40, -35, 6.6667, 35, -6.6667, -120, -70, -40, -23.3333, 40, 23.3333, 0, 0, -35, 6.6667, 35, -6.6667, 120, 70, -30, 36.6667, 30, -36.6667, 210, -40)
+}
+point_count = 5
+
+[sub_resource type="Curve2D" id="Curve2D_c18"]
+_data = {
+"points": PackedVector2Array(19.7425, -9.1071, -19.7425, 9.1071, 120.2698, 85.0396, 20.7073, -9.3801, -20.7073, 9.3801, 61.0424, 112.3609, 20.1178, 2.5214, -20.1178, -2.5214, -3.974, 141.3199, 19.3826, 14.7566, -19.3826, -14.7566, -59.6644, 97.2328, 6.4689, 19.4612, -6.4689, -19.4612, -120.2698, 52.7802, -5.8733, 23.3346, 5.8733, -23.3346, -98.4777, -19.5342, -13.2479, 14.6655, 13.2479, -14.6655, -85.0301, -87.2275, -21.8155, 9.0154, 21.8155, -9.0154, -18.9903, -107.5271, -20.3252, -1.8251, 20.3252, 1.8251, 45.863, -141.3199, -19.0326, -14.9145, 19.0326, 14.9145, 102.9609, -96.5765)
+}
+point_count = 10
+
+[sub_resource type="Curve2D" id="Curve2D_c19"]
+_data = {
+"points": PackedVector2Array(11.8446, -25.2239, -11.8446, 25.2239, 127.2384, 43.3879, 19.5684, -14.2847, -19.5684, 14.2847, 91.7047, 119.0595, 28.0278, -2.414, -28.0278, 2.414, 9.8278, 129.096, 20.332, 12.3999, -20.332, -12.3999, -76.4621, 133.5436, 8.5507, 26.414, -8.5507, -26.414, -112.1641, 54.6967, -7.232, 22.3016, 7.232, -22.3016, -127.7661, -24.9404, -20.6383, 18.1005, 20.6383, -18.1005, -68.772, -79.1127, -23.4994, 2.7168, 23.4994, -2.7168, -3.9365, -133.5436, -21.9504, -16.0233, 21.9504, 16.0233, 72.2244, -95.4135, -18.5139, -19.3365, 18.5139, 19.3365, 127.7661, -37.4039)
+}
+point_count = 10
+
+[sub_resource type="Curve2D" id="Curve2D_c20"]
+_data = {
+"points": PackedVector2Array(-8.3333, 25, 8.3333, -25, -207.5, 94, -13.3333, 24.1667, 13.3333, -24.1667, -182.5, 19, -20.8333, 15.8333, 20.8333, -15.8333, -127.5, -51, -22.5, 7.1667, 22.5, -7.1667, -57.5, -76, -23.3333, -2, 23.3333, 2, 7.5, -94, -22.5, -8, 22.5, 8, 82.5, -64, -18.3333, -13.8333, 18.3333, 13.8333, 142.5, -46, -10.8333, -21.6667, 10.8333, 21.6667, 192.5, 19, -5, -21.6667, 5, 21.6667, 207.5, 84)
+}
+point_count = 9
+
+[sub_resource type="Curve2D" id="Curve2D_c21"]
+_data = {
+"points": PackedVector2Array(26.1382, -0.6137, -26.1382, 0.6137, 156.4461, 48.9974, 22.3344, 6.6933, -22.3344, -6.6933, 78.0314, 50.8386, 17.623, 14.6528, -17.623, -14.6528, 22.4394, 8.8374, 20.2455, 11.4137, -20.2455, -11.4137, -27.7068, -37.0781, 21.4566, -6.1797, -21.4566, 6.1797, -99.0338, -59.6445, 0, -19.8815, 0, 19.8815, -156.4461, 0, -21.4566, -6.1797, 21.4566, 6.1797, -99.0338, 59.6445, -20.2455, 11.4137, 20.2455, -11.4137, -27.7068, 37.0781, -17.623, 14.6528, 17.623, -14.6528, 22.4394, -8.8374, -22.3344, 6.6933, 22.3344, -6.6933, 78.0314, -50.8386, -26.1382, -0.6137, 26.1382, 0.6137, 156.4461, -48.9974)
+}
+point_count = 11
+
+[sub_resource type="Curve2D" id="Curve2D_c22"]
+_data = {
+"points": PackedVector2Array(-36.6667, 40, 36.6667, -40, -170, -15, -48.3333, 15, 48.3333, -15, -60, -135, -28.3333, -21.6667, 28.3333, 21.6667, 120, -105, 26.6667, -21.6667, -26.6667, 21.6667, 110, -5, 33.3333, -18.3333, -33.3333, 18.3333, -40, 25, -16.6667, -18.3333, 16.6667, 18.3333, -90, 105, -43.3333, 1.6667, 43.3333, -1.6667, 60, 135, -36.6667, 13.3333, 36.6667, -13.3333, 170, 95)
+}
+point_count = 8
+
+[sub_resource type="Curve2D" id="Curve2D_c23"]
+_data = {
+"points": PackedVector2Array(-22.4586, -6.164, 22.4586, 6.164, 8.1488, -101.0242, -18.664, -12.5299, 18.664, 12.5299, 75.5247, -82.5321, -7.8139, -21.8422, 7.8139, 21.8422, 120.1328, -25.8448, 6.8932, -22.901, -6.8932, 22.901, 122.408, 48.5213, 19.721, -14.762, -19.721, 14.762, 78.7735, 111.561, 25.3516, -0.1718, -25.3516, 0.1718, 4.0819, 137.0931, 21.0816, 15.337, -21.0816, -15.337, -73.3358, 112.5919, 8.0745, 25.5426, -8.0745, -25.5426, -122.408, 45.0709, -8.8988, 26.0275, 8.8988, -26.0275, -121.7827, -40.6638, -23.2024, 16.0716, 23.2024, -16.0716, -69.0154, -111.094, -28.9304, -0.8605, 28.9304, 0.8605, 17.4318, -137.0931, -29.0451, -10.3874, 29.0451, 10.3874, 104.5669, -105.9308)
+}
+point_count = 12
+
+[sub_resource type="Curve2D" id="Curve2D_c24"]
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, -60, -90, 0, 0, 18.7782, 0, 96, -90, 0, -18.7782, 0, 0, 130, -56, 0, 0, 0, 18.7782, 130, 56, 18.7782, 0, 0, 0, 96, 90, 0, 0, -18.7782, 0, -96, 90, 0, 18.7782, 0, 0, -130, 56, 0, 0, 0, 0, -130, -40)
+}
+point_count = 8
+
+[node name="LineLightClosingTest" type="Node2D" unique_id=7300001]
+
+[node name="Floor" type="Polygon2D" parent="." unique_id=7300002]
+material = SubResource("ShaderMaterial_floor")
+color = Color(0.55, 0.55, 0.58, 1)
+polygon = PackedVector2Array(0, 0, 4560, 0, 4560, 2560, 0, 2560)
+
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=7300003]
+script = ExtResource("2_mod")
+lit_version = "1.1.7"
+color = Color(0.12, 0.12, 0.14, 1)
+
+[node name="Lights" type="Node2D" parent="." unique_id=7300004]
+
+[node name="01 Square" type="Node2D" parent="Lights" unique_id=7300006]
+position = Vector2(380, 350)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/01 Square" unique_id=7300007]
+curve = SubResource("Curve2D_c01")
+
+[node name="02 ThreePointPath" type="Node2D" parent="Lights" unique_id=7300009]
+position = Vector2(1140, 350)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/02 ThreePointPath" unique_id=7300010]
+curve = SubResource("Curve2D_c02")
+
+[node name="03 TwoPointCurve" type="Node2D" parent="Lights" unique_id=7300012]
+position = Vector2(1900, 350)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/03 TwoPointCurve" unique_id=7300013]
+curve = SubResource("Curve2D_c03")
+
+[node name="04 Curved" type="Node2D" parent="Lights" unique_id=7300015]
+position = Vector2(2660, 350)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/04 Curved" unique_id=7300016]
+curve = SubResource("Curve2D_c04")
+
+[node name="05 Circle" type="Node2D" parent="Lights" unique_id=7300018]
+position = Vector2(3420, 350)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/05 Circle" unique_id=7300019]
+curve = SubResource("Curve2D_c05")
+
+[node name="06 Arc" type="Node2D" parent="Lights" unique_id=7300021]
+position = Vector2(4180, 350)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/06 Arc" unique_id=7300022]
+curve = SubResource("Curve2D_c06")
+
+[node name="07 Spiral" type="Node2D" parent="Lights" unique_id=7300024]
+position = Vector2(380, 990)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/07 Spiral" unique_id=7300025]
+curve = SubResource("Curve2D_c07")
+
+[node name="08 Loops" type="Node2D" parent="Lights" unique_id=7300027]
+position = Vector2(1140, 990)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/08 Loops" unique_id=7300028]
+curve = SubResource("Curve2D_c08")
+
+[node name="09 Pentagon" type="Node2D" parent="Lights" unique_id=7300030]
+position = Vector2(1900, 990)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/09 Pentagon" unique_id=7300031]
+curve = SubResource("Curve2D_c09")
+
+[node name="10 Square missing a corner" type="Node2D" parent="Lights" unique_id=7300033]
+position = Vector2(2660, 990)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/10 Square missing a corner" unique_id=7300034]
+curve = SubResource("Curve2D_c10")
+
+[node name="11 U with straight arms" type="Node2D" parent="Lights" unique_id=7300036]
+position = Vector2(3420, 990)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/11 U with straight arms" unique_id=7300037]
+curve = SubResource("Curve2D_c11")
+
+[node name="12 Smooth U" type="Node2D" parent="Lights" unique_id=7300039]
+position = Vector2(4180, 990)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/12 Smooth U" unique_id=7300040]
+curve = SubResource("Curve2D_c12")
+
+[node name="13 Egg C" type="Node2D" parent="Lights" unique_id=7300042]
+position = Vector2(380, 1630)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/13 Egg C" unique_id=7300043]
+curve = SubResource("Curve2D_c13")
+
+[node name="14 Half ellipse" type="Node2D" parent="Lights" unique_id=7300045]
+position = Vector2(1140, 1630)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/14 Half ellipse" unique_id=7300046]
+curve = SubResource("Curve2D_c14")
+
+[node name="15 Shallow bow" type="Node2D" parent="Lights" unique_id=7300048]
+position = Vector2(1900, 1630)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/15 Shallow bow" unique_id=7300049]
+curve = SubResource("Curve2D_c15")
+
+[node name="16 Three-quarter circle" type="Node2D" parent="Lights" unique_id=7300051]
+position = Vector2(2660, 1630)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/16 Three-quarter circle" unique_id=7300052]
+curve = SubResource("Curve2D_c16")
+
+[node name="17 S-curve" type="Node2D" parent="Lights" unique_id=7300054]
+position = Vector2(3420, 1630)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/17 S-curve" unique_id=7300055]
+curve = SubResource("Curve2D_c17")
+
+[node name="18 Lumpy blob wide gap" type="Node2D" parent="Lights" unique_id=7300057]
+position = Vector2(4180, 1630)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/18 Lumpy blob wide gap" unique_id=7300058]
+curve = SubResource("Curve2D_c18")
+
+[node name="19 Lumpy blob nearly closed" type="Node2D" parent="Lights" unique_id=7300060]
+position = Vector2(380, 2270)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/19 Lumpy blob nearly closed" unique_id=7300061]
+curve = SubResource("Curve2D_c19")
+
+[node name="20 Lumpy arch" type="Node2D" parent="Lights" unique_id=7300063]
+position = Vector2(1140, 2270)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/20 Lumpy arch" unique_id=7300064]
+curve = SubResource("Curve2D_c20")
+
+[node name="21 Figure eight" type="Node2D" parent="Lights" unique_id=7300066]
+position = Vector2(1900, 2270)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/21 Figure eight" unique_id=7300067]
+curve = SubResource("Curve2D_c21")
+
+[node name="22 Gap crosses the path" type="Node2D" parent="Lights" unique_id=7300069]
+position = Vector2(2660, 2270)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/22 Gap crosses the path" unique_id=7300070]
+curve = SubResource("Curve2D_c22")
+
+[node name="23 Ends overshoot" type="Node2D" parent="Lights" unique_id=7300072]
+position = Vector2(3420, 2270)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/23 Ends overshoot" unique_id=7300073]
+curve = SubResource("Curve2D_c23")
+
+[node name="24 Rounded rectangle missing a corner" type="Node2D" parent="Lights" unique_id=7300075]
+position = Vector2(4180, 2270)
+script = ExtResource("3_line")
+width = 6.0
+glow = 0.85
+closed = true
+range = 150.0
+lit_version = "1.1.7"
+color = Color(1.6, 1.1, 0.45, 1)
+
+[node name="Path2D" type="Path2D" parent="Lights/24 Rounded rectangle missing a corner" unique_id=7300076]
+curve = SubResource("Curve2D_c24")
+
+[node name="Labels" type="Node2D" parent="." unique_id=7300005]
+
+[node name="01" type="Label" parent="Labels" unique_id=7300008]
+offset_left = 24.0
+offset_top = 16.0
+offset_right = 736.0
+offset_bottom = 60.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "01  Square"
+
+[node name="02" type="Label" parent="Labels" unique_id=7300011]
+offset_left = 784.0
+offset_top = 16.0
+offset_right = 1496.0
+offset_bottom = 60.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "02  ThreePointPath"
+
+[node name="03" type="Label" parent="Labels" unique_id=7300014]
+offset_left = 1544.0
+offset_top = 16.0
+offset_right = 2256.0
+offset_bottom = 60.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "03  TwoPointCurve"
+
+[node name="04" type="Label" parent="Labels" unique_id=7300017]
+offset_left = 2304.0
+offset_top = 16.0
+offset_right = 3016.0
+offset_bottom = 60.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "04  Curved"
+
+[node name="05" type="Label" parent="Labels" unique_id=7300020]
+offset_left = 3064.0
+offset_top = 16.0
+offset_right = 3776.0
+offset_bottom = 60.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "05  Circle"
+
+[node name="06" type="Label" parent="Labels" unique_id=7300023]
+offset_left = 3824.0
+offset_top = 16.0
+offset_right = 4536.0
+offset_bottom = 60.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "06  Arc"
+
+[node name="07" type="Label" parent="Labels" unique_id=7300026]
+offset_left = 24.0
+offset_top = 656.0
+offset_right = 736.0
+offset_bottom = 700.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "07  Spiral"
+
+[node name="08" type="Label" parent="Labels" unique_id=7300029]
+offset_left = 784.0
+offset_top = 656.0
+offset_right = 1496.0
+offset_bottom = 700.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "08  Loops"
+
+[node name="09" type="Label" parent="Labels" unique_id=7300032]
+offset_left = 1544.0
+offset_top = 656.0
+offset_right = 2256.0
+offset_bottom = 700.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "09  Pentagon"
+
+[node name="10" type="Label" parent="Labels" unique_id=7300035]
+offset_left = 2304.0
+offset_top = 656.0
+offset_right = 3016.0
+offset_bottom = 700.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "10  Square missing a corner"
+
+[node name="11" type="Label" parent="Labels" unique_id=7300038]
+offset_left = 3064.0
+offset_top = 656.0
+offset_right = 3776.0
+offset_bottom = 700.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "11  U with straight arms"
+
+[node name="12" type="Label" parent="Labels" unique_id=7300041]
+offset_left = 3824.0
+offset_top = 656.0
+offset_right = 4536.0
+offset_bottom = 700.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "12  Smooth U"
+
+[node name="13" type="Label" parent="Labels" unique_id=7300044]
+offset_left = 24.0
+offset_top = 1296.0
+offset_right = 736.0
+offset_bottom = 1340.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "13  Egg C"
+
+[node name="14" type="Label" parent="Labels" unique_id=7300047]
+offset_left = 784.0
+offset_top = 1296.0
+offset_right = 1496.0
+offset_bottom = 1340.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "14  Half ellipse"
+
+[node name="15" type="Label" parent="Labels" unique_id=7300050]
+offset_left = 1544.0
+offset_top = 1296.0
+offset_right = 2256.0
+offset_bottom = 1340.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "15  Shallow bow"
+
+[node name="16" type="Label" parent="Labels" unique_id=7300053]
+offset_left = 2304.0
+offset_top = 1296.0
+offset_right = 3016.0
+offset_bottom = 1340.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "16  Three-quarter circle"
+
+[node name="17" type="Label" parent="Labels" unique_id=7300056]
+offset_left = 3064.0
+offset_top = 1296.0
+offset_right = 3776.0
+offset_bottom = 1340.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "17  S-curve"
+
+[node name="18" type="Label" parent="Labels" unique_id=7300059]
+offset_left = 3824.0
+offset_top = 1296.0
+offset_right = 4536.0
+offset_bottom = 1340.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "18  Lumpy blob, wide gap"
+
+[node name="19" type="Label" parent="Labels" unique_id=7300062]
+offset_left = 24.0
+offset_top = 1936.0
+offset_right = 736.0
+offset_bottom = 1980.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "19  Lumpy blob, nearly closed"
+
+[node name="20" type="Label" parent="Labels" unique_id=7300065]
+offset_left = 784.0
+offset_top = 1936.0
+offset_right = 1496.0
+offset_bottom = 1980.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "20  Lumpy arch"
+
+[node name="21" type="Label" parent="Labels" unique_id=7300068]
+offset_left = 1544.0
+offset_top = 1936.0
+offset_right = 2256.0
+offset_bottom = 1980.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "21  Figure eight"
+
+[node name="22" type="Label" parent="Labels" unique_id=7300071]
+offset_left = 2304.0
+offset_top = 1936.0
+offset_right = 3016.0
+offset_bottom = 1980.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "22  Gap crosses the path"
+
+[node name="23" type="Label" parent="Labels" unique_id=7300074]
+offset_left = 3064.0
+offset_top = 1936.0
+offset_right = 3776.0
+offset_bottom = 1980.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "23  Ends overshoot"
+
+[node name="24" type="Label" parent="Labels" unique_id=7300077]
+offset_left = 3824.0
+offset_top = 1936.0
+offset_right = 4536.0
+offset_bottom = 1980.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 30
+text = "24  Rounded rectangle missing a corner"
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=7300078]
+position = Vector2(2280, 1280)
+zoom = Vector2(0.42, 0.42)
+script = ExtResource("4_cam")
