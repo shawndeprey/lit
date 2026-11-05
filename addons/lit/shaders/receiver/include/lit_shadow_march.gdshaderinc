@@ -36,7 +36,9 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 		int max_steps, float frag_d,
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
 	float t_tip = maxd;                      // tip anchor: the cap, before coverage clamps it
-	maxd = min(maxd, lit_sdf_cov_exit(frag_sdf, dir));
+	float t_cov = lit_sdf_cov_exit(frag_sdf, dir);
+	maxd = min(maxd, t_cov);
+	float t_grace = tip_band > 0.0 ? t_cov : 0.0;   // a capped march still exits its containing shape
 	float t = shadow_min_step;
 	float res = 1.0;
 	float prev_d = frag_d;                   // signed; tracks outline crossings
@@ -61,7 +63,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 		float pad = (max(maxd / k, shadow_min_step) + LIT_SELF_PAD_SDF) * self_scale;
 		float t_mk_end = lit_rect_segment_exit(self_canvas, dir_canvas * maxd, mk_rect, pad) * maxd;
 		t_ex_end = t_mk_end;
-		for (; s < s_end && t < maxd && t <= t_mk_end; s++) {
+		for (; s < s_end && ((grace && t < t_grace) || (t < maxd && t <= t_mk_end)); s++) {
 			float d = lit_sdf_sample(frag_sdf + dir * t);
 			float ad = abs(d);
 			float floor_t = s < max_steps ? shadow_min_step : max(shadow_min_step, (min(t_mk_end, maxd) - t) / float(s_end - s));
@@ -104,7 +106,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 #endif
 					float rw = LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t);
 					if (at_exit) {
-						float own_block = rw * yw * lit_tip_weight(t, t_tip, tip_band);
+						float own_block = rw * yw;
 						res = min(res, 1.0 - own_block);
 						if (res <= 0.0) {
 							return 0.0;              // fully occluded
@@ -158,7 +160,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 		t_ex_end = max(t_ex_end, t_slow_end);
 		// Dynamic loop bounds on purpose: a constant bound invites unrolling this
 		// body, which taxes the whole shader even on fragments that never take it.
-		for (; s < s_end && t < maxd && t <= t_slow_end; s++) {
+		for (; s < s_end && ((grace && t < t_grace) || (t < maxd && t <= t_slow_end)); s++) {
 			float d = lit_sdf_sample(frag_sdf + dir * t); // signed: negative inside a shape
 			float ad = abs(d);                         // distance to the nearest outline
 			float floor_t = s < max_steps ? shadow_min_step : max(shadow_min_step, (min(t_slow_end, maxd) - t) / float(s_end - s));
@@ -203,7 +205,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 #endif
 					float rw = LIT_RAMP_W(self_canvas + dir_canvas * t, frag_px + dir_px * t, own_r, t);
 					if (at_exit) {
-						float own_block = rw * yw * lit_tip_weight(t, t_tip, tip_band);
+						float own_block = rw * yw;
 						res = min(res, 1.0 - own_block);
 						if (res <= 0.0) {
 							return 0.0;              // fully occluded
@@ -230,9 +232,9 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 		}
 	}
 
-	// Fast phases: grace, receding, steady - each runs at most once, in order, so run
-	// each as its own minimal loop sharing the step budget: identical samples, none of
-	// the per-step phase bookkeeping. Past the grace exit every sample is non-negative,
+	// Fast phases: grace and steady each run at most once, in order, so run each as
+	// its own minimal loop sharing the step budget: identical samples, none of the
+	// per-step phase bookkeeping. Past the grace exit every sample is non-negative,
 	// so the full hit test (|d| < 0.001 || sign flip) collapses to d < 0.001 and
 	// prev_d/abs() drop out. Also the self-excluding tail: no self tests needed here.
 	// Length-limited marches stop the hard-hit loops at the tip band; a weighted sweep
@@ -240,45 +242,14 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 	{
 		float t_fast_end = tip_band > 0.0 ? min(maxd, max(t_tip - tip_band, 0.0)) : maxd;
 		if (grace) {
-			// Grace: march out of the containing shape without treating its outline as
-			// hits; apply its footprint shadow once, at the exit sample.
-			bool receding = false;
-			float prev_ad = 0.0;
-			for (; s < max_steps && t < maxd; s++) {
+			// Grace: march out of the containing shape; its footprint is fully occluded.
+			for (; s < max_steps && t < max(maxd, t_grace); s++) {
 				float d = lit_sdf_sample(frag_sdf + dir * t); // signed: negative inside a shape
 				if (d < 0.0) {
 					t += max(-d, shadow_min_step);         // -d is the distance to the far edge
 					continue;
 				}
-				float own_block = lit_tip_weight(t, t_tip, tip_band);
-				res = min(res, 1.0 - own_block);
-				if (res <= 0.0) {
-					return 0.0;                            // fully occluded
-				}
-				prev_ad = d;
-				t += max(d, shadow_min_step);
-				s++;                                       // this sample consumed a step
-				receding = true;
-				break;
-			}
-			// Receding: mute penumbra accumulation until the ray stops receding from
-			// the exited edge; the breaking sample follows the steady-state rules.
-			if (receding) {
-				for (; s < max_steps && t < t_fast_end; s++) {
-					float d = lit_sdf_sample(frag_sdf + dir * t);
-					if (d >= 0.001 && d >= prev_ad) {
-						prev_ad = d;
-						t += max(d, shadow_min_step);
-						continue;
-					}
-					if (d < 0.001) {
-						return 0.0;                        // fully occluded
-					}
-					res = min(res, k * d / t);
-					t += max(d, shadow_min_step);
-					s++;                                   // this sample consumed a step
-					break;
-				}
+				return 0.0;
 			}
 		}
 		// Steady state: bare IQ march. Track the minimizing (d, t) pair with a

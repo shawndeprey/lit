@@ -1,121 +1,335 @@
-[gd_scene load_steps=10 format=4 uid="uid://dv7vobouslo8o"]
+[gd_scene format=4 uid="uid://dv7vobouslo8o"]
 
 [ext_resource type="Script" uid="uid://isp1sjk3n8e6" path="res://Test/misc/normal_map_rotation.gd" id="1_nmr"]
 [ext_resource type="Texture2D" uid="uid://82bocparm4uw" path="res://Test/misc/normal_map_rotation/dome.png" id="2_dome"]
 [ext_resource type="Texture2D" uid="uid://dg8fixirwd51g" path="res://Test/misc/normal_map_rotation/dome_n.png" id="3_dome_n"]
+[ext_resource type="Shader" uid="uid://cadnte8s5ipk7" path="res://addons/lit/shaders/receiver/lit_receiver_fast.gdshader" id="3_o2sgx"]
 [ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="4_sprite"]
 [ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="5_modulate"]
 [ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="6_point"]
 [ext_resource type="Script" uid="uid://7156lwdhmrod" path="res://addons/lit/nodes/lit_directional_light_2d.gd" id="7_directional"]
 [ext_resource type="PackedScene" uid="uid://cpygp0wxw1iu7" path="res://Test/nodes/skeleton.tscn" id="8_skull"]
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_tbku2"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
 [sub_resource type="CanvasTexture" id="CanvasTexture_dome"]
 diffuse_texture = ExtResource("2_dome")
 normal_texture = ExtResource("3_dome_n")
 
-[node name="NormalMapRotation" type="Node2D"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_nfrbo"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_nr7fj"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_syhlp"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_a77n5"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_qg7ik"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_oukp8"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_d5n0s"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ch8ve"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ne2w6"]
+shader = ExtResource("3_o2sgx")
+shader_parameter/emissive_strength = 0.0
+shader_parameter/receiver_mask = 1
+shader_parameter/receiver_z = 0
+shader_parameter/receiver_layer = 0
+shader_parameter/self_shadow = false
+shader_parameter/self_rect_count = 0
+shader_parameter/self_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/specular_strength = 0.5
+shader_parameter/specular_k = 32.0
+shader_parameter/has_specular_map = false
+shader_parameter/metallic_value = 0.0
+shader_parameter/roughness_value = 1.0
+shader_parameter/shadow_steps = 64
+shader_parameter/shadow_min_step = 0.2
+shader_parameter/shadow_ramp = 0.0
+shader_parameter/directional_horizontal_scale = 32.0
+
+[node name="NormalMapRotation" type="Node2D" unique_id=1585422937]
 script = ExtResource("1_nmr")
 
-[node name="LitCanvasModulate" type="Node2D" parent="."]
+[node name="LitCanvasModulate" type="Node2D" parent="." unique_id=1246933422]
 script = ExtResource("5_modulate")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://dtbtq2iowg33y"
 
-[node name="Rows" type="Node2D" parent="."]
+[node name="Rows" type="Node2D" parent="." unique_id=1813434624]
 
-[node name="Rot0" type="Sprite2D" parent="Rows"]
+[node name="Rot0" type="Sprite2D" parent="Rows" unique_id=295214248]
+material = SubResource("ShaderMaterial_tbku2")
 position = Vector2(300, 300)
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="Rot45" type="Sprite2D" parent="Rows"]
+[node name="Rot45" type="Sprite2D" parent="Rows" unique_id=216872203]
+material = SubResource("ShaderMaterial_nfrbo")
 position = Vector2(630, 300)
 rotation = 0.785398
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="Rot90" type="Sprite2D" parent="Rows"]
+[node name="Rot90" type="Sprite2D" parent="Rows" unique_id=1678199314]
+material = SubResource("ShaderMaterial_nr7fj")
 position = Vector2(960, 300)
 rotation = 1.570796
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="Rot180" type="Sprite2D" parent="Rows"]
+[node name="Rot180" type="Sprite2D" parent="Rows" unique_id=2026627548]
+material = SubResource("ShaderMaterial_syhlp")
 position = Vector2(1290, 300)
 rotation = 3.141593
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="Rot270" type="Sprite2D" parent="Rows"]
+[node name="Rot270" type="Sprite2D" parent="Rows" unique_id=761582832]
+material = SubResource("ShaderMaterial_a77n5")
 position = Vector2(1620, 300)
 rotation = 4.712389
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="FlipH" type="Sprite2D" parent="Rows"]
+[node name="FlipH" type="Sprite2D" parent="Rows" unique_id=203881532]
+material = SubResource("ShaderMaterial_qg7ik")
 position = Vector2(300, 560)
 texture = SubResource("CanvasTexture_dome")
 flip_h = true
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="ScaleNegX" type="Sprite2D" parent="Rows"]
+[node name="ScaleNegX" type="Sprite2D" parent="Rows" unique_id=1442506010]
+material = SubResource("ShaderMaterial_oukp8")
 position = Vector2(630, 560)
 scale = Vector2(-1, 1)
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="Parent180" type="Node2D" parent="Rows"]
+[node name="Parent180" type="Node2D" parent="Rows" unique_id=1338300277]
 position = Vector2(960, 560)
 rotation = 3.141593
 
-[node name="Dome" type="Sprite2D" parent="Rows/Parent180"]
+[node name="Dome" type="Sprite2D" parent="Rows/Parent180" unique_id=1047192709]
+material = SubResource("ShaderMaterial_d5n0s")
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="Spinner" type="Sprite2D" parent="Rows"]
+[node name="Spinner" type="Sprite2D" parent="Rows" unique_id=927626866]
+material = SubResource("ShaderMaterial_ch8ve")
 position = Vector2(1290, 560)
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="ParentScaleNegY" type="Node2D" parent="Rows"]
+[node name="ParentScaleNegY" type="Node2D" parent="Rows" unique_id=332120510]
 position = Vector2(1620, 560)
 scale = Vector2(1, -1)
 
-[node name="Dome" type="Sprite2D" parent="Rows/ParentScaleNegY"]
+[node name="Dome" type="Sprite2D" parent="Rows/ParentScaleNegY" unique_id=222916554]
+material = SubResource("ShaderMaterial_ne2w6")
 texture = SubResource("CanvasTexture_dome")
 script = ExtResource("4_sprite")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://drrhypxeb6nsg"
 
-[node name="Lights" type="Node2D" parent="."]
+[node name="Lights" type="Node2D" parent="." unique_id=1278835951]
 
-[node name="LitDirectionalLight2D" type="Node2D" parent="Lights"]
+[node name="LitDirectionalLight2D" type="Node2D" parent="Lights" unique_id=2020287443]
 position = Vector2(960, 540)
 rotation = 0.785398
 script = ExtResource("7_directional")
+lit_version = "1.1.7"
 metadata/_custom_type_script = "uid://7156lwdhmrod"
 
-[node name="LitPointLight2D" type="Node2D" parent="Lights"]
+[node name="LitPointLight2D" type="Node2D" parent="Lights" unique_id=844278478]
 position = Vector2(960, 540)
 script = ExtResource("6_point")
-enabled = false
 range = 1200.0
+lit_version = "1.1.7"
+enabled = false
 height = 40.0
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1254968508]
 position = Vector2(960, 540)
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=174983773]
 
-[node name="Title" type="Label" parent="UI"]
+[node name="Title" type="Label" parent="UI" unique_id=712984405]
 offset_left = 16.0
 offset_top = 12.0
 offset_right = 1904.0
@@ -128,13 +342,13 @@ theme_override_font_sizes/font_size = 24
 text = "One hemisphere normal map on every dome, directional light from the upper-left. Correct: every dome shades identically (lit side toward the light) and only the red notch turns."
 autowrap_mode = 3
 
-[node name="MouseLightToggle" type="CheckButton" parent="UI"]
+[node name="MouseLightToggle" type="CheckButton" parent="UI" unique_id=1083131875]
 offset_left = 16.0
 offset_top = 84.0
 theme_override_font_sizes/font_size = 22
 text = "Point light follows the mouse (directional off)"
 
-[node name="LabelRot0" type="Label" parent="UI"]
+[node name="LabelRot0" type="Label" parent="UI" unique_id=1275611621]
 offset_left = 150.0
 offset_top = 400.0
 offset_right = 450.0
@@ -147,7 +361,7 @@ theme_override_font_sizes/font_size = 20
 text = "rotation 0°"
 horizontal_alignment = 1
 
-[node name="LabelRot45" type="Label" parent="UI"]
+[node name="LabelRot45" type="Label" parent="UI" unique_id=234673576]
 offset_left = 480.0
 offset_top = 400.0
 offset_right = 780.0
@@ -160,7 +374,7 @@ theme_override_font_sizes/font_size = 20
 text = "rotation 45°"
 horizontal_alignment = 1
 
-[node name="LabelRot90" type="Label" parent="UI"]
+[node name="LabelRot90" type="Label" parent="UI" unique_id=816313969]
 offset_left = 810.0
 offset_top = 400.0
 offset_right = 1110.0
@@ -173,7 +387,7 @@ theme_override_font_sizes/font_size = 20
 text = "rotation 90°"
 horizontal_alignment = 1
 
-[node name="LabelRot180" type="Label" parent="UI"]
+[node name="LabelRot180" type="Label" parent="UI" unique_id=826194092]
 offset_left = 1140.0
 offset_top = 400.0
 offset_right = 1440.0
@@ -186,7 +400,7 @@ theme_override_font_sizes/font_size = 20
 text = "rotation 180°"
 horizontal_alignment = 1
 
-[node name="LabelRot270" type="Label" parent="UI"]
+[node name="LabelRot270" type="Label" parent="UI" unique_id=215248970]
 offset_left = 1470.0
 offset_top = 400.0
 offset_right = 1770.0
@@ -199,7 +413,7 @@ theme_override_font_sizes/font_size = 20
 text = "rotation 270°"
 horizontal_alignment = 1
 
-[node name="LabelFlipH" type="Label" parent="UI"]
+[node name="LabelFlipH" type="Label" parent="UI" unique_id=189763373]
 offset_left = 150.0
 offset_top = 660.0
 offset_right = 450.0
@@ -212,7 +426,7 @@ theme_override_font_sizes/font_size = 20
 text = "flip_h (Godot pre-mirrors NORMAL: correct)"
 horizontal_alignment = 1
 
-[node name="LabelScaleNegX" type="Label" parent="UI"]
+[node name="LabelScaleNegX" type="Label" parent="UI" unique_id=1255426128]
 offset_left = 480.0
 offset_top = 660.0
 offset_right = 780.0
@@ -225,7 +439,7 @@ theme_override_font_sizes/font_size = 20
 text = "scale (-1, 1)"
 horizontal_alignment = 1
 
-[node name="LabelParent180" type="Label" parent="UI"]
+[node name="LabelParent180" type="Label" parent="UI" unique_id=235921619]
 offset_left = 810.0
 offset_top = 660.0
 offset_right = 1110.0
@@ -238,7 +452,7 @@ theme_override_font_sizes/font_size = 20
 text = "parent rotation 180°"
 horizontal_alignment = 1
 
-[node name="LabelSpinner" type="Label" parent="UI"]
+[node name="LabelSpinner" type="Label" parent="UI" unique_id=1800301586]
 offset_left = 1140.0
 offset_top = 660.0
 offset_right = 1440.0
@@ -251,7 +465,7 @@ theme_override_font_sizes/font_size = 20
 text = "spinning"
 horizontal_alignment = 1
 
-[node name="LabelParentScaleNegY" type="Label" parent="UI"]
+[node name="LabelParentScaleNegY" type="Label" parent="UI" unique_id=1875434819]
 offset_left = 1470.0
 offset_top = 660.0
 offset_right = 1770.0
@@ -264,32 +478,7 @@ theme_override_font_sizes/font_size = 20
 text = "parent scale (1, -1)"
 horizontal_alignment = 1
 
-[node name="Skulls" type="Node2D" parent="."]
-
-[node name="Static" parent="Skulls" instance=ExtResource("8_skull")]
-position = Vector2(300, 880)
-
-[node name="ScaleNegX" parent="Skulls" instance=ExtResource("8_skull")]
-position = Vector2(630, 880)
-scale = Vector2(-5, 5)
-
-[node name="Parent90" type="Node2D" parent="Skulls"]
-position = Vector2(960, 880)
-rotation = 1.570796
-
-[node name="Skull" parent="Skulls/Parent90" instance=ExtResource("8_skull")]
-
-[node name="Spinning" parent="Skulls" instance=ExtResource("8_skull")]
-position = Vector2(1290, 880)
-
-[node name="Parent45Mirror" type="Node2D" parent="Skulls"]
-position = Vector2(1620, 880)
-rotation = 0.785398
-
-[node name="Skull" parent="Skulls/Parent45Mirror" instance=ExtResource("8_skull")]
-scale = Vector2(-5, 5)
-
-[node name="LabelSkullStatic" type="Label" parent="UI"]
+[node name="LabelSkullStatic" type="Label" parent="UI" unique_id=1291406094]
 offset_left = 150.0
 offset_top = 980.0
 offset_right = 450.0
@@ -302,7 +491,7 @@ theme_override_font_sizes/font_size = 20
 text = "skull (static)"
 horizontal_alignment = 1
 
-[node name="LabelSkullScaleNegX" type="Label" parent="UI"]
+[node name="LabelSkullScaleNegX" type="Label" parent="UI" unique_id=1725080633]
 offset_left = 480.0
 offset_top = 980.0
 offset_right = 780.0
@@ -315,7 +504,7 @@ theme_override_font_sizes/font_size = 20
 text = "skull scale (-1, 1)"
 horizontal_alignment = 1
 
-[node name="LabelSkullParent90" type="Label" parent="UI"]
+[node name="LabelSkullParent90" type="Label" parent="UI" unique_id=1396840923]
 offset_left = 810.0
 offset_top = 980.0
 offset_right = 1110.0
@@ -328,7 +517,7 @@ theme_override_font_sizes/font_size = 20
 text = "skull parent rotation 90°"
 horizontal_alignment = 1
 
-[node name="LabelSkullSpinning" type="Label" parent="UI"]
+[node name="LabelSkullSpinning" type="Label" parent="UI" unique_id=2142894585]
 offset_left = 1140.0
 offset_top = 980.0
 offset_right = 1440.0
@@ -341,7 +530,7 @@ theme_override_font_sizes/font_size = 20
 text = "skull (spinning)"
 horizontal_alignment = 1
 
-[node name="LabelSkullParent45Mirror" type="Label" parent="UI"]
+[node name="LabelSkullParent45Mirror" type="Label" parent="UI" unique_id=184239691]
 offset_left = 1470.0
 offset_top = 980.0
 offset_right = 1770.0
@@ -353,3 +542,28 @@ theme_override_constants/shadow_offset_y = 2
 theme_override_font_sizes/font_size = 20
 text = "skull parent 45° + scale (-1, 1)"
 horizontal_alignment = 1
+
+[node name="Skulls" type="Node2D" parent="." unique_id=2066934415]
+
+[node name="Static" parent="Skulls" unique_id=1921005630 instance=ExtResource("8_skull")]
+position = Vector2(300, 880)
+
+[node name="ScaleNegX" parent="Skulls" unique_id=673325887 instance=ExtResource("8_skull")]
+position = Vector2(630, 880)
+scale = Vector2(-5, 5)
+
+[node name="Parent90" type="Node2D" parent="Skulls" unique_id=634378363]
+position = Vector2(960, 880)
+rotation = 1.570796
+
+[node name="Skull" parent="Skulls/Parent90" unique_id=135423209 instance=ExtResource("8_skull")]
+
+[node name="Spinning" parent="Skulls" unique_id=160073001 instance=ExtResource("8_skull")]
+position = Vector2(1290, 880)
+
+[node name="Parent45Mirror" type="Node2D" parent="Skulls" unique_id=1683696649]
+position = Vector2(1620, 880)
+rotation = 0.785398
+
+[node name="Skull" parent="Skulls/Parent45Mirror" unique_id=1226762876 instance=ExtResource("8_skull")]
+scale = Vector2(-5, 5)
