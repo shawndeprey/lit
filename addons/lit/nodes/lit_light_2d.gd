@@ -93,8 +93,9 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 	set(value):
 		shadow_length = value
 		_pack_version += 1
-## Shadow marches per fragment across the source (STOCHASTIC, and a line light's
-## CONE_TRACED): more is smoother and slower. Clamped by lit/quality/shadow_samples_max.
+## Shadow marches per fragment across the source (STOCHASTIC, a line light's
+## CONE_TRACED, and a curved line light on any algorithm): more is smoother and slower.
+## Clamped by lit/quality/shadow_samples_max.
 @export_range(1, 32) var shadow_samples: int = 8:
 	set(value):
 		shadow_samples = value

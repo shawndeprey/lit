@@ -152,6 +152,7 @@ shadow_enabled = true
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="ZeroLengthLine" type="Node2D" parent="Lights" unique_id=1736456417]
+visible = false
 position = Vector2(1288, 160)
 rotation = -1.5707964
 script = ExtResource("4_saber")
@@ -163,6 +164,7 @@ energy = 2.0
 shadow_enabled = true
 
 [node name="LightSaber" type="Node2D" parent="Lights" unique_id=1799641673]
+visible = false
 position = Vector2(1517, 542)
 rotation = -1.5707964
 script = ExtResource("4_saber")

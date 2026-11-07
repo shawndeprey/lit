@@ -1,8 +1,0 @@
-[gd_scene format=4]
-
-[ext_resource type="Script" path="res://Test/integration_tests/line_light_review/04_precompile_ramp_twin.gd" id="1_demo"]
-
-[node name="PrecompileRampTwinDemo" type="Node2D"]
-script = ExtResource("1_demo")
-section_id = "demo_precompile_ramp_twin"
-section_title = "Issue 4: precompile folds away ramp variants the game still requests"
