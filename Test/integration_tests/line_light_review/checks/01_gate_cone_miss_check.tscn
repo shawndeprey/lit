@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" path="res://Test/integration_tests/line_light_review/checks/01_gate_cone_miss_check.gd" id="1_sec"]
+
+[node name="GateConeMiss" type="Node2D"]
+script = ExtResource("1_sec")
+section_id = "review_gate_cone_miss"
+section_title = "Issue 1: straight line shadow gate misses the near end"

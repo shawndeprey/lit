@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" path="res://Test/integration_tests/line_light_review/02_stale_cull_bounds.gd" id="1_demo"]
+
+[node name="StaleCullBoundsDemo" type="Node2D"]
+script = ExtResource("1_demo")
+section_id = "demo_stale_cull_bounds"
+section_title = "Issue 2: off-screen curved light keeps stale cull bounds"

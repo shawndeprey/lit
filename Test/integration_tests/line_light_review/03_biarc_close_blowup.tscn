@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" path="res://Test/integration_tests/line_light_review/03_biarc_close_blowup.gd" id="1_demo"]
+
+[node name="BiarcCloseBlowupDemo" type="Node2D"]
+script = ExtResource("1_demo")
+section_id = "demo_biarc_close_blowup"
+section_title = "Issue 3: BIARC close blows up near-parallel end tangents"

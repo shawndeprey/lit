@@ -1,0 +1,8 @@
+[gd_scene format=4]
+
+[ext_resource type="Script" path="res://Test/integration_tests/line_light_review/05_raymarch_curved_samples.gd" id="1_demo"]
+
+[node name="RaymarchCurvedSamplesDemo" type="Node2D"]
+script = ExtResource("1_demo")
+section_id = "demo_raymarch_curved_samples"
+section_title = "Issue 5: curved RAYMARCHED lights march shadow_samples times"
