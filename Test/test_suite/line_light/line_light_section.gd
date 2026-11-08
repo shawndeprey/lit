@@ -7,8 +7,10 @@ extends LitSuiteSection
 ## gates, blend, light masks), width and glow (a flat beam under the tube, a halo at a
 ## fraction of its brightness falling off from its surface, the caps lit as the body),
 ## shadows (umbra, colour, length, soft along the tube and sharp across it on Cone
-## Traced and Stochastic with the stochastic as the reference, Raymarched hard, and an
-## occluder beside the tube darkening nothing but its own shadow), cookies
+## Traced and Stochastic with the stochastic as the reference, Raymarched hard, an
+## occluder beside the tube darkening nothing but its own shadow, and the gate's hull
+## reaching every stratum: blockers beside a tube's end, on the axis to the window's
+## middle and past it), cookies
 ## (node-centered NATIVE, FIT_RANGE over the capsule's box, offset), the node API and
 ## registry plumbing (kind, mirror, packed row, capsule culling, activity flags), the
 ## luminance mirror, z ranges and camera zoom invariance.
@@ -64,6 +66,7 @@ func run() -> void:
 	await _shading()
 	await _width()
 	await _shadows()
+	await _shadow_gate()
 	await _shadow_shape()
 	await _cookies()
 	await _api()
@@ -586,6 +589,96 @@ func _shadow_shape() -> void:
 	end_box.name = "EndBox"
 	side_box.name = "SideBox"
 	await frames(2)
+
+
+# --- gate: the window's angular hull ---------------------------------------------------------
+
+## A straight tube's Cone Traced / Stochastic gate bounds every stratum: the near end of a
+## window that runs off to one side of the fragment, and the far rays past its middle.
+## Expected shares come from the strata themselves: 32 equal rays from the probe to the
+## tube, a blocker's share being the rays it cuts.
+func _shadow_gate() -> void:
+	var c := "line_shadow_gate"
+	var tube_c := Vector2(1016, 640)
+	var half := 256.0
+	var l := line_light(tube_c, 2.0 * half, 560.0, 0.3, 100.0)
+	l.shadow_enabled = true
+	l.shadow_samples = 32
+	l.source_radius = 1.0
+	l.shadow_jitter = 0.0
+	var p_end := tube_c + Vector2(half, 40)
+	var to_mid := (tube_c - p_end).normalized()
+	var w_mid := (half * absf(to_mid.y) + 1.0) / tube_c.distance_to(p_end)
+	var p_under := tube_c + Vector2(134, 120)
+	var p_past := tube_c + Vector2(half + 80, 60)
+	# probe, blocker centre, blocker radius
+	var cases := {
+		"A beside the near end": [p_end, p_end + Vector2.from_angle(deg_to_rad(237.0)) * 24.0, 8.0],
+		"B on the axis to the window's middle": [p_end, p_end + to_mid * 80.0, w_mid * 80.0 * 1.3],
+		"C on the far rays, past the window's middle": [p_end, p_end + (tube_c - Vector2(half, 0) - p_end) * 0.78, 8.0],
+		"D under the tube, toward its near end": [p_under, p_under + Vector2(50, -60), 10.0],
+		"E past the tube's end, on the near end's rays": [p_past, p_past + (tube_c + Vector2(half, 0) - p_past).normalized() * 60.0, 8.0],
+	}
+	for algo in [ALGO.CONE_TRACED, ALGO.STOCHASTIC]:
+		var an: String = ["Raymarched", "Cone Traced", "Stochastic"][algo]
+		l.shadow_algorithm = algo
+		await frames(3)
+		var open := await capture()
+		for key in cases:
+			var p: Vector2 = cases[key][0]
+			var lit_open := lum(open, p, 1) - AMBIENT
+			var o := _disc(cases[key][1], cases[key][2])
+			await frames(3)
+			var img := await capture()
+			var share := (lum(img, p, 1) - AMBIENT) / maxf(lit_open, 0.001)
+			var model := _strata_share(p, tube_c, half, cases[key][1], cases[key][2])
+			check_approx(c, "%s: blocker %s leaves the strata's share at P (%.2f)" % [an, key, model], model, share, 0.05)
+			if key.begins_with("B"):
+				check_gt(c, "%s: blocker B: no pixel around P goes black" % an, _min_share(img, open, p), 0.03)
+			o.queue_free()
+			await frames(1)
+	l.queue_free()
+	await frames(2)
+
+
+## The share of 32 equal strata from `p` to the tube (centre `c`, half-length `half`) that
+## a disc blocker leaves clear.
+static func _strata_share(p: Vector2, c: Vector2, half: float, disc: Vector2, r: float) -> float:
+	var clear := 0
+	for i in 32:
+		var s := c + Vector2(half * (((float(i) + 0.5) / 32.0) * 2.0 - 1.0), 0.0)
+		var ab := s - p
+		var t := clampf((disc - p).dot(ab) / ab.length_squared(), 0.0, 1.0)
+		if (p + ab * t).distance_to(disc) >= r:
+			clear += 1
+	return float(clear) / 32.0
+
+
+## A round occluder of `radius` px at `pos`.
+func _disc(pos: Vector2, radius: float) -> LightOccluder2D:
+	var o := LightOccluder2D.new()
+	var poly := OccluderPolygon2D.new()
+	var pts := PackedVector2Array()
+	for k in 32:
+		pts.append(Vector2.from_angle(TAU * float(k) / 32.0) * radius)
+	poly.polygon = pts
+	o.occluder = poly
+	o.position = pos
+	_props.add_child(o)
+	return o
+
+
+## The smallest light share left over the 9x9 px around `p`, against the open capture.
+func _min_share(img: Image, open: Image, p: Vector2) -> float:
+	var at := to_px(p, img)
+	var lo := 1.0
+	for dy in range(-4, 5):
+		for dx in range(-4, 5):
+			var q := Vector2i(int(at.x) + dx, int(at.y) + dy)
+			var base := open.get_pixelv(q).get_luminance() - AMBIENT
+			if base > 0.005:
+				lo = minf(lo, (img.get_pixelv(q).get_luminance() - AMBIENT) / base)
+	return lo
 
 
 # --- C: cookies --------------------------------------------------------------------------------

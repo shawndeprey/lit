@@ -593,9 +593,56 @@ func _api() -> void:
 	far.queue_free()
 	await frames(1)
 
+	# A culled light notices its Path2D child moving or swapping its curve, with no tree change.
+	var on := Vector2(120, 980)
+	var stale := line_light(Vector2(on.x + 5000.0, on.y), 40.0, 0.6, 60.0)
+	var sp := ring_child(stale, 50.0)
+	var probe_in := on + Vector2(40, 0)
+	await frames(2)
+	img = await capture()
+	check_approx(c, "ring off screen: its target spot is ambient", AMBIENT, lum(img, probe_in), TOL)
+	sp.position = Vector2(-5000, 0)
+	await frames(4)
+	img = await capture()
+	check_gt(c, "the Path2D child moved on screen while culled: the ring lights the floor", lum(img, probe_in), AMBIENT, 0.1)
+	sp.position = Vector2.ZERO
+	await frames(4)
+	img = await capture()
+	check_approx(c, "moved back off screen: culled again", AMBIENT, lum(img, probe_in), TOL)
+	var k50 := KAPPA * 50.0
+	var off := Vector2(-5000, 0)
+	sp.curve = _curve([[Vector2(50, 0) + off, Vector2(0, -k50), Vector2(0, k50)], [Vector2(0, 50) + off, Vector2(k50, 0), Vector2(-k50, 0)],
+			[Vector2(-50, 0) + off, Vector2(0, k50), Vector2(0, -k50)], [Vector2(0, -50) + off, Vector2(-k50, 0), Vector2(k50, 0)]])
+	await frames(4)
+	img = await capture()
+	check_gt(c, "a new on-screen Curve2D assigned while culled: the ring lights the floor", lum(img, probe_in), AMBIENT, 0.1)
+	stale.queue_free()
+	await frames(1)
+
+	# shadow_samples sets the march count on every curved path, so it shows there under any algorithm.
+	var vis := line_light(Vector2(-900, 900), 40.0, 0.5, 100.0)
+	vis.shadow_algorithm = ALGO.RAYMARCHED
+	check_true(c, "shadow_samples hidden on a straight Raymarched line", not _shown(vis, "shadow_samples"))
+	vis.shadow_algorithm = ALGO.CONE_TRACED
+	check_true(c, "shown on a straight Cone Traced line", _shown(vis, "shadow_samples"))
+	vis.shadow_algorithm = ALGO.RAYMARCHED
+	var vp := ring_child(vis, 50.0)
+	check_true(c, "shown on a curved Raymarched line (one hard march per chord)", _shown(vis, "shadow_samples"))
+	vis.shadow_algorithm = ALGO.STOCHASTIC
+	check_true(c, "and on a curved Stochastic line", _shown(vis, "shadow_samples"))
+	vis.shadow_algorithm = ALGO.RAYMARCHED
+	vp.free()
+	check_true(c, "hidden again once the Path2D child is gone", not _shown(vis, "shadow_samples"))
+	vis.queue_free()
+	await frames(1)
+
 
 func _read_only(obj: Object, prop: String) -> bool:
 	return _prop(obj, prop).get("usage", 0) & PROPERTY_USAGE_READ_ONLY != 0
+
+
+func _shown(obj: Object, prop: String) -> bool:
+	return _prop(obj, prop).get("usage", 0) & PROPERTY_USAGE_EDITOR != 0
 
 
 func _prop(obj: Object, prop: String) -> Dictionary:
@@ -1325,11 +1372,24 @@ func _close_modes() -> void:
 			[Vector2(50, 0), z, z]]
 	check_lt(c, "a square missing a corner: Straight bevels it", _close_sag(missing, m_st), 0.01)
 	check_gt(c, "where Biarc rounds it", _close_sag(missing, m_bi), 5.0)
+	# End tangents pointing back along a 200 px gap: 60 degrees apart the biarc is a loop
+	# under two gaps out; 10 degrees apart its joint runs 7 gaps out, so Biarc closes straight.
+	var back := func(sep: float) -> Array:
+		return [[Vector2(100, 0), z, Vector2.from_angle(deg_to_rad(120.0 + sep)) * 120.0],
+				[Vector2(-100, 0), -Vector2.from_angle(deg_to_rad(120.0)) * 120.0, z]]
+	check_gt(c, "end tangents 60 degrees apart pointing back along the gap: Biarc loops around", _close_sag(back.call(60.0), m_bi), 100.0)
+	check_lt(c, "10 degrees apart: Biarc closes straight instead of a loop 7 gaps out", _close_sag(back.call(10.0), m_bi), 0.01)
+	var ta := Vector2.from_angle(deg_to_rad(120.0))
+	var j10: Vector2 = LinePath.biarc(Vector2(-100, 0), ta, Vector2(100, 0), Vector2.from_angle(deg_to_rad(130.0)))[0]
+	var j60: Vector2 = LinePath.biarc(Vector2(-100, 0), ta, Vector2(100, 0), Vector2.from_angle(deg_to_rad(180.0)))[0]
+	check_true(c, "biarc_blown: the 10 degree joint, past 4 gaps", LinePath.biarc_blown(Vector2(-100, 0), Vector2(100, 0), j10))
+	check_true(c, "not the 60 degree joint", not LinePath.biarc_blown(Vector2(-100, 0), Vector2(100, 0), j60))
 
 	var l := line_light(Vector2(560, 700), 25.0, 0.5, 100.0)
 	l.width = 12.0
 	check(c, "close_mode defaults to Symmetric", LitLineLight2D.CloseMode.SYMMETRIC, l.close_mode)
-	var p := path_child(l, [[Vector2(40, -40), z, z], [Vector2(40, 40), z, z], [Vector2(-40, 40), z, z], [Vector2(-40, -40), z, z]])
+	var sq := [[Vector2(40, -40), z, z], [Vector2(40, 40), z, z], [Vector2(-40, 40), z, z], [Vector2(-40, -40), z, z]]
+	var p := path_child(l, sq)
 	check_true(c, "close_mode is hidden while open", _prop(l, "close_mode").get("usage", 0) & PROPERTY_USAGE_EDITOR == 0)
 	l.closed = true
 	await frames(2)
@@ -1345,6 +1405,20 @@ func _close_modes() -> void:
 	check_gt(c, "rendered: Straight lights the square's straight top edge", lum(st, Vector2(560, 660), 1), lum(bi, Vector2(560, 660), 1), 0.05)
 	check_gt(c, "rendered: Biarc lights the rounded cap above it", lum(bi, Vector2(560, 620), 1), lum(st, Vector2(560, 620), 1), 0.05)
 	check_lt(c, "rendered: Symmetric closes the square straight too", image_diff(sym, st, Rect2(500, 600, 120, 140), 2), 0.002)
+	# A shadow-casting Biarc light with the 10 degree path keeps its bounds, and the world SDF its texel.
+	l.shadow_enabled = true
+	await frames(2)
+	var texel_st := _sdf_texel()
+	p.curve = _curve(back.call(10.0))
+	l.close_mode = LitLineLight2D.CloseMode.BIARC
+	await frames(2)
+	var pr := l.path_rect()
+	check_lt(c, "Biarc on the 10 degree path: the light's bounds stay within 4 gaps", maxf(pr.size.x, pr.size.y), 800.0)
+	check_approx(c, "and the world-SDF texel is unchanged", texel_st, _sdf_texel(), 0.01)
+	l.shadow_enabled = false
+	l.close_mode = LitLineLight2D.CloseMode.STRAIGHT
+	p.curve = _curve(sq)
+	await frames(2)
 	p.curve.remove_point(3)
 	p.curve.remove_point(2)
 	await frames(2)
@@ -1458,6 +1532,10 @@ func _curve(points: Array) -> Curve2D:
 	for pt in points:
 		cv.add_point(pt[0], pt[1], pt[2])
 	return cv
+
+
+func _sdf_texel() -> float:
+	return float(get_node("/root/LitManager")._registry._world_sdf._wsdf_texel)
 
 
 ## Closing arcs' sample points (the chain's last stretch) for `points` closed by `mode`.

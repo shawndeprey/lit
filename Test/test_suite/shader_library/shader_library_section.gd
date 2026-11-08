@@ -23,6 +23,7 @@ func run() -> void:
 	_entry_equivalence()
 	await _render_matrix()
 	_precompiler()
+	await _ramp_twins()
 	await _overlay()
 
 
@@ -453,6 +454,93 @@ func _precompiler() -> void:
 
 ## The follow side of a worker bake, driven by hand: the plan a worker thread would
 ## publish, then done-files appearing in the worker directory. No process is spawned.
+class WarningCatcher extends Logger:
+	var lines: PackedStringArray = []
+	var _mutex := Mutex.new()
+
+	func _log_error(_function: String, _file: String, _line: int, code: String, rationale: String,
+			_editor_notify: bool, _error_type: int, _script_backtraces: Array[ScriptBacktrace]) -> void:
+		_mutex.lock()
+		lines.append(code + " " + rationale)
+		_mutex.unlock()
+
+	func _log_message(_message: String, _error: bool) -> void:
+		pass
+
+	func count(text: String) -> int:
+		_mutex.lock()
+		var n := 0
+		for l in lines:
+			if l.contains(text):
+				n += 1
+		_mutex.unlock()
+		return n
+
+
+## The fast-tier ramp variants dedupe folds into their full-tier twins are still what the
+## runtime requests, so they count as warmed and the silent pass instantiates them: a
+## shadow ramp turned on after a precompile compiles nothing mid-game and warns of nothing.
+func _ramp_twins() -> void:
+	var case_name := "precompile_ramp_twin"
+	var dflt: Array = Pre.dedupe(Array(Pre.default_variant_flags()))
+	var twins: Array[int] = Pre.folded_twins(dflt)
+	var requestable := 0
+	var covered := 0
+	var doubled := 0
+	for fl in Lib.all_variant_flags():
+		if fl & Lib.F_RAMP != 0 and fl & Lib.F_SELF_EXCL == 0:
+			requestable += 1
+			if dflt.has(fl) or twins.has(fl):
+				covered += 1
+			if dflt.has(fl) and twins.has(fl):
+				doubled += 1
+	check(case_name, "the default list folds 20 ramp twins", 20, twins.size())
+	check(case_name, "every fast-tier ramp variant the runtime can request is listed or a folded twin", requestable, covered)
+	check(case_name, "no twin is also listed", 0, doubled)
+	var one: Array[int] = Pre.folded_twins([Lib.F_SELF_EXCL | Lib.F_CONE, Lib.ENTRY_PATHS[0]])
+	check_true(case_name, "a listed full-tier variant yields its fast ramp twin", one.size() == 1 and one[0] == Lib.F_CONE | Lib.F_RAMP)
+	check(case_name, "a listed twin pair yields nothing", 0, Pre.folded_twins([Lib.F_SELF_EXCL | Lib.F_CONE, Lib.F_CONE | Lib.F_RAMP]).size())
+	check(case_name, "a y-sort variant has no twin", 0, Pre.folded_twins([Lib.F_SELF_EXCL | Lib.F_YSORT]).size())
+
+	var catcher := WarningCatcher.new()
+	OS.add_logger(catcher)
+	var fl := floor_receiver(Rect2(1000, 780, 360, 240))
+	var light := point_light(Vector2(1120, 900), 200.0, 0.9, Color.WHITE, 80.0)
+	light.shadow_enabled = true
+	var props := group("RampTwin")
+	var post := box_receiver(Vector2(1180, 960), Vector2(8, 8), Color.WHITE, props)
+	occluder(Vector2(1220, 900), Vector2(16, 60), props)
+	await frames(2)
+	var pre: Node = Pre.new()
+	add_child(pre)
+	pre.start(true)
+	if pre.is_processing():
+		await pre.finished
+	pre.queue_free()
+	await frames(2)
+	var warmed := 0
+	var instantiated := 0
+	for twin in Pre.folded_twins(Pre.work_list()):
+		warmed += int(Lib._warmed.has(twin))
+		instantiated += int(Lib._receivers.has(twin))
+	var expect := Pre.folded_twins(Pre.work_list()).size()
+	check(case_name, "the silent pass marks every folded twin warmed", expect, warmed)
+	check(case_name, "and instantiates it", expect, instantiated)
+	var before := catcher.count("compiled mid-game")
+	post.shadow_ramp = 100.0
+	await frames(6)
+	var after: int = Lib.flags_of((fl.material as ShaderMaterial).shader)
+	check_true(case_name, "a sibling's shadow_ramp moves the fast-tier floor to its ramp variant",
+			after & Lib.F_RAMP != 0 and after & Lib.F_SELF_EXCL == 0)
+	check(case_name, "no 'compiled mid-game' warning after the precompile", 0, catcher.count("compiled mid-game") - before)
+	check_true(case_name, "the floor's ramp variant counts as warmed", Lib._warmed.has(after))
+	OS.remove_logger(catcher)
+	props.queue_free()
+	light.queue_free()
+	fl.queue_free()
+	await frames(1)
+
+
 func _worker_protocol() -> void:
 	var case_name := "precompile_workers"
 	var wd := ProjectSettings.globalize_path(Pre.WORKER_DIR)

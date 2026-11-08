@@ -14,7 +14,8 @@ class_name LitLineLight2D
 ## off. `width` gives the tube a body, lit from overhead across it, and `glow` dims
 ## the halo around it against the beam.
 ## Shadows follow: Raymarched casts one hard march from the nearest point of the
-## segment, while Cone Traced and Stochastic march `shadow_samples` narrow cones spread
+## segment (one per `shadow_samples` chord on a curved path), while Cone Traced and
+## Stochastic march `shadow_samples` narrow cones spread
 ## along the part of the segment within `range` of the receiver (Stochastic dithers
 ## them), so shadows are soft along the tube and sharp across it. The cookie stays
 ## centered on the node; FIT_RANGE spans the capsule's bounding box.[br][br]
@@ -23,8 +24,7 @@ class_name LitLineLight2D
 ## `length` (select the Path2D to draw and edit the curve with Godot's pen gizmo), and
 ## `closed` joins the curve's ends into a loop. The curve is lit as true arcs, as many as
 ## it needs, each straight stretch as one piece and the bends as up to 32 chords per 32
-## arcs; Cone Traced and Stochastic shadows march it as `shadow_samples` chords of equal
-## length.
+## arcs; every shadow algorithm marches it as `shadow_samples` chords of equal length.
 ## Everything else is inherited from LitPositionalLight2D and LitLight2D.
 
 const LinePathScript := preload("res://addons/lit/runtime/registry/line_path.gd")
@@ -162,7 +162,7 @@ func _init() -> void:
 	child_order_changed.connect(_on_child_order_changed)
 
 func _validate_property(property: Dictionary) -> void:
-	if property.name == "shadow_samples" and shadow_algorithm == ShadowAlgorithm.CONE_TRACED:
+	if property.name == "shadow_samples" and (shadow_algorithm == ShadowAlgorithm.CONE_TRACED or _path != null):
 		return
 	if (property.name == "length" and _path != null) or (property.name in ["closed", "close_mode", "tessellate"] and _path == null) \
 			or (property.name in ["closed", "close_mode"] and not _closable):
@@ -191,6 +191,10 @@ func _get_configuration_warnings() -> PackedStringArray:
 func is_curved() -> bool:
 	_refresh_path()
 	return _chain != null and _chain.arc_count() > 0
+
+## True while the Path2D child has moved or swapped its curve since the last fit.
+func path_stale() -> bool:
+	return _path != null and (_path.curve != _path_curve or _path.transform != _path_xf)
 
 ## True while `closed` joins the path (never on a straight 2-point path).
 func path_closed() -> bool:

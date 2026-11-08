@@ -9,6 +9,7 @@ const TOLERANCE := 0.1
 const MAX_DEPTH := 6
 const STRAIGHT := 1e-6
 const COS_JOINT := 0.99985  # 1 degree
+const BIARC_REACH := 4.0  # a closing biarc whose joint lies past this many gaps away closes straight
 const CLOSE_BIARC := 1  # LitLineLight2D.CloseMode
 const CLOSE_STRAIGHT := 2
 const CLOSE_SYMMETRIC := 3
@@ -176,7 +177,7 @@ static func _close(segs: Array[PackedVector2Array], pts: PackedVector2Array, bul
 		var bi := biarc(a, ta, d, td)
 		var b1: float = bi[1]
 		var b2: float = bi[2]
-		if is_finite(b1) and is_finite(b2) and absf(b1) <= 1e4 and absf(b2) <= 1e4:
+		if is_finite(b1) and is_finite(b2) and absf(b1) <= 1e4 and absf(b2) <= 1e4 and not biarc_blown(a, d, bi[0]):
 			pts.append(bi[0])
 			bul.append(b1)
 			bulge = b2
@@ -233,6 +234,12 @@ static func biarc(a: Vector2, t0: Vector2, d: Vector2, t1: Vector2) -> Array:
 		var dl := (sqrt(vt * vt + 2.0 * k * v.length_squared()) - vt) / (2.0 * k)
 		j = (a + t0 * dl + d - t1 * dl) * 0.5
 	return [j, bulge_from_tangent(a, j, t0), -tan(0.5 * (d - j).normalized().angle_to(t1))]
+
+
+## True when a biarc from `a` to `d` puts its joint `j` past BIARC_REACH gaps from either end:
+## near-parallel end tangents pointing back along the gap, whose biarc loops without bound.
+static func biarc_blown(a: Vector2, d: Vector2, j: Vector2) -> bool:
+	return maxf(a.distance_to(j), d.distance_to(j)) > BIARC_REACH * a.distance_to(d)
 
 
 ## Bulge of the arc from `a` to `b` leaving `a` along `t`.

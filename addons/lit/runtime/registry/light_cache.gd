@@ -83,6 +83,9 @@ func cull_visible(tree: SceneTree, world_rect: Rect2) -> Array:
 			_visible_kinds.append(1)
 			continue
 		if _kinds[i] == 3:
+			if (node as LitLineLight2D).path_stale():
+				_write_mirror(i, node, 3)
+				f = _flags[i]
 			var lxf := node.global_transform
 			var lp := lxf.origin
 			var lr := _ranges[i] * maxf(lxf.x.length(), lxf.y.length())

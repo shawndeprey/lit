@@ -43,6 +43,7 @@ var took_over := false
 var _mode := Mode.SILENT
 var _is_worker := false
 var _work: Array = []
+var _twins: Array[int] = []
 var _next := 0
 var _done := 0
 var _pending: Array = []
@@ -74,7 +75,8 @@ func _init() -> void:
 ## a static shader path warmed verbatim. Twins are folded: a fast ramp variant is the
 ## same program as its full-tier sibling (lit_header promotes LIT_OCC_RAMP to
 ## LIT_SELF_EXCLUSION), and an entry file is its tier's base variant, so one of each
-## pair bakes and the other is a cache hit in every process that loads it.
+## pair bakes and the other is a cache hit in every process that loads it. The runtime
+## still keys a folded ramp twin apart, so folded_twins() marks and instantiates them.
 static func work_list() -> Array:
 	var configured: Variant = config_work_list()
 	if configured != null:
@@ -103,6 +105,23 @@ static func dedupe(work: Array) -> Array:
 			if tier != null and flags.has(tier):
 				continue
 		out.append(item)
+	return out
+
+## The fast-tier ramp variants the listed full-tier variants stand for and the list leaves out.
+static func folded_twins(work: Array) -> Array[int]:
+	var members := {}
+	for fl in LitShaderLibrary.all_variant_flags():
+		members[fl] = true
+	var listed := {}
+	for item in work:
+		if item is int:
+			listed[item] = true
+	var out: Array[int] = []
+	for item in work:
+		if item is int and item & (LitShaderLibrary.F_SELF_EXCL | LitShaderLibrary.F_RAMP) == LitShaderLibrary.F_SELF_EXCL:
+			var twin: int = (item & ~LitShaderLibrary.F_SELF_EXCL) | LitShaderLibrary.F_RAMP
+			if members.has(twin) and not listed.has(twin):
+				out.append(twin)
 	return out
 
 ## The variants a build without a config covers (the editor warm too): every matrix
@@ -358,6 +377,9 @@ func _mark_warmed() -> void:
 	for item in _work:
 		if item is int:
 			LitShaderLibrary._warmed[item] = true
+	_twins = folded_twins(_work)
+	for twin in _twins:
+		LitShaderLibrary._warmed[twin] = true
 
 
 func _start_thread(body: Callable) -> void:
@@ -479,10 +501,10 @@ func _process(_delta: float) -> void:
 
 func _process_silent() -> void:
 	for i in SILENT_PER_FRAME:
-		if _next >= _work.size():
+		if _next >= _work.size() + _twins.size():
 			_finish(true)
 			return
-		var item: Variant = _work[_next]
+		var item: Variant = _work[_next] if _next < _work.size() else _twins[_next - _work.size()]
 		# Statics warm the disk cache only; the in-process shader dict is variant-only.
 		if item is int:
 			LitShaderLibrary.get_receiver(item)
