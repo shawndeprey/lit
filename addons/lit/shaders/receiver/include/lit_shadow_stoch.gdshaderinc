@@ -59,6 +59,36 @@ vec4 lit_seg_stratum(vec2 frag_sdf, vec2 light_sdf, vec2 seg, float src_r, int i
 	vec2 sdir = delta / max(len, 1e-4);
 	return vec4(sdir, len * cap_frac, max((abs(seg.x * sdir.y - seg.y * sdir.x) / float(n) + src_r) / max(len, 1e-4), 1e-4));
 }
+
+// Sphere-trace a gate cone (half-width tangent w around axis) out to reach: false at the
+// first sample inside the cone, with t and d left there for the umbra walk.
+bool lit_path_walk(vec2 frag_sdf, vec2 axis, float w, float reach, bool capped, int max_steps,
+		inout float t, inout float d) {
+	float t_cov = lit_sdf_cov_exit(frag_sdf, axis);
+	bool plane = !capped && reach <= t_cov;
+	float maxd = min(reach, t_cov);
+	int steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+	t = shadow_min_step;
+	d = 0.0;
+	for (int s = 0; s < steps && t < maxd; s++) {
+		d = lit_sdf_sample(frag_sdf + axis * t);
+		if (d < w * t) {
+			return false;
+		}
+		t += max(d, shadow_min_step);
+	}
+	if (t < maxd) {
+		int tail = max(steps >> 2, 4);
+		for (int e = 0; e < tail && t < maxd; e++) {
+			d = lit_sdf_sample(frag_sdf + axis * t);
+			if (d < w * t) {
+				return false;
+			}
+			t += max(d, (maxd - t) / float(tail - e));
+		}
+	}
+	return !plane || maxd <= shadow_min_step || lit_sdf_sample(frag_sdf + axis * maxd) >= w * maxd;
+}
 #else
 
 // Stratum i of n of a point, spot or directional source: march direction (xy), length, cone tangent.
@@ -131,12 +161,129 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 	// Per-stratum cap as a fraction so point/spot strata (whose lengths differ per
 	// stratum) all close on the same tip isoline.
 	float cap_frac = capped ? t_cap / max(maxd, 1e-4) : 1.0;
+#ifdef LIT_LINE
+	// A window's strata fan out to its ends, which the cone toward its middle bounds
+	// only when the window is centred on the fragment. A line gates on the window's
+	// angular hull instead, about its bisector: the hull cone to the near end's depth,
+	// then the triangle's tip to the far end; clear = lit, spanned = dark while every
+	// stratum still reaches the ball, neither = strata.
+	bool march = !(line && n > 0);
+	bool hull_m = false;
+	bool tip = false;
+	vec2 g_dir = dir;
+	float g_reach = t_cap;
+	float g_band = band;
+	float g_w = w_gate;
+	vec2 axis = vec2(0.0);
+	vec2 e_f = vec2(0.0);
+	float reach_n = 0.0;
+	float w_g = 0.0;
+	if (line && n > 0) {
+		vec2 sg = dot(seg, dir) < 0.0 ? -seg : seg;
+		vec2 e_n = dir * maxd - sg;
+		e_f = dir * maxd + sg;
+		float l_n = max(length(e_n), 1e-4);
+		float l_f = max(length(e_f), 1e-4);
+		axis = e_n / l_n + e_f / l_f;
+		float cs = dot(e_n, e_f) / (l_n * l_f);
+		float tan_h = sqrt(max(1.0 - cs, 0.0) / max(1.0 + cs, 1e-6));
+		float w_e = src_r / l_n;
+		w_g = (tan_h + w_e) / max(1.0 - tan_h * w_e, 1e-6);
+		bool hull = cs > -0.999 && tan_h * w_e < 1.0;
+		// On or beside the tube (a hull past a quarter turn, or none) one ball about the
+		// window's middle holding the fragment and both ends answers first.
+		if ((tan_h > 1.0 || !hull) && lit_sdf_cov_exit(frag_sdf, dir) >= maxd * cap_frac
+				&& lit_sdf_sample(frag_sdf + dir * (maxd * cap_frac)) >= (max(length(seg), maxd) + src_r) * cap_frac) {
+			return 1.0;
+		}
+		if (hull) {
+			axis = normalize(axis);
+			reach_n = dot(e_n, axis) * cap_frac;
+			if (frag_d >= 0.0 && !self_ex && !LIT_YS_ON && !LIT_RAMP_ON && !LIT_MK_ON && !LIT_RX_ON) {
+				// Plain: leave the cone at its first blocked sample; spanned there = dark
+				// out to the window's nearest point.
+				float u = clamp(-dot(dir, seg) * maxd / max(dot(seg, seg), 1e-8), -1.0, 1.0);
+				float t_dark = length(dir * maxd + seg * u);
+				float t = 0.0;
+				float d = 0.0;
+				tip = lit_path_walk(frag_sdf, axis, w_g, reach_n, true, max_steps, t, d);
+				if (!tip && !capped) {
+					for (int e = 0; e < 16 && t <= t_dark; e++) {
+						if (d <= -w_g * t) {
+							return 0.0;
+						}
+						if (d >= 0.0 && e >= 2) {
+							break;
+						}
+						t += max(abs(d), shadow_min_step);
+						d = lit_sdf_sample(frag_sdf + axis * t);
+					}
+				}
+			} else if (frag_d < 0.0 && !self_ex && !LIT_YS_ON && !LIT_RAMP_ON && !LIT_MK_ON && !LIT_RX_ON
+					&& lit_sdf_sample(frag_sdf + dir * (maxd * cap_frac)) >= 0.0) {
+				// Inside a shape the window's middle is not: the march out of it is its
+				// footprint shadow.
+				return 0.0;
+			} else {
+				// Inside a shape or with exclusions: the marcher's phases resolve them.
+				march = true;
+				hull_m = true;
+				g_dir = axis;
+				g_reach = reach_n;
+				g_band = capped ? w_g * reach_n : 0.0;
+				g_w = w_g;
+			}
+		}
+	}
+	if (march) {
+		float c = lit_shadow_cone(frag_sdf, g_dir, g_reach, g_band, g_w,
+				max_steps, frag_d,
+				!is_dir && !capped && !hull_m, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+		if (hull_m) {
+			// A fragment inside a shape the cone never leaves reads lit, as the marcher
+			// has it; the tip is only walked from outside.
+			if (c <= 0.0 || (c >= 1.0 && frag_d < 0.0)) {
+				return c;
+			}
+			tip = c >= 1.0;
+		} else if (n <= 0 || c <= 0.0 || c >= 1.0) {
+			return c;
+		}
+	}
+	if (tip) {
+		// Past the near end the strata's hull is the triangle's tip: one ball over the
+		// whole tip, then a ball walk shrinking to the tube.
+		vec2 s0 = frag_sdf + axis * reach_n;
+		vec2 to_f = frag_sdf + e_f * cap_frac - s0;
+		float len2 = max(length(to_f), 1e-4);
+		vec2 u2 = to_f / len2;
+		float r0 = w_g * reach_n;
+		float end2 = min(len2, lit_sdf_cov_exit(s0, u2));
+		if (end2 >= 0.5 * len2
+				&& lit_sdf_sample(s0 + u2 * (0.5 * len2)) >= max(length(vec2(0.5 * len2, r0)), 0.5 * len2 + src_r)) {
+			return 1.0;
+		}
+		int steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+		float tau = 0.0;
+		for (int s = 0; s < steps && tau < end2; s++) {
+			float dd = lit_sdf_sample(s0 + u2 * tau);
+			if (dd < r0 * (1.0 - tau / len2) + src_r) {
+				break;
+			}
+			tau += max(dd, max(shadow_min_step, (end2 - tau) / float(steps - s)));
+		}
+		if (tau >= end2) {
+			return 1.0;
+		}
+	}
+#else
 	float c = lit_shadow_cone(frag_sdf, dir, t_cap, band, w_gate,
 			max_steps, frag_d,
 			!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 	if (n <= 0 || c <= 0.0 || c >= 1.0) {
 		return c;
 	}
+#endif
 	float sum = 0.0;
 #ifdef LIT_LINE
 	// Plain line strata march in pairs.
@@ -199,36 +346,6 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 }
 
 #ifdef LIT_LINE
-// Sphere-trace a gate cone (half-width tangent w around axis) out to reach: false at the
-// first sample inside the cone, with t and d left there for the umbra walk.
-bool lit_path_walk(vec2 frag_sdf, vec2 axis, float w, float reach, bool capped, int max_steps,
-		inout float t, inout float d) {
-	float t_cov = lit_sdf_cov_exit(frag_sdf, axis);
-	bool plane = !capped && reach <= t_cov;
-	float maxd = min(reach, t_cov);
-	int steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
-	t = shadow_min_step;
-	d = 0.0;
-	for (int s = 0; s < steps && t < maxd; s++) {
-		d = lit_sdf_sample(frag_sdf + axis * t);
-		if (d < w * t) {
-			return false;
-		}
-		t += max(d, shadow_min_step);
-	}
-	if (t < maxd) {
-		int tail = max(steps >> 2, 4);
-		for (int e = 0; e < tail && t < maxd; e++) {
-			d = lit_sdf_sample(frag_sdf + axis * t);
-			if (d < w * t) {
-				return false;
-			}
-			t += max(d, (maxd - t) / float(tail - e));
-		}
-	}
-	return !plane || maxd <= shadow_min_step || lit_sdf_sample(frag_sdf + axis * maxd) >= w * maxd;
-}
-
 // Stratum i of a path row: march direction (xy), length, cone tangent; band its tip band,
 // weight its shading share, 0 (and maxd 0, idle) when it casts nothing.
 vec4 lit_path_stratum(vec2 frag_sdf, int row, int i, int n, vec3 N, vec3 tube, float cap_frac, bool capped, float src_r,

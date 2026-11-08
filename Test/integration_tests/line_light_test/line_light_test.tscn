@@ -152,7 +152,6 @@ shadow_enabled = true
 metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
 
 [node name="ZeroLengthLine" type="Node2D" parent="Lights" unique_id=1736456417]
-visible = false
 position = Vector2(1288, 160)
 rotation = -1.5707964
 script = ExtResource("4_saber")
@@ -164,13 +163,11 @@ energy = 2.0
 shadow_enabled = true
 
 [node name="LightSaber" type="Node2D" parent="Lights" unique_id=1799641673]
-visible = false
 position = Vector2(1517, 542)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 271.0
-width = 12.5
-glow = 0.96
+width = 10.0
 range = 1024.0
 lit_version = "1.1.7"
 color = Color(1.6197081, 0, 1.6197081, 1)
@@ -236,6 +233,7 @@ position = Vector2(1424, 227)
 rotation = -1.5707964
 script = ExtResource("4_saber")
 length = 347.0
+close_mode = 2
 tessellation_segments = 3
 range = 1024.0
 lit_version = "1.1.7"
@@ -311,6 +309,7 @@ position = Vector2(216, 320)
 script = ExtResource("4_saber")
 width = 11.0
 glow = 0.85
+tessellation_segments = 30
 range = 1024.0
 lit_version = "1.1.7"
 color = Color(1.2236274, 0.8471569, 1.2236274, 1)
