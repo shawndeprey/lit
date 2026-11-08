@@ -99,7 +99,7 @@ func _ensure_world_sdf(host: Node, viewport: Viewport) -> bool:
 ## diagonal toward the light) and publish the sampling globals. The viewport re-renders
 ## only when its content or framing changed: on the world-anchored grid an unchanged
 ## framing re-renders to identical texels, so skipping those renders is invisible.
-func update(host: Node, viewport: Viewport, visible: Array,
+func update(host: Node, viewport: Viewport, visible: Array, kinds: PackedByteArray,
 		canvas_xform: Transform2D, world_rect: Rect2, occ_root: Node) -> void:
 	if not _ensure_world_sdf(host, viewport):
 		return
@@ -110,10 +110,12 @@ func update(host: Node, viewport: Viewport, visible: Array,
 
 	var rect := world_rect
 	var diag := world_rect.size.length()
-	for light in visible:
+	for i in visible.size():
+		var light = visible[i]
 		if not light.shadow_enabled:
 			continue
-		if light is LitDirectionalLight2D:
+		var kind := kinds[i]
+		if kind == 1:
 			# Extend by the light's effective world-px shadow cap, so the window always
 			# contains its marches at any zoom (a view-derived extension would shrink
 			# the world coverage when zoomed in, truncating shadows on screen).
@@ -121,6 +123,12 @@ func update(host: Node, viewport: Viewport, visible: Array,
 					* clampf(light.shadow_length, 0.0, 1.0)
 			var toward := -Vector2.from_angle(light.global_rotation) * reach
 			rect = rect.expand(world_rect.position + toward).expand(world_rect.end + toward)
+		elif kind >= 3:
+			if kind == 4:
+				rect = rect.merge(light.path_rect_in(light.global_transform))
+				continue
+			var half: Vector2 = light.global_transform.basis_xform(Vector2(light.length * 0.5, 0.0))
+			rect = rect.expand(light.global_position - half).expand(light.global_position + half)
 		else:
 			rect = rect.expand(light.global_position)
 	rect = rect.grow(8.0)

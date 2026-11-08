@@ -1,6 +1,6 @@
 class_name CryptTorch extends Node2D
 
-@onready var point_light_2d: LitPointLight2D = $PointLight2D
+@onready var point_light_2d: LitPositionalLight2D = $PointLight2D
 
 # Tunables (realistic values)
 @export var flicker_strength := 0.12      # ±12% energy variation

@@ -19,14 +19,20 @@ class_name LitDirectionalLight2D
 ## Maximum distance shadows can extend, in world pixels; `shadow_length` scales within
 ## it. A world length, so shadows stay identical at any camera zoom. The world-SDF
 ## window grows to cover it, so very large values coarsen shadow-casting resolution.
-@export_range(256.0, 16384.0, 1.0, "or_greater") var shadow_reach: float = 4096.0
+@export_range(256.0, 16384.0, 1.0, "or_greater") var shadow_reach: float = 4096.0:
+	set(value):
+		shadow_reach = value
+		_pack_version += 1
 ## Angular size (full diameter) of the source in degrees (CONE_TRACED / STOCHASTIC):
 ## how wide the light appears in the sky, the same convention as Unreal's Source Angle
 ## (0.5357), Unity HDRP's Angular Diameter (0.5) and Blender's Sun Angle (0.526) - the
 ## sun is about 0.53. Larger reads as a big soft sky light with penumbras that grow
 ## with distance from the occluder; the default is deliberately sun x ~11 so the
 ## softness is visible at game scale.
-@export_range(0.0, 60.0, 0.05) var source_angle: float = 6.0
+@export_range(0.0, 60.0, 0.05) var source_angle: float = 6.0:
+	set(value):
+		source_angle = value
+		_pack_version += 1
 
 
 func _shadow_source_property() -> StringName:

@@ -25,8 +25,10 @@ const TOOL_MENU_PRECOMPILE := "Generate Lit Precompile Config"
 
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const LitPostInspectorScript := preload("res://addons/lit/editor/lit_post_inspector.gd")
-const LitReceiverInspectorScript := preload("res://addons/lit/editor/lit_receiver_inspector.gd")
+const LitLineInspectorScript := preload("res://addons/lit/editor/lit_line_inspector.gd")
+const LitReceiverInspectorScript :=preload("res://addons/lit/editor/lit_receiver_inspector.gd")
 const LitPrecompileConfigScript := preload("res://addons/lit/editor/lit_precompile_config.gd")
+const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const LitExportPluginScript := preload("res://addons/lit/editor/lit_export_plugin.gd")
 const LitPortToolScript := preload("res://addons/lit/editor/lit_port_tool.gd")
 const LitUpdateToolScript := preload("res://addons/lit/editor/lit_update_tool.gd")
@@ -38,17 +40,22 @@ const LitMigrationsScript := preload("res://addons/lit/editor/lit_update_tool/mi
 # signals, and it's the only thing that catches editor-camera pan/zoom, which the
 # shadow and position math depend on.
 const EDITOR_REFRESH_INTERVAL := 1.0 / 30.0
+# Project metadata flag: the port wrote scenes, generate the precompile config once
+# the reloaded editor reads them fresh.
+const PORT_GENERATE_KEY := "generate_precompile_config_after_port"
 
 var _registry: LitLightRegistry
 var _refresh_accum := 0.0
 var _warm_pending: Array[int] = []
 var _post_inspector: EditorInspectorPlugin
+var _line_inspector: EditorInspectorPlugin
 var _receiver_inspector: EditorInspectorPlugin
 # Last-seen values of the project settings that gate receiver exports; see _process.
 var _gating_key := ""
 var _export_plugin: EditorExportPlugin
 # Carries the version, so registration and removal must use the same stored string.
 var _update_menu_label := ""
+var _generate_after_port := false
 
 
 # --- Lifecycle ---------------------------------------------------------------
@@ -78,16 +85,24 @@ func _enter_tree() -> void:
 	_post_inspector = LitPostInspectorScript.new()
 	_post_inspector.undo_redo = get_undo_redo()
 	add_inspector_plugin(_post_inspector)
+	# The "Add Path" button on the LitLineLight2D inspector.
+	_line_inspector = LitLineInspectorScript.new()
+	_line_inspector.undo_redo = get_undo_redo()
+	add_inspector_plugin(_line_inspector)
 	# Notes on receiver inspectors for exports the project settings make inert.
 	_receiver_inspector = LitReceiverInspectorScript.new()
 	add_inspector_plugin(_receiver_inspector)
 	# Packs lit_precompile.cfg into exports (see editor/lit_export_plugin.gd).
 	_export_plugin = LitExportPluginScript.new()
 	add_export_plugin(_export_plugin)
+	# Opening the export dialog offers to generate a missing precompile config.
+	_watch_export_dialog(_find_export_dialog())
 	# Editor-side gather driver; the autoload covers runtime but doesn't run here.
 	_registry = LitLightRegistryScript.new()
 	# Silent background warm so first-session editor tier swaps never pay a compile.
-	_warm_pending = LitShaderLibrary.all_variant_flags()
+	_warm_pending = LitShaderPrecompilerScript.default_variant_flags()
+	_generate_after_port = bool(EditorInterface.get_editor_settings().get_project_metadata(
+			"lit", PORT_GENERATE_KEY, false))
 	set_process(true)
 
 func _exit_tree() -> void:
@@ -101,10 +116,17 @@ func _exit_tree() -> void:
 	remove_tool_menu_item(_update_menu_label)
 	remove_inspector_plugin(_post_inspector)
 	_post_inspector = null
+	remove_inspector_plugin(_line_inspector)
+	_line_inspector = null
 	remove_inspector_plugin(_receiver_inspector)
 	_receiver_inspector = null
 	remove_export_plugin(_export_plugin)
 	_export_plugin = null
+	var export_dialog := _find_export_dialog()
+	if export_dialog != null:
+		for c in export_dialog.visibility_changed.get_connections():
+			if c.callable.get_object() == self:
+				export_dialog.visibility_changed.disconnect(c.callable)
 	get_tree().node_added.disconnect(_on_editor_node_added)
 	_remove_live_globals()
 
@@ -141,6 +163,10 @@ func _process(delta: float) -> void:
 	if _refresh_accum < EDITOR_REFRESH_INTERVAL:
 		return
 	_refresh_accum = 0.0
+	if _generate_after_port and not EditorInterface.get_resource_filesystem().is_scanning():
+		_generate_after_port = false
+		EditorInterface.get_editor_settings().set_project_metadata("lit", PORT_GENERATE_KEY, false)
+		_generate_precompile_config()
 	# Mirror the runtime LitManager: publish the selected lighting model so the editor
 	# preview reflects the lit/render/lighting_model setting. The autoload that does this
 	# at runtime doesn't run in the editor, so without this the preview would always be
@@ -240,12 +266,13 @@ func _start_converted_sprite(node: Node) -> void:
 #
 # "Generate Lit Precompile Config" scans the project's saved scenes for actual Lit
 # usage and writes res://lit_precompile.cfg; while that file exists, the startup
-# precompiler builds exactly that list instead of the full variant matrix. Deleting
-# the file restores the full build. The scan itself lives in
+# precompiler builds exactly that list instead of the default build. Deleting the
+# file restores the default build. The scan itself lives in
 # editor/lit_precompile_config.gd.
 
 func _generate_precompile_config() -> void:
-	var result: Dictionary = LitPrecompileConfigScript.generate()
+	var found: Dictionary = await _scan_precompile("Lit Precompile Config")
+	var result: Dictionary = LitPrecompileConfigScript.generate(found)
 	if not result.saved:
 		_popup_tool_dialog("Lit Precompile Config", "Could not write res://lit_precompile.cfg; see the Output log.")
 		return
@@ -259,6 +286,63 @@ func _generate_precompile_config() -> void:
 		text = "Scanned %d scenes.\nPrecompile list: %d of %d receiver variants, plus %d shader files.\n\nWrote res://lit_precompile.cfg (packed into exports automatically); delete it to return to full builds.\nRegenerate after adding lights, masks, or post effects." \
 				% [result.scenes, variants.size(), result.full, shaders.size()]
 	_popup_tool_dialog("Lit Precompile Config", text)
+
+func _scan_precompile(title: String) -> Dictionary:
+	_progress_open(title, "Scanning scenes...")
+	await get_tree().process_frame
+	var acc: Dictionary = LitPrecompileConfigScript.scan_begin()
+	var scene_paths: Array = acc.scene_paths
+	for i in scene_paths.size():
+		LitPrecompileConfigScript.scan_scene(acc, scene_paths[i])
+		if (i + 1) % 4 == 0 or i + 1 == scene_paths.size():
+			_progress_set("Scanning scenes... %d / %d" % [i + 1, scene_paths.size()],
+					float(i + 1) / maxf(scene_paths.size(), 1.0))
+			await get_tree().process_frame
+	_progress_set("Finding post-effect shaders...", 1.0)
+	await get_tree().process_frame
+	var found: Dictionary = LitPrecompileConfigScript.scan_finish(acc)
+	_progress_close()
+	return found
+
+func _find_export_dialog() -> Window:
+	var found := get_tree().root.find_children("*", "ProjectExportDialog", true, false)
+	return found[0] as Window if not found.is_empty() else null
+
+func _watch_export_dialog(export_dialog: Window) -> void:
+	if export_dialog == null:
+		return
+	for c in export_dialog.visibility_changed.get_connections():
+		if c.callable.get_object() == self:
+			return
+	export_dialog.visibility_changed.connect(_on_export_dialog_visibility.bind(export_dialog))
+
+# Yes closes the export dialog and runs the generator; No leaves the export dialog up.
+func _on_export_dialog_visibility(export_dialog: Window) -> void:
+	if not export_dialog.visible or FileAccess.file_exists(LitShaderPrecompilerScript.CONFIG_PATH):
+		return
+	var dlg := ConfirmationDialog.new()
+	dlg.title = TOOL_MENU_PRECOMPILE
+	dlg.dialog_text = "This project has no res://lit_precompile.cfg, so players compile all %d Lit shader variants on first launch.\n\nGenerate one now from your saved scenes?" \
+			% LitShaderPrecompilerScript.default_variant_flags().size()
+	dlg.ok_button_text = "Yes"
+	dlg.cancel_button_text = "No"
+	dlg.dialog_autowrap = true
+	dlg.get_label().horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	dlg.get_label().vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	dlg.exclusive = true
+	dlg.transient = true
+	dlg.confirmed.connect(func() -> void:
+		export_dialog.hide()
+		_generate_precompile_config())
+	dlg.visibility_changed.connect(func() -> void:
+		if not dlg.visible:
+			dlg.queue_free())
+	export_dialog.add_child(dlg)
+	var size := Vector2(340, 280) * EditorInterface.get_editor_scale()
+	(func() -> void:
+		dlg.popup_centered(Vector2i(size))
+		dlg.grab_focus()
+		dlg.get_ok_button().grab_focus()).call_deferred()
 
 # --- Port Project to Lit --------------------------------------------------------
 #
@@ -453,12 +537,19 @@ func _run_port(scan: Dictionary, kinds: Dictionary) -> void:
 		text += "\n%d items were not auto-migratable - see the attention section at the top of the report." % flagged
 	text += "\n\nFull details: res://lit_port_report.txt\nRun the tool again any time; it only rewrites what changed."
 	if not did_work:
+		var gen: Dictionary = LitPrecompileConfigScript.generate(await _scan_precompile(title))
+		if gen.saved:
+			text += "\n\nWrote res://lit_precompile.cfg: %d of %d shader variants precompile at startup." \
+					% [gen.variants.size(), gen.full]
 		_popup_tool_dialog(title, text)
 		return
 	# Rewritten scripts and scenes only fully take after a project reload (in-editor
 	# script reloads leave stale compiled state and class caches). Disk is authoritative
-	# here - everything was saved before the run - so restart without re-saving.
-	text += "\n\nClosing this dialog reloads the project so every change takes effect."
+	# here - everything was saved before the run - so restart without re-saving. The
+	# resource cache still holds the pre-port scenes, so the precompile config is
+	# generated after the reload.
+	EditorInterface.get_editor_settings().set_project_metadata("lit", PORT_GENERATE_KEY, true)
+	text += "\n\nClosing this dialog reloads the project so every change takes effect, then writes res://lit_precompile.cfg from the ported scenes."
 	var dlg := AcceptDialog.new()
 	dlg.title = title
 	dlg.dialog_text = text
@@ -677,6 +768,10 @@ func _ps_global_defs() -> Array:
 			"name": "lit_light_data",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
 		},
+		{
+			"name": "lit_light_path",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
 		{"name": "lit_light_count", "def": {"type": "int", "value": 0}},
 		{"name": "lit_viewport_size", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{"name": "lit_canvas_scale", "def": {"type": "float", "value": 1.0}},
@@ -742,6 +837,7 @@ func _rs_global_defs() -> Array:
 			"type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D,
 			"value": _placeholder_texture(),
 		},
+		{"name": "lit_light_path", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_light_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_viewport_size", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_canvas_scale", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
@@ -876,20 +972,20 @@ func _project_setting_defs() -> Array:
 		},
 		{
 			"name": "lit/startup/precompile_max_workers",
-			"default": 4,
+			"default": 8,
 			"description": "The most hidden worker processes an asynchronous or API shader precompile may start.\n\n"
-					+ "Lit starts one worker for every 6 hardware threads of the CPU the game is running on, "
-					+ "because each worker uses up to 6 threads. This setting only caps that number, it never raises it: "
-					+ "a 24-thread CPU has room for 4 workers, so it runs 4 whether this is set to 4 or to 16, "
-					+ "and an 8-thread CPU always runs 1.\n\n"
-					+ "Raise it only if builds on CPUs with more than 24 threads need to finish sooner. "
-					+ "Every worker is a whole hidden copy of the game, so more of them cost memory and frame rate "
-					+ "while the build runs, and each extra worker adds less speed than the one before.",
+					+ "Lit starts one worker for every 3 hardware threads of the CPU the game is running on. "
+					+ "This setting only caps that number, it never raises it: "
+					+ "a 24-thread CPU has room for 8 workers, so it runs 8 whether this is set to 8 or to 16, "
+					+ "and an 8-thread CPU always runs 2.\n\n"
+					+ "The GPU driver builds one shader at a time per process, so the build finishes about as many "
+					+ "times faster as there are workers. Lower it if the hidden copies of the game cost too much "
+					+ "memory or frame rate while the build runs.",
 			"info": {
 				"name": "lit/startup/precompile_max_workers",
 				"type": TYPE_INT,
 				"hint": PROPERTY_HINT_RANGE,
-				"hint_string": "1,16,1,suffix:workers x 6 threads each",
+				"hint_string": "1,16,1,suffix:workers x 3 threads each",
 			},
 		},
 		{
@@ -949,6 +1045,9 @@ func _project_setting_defs() -> Array:
 ## node_added fires inside the tooltip's add_child, and its ready signal still lands
 ## before the editor measures the content, so the tooltip sizes itself to the new text.
 func _on_editor_node_added(node: Node) -> void:
+	if node.get_class() == "ProjectExportDialog":
+		_watch_export_dialog(node as Window)
+		return
 	if not (node is PopupPanel and node.get_class() == "EditorHelpBitTooltip"):
 		return
 	var prop := node.get_parent() as EditorProperty

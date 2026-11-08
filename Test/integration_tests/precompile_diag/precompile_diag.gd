@@ -632,11 +632,28 @@ func _draw_timeline(c: Control) -> void:
 		_blocks.append([r, key])
 
 
-func _draw_slowest(c: Control) -> void:
+## Items a worker claimed in one frame share that frame's done time, so they are ranked
+## as one batch spanning the earliest claim: the span is the batch's cost, not any
+## member's.
+func _batches() -> Array:
 	var done: Array = []
 	for key in _items:
 		if _items[key].end >= 0.0:
 			done.append(_items[key])
+	done.sort_custom(func(a, b): return a.pid < b.pid if a.pid != b.pid else a.end < b.end)
+	var out: Array = []
+	for item in done:
+		var last: Dictionary = out.back() if not out.is_empty() else {}
+		if not last.is_empty() and last.pid == item.pid and absf(last.end - item.end) < 0.02:
+			last.start = minf(last.start, item.start)
+			last.label += " + " + item.label
+		else:
+			out.append({"label": item.label, "pid": item.pid, "start": item.start, "end": item.end})
+	return out
+
+
+func _draw_slowest(c: Control) -> void:
+	var done := _batches()
 	done.sort_custom(func(a, b): return a.end - a.start > b.end - b.start)
 	var row := 30.0
 	var top := 0.0

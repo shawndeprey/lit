@@ -81,6 +81,18 @@ func _point_shadows() -> void:
 	_light.shadow_length = 1.0
 	img = await capture()
 	check_approx(case_name, "shadow_length 1: shadow back", AMBIENT, lum(img, S), TOL)
+	# A cap shorter than the march out of the box (20 px from F) must still darken the footprint.
+	_light.shadow_length = 0.05
+	img = await capture()
+	check_approx(case_name, "shadow_length 0.05: the box interior 20 px inside its lit edge stays dark",
+			AMBIENT, lum(img, F), 0.06)
+	_light.source_radius = 150.0
+	img = await capture()
+	check_approx(case_name, "shadow_length 0.05, source_radius 150: 8 px inside the lit edge is dark (no tip fade)",
+			AMBIENT, lum(img, Vector2(318, 300)), 0.06)
+	_light.source_radius = 32.0
+	_light.shadow_length = 1.0
+	img = await capture()
 
 	_box.visible = false
 	await frames(2)
@@ -121,6 +133,11 @@ func _point_shadows() -> void:
 		# Interior shadow is hard on every algorithm: 8 px inside the box's lit edge.
 		check_approx("shadow_algorithms", "%s: box interior 8 px inside its lit edge is dark (no ramp)" % an,
 				AMBIENT, lum(img, Vector2(318, 300)), 0.06)
+		_light.shadow_length = 0.05
+		img = await capture()
+		check_approx("shadow_algorithms", "%s: shadow_length 0.05 keeps the box interior dark" % an,
+				AMBIENT, lum(img, F), 0.06)
+		_light.shadow_length = 1.0
 	# Penumbra shaping. Raymarched softness reaches outward from the geometric edge.
 	_light.shadow_algorithm = ALGO.RAYMARCHED
 	_light.shadow_hardness = 1.0
@@ -175,6 +192,17 @@ func _point_shadows() -> void:
 	img = await capture()
 	check_gt("shadow_algorithms", "Stochastic: source_radius 150 with 16 samples lights inside the edge vs the tight cone",
 			lum(img, E_IN), tight_in, 0.05)
+	# Strata march in pairs; an odd count leaves the last pair's second lane idle.
+	_light.shadow_jitter = 0.0
+	img = await capture()
+	var in16 := lum(img, E_IN)
+	var out16 := lum(img, E_OUT)
+	_light.shadow_samples = 15
+	img = await capture()
+	check_approx("shadow_algorithms", "Stochastic 15 samples (odd), no jitter: matches 16 inside the edge", in16,
+			lum(img, E_IN), 0.01)
+	check_approx("shadow_algorithms", "Stochastic 15 samples (odd), no jitter: matches 16 outside the edge", out16,
+			lum(img, E_OUT), 0.01)
 	var band := Rect2(500, 150, 40, 100)   # penumbra column through E_OUT and E_IN
 	_light.shadow_samples = 4
 	_light.shadow_jitter = 0.0
@@ -364,6 +392,11 @@ func _directional_shadows() -> void:
 	img = await capture()
 	check_gt(case_name, "shadow_reach 256 x length 0.25 (64 px): probe 180 px behind the box is lit",
 			lum(img, right), AMBIENT, 0.2)
+	d.shadow_length = 0.1   # 26 px cap, short of the 35 px march out of the box
+	await frames(2)
+	img = await capture()
+	check_approx(case_name, "reach 256 x length 0.1 (26 px): 35 px inside the lit edge stays dark", AMBIENT,
+			lum(img, Vector2(1015, 180)), 0.06)
 	d.shadow_length = 1.0
 	await frames(2)
 	img = await capture()
@@ -420,6 +453,12 @@ func _spot_shadows() -> void:
 	img = await capture()
 	check_approx(case_name, "spot: Stochastic shadow", AMBIENT, lum(img, Vector2(520, 800)), 0.06)
 	s.shadow_algorithm = ALGO.CONE_TRACED
+	s.shadow_length = 0.05
+	await frames(2)
+	img = await capture()
+	check_approx(case_name, "spot: shadow_length 0.05 keeps the box interior dark", AMBIENT,
+			lum(img, Vector2(330, 800)), 0.06)
+	s.shadow_length = 1.0
 
 
 ## One float of a light's packed row in the CPU upload buffer (row = its index in the
