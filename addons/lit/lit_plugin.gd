@@ -958,6 +958,11 @@ func _project_setting_defs() -> Array:
 			# Compile behind the running game (no takeover) with a floating progress box.
 			"name": "lit/startup/precompile_async",
 			"default": false,
+			"description": "Play immediately while hidden worker processes build the shaders into the disk caches, "
+					+ "with a small progress card on screen.\n\n"
+					+ "The build pays off from the next launch only: a running process cannot pick up pipelines "
+					+ "another process built, so in this first session a shader your scene uses still compiles on "
+					+ "its first draw. The takeover (this setting off) is the only mode that warms the very session it runs in.",
 			"info": {"name": "lit/startup/precompile_async", "type": TYPE_BOOL},
 		},
 		{

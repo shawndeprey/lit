@@ -104,6 +104,8 @@ func _boot_worker() -> void:
 
 ## Public API: run the precompile pipeline on demand (always worker-backed); wire UI to
 ## precompile_progress / precompile_finished. False if a precompile is already in flight.
+## The workers bake into the disk caches, which a process reads only at start: the session
+## that calls this still compiles a shader on its first draw; the next launch is warm.
 func precompile_shaders() -> bool:
 	if _api_precompiler != null or (precompiler != null and precompiler.is_processing()):
 		return false
