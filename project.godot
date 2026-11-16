@@ -46,6 +46,7 @@ render/lighting_model=1
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
+renderer/rendering_method="mobile"
 
 [shader_globals]
 
@@ -72,6 +73,10 @@ lit_viewport_size={
 lit_canvas_scale={
 "type": "float",
 "value": 1.0
+}
+lit_screen_to_sdf={
+"type": "vec2",
+"value": Vector2(0, 0)
 }
 lit_world_sdf={
 "filter": "linear",

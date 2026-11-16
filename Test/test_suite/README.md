@@ -48,9 +48,17 @@ godot --path . res://Test/test_suite/TestSuite.tscn -- quit=on full=on
 Every section scene (`<section>/<section>_section.tscn`) also runs on its own with the
 same HUD and options, which is the quick way to iterate on one feature set.
 
-The suite targets the RenderingDevice renderers (Forward+ and Mobile): the shader
-library section checks the world-SDF R16F pack pipeline, which the Compatibility
-renderer does not have.
+The same run works on every renderer. Pass the renderer before the scene path:
+
+```
+godot --rendering-method gl_compatibility --path . res://Test/test_suite/TestSuite.tscn -- quit=on
+godot --rendering-method mobile --path . res://Test/test_suite/TestSuite.tscn -- quit=on
+```
+
+The `SUITE ENV` line names the renderer and driver the run used. On Compatibility one
+check reports as a known gap (bloom reach, the screen mip chain is shorter there), and
+the shader library section takes several minutes because the GL driver compiles every
+variant on the main thread.
 
 ## Output
 

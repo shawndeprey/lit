@@ -292,7 +292,8 @@ static func marker_fresh(work: Array) -> bool:
 		return false
 	var want := marker_values(work)
 	return cfg.get_value("lit", "bundle", "") == want.bundle \
-			and cfg.get_value("lit", "worklist", "") == want.worklist
+			and cfg.get_value("lit", "worklist", "") == want.worklist \
+			and cfg.get_value("lit", "renderer", "") == want.renderer
 
 
 static func marker_values(work: Array) -> Dictionary:
@@ -300,7 +301,13 @@ static func marker_values(work: Array) -> Dictionary:
 		"version": LitShaderLibrary._get_version(),
 		"bundle": bundle_hash(work),
 		"worklist": str(work).md5_text(),
+		"renderer": renderer_key(),
 	}
+
+
+## Shader caches are per renderer and driver, so the marker is too.
+static func renderer_key() -> String:
+	return "%s/%s" % [RenderingServer.get_current_rendering_method(), RenderingServer.get_current_rendering_driver_name()]
 
 
 ## Worker done-file key for a work item (variant flags or static shader path).
@@ -446,7 +453,9 @@ static func _spawn_workers(count: int) -> void:
 	if hb != null:
 		hb.close()
 	var exe := OS.get_executable_path()
-	var args := PackedStringArray(["--position", "-32000,-32000", "--resolution", "640x220"])
+	var args := PackedStringArray(["--position", "-32000,-32000", "--resolution", "640x220",
+			"--rendering-method", RenderingServer.get_current_rendering_method(),
+			"--rendering-driver", RenderingServer.get_current_rendering_driver_name()])
 	if OS.has_feature("editor"):
 		args.append_array(PackedStringArray(["--path", ProjectSettings.globalize_path("res://")]))
 	# A script main loop boots the autoloads and no scene, never the game's main scene.

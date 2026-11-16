@@ -46,6 +46,10 @@ func run() -> void:
 	check_approx("probe_calibration", "unlit black sprite reads black", 0.0,
 			lum(img, black_spr.position), 0.03)
 	check_true("probe_calibration", "capture is at least 640 px wide", img.get_width() >= 640)
+	var uv_to_sdf: Vector2 = get_node("/root/LitManager")._registry._ctx.screen_to_sdf
+	var want_sdf := get_viewport().get_visible_rect().size
+	check_approx("screen_to_sdf", "lit_screen_to_sdf is the visible rect at canvas scale 1 (x)", want_sdf.x, uv_to_sdf.x, 0.01)
+	check_approx("screen_to_sdf", "lit_screen_to_sdf is the visible rect at canvas scale 1 (y)", want_sdf.y, uv_to_sdf.y, 0.01)
 
 	var lit_level := lum(img, recv.position)
 	check_approx("ambient", "white receiver with no light = ambient 0.2", 0.2, lit_level, 0.03)

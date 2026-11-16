@@ -400,7 +400,8 @@ static func env_line(vp: Viewport) -> String:
 	var tex := vp.get_texture()
 	if tex != null:
 		tex_size = Vector2i(tex.get_size())
-	return "SUITE ENV window=%s screen=%d/%d screen_size=%s screen_scale=%.2f dpi=%d viewport_px=%s canvas_units=%s final_scale=%.3f canvas_scale=%.3f vsync=%d debugger=%s args=%s" % [
+	return "SUITE ENV renderer=%s/%s window=%s screen=%d/%d screen_size=%s screen_scale=%.2f dpi=%d viewport_px=%s canvas_units=%s final_scale=%.3f canvas_scale=%.3f vsync=%d debugger=%s args=%s" % [
+			RenderingServer.get_current_rendering_method(), RenderingServer.get_current_rendering_driver_name(),
 			win.size, screen, DisplayServer.get_screen_count(), DisplayServer.screen_get_size(screen),
 			DisplayServer.screen_get_scale(screen), DisplayServer.screen_get_dpi(screen),
 			tex_size, vp.get_visible_rect().size, vp.get_final_transform().get_scale().x,

@@ -775,6 +775,7 @@ func _ps_global_defs() -> Array:
 		{"name": "lit_light_count", "def": {"type": "int", "value": 0}},
 		{"name": "lit_viewport_size", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{"name": "lit_canvas_scale", "def": {"type": "float", "value": 1.0}},
+		{"name": "lit_screen_to_sdf", "def": {"type": "vec2", "value": Vector2.ZERO}},
 		{
 			"name": "lit_world_sdf",
 			"def": {"type": "sampler2D", "value": "", "filter": "linear", "repeat": "disable"},
@@ -841,6 +842,7 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_light_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_viewport_size", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_canvas_scale", "type": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "value": 1.0},
+		{"name": "lit_screen_to_sdf", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},
 		{"name": "lit_world_sdf", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_wsdf_basis", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
 		{"name": "lit_wsdf_origin", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC2, "value": Vector2.ZERO},

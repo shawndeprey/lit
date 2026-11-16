@@ -213,7 +213,10 @@ func _render_matrix() -> void:
 	check_true("world_sdf", "the world-SDF SubViewport lives under LitManager", wsdf != null)
 	check_true("world_sdf", "world-SDF encode shader compiled",
 			wsdf != null and (wsdf.get_child(0).get_child(0).material as ShaderMaterial).shader.get_shader_uniform_list().size() > 0)
-	check(("world_sdf"), "R16F pack pipeline ready on a RenderingDevice renderer", 2, mgr._registry._world_sdf._wsdf_rd_init)
+	if RenderingServer.get_rendering_device() != null:
+		check(("world_sdf"), "R16F pack pipeline ready on a RenderingDevice renderer", 2, mgr._registry._world_sdf._wsdf_rd_init)
+	else:
+		check(("world_sdf"), "no RenderingDevice (Compatibility): the R16F pack is skipped", -1, mgr._registry._world_sdf._wsdf_rd_init)
 
 
 func _precompiler() -> void:
@@ -294,6 +297,8 @@ func _precompiler() -> void:
 	var values: Dictionary = Pre.marker_values(work)
 	check(case_name, "marker values carry the bundle hash", h1, values.bundle)
 	check(case_name, "marker values carry the work-list hash", str(work).md5_text(), values.worklist)
+	check(case_name, "marker values carry the renderer and driver",
+			"%s/%s" % [RenderingServer.get_current_rendering_method(), RenderingServer.get_current_rendering_driver_name()], values.renderer)
 	var marker_backup := FileAccess.get_file_as_bytes(Pre.MARKER_PATH)
 	Pre._write_marker(Pre.marker_values([Lib.F_CONE]))
 	check_true(case_name, "a written marker reads back fresh for its own work list", Pre.marker_fresh([Lib.F_CONE]))

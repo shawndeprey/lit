@@ -228,6 +228,7 @@ func refresh(tree: SceneTree, viewport: Viewport, receiver_root: Node = null, sd
 		return
 	# Published before the early returns so the uniform is always fresh.
 	RenderingServer.global_shader_parameter_set("lit_canvas_scale", _ctx.canvas_scale)
+	RenderingServer.global_shader_parameter_set("lit_screen_to_sdf", _ctx.screen_to_sdf)
 
 	# Collect enabled, visible lights from the cache (view-culled), plus the full
 	# cached list for the tree-wide scans below.

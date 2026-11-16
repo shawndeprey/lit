@@ -222,6 +222,13 @@ global uniform int       lit_light_count;
 global uniform int       lit_directional_count;         // directionals occupy rows [0, this)
 global uniform vec2      lit_viewport_size;             // pixels
 global uniform float     lit_canvas_scale;              // world-to-screen px scale (camera/editor zoom)
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+// The GLES3 canvas template declares screen_uv_to_sdf() after user functions.
+global uniform vec2      lit_screen_to_sdf;
+#define screen_uv_to_sdf(uv) ((uv) * lit_screen_to_sdf)
+// findLSB() is GLSL ES 3.1; the lowest set bit is a power of two, exact in float.
+#define findLSB(v) int(floor(log2(float((v) & (~(v) + 1u))) + 0.5))
+#endif
 
 // World-space shadow SDF, rendered by the registry's SubViewport over the region that
 // can shadow the view. Texel .r is signed distance in world px; the basis/origin pair

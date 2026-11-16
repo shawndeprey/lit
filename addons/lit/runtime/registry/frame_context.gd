@@ -9,6 +9,7 @@ extends RefCounted
 var canvas_xform: Transform2D
 var canvas_scale: float
 var vp_size: Vector2
+var screen_to_sdf: Vector2
 var world_rect: Rect2
 
 # Light set for the frame: view-culled, then reordered directionals-first (the row
@@ -53,6 +54,7 @@ func begin(tree: SceneTree, viewport: Viewport) -> bool:
 	# scale below, so the shader's effective range never exceeds the tiled footprint (a
 	# smaller shader scale would just under-light; a larger one would cull lit tiles).
 	canvas_scale = maxf(canvas_xform.x.length(), canvas_xform.y.length())
+	screen_to_sdf = vp_size / canvas_xform.get_scale()
 	return true
 
 
