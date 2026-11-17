@@ -45,7 +45,7 @@ void fragment() {
 	bool self_ex = false;
 #endif
 #ifdef LIT_OCC_GX
-	self_ex = self_ex || lit_gx_count > 0;
+	self_ex = self_ex || LIT_GX_COUNT > 0;
 #endif
 #ifdef LIT_OCC_RX
 	self_ex = self_ex || rx_mask != 0;
@@ -55,7 +55,7 @@ void fragment() {
 #endif
 #if defined(LIT_SELF_EXCLUSION) || defined(LIT_OCC_RX)
 	mat2 sdf_to_px = mat2(vec2(0.0), vec2(0.0));
-	vec2 frag_px = SCREEN_UV * lit_viewport_size;
+	vec2 frag_px = SCREEN_UV * LIT_VIEWPORT_SIZE;
 #endif
 	mat2 sdf_to_canvas = mat2(vec2(0.0), vec2(0.0));
 	float self_scale = 0.0;
@@ -75,7 +75,7 @@ void fragment() {
 		mat2 sdf_to_fb = inverse(px_to_sdf);
 		sdf_to_canvas = px_to_canvas * sdf_to_fb;
 		// frag_px counts canvas units; a stretched window's framebuffer pixel is not one.
-		vec2 fb_to_px = SCREEN_PIXEL_SIZE * lit_viewport_size;
+		vec2 fb_to_px = SCREEN_PIXEL_SIZE * LIT_VIEWPORT_SIZE;
 		sdf_to_px = mat2(sdf_to_fb[0] * fb_to_px, sdf_to_fb[1] * fb_to_px);
 #else
 		sdf_to_canvas = px_to_canvas * inverse(px_to_sdf);
@@ -86,9 +86,29 @@ void fragment() {
 
 	// Tiling is only used once the manager has published a grid; until then (and in the
 	// zero-light case) fall back to looping every light.
-	bool tiling_valid = lit_tile_grid.x > 0 && lit_tile_grid.y > 0 && lit_tile_size > 0;
+	bool tiling_valid = LIT_TILE_GRID.x > 0 && LIT_TILE_GRID.y > 0 && LIT_TILE_SIZE > 0;
 
 	if (tiling_valid) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+		// One lit_shade call site: the Direct3D shader compiler inlines a copy per site,
+		// and its time grows faster than the program does. Directional rows go first.
+		ivec2 tile = clamp(ivec2(SCREEN_UV * LIT_VIEWPORT_SIZE) / LIT_TILE_SIZE, ivec2(0), LIT_TILE_GRID - ivec2(1));
+		// The tile headers sit at the front of the index texture (see screen_tiles.gd).
+		int h = (tile.y * LIT_TILE_GRID.x + tile.x) * 2;
+		int offset = int(round(texelFetch(lit_tile_indices, ivec2(h % LIT_INDEX_TEX_WIDTH, h / LIT_INDEX_TEX_WIDTH), 0).x));
+		h += 1;
+		int count = int(round(texelFetch(lit_tile_indices, ivec2(h % LIT_INDEX_TEX_WIDTH, h / LIT_INDEX_TEX_WIDTH), 0).x));
+		int n_dir = lit_directional_count;
+		for (int j = -n_dir; j < count; j++) {
+			int li = j + n_dir;
+			if (j >= 0) {
+				int flat_idx = offset + j;
+				li = int(round(texelFetch(lit_tile_indices, ivec2(flat_idx % LIT_INDEX_TEX_WIDTH, flat_idx / LIT_INDEX_TEX_WIDTH), 0).x));
+			}
+			lit += lit_shade(li LIT_LINE_ARGS(j >= 0), albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS);
+		}
+	}
+#else
 		// Directional lights cover the whole screen, so they're never tiled: shade the
 		// leading directional rows for every fragment. Kept separate from the tile loop
 		// so the row index stays wave-uniform.
@@ -98,8 +118,8 @@ void fragment() {
 
 		// Positional lights: look up this fragment's tile and shade only the lights
 		// binned into it. The header gives the offset/count into the flat index list.
-		ivec2 tile = ivec2(SCREEN_UV * lit_viewport_size) / lit_tile_size;
-		tile = clamp(tile, ivec2(0), lit_tile_grid - ivec2(1));
+		ivec2 tile = ivec2(SCREEN_UV * LIT_VIEWPORT_SIZE) / LIT_TILE_SIZE;
+		tile = clamp(tile, ivec2(0), LIT_TILE_GRID - ivec2(1));
 		vec4 header = texelFetch(lit_tile_headers, tile, 0); // offset | count
 		int offset = int(round(header.x));
 		int count = int(round(header.y));
@@ -115,6 +135,7 @@ void fragment() {
 			lit += lit_shade(i LIT_LINE_POS_ARGS, albedo, N, spec_shin, shininess, metallic, roughness, frag_uv, frag_sdf, sdf_diag, frag_d, self_ex, v_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS);
 		}
 	}
+#endif
 
 	// Emissive ignores the dark and composes with ambient and lights by construction.
 	// Zero strength skips the mask fetch.

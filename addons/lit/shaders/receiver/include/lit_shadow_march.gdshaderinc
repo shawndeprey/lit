@@ -152,7 +152,7 @@ float lit_shadow(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float k,
 		}
 #endif
 #ifdef LIT_SELF_EXCLUSION
-		for (int bi = 0; bi < lit_ramp_count; bi++) {
+		for (int bi = 0; bi < LIT_RAMP_COUNT; bi++) {
 			t_slow_end = max(t_slow_end,
 					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, lit_ramp_rect(bi), pad) * maxd);
 		}
@@ -333,9 +333,9 @@ float lit_shadow_path_hard(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, flo
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
 	n = clamp(n, 1, 32);
 	vec4 c0 = texelFetch(lit_light_path, ivec2(0, row), 0);
-	vec2 c_sdf = screen_uv_to_sdf(c0.xy / lit_viewport_size);
-	float r_sdf = max(length(screen_uv_to_sdf((c0.xy + vec2(c0.z, 0.0)) / lit_viewport_size) - c_sdf),
-			length(screen_uv_to_sdf((c0.xy + vec2(0.0, c0.z)) / lit_viewport_size) - c_sdf));
+	vec2 c_sdf = screen_uv_to_sdf(c0.xy / LIT_VIEWPORT_SIZE);
+	float r_sdf = max(length(screen_uv_to_sdf((c0.xy + vec2(c0.z, 0.0)) / LIT_VIEWPORT_SIZE) - c_sdf),
+			length(screen_uv_to_sdf((c0.xy + vec2(0.0, c0.z)) / LIT_VIEWPORT_SIZE) - c_sdf));
 	if (frag_d >= (length(c_sdf - frag_sdf) + r_sdf) * (1.0 + 1.0 / k) * 1.05 + 0.5) {
 		return 1.0;
 	}
@@ -364,7 +364,7 @@ float lit_shadow_path_hard(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, flo
 			if (w <= 0.0) {
 				continue;
 			}
-			vec2 delta = screen_uv_to_sdf(texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0).xy / lit_viewport_size) - frag_sdf;
+			vec2 delta = screen_uv_to_sdf(texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0).xy / LIT_VIEWPORT_SIZE) - frag_sdf;
 			float len = length(delta);
 			float maxd = len * cap_frac;
 			sum += w * lit_shadow(frag_sdf, delta / max(len, 1e-4), maxd, capped ? maxd / k : 0.0, k,

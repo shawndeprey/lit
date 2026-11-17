@@ -3,7 +3,7 @@
 #ifdef LIT_YSORT
 // 1 keeps the caster's shadow, 0 exempts it; max over tile candidates, 1 when none.
 float lit_ysort_weight(vec2 p_canvas, vec2 p_px, float reach) {
-	ivec2 tile = clamp(ivec2(p_px) / lit_tile_size, ivec2(0), lit_tile_grid - ivec2(1));
+	ivec2 tile = clamp(ivec2(p_px) / LIT_TILE_SIZE, ivec2(0), LIT_TILE_GRID - ivec2(1));
 	vec4 header = texelFetch(lit_occ_headers, tile, 0);
 	// Every candidate at or below the receiver's band keeps its shadow (smoothstep
 	// saturates to 1), so the tile's min depth answers for all of them at once. Empty
