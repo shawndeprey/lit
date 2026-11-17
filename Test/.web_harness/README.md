@@ -32,3 +32,13 @@ python benchrun.py runs/suite/src_22_vert.glsl runs/suite/src_22_frag.glsl --tra
 python fxc.py runs/bench_b_<stamp>/f0_src_22_frag.frag.hlsl
 python inltree.py runs/suite/src_22_frag.glsl
 ```
+
+Demo stages, held and captured without clicking (desktop: the launcher, browser: `--shot-at`):
+
+```
+python run_godot.py 90 runs/demo.log "d:/Game Dev/lit" --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "d:/Game Dev/lit" res://Test/Test.tscn -- demo=dir capture="d:/Game Dev/lit/demo_dir.png"
+python webbuild.py res://Test/Test.tscn
+python webrun.py --out runs/demo --timeout 24 --idle 120 --godot-args "[\"--\",\"demo=dir\"]" --shot-at 20
+```
+
+`--click T:X,Y` clicks the page at T seconds; `democap.sh <name> <stage> [godot args]` wraps the desktop capture.

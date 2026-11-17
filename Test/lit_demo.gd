@@ -76,6 +76,12 @@ const SWEEP_SECONDS := 4.0
 
 # --- runtime state ---
 var _running := false
+# Command line: demo=<stage id> starts the reel on that stage and holds it (seeded);
+# capture=PATH saves the viewport after CAPTURE_FRAMES frames and quits.
+const CAPTURE_FRAMES := 90
+var _hold := false
+var _capture := ""
+var _capture_frames := 0
 var _stage_index := -1
 var _stage_time := 0.0
 var _clock := 0.0
@@ -179,6 +185,18 @@ func _ready() -> void:
 	_circle_tex = _make_circle_texture()
 	_build_ui()
 	_set_ui_state("idle")
+	var stage_id := ""
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("demo="):
+			stage_id = arg.substr(5)
+		elif arg.begins_with("capture="):
+			_capture = arg.substr(8)
+	for i in _stages.size():
+		if _stages[i].id == stage_id:
+			seed(1)
+			_hold = true
+			_begin()
+			_enter_stage(i)
 
 
 # White disc with a 1px anti-aliased rim, shared by every circle prop.
@@ -214,23 +232,23 @@ func _build_ui() -> void:
 	_counter_lbl = _make_label(root, 15, Color(0.7, 0.72, 0.8), HORIZONTAL_ALIGNMENT_CENTER)
 	_set_rect(_counter_lbl, 0, 0, 1, 0, 0, 120, 0, 144)
 
-	_start_btn = _make_button(root, "▶  Start Performance Demo")
+	_start_btn = _make_button(root, "Start Performance Demo")
 	_set_rect(_start_btn, 0, 1, 0, 1, 16, -58, 340, -16)   # bottom-left
 	_start_btn.pressed.connect(_begin)
 
-	_restart_btn = _make_button(root, "⟳  Restart Demo")
+	_restart_btn = _make_button(root, "Restart Demo")
 	_set_rect(_restart_btn, 0.5, 0.5, 0.5, 0.5, -150, 18, 150, 74)
 	_restart_btn.pressed.connect(_on_restart)
 
-	_skip_btn = _make_button(root, "Skip  ▶▶")
+	_skip_btn = _make_button(root, "Skip")
 	_set_rect(_skip_btn, 1, 1, 1, 1, -150, -58, -16, -16)
 	_skip_btn.pressed.connect(_on_skip)
 
-	_stop_btn = _make_button(root, "■  Stop")
+	_stop_btn = _make_button(root, "Stop")
 	_set_rect(_stop_btn, 0, 1, 0, 1, 16, -58, 150, -16)
 	_stop_btn.pressed.connect(_teardown_to_idle)
 
-	_splash_btn = _make_button(root, "✦  Splash Screen")
+	_splash_btn = _make_button(root, "Splash Screen")
 	_set_rect(_splash_btn, 0, 1, 0, 1, 356, -58, 560, -16)
 	_splash_btn.pressed.connect(_play_splash)
 
@@ -1065,8 +1083,14 @@ func _process(dt: float) -> void:
 	_stage_time += dt
 	_update_stage(_stage_time)
 	var s = _stages[_stage_index]
-	if s.auto and _stage_time >= s.dur:
+	if s.auto and _stage_time >= s.dur and not _hold:
 		_next_stage()
+	if _capture != "":
+		_capture_frames += 1
+		if _capture_frames == CAPTURE_FRAMES:
+			get_viewport().get_texture().get_image().save_png(_capture)
+			print("DEMO capture=%s" % _capture)
+			get_tree().quit()
 
 
 func _update_perf(dt: float) -> void:

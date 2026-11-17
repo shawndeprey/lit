@@ -870,8 +870,8 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_occ_data", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_occ_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_occ_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
-		{"name": "lit_gl_unit_9", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
-		{"name": "lit_gl_unit_10", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_gl_unit_9", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _pad_texture(Color(1, 1, 1, 1))},
+		{"name": "lit_gl_unit_10", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _pad_texture(Color(0.5, 0.5, 1, 1))},
 		{"name": "lit_gx_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_gx_rect0", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
 		{"name": "lit_gx_rect1", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
@@ -1146,4 +1146,10 @@ func _remove_live_globals() -> void:
 func _placeholder_texture() -> ImageTexture:
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBAF)
 	img.set_pixel(0, 0, Color(0, 0, 0, 0))
+	return ImageTexture.create_from_image(img)
+
+## The GLES3 unit 9/10 pads stand in for the canvas specular and normal maps.
+func _pad_texture(color: Color) -> ImageTexture:
+	var img := Image.create(1, 1, false, Image.FORMAT_RGBAF)
+	img.set_pixel(0, 0, color)
 	return ImageTexture.create_from_image(img)

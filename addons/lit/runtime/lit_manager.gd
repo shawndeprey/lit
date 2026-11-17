@@ -221,3 +221,12 @@ func _reload_settings() -> void:
 	RenderingServer.global_shader_parameter_set("lit_shadow_step_scaling", shadow_step_scaling)
 	RenderingServer.global_shader_parameter_set("lit_ysort_enabled", y_sorting)
 	RenderingServer.global_shader_parameter_set("lit_ysort_band", y_sort_band)
+	# GLES3 binds the material samplers before its own maps and skips those while the
+	# canvas texture repeats, so the unit 9/10 pads carry its defaults: white, flat normal.
+	RenderingServer.global_shader_parameter_set("lit_gl_unit_9", _pad_texture(Color(1, 1, 1, 1)))
+	RenderingServer.global_shader_parameter_set("lit_gl_unit_10", _pad_texture(Color(0.5, 0.5, 1, 1)))
+
+func _pad_texture(color: Color) -> ImageTexture:
+	var img := Image.create(1, 1, false, Image.FORMAT_RGBAF)
+	img.set_pixel(0, 0, color)
+	return ImageTexture.create_from_image(img)

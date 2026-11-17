@@ -113,6 +113,8 @@ def main():
     ap.add_argument("--browser", default="chrome", help="chrome (installed) or firefox (Playwright build)")
     ap.add_argument("--dump-all", action="store_true", help="dump every program's GLSL, not only Lit's")
     ap.add_argument("--crash-after", type=float, default=None, help="self-test: crash the renderer after S seconds")
+    ap.add_argument("--click", action="append", default=[], help="T:X,Y click the page at X,Y once T seconds have passed")
+    ap.add_argument("--shot-at", action="append", default=[], help="T screenshot once T seconds have passed (shot_at_T.png)")
     a = ap.parse_args()
 
     os.makedirs(a.out, exist_ok=True)
@@ -248,6 +250,8 @@ def main():
             if "crash" in str(e).lower():
                 state["crash"] = True
         last_shot = time.time(); shot_n = 0; blocked_since = None; responsive = True
+        clicks = sorted((float(c.split(":")[0]), c.split(":")[1]) for c in a.click)
+        shots_at = sorted(float(t) for t in a.shot_at)
         while True:
             now = time.time()
             if state["crash"]:
@@ -309,6 +313,18 @@ def main():
                     log("event", "STOP: page gone: %s" % str(e)[:200]); rc = 4; break
             if responsive and now - state["last_line"] > a.idle:
                 log("event", "STOP: idle %.0fs with no output" % a.idle); rc = 6; break
+            while clicks and now - t0 >= clicks[0][0]:
+                t, xy = clicks.pop(0); x, y = (float(v) for v in xy.split(","))
+                try:
+                    page.mouse.click(x, y); log("harness", "click %s at %.0fs" % (xy, now - t0))
+                except PWError as e:
+                    log("event", "click failed: %s" % str(e)[:120])
+            while shots_at and now - t0 >= shots_at[0]:
+                t = shots_at.pop(0)
+                try:
+                    page.screenshot(path=os.path.join(a.out, "shot_at_%03d.png" % int(t)), timeout=5000); log("harness", "shot at %.0fs" % (now - t0))
+                except PWError as e:
+                    log("event", "shot failed: %s" % str(e)[:120])
             if now - last_shot >= a.shot:
                 try:
                     shot_n += 1

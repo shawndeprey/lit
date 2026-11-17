@@ -23,6 +23,8 @@ godot --path "D:\Game Dev\lit" res://Test/StressTest.tscn -- shadow_algo=cone wa
 godot --path "D:\Game Dev\lit" res://Test/Test.tscn
 godot --rendering-method gl_compatibility --path "D:\Game Dev\lit" res://Test/Test.tscn
 godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "D:\Game Dev\lit" res://Test/Test.tscn
+godot --path "D:\Game Dev\lit" res://Test/Test.tscn -- demo=point capture="D:/Game Dev/lit/demo_point.png"
+godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "D:\Game Dev\lit" res://Test/Test.tscn -- demo=dir capture="D:/Game Dev/lit/demo_dir.png"
 
 # Line Light Benches
 godot --path "D:\Game Dev\lit" res://Test/integration_tests/line_light_test/line_light_test.tscn
