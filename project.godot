@@ -167,6 +167,18 @@ lit_occ_indices={
 "type": "sampler2D",
 "value": ""
 }
+lit_gl_unit_9={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
+lit_gl_unit_10={
+"filter": "nearest",
+"repeat": "disable",
+"type": "sampler2D",
+"value": ""
+}
 lit_gx_count={
 "type": "int",
 "value": 0

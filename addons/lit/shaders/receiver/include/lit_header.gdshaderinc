@@ -228,6 +228,9 @@ global uniform vec2      lit_screen_to_sdf;
 #define screen_uv_to_sdf(uv) ((uv) * lit_screen_to_sdf)
 // findLSB() is GLSL ES 3.1; the lowest set bit is a power of two, exact in float.
 #define findLSB(v) int(floor(log2(float((v) & (~(v) + 1u))) + 0.5))
+// On a 16 unit device Godot binds its specular and normal textures to units 9 and 10
+// after the material's own; these keep the ninth and tenth sampler slots unused.
+#define LIT_GL_UNIT_PADS global uniform sampler2D lit_gl_unit_9; global uniform sampler2D lit_gl_unit_10;
 #endif
 
 // World-space shadow SDF, rendered by the registry's SubViewport over the region that
@@ -273,7 +276,13 @@ global uniform float     lit_ysort_band;                // fade half-width, worl
 // per-occluder canvas rect, light mask and ramp, binned into the light tile grid.
 global uniform sampler2D lit_occ_data;                  // t0 rect min.xy|max.xy (max.y depth line); t1.x mask, t1.y ramp
 global uniform sampler2D lit_occ_headers;               // per tile: offset | count | min depth
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY && defined(LIT_LINE)
+LIT_GL_UNIT_PADS
+#endif
 global uniform sampler2D lit_occ_indices;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY && !defined(LIT_LINE)
+LIT_GL_UNIT_PADS
+#endif
 
 // Globally excluded occluders (no shadow-casting light's mask matches theirs): exempt
 // canvas rects treated exactly like self rects, for every light at once.

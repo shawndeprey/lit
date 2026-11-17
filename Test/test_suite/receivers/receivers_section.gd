@@ -88,6 +88,22 @@ func _emissive() -> void:
 	img = await capture()
 	check_approx(case_name, "emissive set to 0 at runtime: dark again", AMBIENT, lum(img, e.position), TOL)
 	e.emissive_strength = 0.8
+	# The line variants declare one more sampler ahead of the material maps.
+	var line := LitLineLight2D.new()
+	line.position = Vector2(-4000, -4000)
+	line.length = 40.0
+	line.range = 60.0
+	add_child(line)
+	await frames(2)
+	img = await capture()
+	check_true(case_name, "a line light puts the masked receiver on a line variant",
+			LitShaderLibrary.flags_of(m.material.shader) & LitShaderLibrary.F_LINE != 0)
+	check_approx(case_name, "emissive mask on a line variant: black half stays ambient", AMBIENT,
+			lum(img, m.position + Vector2(-25, 0)), TOL)
+	check_approx(case_name, "emissive mask on a line variant: white half glows", AMBIENT + 0.8,
+			lum(img, m.position + Vector2(25, 0)), TOL)
+	line.queue_free()
+	await frames(2)
 
 	# Receiver mask against a mask-1 light.
 	c = cell("receiver_mask 2 vs light 1\n(dark)   |   receiver_mask 3 (lit)")

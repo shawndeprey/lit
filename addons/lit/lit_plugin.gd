@@ -817,6 +817,14 @@ func _ps_global_defs() -> Array:
 			"name": "lit_occ_indices",
 			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
 		},
+		{
+			"name": "lit_gl_unit_9",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
+		{
+			"name": "lit_gl_unit_10",
+			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+		},
 		{"name": "lit_gx_count", "def": {"type": "int", "value": 0}},
 		{"name": "lit_gx_rect0", "def": {"type": "vec4", "value": Vector4()}},
 		{"name": "lit_gx_rect1", "def": {"type": "vec4", "value": Vector4()}},
@@ -862,6 +870,8 @@ func _rs_global_defs() -> Array:
 		{"name": "lit_occ_data", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_occ_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_occ_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_gl_unit_9", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
+		{"name": "lit_gl_unit_10", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": _placeholder_texture()},
 		{"name": "lit_gx_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_gx_rect0", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
 		{"name": "lit_gx_rect1", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},

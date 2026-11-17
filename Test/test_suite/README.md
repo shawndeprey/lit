@@ -52,6 +52,7 @@ The same run works on every renderer. Pass the renderer before the scene path:
 
 ```
 godot --rendering-method gl_compatibility --path . res://Test/test_suite/TestSuite.tscn -- quit=on
+godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path . res://Test/test_suite/TestSuite.tscn -- quit=on
 godot --rendering-method mobile --path . res://Test/test_suite/TestSuite.tscn -- quit=on
 ```
 
