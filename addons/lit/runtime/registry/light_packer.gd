@@ -134,10 +134,13 @@ func pack_and_publish(ctx: FrameContext, excl_info: Dictionary, excl_lists: Dict
 	var count := visible.size()
 
 	# Refresh and publish the cookie atlas before packing, which reads its rects.
+	# De-duplicate with a Dictionary: Array.has made this quadratic in the light count.
 	var cookie_textures: Array = []
+	var seen := {}
 	for l in positional:
 		var cookie: Texture2D = l.texture
-		if cookie != null and not cookie_textures.has(cookie):
+		if cookie != null and not seen.has(cookie):
+			seen[cookie] = true
 			cookie_textures.append(cookie)
 	_cookie_atlas.refresh(cookie_textures)
 	_cookies_active = not cookie_textures.is_empty()
