@@ -150,6 +150,8 @@ var range_pack := Vector3.ZERO
 var _pack_version := 0
 var _pack_seen := -1
 var _pack_row := PackedFloat32Array()
+# What the cached row's cookie texels were packed against (LightPacker._cookie_sig); empty without a cookie.
+var _pack_cookie_sig: Array = []
 
 func _update_ranged() -> void:
 	range_pack = LitLightRegistry.LightPackerScript.range_pack(range_z_min, range_z_max,

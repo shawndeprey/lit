@@ -264,6 +264,16 @@ func _keep_row(o: int, light: Node2D, key: int, rp_z_high: float, s: float) -> v
 		keep[28] = light.source_radius
 	light._pack_row = keep
 
+## Everything _pack_cookie reads that does not bump _pack_version: the screen-space basis
+## (camera zoom/rotation and the node's rotation/scale), the atlas texture (its rects move
+## when it rebuilds) and the three texture properties. A cookie light's cached row is reused
+## only while this matches, so lights with cookies take the fast path too instead of being
+## fully repacked every frame.
+func _cookie_sig(light: Node2D, canvas_xform: Transform2D, xf: Transform2D) -> Array:
+	var b := canvas_xform * Transform2D(xf.x, xf.y, Vector2.ZERO)
+	return [b.x, b.y, _cookie_atlas.get_texture().get_instance_id(),
+			light.texture_scale, light.texture_offset, light.texture_size_mode]
+
 ## Pack one point light into the row starting at `row` in _pack_buf.
 func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp_size: Vector2) -> void:
 	# Position to normalized screen UV, the one canonical space.
@@ -278,7 +288,8 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	var o := row * _tpl * 4
 	var key: int = light._pack_version + _pack_epoch
 	var excl := _excl_active and _excl_info.has(light)
-	if light._pack_seen == key and not excl:
+	var cookie_sig: Array = _cookie_sig(light, canvas_xform, xf) if _cookies_active and light.texture != null else []
+	if light._pack_seen == key and not excl and light._pack_cookie_sig == cookie_sig:
 		_pack_buf.append_array(light._pack_row)
 		_pack_buf[o + 2] += float(light.light_mask & 1048575)
 		_pack_buf[o + 7] = light.energy
@@ -335,7 +346,8 @@ func _pack_point(row: int, light: LitPointLight2D, canvas_xform: Transform2D, vp
 	_pack_buf[o + 30] = light.shadow_jitter
 	if _rx_union_frame != 0:
 		_pack_buf[o + 31] = float(light.shadow_mask)
-	_keep_row(o, light, -1 if excl or (_cookies_active and light.texture != null) else key, rp.y, s)
+	light._pack_cookie_sig = cookie_sig
+	_keep_row(o, light, -1 if excl else key, rp.y, s)
 
 ## Pack one directional light. Texel 1 carries a normalized direction toward the light
 ## in screen-pixel space instead of a UV position; range and falloff are unused.
@@ -426,7 +438,8 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	var o := row * _tpl * 4
 	var key: int = light._pack_version + _pack_epoch
 	var excl := _excl_active and _excl_info.has(light)
-	if light._pack_seen == key and not excl:
+	var cookie_sig: Array = _cookie_sig(light, canvas_xform, xf) if _cookies_active and light.texture != null else []
+	if light._pack_seen == key and not excl and light._pack_cookie_sig == cookie_sig:
 		_pack_buf.append_array(light._pack_row)
 		_pack_buf[o + 2] += float(light.light_mask & 1048575)
 		_pack_buf[o + 7] = light.energy
@@ -498,7 +511,8 @@ func _pack_spot(row: int, light: LitSpotLight2D, canvas_xform: Transform2D, vp_s
 	_pack_buf[o + 30] = light.shadow_jitter
 	if _rx_union_frame != 0:
 		_pack_buf[o + 31] = float(light.shadow_mask)
-	_keep_row(o, light, -1 if excl or (_cookies_active and light.texture != null) else key, rp.y, s)
+	light._pack_cookie_sig = cookie_sig
+	_keep_row(o, light, -1 if excl else key, rp.y, s)
 
 ## Pack one line light: a point light (texels 0 to 3, 7) at the node plus its segment
 ## (texel 4). The segment is centered on the node along its local +X and takes the full
