@@ -27,6 +27,10 @@ const WORKER_ARG := "lit-worker"
 const WORKER_LOOP_PATH := "res://addons/lit/runtime/lit_worker_loop.gd"
 const WorldSdfScript := preload("res://addons/lit/runtime/registry/world_sdf.gd")
 const BUILD_BUDGET_MS := 8.0
+# A browser paints only after the animation-frame callback returns, so the notice
+# needs a painted frame before the one that freezes on the list.
+const NOTICE_FRAMES := 3
+const TAKEOVER_LAYER := 1 << 19
 const SILENT_PER_FRAME := 4
 const QUAD_POOL := 16
 const SETTING_MAX_WORKERS := "lit/startup/precompile_max_workers"
@@ -51,6 +55,9 @@ var _claimed_at := {}
 var _prev_paused := false
 var _quad_layer: CanvasLayer
 var _quads: Array[Sprite2D] = []
+var _one_frame := false
+var _notice_frames := 0
+var _prev_cull := 0
 var _encode_vp: SubViewport
 
 # Follow mode: _plan is filled by the worker thread and adopted on the main thread.
@@ -287,6 +294,9 @@ static func bundle_hash(work: Array) -> String:
 
 
 static func marker_fresh(work: Array) -> bool:
+	# A browser keeps no shader cache between loads: the list is built on every load.
+	if OS.has_feature("web"):
+		return false
 	var cfg := ConfigFile.new()
 	if cfg.load(MARKER_PATH) != OK:
 		return false
@@ -364,6 +374,11 @@ func start(silent: bool, follow_workers: bool = false) -> void:
 		_prev_paused = get_tree().paused
 		get_tree().paused = true
 		_build_quads()
+		if _one_frame:
+			# Nothing of the game draws under the cover: its first screen would link
+			# its own variants before the notice ever shows.
+			_prev_cull = get_viewport().canvas_cull_mask
+			get_viewport().canvas_cull_mask = TAKEOVER_LAYER
 	set_process(true)
 
 
@@ -559,6 +574,10 @@ func _process_follow() -> void:
 
 
 func _process_build() -> void:
+	if _notice_frames > 0:
+		_notice_frames -= 1
+		progress.emit(0, _work.size(), "")
+		return
 	# Whatever was assigned last frame has drawn by now: its pipelines are warm.
 	if _is_worker:
 		for item in _pending:
@@ -588,7 +607,7 @@ func _process_build() -> void:
 			_quads[quad].visible = true
 			quad += 1
 		_pending.append(item)
-		if float(Time.get_ticks_usec() - t0) / 1000.0 > BUILD_BUDGET_MS:
+		if float(Time.get_ticks_usec() - t0) / 1000.0 > BUILD_BUDGET_MS and not _one_frame:
 			break
 	for i in range(quad, _quads.size()):
 		_quads[i].visible = false
@@ -640,6 +659,8 @@ func _finish(complete: bool) -> void:
 	if _mode == Mode.BUILD:
 		if took_over:
 			get_tree().paused = _prev_paused
+		if _one_frame:
+			get_viewport().canvas_cull_mask = _prev_cull
 		if _quad_layer != null:
 			_quad_layer.queue_free()
 			_quad_layer = null
@@ -673,19 +694,25 @@ static func _write_marker(values: Dictionary) -> void:
 # 4x4 quads drawn behind the overlay's opaque cover, matching real receiver render
 # state; their draw forces the pipeline build.
 func _build_quads() -> void:
+	# GLES3 links on the drawing thread at first bind and fastest back to back, so the
+	# takeover draws the whole list in one frame, after the frames that show the notice.
+	_one_frame = RenderingServer.get_current_rendering_method() == "gl_compatibility" and not _is_worker
+	_notice_frames = NOTICE_FRAMES if _one_frame else 0
 	_quad_layer = CanvasLayer.new()
 	_quad_layer.layer = 99
 	add_child(_quad_layer)
 	var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
 	var tex := ImageTexture.create_from_image(img)
-	for i in QUAD_POOL:
+	for i in (_work.size() if _one_frame else QUAD_POOL):
 		var s := Sprite2D.new()
 		s.texture = tex
 		s.centered = false
 		s.position = Vector2(4 + i * 6, 4)
 		s.material = ShaderMaterial.new()
 		s.visible = false
+		if _one_frame:
+			s.visibility_layer = TAKEOVER_LAYER
 		_quad_layer.add_child(s)
 		_quads.append(s)
 

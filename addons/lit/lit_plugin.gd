@@ -950,8 +950,9 @@ func _project_setting_defs() -> Array:
 		},
 		{
 			# Launch-time variant precompile takeover; marker-skipped once caches are warm.
+			# Off by default: new projects compile on first draw and opt in once it matters.
 			"name": "lit/startup/precompile_shaders",
-			"default": true,
+			"default": false,
 			"info": {"name": "lit/startup/precompile_shaders", "type": TYPE_BOOL},
 		},
 		{

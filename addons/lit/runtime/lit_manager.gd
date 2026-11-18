@@ -62,8 +62,7 @@ func _ready() -> void:
 		ProjectSettings.settings_changed.connect(_reload_settings)
 
 	_boot_self_check()
-	# A browser compiles on first draw: no shader cache to warm and no second process.
-	if bool(ProjectSettings.get_setting(SETTING_PRECOMPILE, true)) and not OS.has_feature("web"):
+	if bool(ProjectSettings.get_setting(SETTING_PRECOMPILE, false)):
 		precompiler = LitShaderPrecompilerScript.new()
 		add_child(precompiler)
 		if OS.is_debug_build() and not FileAccess.file_exists(LitShaderPrecompilerScript.CONFIG_PATH):
@@ -77,8 +76,9 @@ func _ready() -> void:
 			# Deferred root add lands after the main scene in tree order, so the cover
 			# wins same-layer ties against game HUDs at layer 128.
 			get_tree().root.add_child.call_deferred(overlay)
-			# Phones cannot spawn the worker processes: they build in this process.
-			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false)) and not OS.has_feature("mobile")
+			# Phones and browsers cannot spawn the worker processes: they build in this process.
+			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false)) \
+					and not OS.has_feature("mobile") and not OS.has_feature("web")
 			precompiler.start(fresh, asynchronous)
 		else:
 			precompiler.start(fresh)

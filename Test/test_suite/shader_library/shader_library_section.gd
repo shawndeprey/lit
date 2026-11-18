@@ -291,7 +291,7 @@ func _precompiler() -> void:
 	check_true(case_name, "bundle hash is a 32-char md5", h1.length() == 32)
 	check(case_name, "bundle hash is deterministic", h1, Pre.bundle_hash(work))
 	check_true(case_name, "bundle hash changes with the work list", Pre.bundle_hash([0]) != h1)
-	if bool(ProjectSettings.get_setting("lit/startup/precompile_shaders", true)):
+	if bool(ProjectSettings.get_setting("lit/startup/precompile_shaders", false)):
 		check_true(case_name, "marker fresh after this run's boot precompile", Pre.marker_fresh(work))
 	check_true(case_name, "marker not fresh for a different work list", not Pre.marker_fresh([0]))
 	var values: Dictionary = Pre.marker_values(work)
@@ -531,6 +531,18 @@ func _ramp_twins() -> void:
 	var expect := Pre.folded_twins(Pre.work_list()).size()
 	check(case_name, "the silent pass marks every folded twin warmed", expect, warmed)
 	check(case_name, "and instantiates it", expect, instantiated)
+	var build: Node = Pre.new()
+	add_child(build)
+	build._work = Pre.work_list()
+	build._build_quads()
+	var gl := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	check(case_name, "GL warms the whole list in one frame, elsewhere the quad pool", build._work.size() if gl else Pre.QUAD_POOL, build._quads.size())
+	check(case_name, "GL shows the notice for painted frames before the compile", Pre.NOTICE_FRAMES if gl else 0, build._notice_frames)
+	check_true(case_name, "GL warm quads sit on the takeover layer, elsewhere the default",
+			build._quads[0].visibility_layer == (Pre.TAKEOVER_LAYER if gl else 1))
+	build.queue_free()
+	if OS.has_feature("web"):
+		check_true(case_name, "a web build never trusts the marker", not Pre.marker_fresh(Pre.work_list()))
 	var before := catcher.count("compiled mid-game")
 	post.shadow_ramp = 100.0
 	await frames(6)
@@ -615,17 +627,28 @@ func _overlay() -> void:
 	ov.attach(pre)
 	add_child(ov)
 	await frames(1)
-	check_true(case_name, "takeover overlay builds a progress bar", not ov.find_children("*", "ProgressBar", true, false).is_empty())
+	var gl := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	check_true(case_name, "takeover overlay builds a progress bar, on GL a notice instead",
+			ov.find_children("*", "ProgressBar", true, false).is_empty() == gl)
 	check(case_name, "overlay sits on layer 128 (above game HUDs)", 128, ov.layer)
 	var titled := false
+	var noticed := false
 	for lbl in ov.find_children("*", "Label", true, false):
 		titled = titled or (lbl as Label).text == "Suite Title"
+		noticed = noticed or (lbl as Label).text == Overlay.NOTICE_TEXT
 	check_true(case_name, "lit/startup/precompile_title names the overlay", titled)
-	check_true(case_name, "precompile_verbose on: a detail label exists", ov._detail != null)
 	pre.progress.emit(3, 10, "shadow_cone")
-	check_approx(case_name, "progress signal drives the bar (3 of 10)", 3.0, float(ov._bar.value), 0.01)
-	check(case_name, "progress signal drives the counter", "3/10", ov._count.text)
-	check(case_name, "progress label lands in the detail line", "shadow_cone", ov._detail.text)
+	if gl:
+		check_true(case_name, "GL notice says the compile can take a while", noticed)
+		var on_layer := true
+		for item in ov.find_children("*", "CanvasItem", true, false):
+			on_layer = on_layer and (item as CanvasItem).visibility_layer == Pre.TAKEOVER_LAYER
+		check_true(case_name, "GL notice items sit on the takeover layer", on_layer)
+	else:
+		check_true(case_name, "precompile_verbose on: a detail label exists", ov._detail != null)
+		check_approx(case_name, "progress signal drives the bar (3 of 10)", 3.0, float(ov._bar.value), 0.01)
+		check(case_name, "progress signal drives the counter", "3/10", ov._count.text)
+		check(case_name, "progress label lands in the detail line", "shadow_cone", ov._detail.text)
 	pre.finished.emit()
 	var waited := 0.0
 	while is_instance_valid(ov) and waited < 3.0:
