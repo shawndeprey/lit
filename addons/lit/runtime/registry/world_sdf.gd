@@ -341,10 +341,10 @@ func _poll_wsdf_content(root: Node) -> bool:
 				_wsdf_occ.append([layer, layer.global_transform, layer.is_visible_in_tree(),
 						false, null, false, 0])
 		return true
-	# is_visible_in_tree() climbs to the root for every occluder; re-read visibility (and the
-	# rarely changing shape and sdf_collision) only after a visibility_changed signal, which
-	# also fires when an ancestor is hidden or shown, plus a full re-check every
-	# WSDF_SLOW_POLL frames as a safety net. Transforms are still compared every frame.
+	# is_visible_in_tree() climbs to the root for every occluder: re-read visibility only
+	# after a visibility_changed signal (it also fires when an ancestor is hidden or shown),
+	# plus a full re-check every WSDF_SLOW_POLL frames as a safety net. Transforms, the
+	# occluder resource and sdf_collision (the registry's SDF cull flips it) stay per frame.
 	_wsdf_slow_age += 1
 	var slow := _wsdf_vis_dirty or _wsdf_slow_age >= WSDF_SLOW_POLL or Engine.is_editor_hint()
 	if slow:
@@ -360,7 +360,7 @@ func _poll_wsdf_content(root: Node) -> bool:
 			entry[1] = node.global_transform
 			entry[2] = vis
 			changed = true
-		if entry[3] and slow:
+		if entry[3]:
 			var h := _wsdf_poly_hash(node)
 			if node.occluder != entry[4] or node.sdf_collision != entry[5] or h != entry[6]:
 				entry[4] = node.occluder
