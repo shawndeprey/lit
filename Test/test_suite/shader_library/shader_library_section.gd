@@ -9,6 +9,7 @@ extends LitSuiteSection
 
 const Lib := preload("res://addons/lit/runtime/lit_shader_library.gd")
 const Pre := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
+const Globals := preload("res://addons/lit/runtime/lit_shader_globals.gd")
 const Overlay := preload("res://addons/lit/nodes/lit_precompile_overlay.gd")
 const Config := preload("res://addons/lit/editor/lit_precompile_config.gd")
 const SHADER_DIR := "res://addons/lit/shaders/"
@@ -455,6 +456,11 @@ func _precompiler() -> void:
 	check_true(case_name, "LitManager exposes precompile_shaders()", mgr.has_method("precompile_shaders"))
 	check_true(case_name, "LitManager exposes the progress and finished signals",
 			mgr.has_signal("precompile_progress") and mgr.has_signal("precompile_finished"))
+	var undeclared := 0
+	for g in Globals.defs():
+		undeclared += int(not ProjectSettings.has_setting("shader_globals/" + g.name))
+	check(case_name, "every Lit shader global is persisted in project.godot", 0, undeclared)
+	check(case_name, "add_missing is a no-op once they are", 0, Globals.add_missing())
 
 
 ## The follow side of a worker bake, driven by hand: the plan a worker thread would
