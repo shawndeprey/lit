@@ -37,12 +37,16 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## head-on. Not affected by node scale (as in Godot).
 @export var height: float = 16.0:
 	set(value):
+		if value == height:
+			return
 		height = value
 		_pack_version += 1
 
 @export_group("Shadow")
 @export var shadow_enabled: bool = false:
 	set(value):
+		if value == shadow_enabled:
+			return
 		shadow_enabled = value
 		_pack_version += 1
 		LitLightRegistry.light_state_changed(self)
@@ -50,6 +54,8 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## occlusion layers: Light Mask) shares a bit with this mask.
 @export_flags_2d_render var shadow_mask: int = 1:
 	set(value):
+		if value == shadow_mask:
+			return
 		shadow_mask = value
 		_pack_version += 1
 		if value != 1:
@@ -68,18 +74,24 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## registry each frame).
 @export var shadow_algorithm: ShadowAlgorithm = ShadowAlgorithm.CONE_TRACED:
 	set(value):
+		if value == shadow_algorithm:
+			return
 		shadow_algorithm = value
 		_pack_version += 1
 		notify_property_list_changed()
 		LitLightRegistry.light_state_changed(self)
 @export var shadow_color: Color = Color.BLACK:
 	set(value):
+		if value == shadow_color:
+			return
 		shadow_color = value
 		_pack_version += 1
 ## RAYMARCHED: 0 = very soft, 1 = hard. CONE_TRACED / STOCHASTIC: penumbra contrast -
 ## 0.5 is physically neutral, lower flattens the gradient, higher sharpens it.
 @export_range(0.0, 1.0) var shadow_hardness: float = 0.5:
 	set(value):
+		if value == shadow_hardness:
+			return
 		shadow_hardness = value
 		_pack_version += 1
 ## Length of cast shadows as a fraction; each shadow closes there through a natural
@@ -91,6 +103,8 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## cycles. 1 = full length (the default).
 @export_range(0.0, 1.0, 0.001) var shadow_length: float = 1.0:
 	set(value):
+		if value == shadow_length:
+			return
 		shadow_length = value
 		_pack_version += 1
 ## Shadow marches per fragment across the source (STOCHASTIC, a line light's
@@ -98,6 +112,8 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## Clamped by lit/quality/shadow_samples_max.
 @export_range(1, 32) var shadow_samples: int = 8:
 	set(value):
+		if value == shadow_samples:
+			return
 		shadow_samples = value
 		_pack_version += 1
 ## STOCHASTIC dither inside each stratum. Samples are fractional sub-cone coverages,
@@ -106,12 +122,16 @@ const ShadowAlgorithm = LitShaderLibrary.ShadowAlgorithm
 ## deterministic, 1 = maximum per-pixel dither (fine grain).
 @export_range(0.0, 1.0) var shadow_jitter: float = 0.35:
 	set(value):
+		if value == shadow_jitter:
+			return
 		shadow_jitter = value
 		_pack_version += 1
 
 @export_group("Advanced")
 @export var blend_mode: BlendMode = BlendMode.ADD:
 	set(value):
+		if value == blend_mode:
+			return
 		blend_mode = value
 		_pack_version += 1
 ## Lowest z_index this light reaches. A receiver is lit only while its final z_index
@@ -150,6 +170,8 @@ var range_pack := Vector3.ZERO
 var _pack_version := 0
 var _pack_seen := -1
 var _pack_row := PackedFloat32Array()
+# What the cached row's cookie texels were packed against (LightPacker._cookie_sig); empty without a cookie.
+var _pack_cookie_sig: Array = []
 
 func _update_ranged() -> void:
 	range_pack = LitLightRegistry.LightPackerScript.range_pack(range_z_min, range_z_max,
