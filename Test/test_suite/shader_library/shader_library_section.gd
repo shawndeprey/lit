@@ -668,4 +668,17 @@ func _overlay() -> void:
 	check_true(case_name, "precompile_verbose off: no detail label", ov2._detail == null)
 	ov2.queue_free()
 	pre2.queue_free()
+	set_setting("lit/startup/precompile_async", true)
+	var pre3 := Pre.new()
+	add_child(pre3)
+	var ov3 := Overlay.new()
+	ov3.force_takeover = true
+	ov3.attach(pre3)
+	add_child(ov3)
+	await frames(1)
+	check_true(case_name, "async on but takeover forced (web, phones): the cover builds, not the floating box",
+			not (ov3._root is MarginContainer) and ov3._root.get_child(0) is ColorRect)
+	ov3.queue_free()
+	pre3.queue_free()
+	set_setting("lit/startup/precompile_async", false)
 	await frames(1)

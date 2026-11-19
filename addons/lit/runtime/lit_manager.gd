@@ -70,15 +70,16 @@ func _ready() -> void:
 					% LitShaderPrecompilerScript.default_variant_flags().size())
 		var fresh: bool = LitShaderPrecompilerScript.marker_fresh(LitShaderPrecompilerScript.work_list())
 		if not fresh:
+			# Phones and browsers cannot spawn the worker processes: they build in this process.
+			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false)) \
+					and not OS.has_feature("mobile") and not OS.has_feature("web")
 			var overlay: Node = LitPrecompileOverlayScript.new()
 			overlay.name = "LitPrecompileOverlay"
+			overlay.force_takeover = not asynchronous
 			overlay.attach(precompiler)
 			# Deferred root add lands after the main scene in tree order, so the cover
 			# wins same-layer ties against game HUDs at layer 128.
 			get_tree().root.add_child.call_deferred(overlay)
-			# Phones and browsers cannot spawn the worker processes: they build in this process.
-			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false)) \
-					and not OS.has_feature("mobile") and not OS.has_feature("web")
 			precompiler.start(fresh, asynchronous)
 		else:
 			precompiler.start(fresh)

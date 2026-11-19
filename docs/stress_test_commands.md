@@ -63,4 +63,4 @@ godot --headless --path "D:\Game Dev\lit" --script res://Test/gate_port_tool.gd
 godot --headless --path "D:\Game Dev\lit" --script res://Test/gate_migration_schema.gd
 
 # Web Harness
-python Test/.web_harness/serve.py "d:/Game Dev/builds/Lit/web" 8765
+python "d:/Game Dev/lit/Test/.web_harness/serve.py" "d:/Game Dev/builds/Lit/web" 8765
