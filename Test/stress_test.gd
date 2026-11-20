@@ -76,6 +76,8 @@ const LIGHT_COUNT := 128
 #   props=off     no prop occluders: the Test scene's own casters only (sparse scene)
 #   linewall=N    an occluder wall N px behind every line light, riding with it (a
 #     light bar on a wall: the gate's hardest case, every open-side pixel sees the wall)
+#   spawn=N       add N plain Node2D + unlit Sprite2D pairs every frame and free the
+#     batch from two frames back (tree churn); filler=N parks N static pairs in the tree
 #   shadow_algo=raymarch|cone|stochastic|mixed   sdf=25|50|100 (SDF scale probe)
 #     mixed cycles the three algorithms across the spawned lights (launch only)
 #   shadowlen=on   random (seeded) shadow_length fraction per light
@@ -148,6 +150,9 @@ var _opt_ropemove := false
 var _rope_root: Node2D
 var _opt_props := true
 var _opt_linewall := 0.0
+var _opt_spawn := 0
+var _opt_filler := 0
+var _spawn_batches: Array = []
 var _pre_elapsed := -1.0
 var _last_usec := 0
 
@@ -266,6 +271,10 @@ func _ready() -> void:
 				_opt_props = kv[1] != "off"
 			"linewall":
 				_opt_linewall = float(kv[1])
+			"spawn":
+				_opt_spawn = int(kv[1])
+			"filler":
+				_opt_filler = int(kv[1])
 	if _opt_lines:
 		_opt_kinds = ["line"]
 	# A startup takeover (lit/startup/precompile_shaders) is already running by now:
@@ -355,6 +364,8 @@ func _setup() -> void:
 	_rng.seed = RNG_SEED
 	if _opt_props:
 		_spawn_props()
+	if _opt_filler > 0:
+		add_child(_plain_batch(_opt_filler))
 	if _opt_receiver_count > 0 and not (_spawn_pair_grid() if paired else _spawn_receivers()):
 		get_tree().quit(1)
 		return
@@ -520,6 +531,27 @@ func _make_prop(pos: Vector2, size: Vector2) -> void:
 	root.add_child(occ)
 
 	_props.append({"root": root, "mat": mat, "occ": occ})
+
+
+# Plain Node2D + unlit Sprite2D pairs parked far off screen: tree churn without draw cost.
+func _plain_batch(n: int) -> Node2D:
+	var batch := Node2D.new()
+	batch.position = Vector2(-100000, -100000)
+	for i in n:
+		var holder := Node2D.new()
+		var spr := Sprite2D.new()
+		spr.texture = _white_tex
+		holder.add_child(spr)
+		batch.add_child(holder)
+	return batch
+
+
+func _cycle_spawns() -> void:
+	if _spawn_batches.size() >= 2:
+		_spawn_batches.pop_front().queue_free()
+	var batch := _plain_batch(_opt_spawn)
+	add_child(batch)
+	_spawn_batches.append(batch)
 
 
 # --- receivers: skeleton= swaps the Test scene's Skeleton prop; receivers= lays out a
@@ -1000,6 +1032,8 @@ func _process(dt: float) -> void:
 		return
 	_clock += dt
 	_update_lights()
+	if _opt_spawn > 0:
+		_cycle_spawns()
 	_state_time += dt
 
 	if _state == "warmup":
@@ -1112,6 +1146,8 @@ func _report() -> void:
 		print("LITBENCH linetess=%d" % _opt_linetess)
 	if _opt_plain:
 		print("LITBENCH plain=on")
+	if _opt_spawn > 0 or _opt_filler > 0:
+		print("LITBENCH spawn=%d filler=%d" % [_opt_spawn, _opt_filler])
 	if _opt_receiver_count > 0:
 		print("LITBENCH receivers=%s receiver_count=%d" % [_opt_receivers, _opt_receiver_count])
 	print("LITBENCH frames=%d" % n)

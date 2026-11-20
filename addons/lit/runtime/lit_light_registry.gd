@@ -380,8 +380,13 @@ func _classify_exclusions(lights: Array, root: Node, potential: bool, smask_unio
 			_occluder_tiles.scope_ids(), _occluder_tiles.scope_occ_masks())
 
 func _on_tree_changed(node: Node) -> void:
-	_receiver_driver.mark_receivers_dirty()
-	if node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer or node is LightOccluder2D:
+	if Engine.is_editor_hint():
+		_receiver_driver.mark_receivers_dirty()
+		if node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer:
+			_receiver_driver.mark_bare_dirty()
+	elif node is CanvasItem:
+		_receiver_driver.note_arrival(node)
+	if node is LightOccluder2D:
 		_receiver_driver.mark_bare_dirty()
 	if node is CanvasItem and OccluderTilesScript.ramp_of(node as CanvasItem) > 0.0:
 		_occluder_tiles.note_ramp_seen()
