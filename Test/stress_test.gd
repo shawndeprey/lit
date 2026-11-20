@@ -78,6 +78,9 @@ const LIGHT_COUNT := 128
 #     light bar on a wall: the gate's hardest case, every open-side pixel sees the wall)
 #   spawn=N       add N plain Node2D + unlit Sprite2D pairs every frame and free the
 #     batch from two frames back (tree churn); filler=N parks N static pairs in the tree
+#   cookiecycle=N every N frames one cookie light (round robin) takes a texture from a
+#     ring of 16 distinct cookies, chosen so the visible set changes and the atlas
+#     repacks each step (use fewer lights than 16); cookiesize=S resizes the ring to SxS
 #   shadow_algo=raymarch|cone|stochastic|mixed   sdf=25|50|100 (SDF scale probe)
 #     mixed cycles the three algorithms across the spawned lights (launch only)
 #   shadowlen=on   random (seeded) shadow_length fraction per light
@@ -153,6 +156,12 @@ var _opt_linewall := 0.0
 var _opt_spawn := 0
 var _opt_filler := 0
 var _spawn_batches: Array = []
+var _opt_cookiecycle := 0
+var _opt_cookiesize := 0
+var _cycle_textures: Array = []
+var _cycle_step := 0
+var _atlas_rebuilds := 0
+var _atlas_last_id := 0
 var _pre_elapsed := -1.0
 var _last_usec := 0
 
@@ -275,6 +284,10 @@ func _ready() -> void:
 				_opt_spawn = int(kv[1])
 			"filler":
 				_opt_filler = int(kv[1])
+			"cookiecycle":
+				_opt_cookiecycle = int(kv[1])
+			"cookiesize":
+				_opt_cookiesize = int(kv[1])
 	if _opt_lines:
 		_opt_kinds = ["line"]
 	# A startup takeover (lit/startup/precompile_shaders) is already running by now:
@@ -552,6 +565,28 @@ func _cycle_spawns() -> void:
 	var batch := _plain_batch(_opt_spawn)
 	add_child(batch)
 	_spawn_batches.append(batch)
+
+
+# One cookie light (round robin) takes a texture from a ring of 16 distinct instances;
+# the window the lights hold shifts by 9 per lap, so every step swaps one texture out.
+func _cycle_cookie() -> void:
+	if _cycle_textures.is_empty():
+		for i in 16:
+			var src: Texture2D = load(COOKIE_DIR + COOKIE_FILES[i % COOKIE_FILES.size()])
+			var img := src.get_image()
+			if _opt_cookiesize > 0:
+				img.resize(_opt_cookiesize, _opt_cookiesize)
+			_cycle_textures.append(ImageTexture.create_from_image(img))
+	var cookies: Array = _lights.filter(func(d): return d.kind == "cookie")
+	if cookies.is_empty():
+		return
+	var lap := _cycle_step / cookies.size()
+	cookies[_cycle_step % cookies.size()].node.texture = _cycle_textures[(_cycle_step % cookies.size() + 9 * lap) % 16]
+	_cycle_step += 1
+	var atlas_tex: Texture2D = get_node("/root/LitManager")._registry._light_packer._cookie_atlas.get_texture()
+	if atlas_tex.get_instance_id() != _atlas_last_id:
+		_atlas_last_id = atlas_tex.get_instance_id()
+		_atlas_rebuilds += 1
 
 
 # --- receivers: skeleton= swaps the Test scene's Skeleton prop; receivers= lays out a
@@ -1034,6 +1069,8 @@ func _process(dt: float) -> void:
 	_update_lights()
 	if _opt_spawn > 0:
 		_cycle_spawns()
+	if _opt_cookiecycle > 0 and Engine.get_process_frames() % _opt_cookiecycle == 0:
+		_cycle_cookie()
 	_state_time += dt
 
 	if _state == "warmup":
@@ -1148,6 +1185,9 @@ func _report() -> void:
 		print("LITBENCH plain=on")
 	if _opt_spawn > 0 or _opt_filler > 0:
 		print("LITBENCH spawn=%d filler=%d" % [_opt_spawn, _opt_filler])
+	if _opt_cookiecycle > 0:
+		print("LITBENCH cookiecycle=%d cookiesize=%d steps=%d atlas_rebuilds=%d" % [_opt_cookiecycle,
+				_opt_cookiesize, _cycle_step, _atlas_rebuilds])
 	if _opt_receiver_count > 0:
 		print("LITBENCH receivers=%s receiver_count=%d" % [_opt_receivers, _opt_receiver_count])
 	print("LITBENCH frames=%d" % n)

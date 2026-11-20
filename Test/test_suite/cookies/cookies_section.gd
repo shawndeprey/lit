@@ -33,6 +33,7 @@ func run() -> void:
 	await _point_cookie()
 	await _spot_cookie()
 	await _atlas()
+	await _atlas_cache()
 
 
 func _lit_at(d: float, energy: float, height: float) -> float:
@@ -184,3 +185,47 @@ func _atlas() -> void:
 			lum(img, a.position + Vector2(0, 64)), TOL)
 	check_gt(case_name, "after swapping: B's left probe lit", lum(img, b.position + Vector2(-64, 0)),
 			AMBIENT, 0.2)
+
+
+## The atlas keeps a CPU image per live texture: a repack reads back only textures it
+## has never seen, a `changed` texture is re-read, and freed textures leave the cache.
+func _atlas_cache() -> void:
+	var case_name := "cookie_atlas_cache"
+	var atlas = get_node("/root/LitManager")._registry._light_packer._cookie_atlas
+	var cache: Dictionary = atlas._images
+	var left_id := _half_left.get_instance_id()
+	var top_id := _half_top.get_instance_id()
+	check_true(case_name, "both packed cookies have cached images", cache.has(left_id) and cache.has(top_id))
+	var left_img = cache.get(left_id)
+	var third := tex_fn(64, 64, func(_x, y): return Color(1, 1, 1, 1) if y >= 32 else Color(0, 0, 0, 0))
+	var third_id := third.get_instance_id()
+	var c := point_light(Vector2(900, 800), 300.0, 0.5, Color.WHITE, 300.0)
+	c.falloff = 0.0
+	c.texture = third
+	c.texture_scale = 4.0
+	await frames(1)
+	var img := await capture()
+	check_gt(case_name, "third cookie (bottom half) packed: bottom probe lit", lum(img, c.position + Vector2(0, 64)),
+			AMBIENT, 0.2)
+	check_approx(case_name, "third cookie: top probe masked", AMBIENT, lum(img, c.position + Vector2(0, -64)), TOL)
+	check_true(case_name, "repack kept the first cookie's cached image (no second readback)",
+			is_same(cache.get(left_id), left_img))
+	check_true(case_name, "the newcomer is cached", cache.has(third_id))
+	var third_img = cache.get(third_id)
+	var mirrored := tex_fn(64, 64, func(_x, y): return Color(1, 1, 1, 1) if y < 32 else Color(0, 0, 0, 0)).get_image()
+	third.update(mirrored)
+	await frames(2)
+	img = await capture()
+	check_true(case_name, "a changed texture drops its cached image and is read again",
+			cache.has(third_id) and not is_same(cache.get(third_id), third_img) and cache.get(third_id).get_pixel(32, 8).a > 0.5)
+	check_gt(case_name, "the changed cookie renders its new content: top probe lit", lum(img, c.position + Vector2(0, -64)),
+			AMBIENT, 0.2)
+	c.texture = null
+	await frames(2)
+	check_true(case_name, "a cookie leaving the visible set keeps its image while the texture lives", cache.has(third_id))
+	third = null
+	c.texture = _red_left
+	await frames(2)
+	check_true(case_name, "a freed texture is pruned from the cache on the next repack", not cache.has(third_id))
+	c.queue_free()
+	await frames(1)
