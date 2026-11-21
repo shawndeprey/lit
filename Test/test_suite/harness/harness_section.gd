@@ -197,17 +197,17 @@ func run() -> void:
 	var native2 := CanvasModulate.new()
 	add_child(native2)
 	await frames(1)
-	check_true("modulate_scoping", "a native CanvasModulate entering dirties the Lit modulate's warning",
+	check_true_editor("modulate_scoping", "a native CanvasModulate entering dirties the Lit modulate's warning",
 			probe_mod in pings)
 	pings.clear()
 	native2.free()
 	await frames(1)
-	check_true("modulate_scoping", "the native CanvasModulate leaving dirties it again", probe_mod in pings)
+	check_true_editor("modulate_scoping", "the native CanvasModulate leaving dirties it again", probe_mod in pings)
 	pings.clear()
 	var other := LitCanvasModulate.new()
 	add_child(other)
 	await frames(1)
-	check_true("modulate_scoping", "another LitCanvasModulate entering dirties it", probe_mod in pings)
+	check_true_editor("modulate_scoping", "another LitCanvasModulate entering dirties it", probe_mod in pings)
 	pings.clear()
 	var plain := Node2D.new()
 	add_child(plain)
@@ -223,6 +223,6 @@ func run() -> void:
 	say("SUITE   project lighting model setting: %d (each section run pins its own model; see model=)" % int(
 			_settings_saved.get("lit/render/lighting_model", 0)))
 	# Version stamp plumbing.
-	check_true("version", "plugin.cfg carries a version", lit_version != "" and lit_version != "0")
+	check_true_editor("version", "plugin.cfg carries a version", lit_version != "" and lit_version != "0")
 	check_true("version", "LitVersionStamp leaves runtime nodes unstamped (editor-only)",
 			String(recv.lit_version).is_empty())

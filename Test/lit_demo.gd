@@ -91,6 +91,8 @@ var _perf_accum := 0.0
 var _perf_frames := 0
 var _perf_cpu_sum := 0.0
 var _perf_gpu_sum := 0.0
+# ANGLE has no GL timer query, so Godot reports 0 (or garbage) GPU time there.
+var _gpu_timer: bool = not RenderingServer.get_video_adapter_name().begins_with("ANGLE")
 
 var _white_tex: ImageTexture
 var _circle_tex: ImageTexture
@@ -1098,7 +1100,7 @@ func _update_perf(dt: float) -> void:
 	var vp_rid := get_viewport().get_viewport_rid()
 	_perf_frames += 1
 	_perf_cpu_sum += RenderingServer.viewport_get_measured_render_time_cpu(vp_rid)
-	_perf_gpu_sum += RenderingServer.viewport_get_measured_render_time_gpu(vp_rid)
+	_perf_gpu_sum += _gpu_ms(vp_rid)
 	_perf_accum += dt
 	if _perf_accum < 0.2:
 		return
@@ -1112,8 +1114,9 @@ func _update_perf(dt: float) -> void:
 	_perf_gpu_sum = 0.0
 	var draws := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	var light_count := _lights.size() if _running else _enabled_scene_lights()
-	_perf_lbl.text = "FPS    %4d\nFrame  %6.2f ms\nCPU    %6.2f ms\nGPU    %6.2f ms\nLights %4d\nDraws  %5d" \
-			% [int(round(fps)), ms, cpu_ms, gpu_ms, light_count, draws]
+	var gpu_txt := ("%6.2f ms" % gpu_ms) if _gpu_timer else "   n/a"
+	_perf_lbl.text = "FPS    %4d\nFrame  %6.2f ms\nCPU    %6.2f ms\nGPU    %s\nLights %4d\nDraws  %5d" \
+			% [int(round(fps)), ms, cpu_ms, gpu_txt, light_count, draws]
 
 
 # Enabled, visible scene lights, for the perf panel outside a demo run.
@@ -1123,3 +1126,8 @@ func _enabled_scene_lights() -> int:
 		if l.get("enabled") and l.is_visible_in_tree():
 			n += 1
 	return n
+
+
+func _gpu_ms(vp: RID) -> float:
+	var ms := RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	return ms if _gpu_timer and ms >= 0.0 and ms < 10000.0 else 0.0

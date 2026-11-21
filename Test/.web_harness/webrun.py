@@ -246,9 +246,8 @@ def main():
         try:
             page.goto(a.url, wait_until="commit", timeout=60000)
         except PWError as e:
-            log("event", "goto failed: %s" % e)
-            if "crash" in str(e).lower():
-                state["crash"] = True
+            log("event", "goto failed (page never loaded, is the server up?): %s" % e)
+            state["crash"] = True
         last_shot = time.time(); shot_n = 0; blocked_since = None; responsive = True
         clicks = sorted((float(c.split(":")[0]), c.split(":")[1]) for c in a.click)
         shots_at = sorted(float(t) for t in a.shot_at)

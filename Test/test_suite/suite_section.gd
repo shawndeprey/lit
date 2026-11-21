@@ -199,6 +199,14 @@ func check_true(case_name: String, desc: String, ok: bool) -> bool:
 	return _record(case_name, desc, true, ok, ok)
 
 
+## Boolean check that only the editor build can satisfy; an exported build logs it as a
+## known gap (export templates have no plugin.cfg, no dot folders and no warning signal).
+func check_true_editor(case_name: String, desc: String, ok: bool) -> bool:
+	if OS.has_feature("template"):
+		desc = "(known gap) exported build: " + desc
+	return _record(case_name, desc, true, ok, ok)
+
+
 ## |expected - actual| <= tol (floats, Vector2, Color: per channel).
 func check_approx(case_name: String, desc: String, expected, actual, tol: float) -> bool:
 	var ok := false

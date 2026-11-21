@@ -189,6 +189,8 @@ var _frame_times: PackedFloat64Array = PackedFloat64Array()
 var _process_times: PackedFloat64Array = PackedFloat64Array()
 var _render_cpu: PackedFloat64Array = PackedFloat64Array()
 var _render_gpu: PackedFloat64Array = PackedFloat64Array()
+# ANGLE has no GL timer query, so Godot reports 0 (or garbage) GPU time there.
+var _gpu_timer: bool = not RenderingServer.get_video_adapter_name().begins_with("ANGLE")
 var _draw_calls: PackedFloat64Array = PackedFloat64Array()
 
 var _hud: Label
@@ -1097,7 +1099,7 @@ func _process(dt: float) -> void:
 	_frame_times.append(wall)
 	_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS))
 	_render_cpu.append(RenderingServer.viewport_get_measured_render_time_cpu(vp_rid))
-	_render_gpu.append(RenderingServer.viewport_get_measured_render_time_gpu(vp_rid))
+	_render_gpu.append(_gpu_ms(vp_rid))
 	_draw_calls.append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	_hud.text = "MEASURE %.1f / %.1f s   lights %d   algo %s   fps %d" % [_state_time, _opt_measure, _lights.size(), _opt_shadow_algo, Engine.get_frames_per_second()]
 	if _state_time >= _opt_measure or _pre_elapsed >= 0.0:
@@ -1196,7 +1198,7 @@ func _report() -> void:
 	print("LITBENCH low1pct_frame_ms=%.3f (%.1f fps)" % [low1_ms, 1000.0 / low1_ms])
 	print("LITBENCH main_process_ms=%.3f" % proc_ms)
 	print("LITBENCH render_cpu_ms=%.3f" % rcpu_ms)
-	print("LITBENCH render_gpu_ms=%.3f" % rgpu_ms)
+	print("LITBENCH render_gpu_ms=%s" % (("%.3f" % rgpu_ms) if _gpu_timer else "n/a"))
 	print("LITBENCH draw_calls=%.0f" % _mean(_draw_calls))
 	print("LITBENCH viewport=%s screen=%s" % [get_viewport_rect().size, DisplayServer.screen_get_size()])
 
@@ -1208,3 +1210,8 @@ func _mean(a: PackedFloat64Array) -> float:
 	for v in a:
 		s += v
 	return s / float(a.size())
+
+
+func _gpu_ms(vp: RID) -> float:
+	var ms := RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	return ms if _gpu_timer and ms >= 0.0 and ms < 10000.0 else 0.0
