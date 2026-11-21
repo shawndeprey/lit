@@ -17,6 +17,7 @@ func run() -> void:
 	await _prewiring()
 	await _emissive()
 	await _normal_maps()
+	await _shared_texture()
 	await _specular()
 	await _specular_nomap()
 	await _bare_receivers()
@@ -88,6 +89,22 @@ func _emissive() -> void:
 	img = await capture()
 	check_approx(case_name, "emissive set to 0 at runtime: dark again", AMBIENT, lum(img, e.position), TOL)
 	e.emissive_strength = 0.8
+	# The line variants declare one more sampler ahead of the material maps.
+	var line := LitLineLight2D.new()
+	line.position = Vector2(-4000, -4000)
+	line.length = 40.0
+	line.range = 60.0
+	add_child(line)
+	await frames(2)
+	img = await capture()
+	check_true(case_name, "a line light puts the masked receiver on a line variant",
+			LitShaderLibrary.flags_of(m.material.shader) & LitShaderLibrary.F_LINE != 0)
+	check_approx(case_name, "emissive mask on a line variant: black half stays ambient", AMBIENT,
+			lum(img, m.position + Vector2(-25, 0)), TOL)
+	check_approx(case_name, "emissive mask on a line variant: white half glows", AMBIENT + 0.8,
+			lum(img, m.position + Vector2(25, 0)), TOL)
+	line.queue_free()
+	await frames(2)
 
 	# Receiver mask against a mask-1 light.
 	c = cell("receiver_mask 2 vs light 1\n(dark)   |   receiver_mask 3 (lit)")
@@ -176,6 +193,52 @@ func _normal_maps() -> void:
 			_ndotl_lit(0.0, Vector3(130, 0, 60), 0.6), lum(img, flat.position), 0.04)
 	check_approx(case_name, "light from the right: left-facing normal faces away, ambient",
 			_ndotl_lit(-1.0, Vector3(180, 0, 60), 0.6), lum(img, left.position), 0.04)
+
+
+## One CanvasTexture drawn by consecutive sprites on different materials: GLES3 rebinds
+## its normal and specular maps only when the canvas texture changes, so the material's
+## own sampler slots must not leave stale data behind on 16 unit devices.
+func _shared_texture() -> void:
+	var case_name := "shared_texture"
+	_cell_index = 24   # bottom-left corner: its range 200 light reaches no other cell
+	var c := cell("one texture, two materials, light from the left:
+plain / owns an occluder (flat row, mapped row)")
+	var base := cell_center(c) + Vector2(20, 10)
+	var l := point_light(base + Vector2(-130, 0), 200.0, 0.6, Color.WHITE, 60.0)
+	l.falloff = 0.0
+	var flat_ct := canvas_tex(tex_sized(Vector2(40, 40)))
+	var a := _shared_sprite(flat_ct, base + Vector2(-50, -30))
+	var b := _shared_sprite(flat_ct, base + Vector2(50, -30))
+	occluder(Vector2.ZERO, Vector2(40, 40), b)
+	var map_ct := canvas_tex(tex_sized(Vector2(40, 40)), tex_normal(8, -1.0))
+	var ma := _shared_sprite(map_ct, base + Vector2(-50, 30))
+	var mb := _shared_sprite(map_ct, base + Vector2(50, 30))
+	occluder(Vector2.ZERO, Vector2(40, 40), mb)
+	await frames(2)
+	var img := await capture()
+	check_true(case_name, "the occluder-owning sprite re-tiered to its own full material",
+			b.material != a.material and LitShaderLibrary.flags_of(b.material.shader) != 0)
+	check_approx(case_name, "plain flat sprite 80 px right of the light: N.L 0.42",
+			_ndotl_lit(0.0, Vector3(-80, 30, 60), 0.6), lum(img, a.position), 0.04)
+	check_approx(case_name, "occluder-owning flat sprite on the same texture, 180 px: 0.32",
+			_ndotl_lit(0.0, Vector3(-180, 30, 60), 0.6), lum(img, b.position), 0.04)
+	check_approx(case_name, "plain left-facing sprite 80 px: N.L 0.99",
+			_ndotl_lit(-1.0, Vector3(-80, -30, 60), 0.6), lum(img, ma.position), 0.04)
+	# 16 unit GL devices: the second material's sampler slots overwrite the normal map
+	# Godot bound for the first, and it rebinds only when the canvas texture changes.
+	var sixteen_units := OS.has_feature("web") or RenderingServer.get_video_adapter_name().begins_with("ANGLE")
+	var unit_gap := "(known gap) " if sixteen_units else ""
+	check_approx(case_name, unit_gap + "occluder-owning sprite on the same mapped texture, 180 px: 0.90",
+			_ndotl_lit(-1.0, Vector3(-180, -30, 60), 0.6), lum(img, mb.position), 0.04)
+
+
+func _shared_sprite(ct: CanvasTexture, pos: Vector2) -> LitSprite2D:
+	var s := LitSprite2D.new()
+	s.texture = ct
+	s.position = pos
+	s.specular_strength = 0.0
+	add_child(s)
+	return s
 
 
 ## Without a specular map the Blinn-Phong lobe falls back to pow(N.L, 1 + shininess x k)

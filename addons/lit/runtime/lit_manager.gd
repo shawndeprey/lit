@@ -14,6 +14,7 @@ signal precompile_finished
 const LitLightRegistryScript := preload("res://addons/lit/runtime/lit_light_registry.gd")
 const LitShaderPrecompilerScript := preload("res://addons/lit/runtime/lit_shader_precompiler.gd")
 const LitPrecompileOverlayScript := preload("res://addons/lit/nodes/lit_precompile_overlay.gd")
+const LitShaderGlobalsScript := preload("res://addons/lit/runtime/lit_shader_globals.gd")
 
 const SETTING_PRECOMPILE := "lit/startup/precompile_shaders"
 const SETTING_PRECOMPILE_ASYNC := "lit/startup/precompile_async"
@@ -52,6 +53,11 @@ func _ready() -> void:
 	# Run after gameplay scripts have moved their lights this frame.
 	process_priority = 1000
 
+	# Plugin disabled (autoload-only setups): globals added since it last persisted them.
+	var missing_globals: int = LitShaderGlobalsScript.add_missing()
+	if missing_globals > 0 and OS.is_debug_build():
+		push_warning("Lit: declared %d shader globals at runtime; enable the Lit plugin once to persist them in project.godot" % missing_globals)
+
 	if OS.get_cmdline_user_args().has(LitShaderPrecompilerScript.WORKER_ARG):
 		_boot_worker()
 		return
@@ -62,7 +68,7 @@ func _ready() -> void:
 		ProjectSettings.settings_changed.connect(_reload_settings)
 
 	_boot_self_check()
-	if bool(ProjectSettings.get_setting(SETTING_PRECOMPILE, true)):
+	if bool(ProjectSettings.get_setting(SETTING_PRECOMPILE, false)):
 		precompiler = LitShaderPrecompilerScript.new()
 		add_child(precompiler)
 		if OS.is_debug_build() and not FileAccess.file_exists(LitShaderPrecompilerScript.CONFIG_PATH):
@@ -70,13 +76,16 @@ func _ready() -> void:
 					% LitShaderPrecompilerScript.default_variant_flags().size())
 		var fresh: bool = LitShaderPrecompilerScript.marker_fresh(LitShaderPrecompilerScript.work_list())
 		if not fresh:
+			# Phones and browsers cannot spawn the worker processes: they build in this process.
+			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false)) \
+					and not OS.has_feature("mobile") and not OS.has_feature("web")
 			var overlay: Node = LitPrecompileOverlayScript.new()
 			overlay.name = "LitPrecompileOverlay"
+			overlay.force_takeover = not asynchronous
 			overlay.attach(precompiler)
 			# Deferred root add lands after the main scene in tree order, so the cover
 			# wins same-layer ties against game HUDs at layer 128.
 			get_tree().root.add_child.call_deferred(overlay)
-			var asynchronous := bool(ProjectSettings.get_setting(SETTING_PRECOMPILE_ASYNC, false))
 			precompiler.start(fresh, asynchronous)
 		else:
 			precompiler.start(fresh)
@@ -107,13 +116,13 @@ func _boot_worker() -> void:
 ## The workers bake into the disk caches, which a process reads only at start: the session
 ## that calls this still compiles a shader on its first draw; the next launch is warm.
 func precompile_shaders() -> bool:
-	if _api_precompiler != null or (precompiler != null and precompiler.is_processing()):
+	if OS.has_feature("web") or _api_precompiler != null or (precompiler != null and precompiler.is_processing()):
 		return false
 	_api_precompiler = LitShaderPrecompilerScript.new()
 	add_child(_api_precompiler)
 	_api_precompiler.progress.connect(_on_api_progress)
 	_api_precompiler.finished.connect(_on_api_finished)
-	_api_precompiler.start(false, true)
+	_api_precompiler.start(false, not OS.has_feature("mobile"))
 	return true
 
 
@@ -219,3 +228,7 @@ func _reload_settings() -> void:
 	RenderingServer.global_shader_parameter_set("lit_shadow_step_scaling", shadow_step_scaling)
 	RenderingServer.global_shader_parameter_set("lit_ysort_enabled", y_sorting)
 	RenderingServer.global_shader_parameter_set("lit_ysort_band", y_sort_band)
+	# GLES3 binds the material samplers before its own maps and skips those while the
+	# canvas texture repeats, so the unit 9/10 pads carry its defaults: white, flat normal.
+	RenderingServer.global_shader_parameter_set("lit_gl_unit_9", LitShaderGlobalsScript.pad_texture(Color(1, 1, 1, 1)))
+	RenderingServer.global_shader_parameter_set("lit_gl_unit_10", LitShaderGlobalsScript.pad_texture(Color(0.5, 0.5, 1, 1)))

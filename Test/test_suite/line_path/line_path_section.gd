@@ -1242,7 +1242,7 @@ func _limits() -> void:
 	var warns := l._get_configuration_warnings()
 	check_true(c, "a second Path2D child warns that only the first shapes the light",
 			warns.size() == 1 and "first Path2D" in warns[0])
-	check_true(c, "and dirties the light's warning", l in pings)
+	check_true_editor(c, "and dirties the light's warning", l in pings)
 	check_approx(c, "the first child still shapes the light (its end x)", 200.0,
 			(l.path_fit_xf().affine_inverse() * l.path_chain().points[-1]).x, 0.01)
 	pings.clear()
@@ -1258,7 +1258,7 @@ func _limits() -> void:
 	second.free()
 	await frames(1)
 	check(c, "removing the extra Path2D clears the warning", 0, l._get_configuration_warnings().size())
-	check_true(c, "and dirties the light's warning again", l in pings)
+	check_true_editor(c, "and dirties the light's warning again", l in pings)
 	tree.node_configuration_warning_changed.disconnect(on_changed)
 	tree.edited_scene_root = null
 	l.queue_free()

@@ -76,6 +76,12 @@ const SWEEP_SECONDS := 4.0
 
 # --- runtime state ---
 var _running := false
+# Command line: demo=<stage id> starts the reel on that stage and holds it (seeded);
+# capture=PATH saves the viewport after CAPTURE_FRAMES frames and quits.
+const CAPTURE_FRAMES := 90
+var _hold := false
+var _capture := ""
+var _capture_frames := 0
 var _stage_index := -1
 var _stage_time := 0.0
 var _clock := 0.0
@@ -85,6 +91,8 @@ var _perf_accum := 0.0
 var _perf_frames := 0
 var _perf_cpu_sum := 0.0
 var _perf_gpu_sum := 0.0
+# ANGLE has no GL timer query, so Godot reports 0 (or garbage) GPU time there.
+var _gpu_timer: bool = not RenderingServer.get_video_adapter_name().begins_with("ANGLE")
 
 var _white_tex: ImageTexture
 var _circle_tex: ImageTexture
@@ -179,6 +187,18 @@ func _ready() -> void:
 	_circle_tex = _make_circle_texture()
 	_build_ui()
 	_set_ui_state("idle")
+	var stage_id := ""
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("demo="):
+			stage_id = arg.substr(5)
+		elif arg.begins_with("capture="):
+			_capture = arg.substr(8)
+	for i in _stages.size():
+		if _stages[i].id == stage_id:
+			seed(1)
+			_hold = true
+			_begin()
+			_enter_stage(i)
 
 
 # White disc with a 1px anti-aliased rim, shared by every circle prop.
@@ -214,23 +234,23 @@ func _build_ui() -> void:
 	_counter_lbl = _make_label(root, 15, Color(0.7, 0.72, 0.8), HORIZONTAL_ALIGNMENT_CENTER)
 	_set_rect(_counter_lbl, 0, 0, 1, 0, 0, 120, 0, 144)
 
-	_start_btn = _make_button(root, "▶  Start Performance Demo")
+	_start_btn = _make_button(root, "Start Performance Demo")
 	_set_rect(_start_btn, 0, 1, 0, 1, 16, -58, 340, -16)   # bottom-left
 	_start_btn.pressed.connect(_begin)
 
-	_restart_btn = _make_button(root, "⟳  Restart Demo")
+	_restart_btn = _make_button(root, "Restart Demo")
 	_set_rect(_restart_btn, 0.5, 0.5, 0.5, 0.5, -150, 18, 150, 74)
 	_restart_btn.pressed.connect(_on_restart)
 
-	_skip_btn = _make_button(root, "Skip  ▶▶")
+	_skip_btn = _make_button(root, "Skip")
 	_set_rect(_skip_btn, 1, 1, 1, 1, -150, -58, -16, -16)
 	_skip_btn.pressed.connect(_on_skip)
 
-	_stop_btn = _make_button(root, "■  Stop")
+	_stop_btn = _make_button(root, "Stop")
 	_set_rect(_stop_btn, 0, 1, 0, 1, 16, -58, 150, -16)
 	_stop_btn.pressed.connect(_teardown_to_idle)
 
-	_splash_btn = _make_button(root, "✦  Splash Screen")
+	_splash_btn = _make_button(root, "Splash Screen")
 	_set_rect(_splash_btn, 0, 1, 0, 1, 356, -58, 560, -16)
 	_splash_btn.pressed.connect(_play_splash)
 
@@ -1065,8 +1085,14 @@ func _process(dt: float) -> void:
 	_stage_time += dt
 	_update_stage(_stage_time)
 	var s = _stages[_stage_index]
-	if s.auto and _stage_time >= s.dur:
+	if s.auto and _stage_time >= s.dur and not _hold:
 		_next_stage()
+	if _capture != "":
+		_capture_frames += 1
+		if _capture_frames == CAPTURE_FRAMES:
+			get_viewport().get_texture().get_image().save_png(_capture)
+			print("DEMO capture=%s" % _capture)
+			get_tree().quit()
 
 
 func _update_perf(dt: float) -> void:
@@ -1074,7 +1100,7 @@ func _update_perf(dt: float) -> void:
 	var vp_rid := get_viewport().get_viewport_rid()
 	_perf_frames += 1
 	_perf_cpu_sum += RenderingServer.viewport_get_measured_render_time_cpu(vp_rid)
-	_perf_gpu_sum += RenderingServer.viewport_get_measured_render_time_gpu(vp_rid)
+	_perf_gpu_sum += _gpu_ms(vp_rid)
 	_perf_accum += dt
 	if _perf_accum < 0.2:
 		return
@@ -1088,8 +1114,9 @@ func _update_perf(dt: float) -> void:
 	_perf_gpu_sum = 0.0
 	var draws := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	var light_count := _lights.size() if _running else _enabled_scene_lights()
-	_perf_lbl.text = "FPS    %4d\nFrame  %6.2f ms\nCPU    %6.2f ms\nGPU    %6.2f ms\nLights %4d\nDraws  %5d" \
-			% [int(round(fps)), ms, cpu_ms, gpu_ms, light_count, draws]
+	var gpu_txt := ("%6.2f ms" % gpu_ms) if _gpu_timer else "   n/a"
+	_perf_lbl.text = "FPS    %4d\nFrame  %6.2f ms\nCPU    %6.2f ms\nGPU    %s\nLights %4d\nDraws  %5d" \
+			% [int(round(fps)), ms, cpu_ms, gpu_txt, light_count, draws]
 
 
 # Enabled, visible scene lights, for the perf panel outside a demo run.
@@ -1099,3 +1126,8 @@ func _enabled_scene_lights() -> int:
 		if l.get("enabled") and l.is_visible_in_tree():
 			n += 1
 	return n
+
+
+func _gpu_ms(vp: RID) -> float:
+	var ms := RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	return ms if _gpu_timer and ms >= 0.0 and ms < 10000.0 else 0.0

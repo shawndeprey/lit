@@ -93,7 +93,7 @@ func run() -> void:
 	var ys := box_receiver(Vector2(750, 620), Vector2(100, 100))
 	ys.specular_strength = 0.0
 	ys.receiver_mask = 4
-	occluder(Vector2(0, 45), Vector2(90, 6), ys)
+	var strip := occluder(Vector2(0, 45), Vector2(90, 6), ys)
 	var yl := point_light(YL, 220.0, 0.8, Color.WHITE, 100.0)
 	yl.falloff = 0.0
 	yl.light_mask = 4
@@ -156,6 +156,17 @@ func run() -> void:
 	_cam.rotation = 0.0
 	_cam.position = Vector2(900, 700)
 	await _compare("camera_pan", "pan to (900, 700)")
+	# An empty occluder SDF must read as far outside at any zoom.
+	_cam.position = S
+	_cam.zoom = Vector2(3, 3)
+	get_node("Props").visible = false
+	strip.visible = false
+	await frames(4)
+	check_gt("camera_empty_sdf", "zoom 3 with no occluder left: the shadow light reaches the old umbra",
+			lum(await capture(), S), _base["umbra behind the box"], 0.15)
+	get_node("Props").visible = true
+	strip.visible = true
+	_cam.zoom = Vector2.ONE
 	_cam.enabled = false
 	await frames(2)
 	get_viewport().canvas_transform = Transform2D()

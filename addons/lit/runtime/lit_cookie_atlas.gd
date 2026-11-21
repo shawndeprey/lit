@@ -26,6 +26,13 @@ var _known: Dictionary = {}
 # Set when a known texture emits `changed`; forces a rebuild.
 var _dirty := false
 
+# Texture instance id -> its RGBA8 image, kept while the texture lives so a rebuild
+# reads back only textures it has never seen; the texture's `changed` drops the entry.
+var _images: Dictionary = {}
+
+# Instance ids whose `changed` signal is hooked, once per texture for its lifetime.
+var _hooked: Dictionary = {}
+
 ## Rebuild if `textures` differs from the last set, or a texture's contents changed.
 func refresh(textures: Array) -> void:
 	if not _dirty and textures.size() == _known.size():
@@ -55,45 +62,40 @@ func get_texture() -> Texture2D:
 		_dummy = ImageTexture.create_from_image(img)
 	return _dummy
 
-func _on_texture_changed() -> void:
-	_dirty = true
+func _on_texture_changed(id: int) -> void:
+	_images.erase(id)
+	var tex := instance_from_id(id)
+	if tex != null and _known.has(tex):
+		_dirty = true
 
 ## Repack every texture into a fresh atlas.
 func _rebuild(textures: Array) -> void:
 	_dirty = false
-
-	# Move the changed-signal subscriptions to the new set.
-	for tex in _known:
-		if is_instance_valid(tex) and tex.changed.is_connected(_on_texture_changed):
-			tex.changed.disconnect(_on_texture_changed)
 	_known.clear()
 	_rects.clear()
 	_texture = null
+	for id in _hooked.keys():
+		if instance_from_id(id) == null:
+			_hooked.erase(id)
+			_images.erase(id)
 
 	var max_size := maxi(int(ProjectSettings.get_setting(SETTING_MAX_SIZE, DEFAULT_MAX_SIZE)), 64)
 
-	# Pull a CPU-side RGBA8 image out of each texture; skip anything unreadable,
-	# undecompressable, or too large.
 	var entries: Array = []
 	for tex in textures:
 		_known[tex] = true
-		if not tex.changed.is_connected(_on_texture_changed):
-			tex.changed.connect(_on_texture_changed)
-		var img: Image = tex.get_image()
-		if img == null or img.get_width() < 2 or img.get_height() < 2:
-			push_warning("Lit: cookie texture '%s' has no usable image; its light falls back to analytic falloff." % _tex_name(tex))
+		var id: int = tex.get_instance_id()
+		if not _hooked.has(id):
+			_hooked[id] = true
+			tex.changed.connect(_on_texture_changed.bind(id))
+		var img: Image = _images.get(id)
+		if img == null:
+			img = _read_image(tex, max_size)
+			if img == null:
+				continue
+			_images[id] = img
+		elif not _fits(tex, img, max_size):
 			continue
-		if img.get_width() + 2 * PAD > max_size or img.get_height() + 2 * PAD > max_size:
-			push_warning("Lit: cookie texture '%s' (%dx%d) exceeds lit/quality/cookie_atlas_max_size (%d); its light falls back to analytic falloff." % [_tex_name(tex), img.get_width(), img.get_height(), max_size])
-			continue
-		img = img.duplicate()
-		if img.is_compressed():
-			img.decompress()
-		if img.is_compressed():
-			push_warning("Lit: cookie texture '%s' uses a format that can't be decompressed; its light falls back to analytic falloff." % _tex_name(tex))
-			continue
-		if img.get_format() != Image.FORMAT_RGBA8:
-			img.convert(Image.FORMAT_RGBA8)
 		entries.append({"tex": tex, "img": img})
 	if entries.is_empty():
 		return
@@ -140,6 +142,31 @@ func _rebuild(textures: Array) -> void:
 			(Vector2(pos) + Vector2(0.5, 0.5)) / atlas_size,
 			(Vector2(img.get_size()) - Vector2(1.0, 1.0)) / atlas_size)
 	_texture = ImageTexture.create_from_image(atlas_img)
+
+## A CPU-side RGBA8 copy of `tex`, or null (with a warning) when it is unreadable,
+## undecompressable, or too large for the atlas.
+func _read_image(tex: Texture2D, max_size: int) -> Image:
+	var img: Image = tex.get_image()
+	if img == null or img.get_width() < 2 or img.get_height() < 2:
+		push_warning("Lit: cookie texture '%s' has no usable image; its light falls back to analytic falloff." % _tex_name(tex))
+		return null
+	if not _fits(tex, img, max_size):
+		return null
+	img = img.duplicate()
+	if img.is_compressed():
+		img.decompress()
+	if img.is_compressed():
+		push_warning("Lit: cookie texture '%s' uses a format that can't be decompressed; its light falls back to analytic falloff." % _tex_name(tex))
+		return null
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	return img
+
+func _fits(tex: Texture2D, img: Image, max_size: int) -> bool:
+	if img.get_width() + 2 * PAD > max_size or img.get_height() + 2 * PAD > max_size:
+		push_warning("Lit: cookie texture '%s' (%dx%d) exceeds lit/quality/cookie_atlas_max_size (%d); its light falls back to analytic falloff." % [_tex_name(tex), img.get_width(), img.get_height(), max_size])
+		return false
+	return true
 
 func _tex_name(tex: Texture2D) -> String:
 	return tex.resource_path if tex.resource_path != "" else str(tex)

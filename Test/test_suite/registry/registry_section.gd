@@ -26,6 +26,7 @@ func run() -> void:
 	await _light_cache()
 	await _bare_driving()
 	await _activity_flags()
+	await _receiver_arrivals()
 	await _rx_registry()
 	await _freed_node_keys()
 	await _screen_tiles()
@@ -227,6 +228,79 @@ func _activity_flags() -> void:
 	lit.queue_free()
 	await frames(1)
 	restore_settings()
+
+
+func _receiver_arrivals() -> void:
+	var case_name := "receiver_arrivals"
+	var drv = _mgr.get("_registry")._receiver_driver
+	var l := point_light(Vector2(200, 1000), 300.0, 0.5)
+	l.shadow_enabled = true
+	l.shadow_algorithm = F.ShadowAlgorithm.CONE_TRACED
+	var caster := occluder(Vector2(300, 1000), Vector2(40, 40), _props)
+	await frames(3)
+	check_true(case_name, "cone light active for the case", RegistryScript.activity_flags & F.F_CONE != 0)
+	var filler := group("Filler")
+	for i in 50:
+		var holder := Node2D.new()
+		var spr := Sprite2D.new()
+		spr.texture = tex_sized(Vector2(8, 8))
+		holder.add_child(spr)
+		filler.add_child(holder)
+	check_true(case_name, "plain Node2D/Sprite2D spawns leave the receiver walk clean", not drv._receiver_dirty)
+	check_true(case_name, "plain Sprite2D spawns schedule no bare cache rebuild", not drv._bare_dirty)
+	check_true(case_name, "spawned CanvasItems are noted as arrivals", drv._arrivals.size() >= 101)
+	var ready_mat := receiver_material()
+	var ready_spr := Sprite2D.new()
+	ready_spr.texture = tex_sized(Vector2(40, 40))
+	ready_spr.material = ready_mat
+	ready_spr.position = Vector2(500, 1000)
+	add_child(ready_spr)
+	var late_spr := Sprite2D.new()
+	late_spr.texture = tex_sized(Vector2(40, 40))
+	late_spr.position = Vector2(560, 1000)
+	add_child(late_spr)
+	var late_mat := receiver_material()
+	late_spr.material = late_mat
+	check_true(case_name, "receiver arrivals schedule no tree walk", not drv._receiver_dirty)
+	await frames(2)
+	check_true(case_name, "arrival with its material: on the _cone variant", F.flags_of(ready_mat.shader) & F.F_CONE != 0)
+	check_true(case_name, "material assigned right after add_child: on the _cone variant",
+			F.flags_of(late_mat.shader) & F.F_CONE != 0)
+	check_true(case_name, "arrivals list drained by the refresh", drv._arrivals.is_empty())
+	# A sibling occluder already in place: only the arrival can schedule the bare rebuild.
+	var wrap := group("BareWrap")
+	wrap.position = Vector2(700, 1000)
+	occluder(Vector2(0, 30), Vector2(20, 10), wrap)
+	await frames(2)
+	var bare := Sprite2D.new()
+	bare.texture = tex_sized(Vector2(40, 40))
+	wrap.add_child(bare)
+	bare.material = receiver_material()
+	await frames(2)
+	check(case_name, "bare receiver configured after add_child: self rect driven", 1,
+			int(_mat(bare).get_shader_parameter("self_rect_count")))
+	check(case_name, "bare receiver configured after add_child: full tier",
+			F.F_SELF_EXCL, F.flags_of(_mat(bare).shader) & F.TIER_MASK)
+	check_true(case_name, "bare receiver configured after add_child: _cone variant",
+			F.flags_of(_mat(bare).shader) & F.F_CONE != 0)
+	var stale := Sprite2D.new()
+	stale.texture = tex_sized(Vector2(40, 40))
+	stale.position = Vector2(760, 1000)
+	add_child(stale)
+	await frames(2)
+	var stale_mat := receiver_material()
+	stale.material = stale_mat
+	await frames(3)
+	check_true(case_name, "(known gap) a Lit material assigned frames after add_child, with nothing else arriving, takes the active variant",
+			F.flags_of(stale_mat.shader) & F.F_CONE != 0)
+	l.queue_free()
+	caster.queue_free()
+	filler.queue_free()
+	ready_spr.queue_free()
+	late_spr.queue_free()
+	wrap.queue_free()
+	stale.queue_free()
+	await frames(1)
 
 
 func _rx_registry() -> void:

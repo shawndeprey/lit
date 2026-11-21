@@ -199,6 +199,14 @@ func check_true(case_name: String, desc: String, ok: bool) -> bool:
 	return _record(case_name, desc, true, ok, ok)
 
 
+## Boolean check that only the editor build can satisfy; an exported build logs it as a
+## known gap (export templates have no plugin.cfg, no dot folders and no warning signal).
+func check_true_editor(case_name: String, desc: String, ok: bool) -> bool:
+	if OS.has_feature("template"):
+		desc = "(known gap) exported build: " + desc
+	return _record(case_name, desc, true, ok, ok)
+
+
 ## |expected - actual| <= tol (floats, Vector2, Color: per channel).
 func check_approx(case_name: String, desc: String, expected, actual, tol: float) -> bool:
 	var ok := false
@@ -400,7 +408,8 @@ static func env_line(vp: Viewport) -> String:
 	var tex := vp.get_texture()
 	if tex != null:
 		tex_size = Vector2i(tex.get_size())
-	return "SUITE ENV window=%s screen=%d/%d screen_size=%s screen_scale=%.2f dpi=%d viewport_px=%s canvas_units=%s final_scale=%.3f canvas_scale=%.3f vsync=%d debugger=%s args=%s" % [
+	return "SUITE ENV renderer=%s/%s window=%s screen=%d/%d screen_size=%s screen_scale=%.2f dpi=%d viewport_px=%s canvas_units=%s final_scale=%.3f canvas_scale=%.3f vsync=%d debugger=%s args=%s" % [
+			RenderingServer.get_current_rendering_method(), RenderingServer.get_current_rendering_driver_name(),
 			win.size, screen, DisplayServer.get_screen_count(), DisplayServer.screen_get_size(screen),
 			DisplayServer.screen_get_scale(screen), DisplayServer.screen_get_dpi(screen),
 			tex_size, vp.get_visible_rect().size, vp.get_final_transform().get_scale().x,

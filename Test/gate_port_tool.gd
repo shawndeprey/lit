@@ -48,6 +48,7 @@ var _fails := 0
 
 func _initialize() -> void:
 	print("[mode] %s" % ("editor (placeholder script instances)" if Engine.is_editor_hint() else "game (real script instances)"))
+	print("[note] TypedArray / TypedDictionary refusals below are expected: retyped @export annotations refuse the old core nodes at load and the converter re-resolves them")
 	_prepare()
 	var scan1: Dictionary = Tool.scan([OUT])
 	var run1: Dictionary = Tool.run(scan1, ALL_KINDS, OUT + "/report.txt")

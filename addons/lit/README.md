@@ -9,7 +9,7 @@ shadows, and stack on a pile of post-processing - all without leaving the node w
 
 *▶ [Watch the tech demo](https://www.youtube.com/watch?v=mWrhQRTlI8w)*
 
-> **Requires Godot 4.5+ on the Forward+ renderer.** (Mobile/Compatibility aren't supported.)
+> **Requires Godot 4.5+.** Forward+ and Mobile are fully supported. Compatibility works on desktop OpenGL, where shaders compile more slowly on first use; web and GLES phones aren't supported yet.
 
 ---
 

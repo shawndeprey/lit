@@ -39,8 +39,9 @@ func run() -> void:
 	label("Port Project to Lit: fixtures converted in a scratch copy of Test/.port_tool_bench",
 			Vector2(24, 74))
 	if not DirAccess.dir_exists_absolute(SRC):
-		check_true("port_tool", "fixture folder %s present" % SRC, false)
+		check_true_editor("port_tool", "fixture folder %s present" % SRC, false)
 		return
+	say("SUITE   port_tool: TypedArray / TypedDictionary refusals in the log are expected (retyped exports refuse old core nodes at load, then get re-resolved)")
 	_prepare()
 	var scan1: Dictionary = Tool.scan([OUT])
 	var run1: Dictionary = Tool.run(scan1, ALL_KINDS, OUT + "/report.txt")

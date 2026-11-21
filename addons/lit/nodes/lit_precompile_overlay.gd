@@ -5,6 +5,7 @@ class_name LitPrecompileOverlay
 ## takeover UI or the async floating progress box, per the lit/startup/* settings.
 
 const DEFAULT_TITLE := "Lit Shaders Precompiling"
+const NOTICE_TEXT := "Compiling shaders, this can take a while"
 
 # (horizontal, vertical) size flags indexed by the precompile_async_position enum.
 const POS_FLAGS := [
@@ -56,7 +57,13 @@ func _build_takeover(title_text: String, verbose: bool) -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
-	center.add_child(_build_box(title_text, verbose, 28, Vector2(420, 16), 16))
+	# GLES3 links the whole list inside one frame, so no bar could move: a notice instead.
+	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		center.add_child(_build_notice(title_text))
+		for item in [_root] + _root.find_children("*", "CanvasItem", true, false):
+			item.visibility_layer = LitShaderPrecompiler.TAKEOVER_LAYER
+	else:
+		center.add_child(_build_box(title_text, verbose, 28, Vector2(420, 16), 16))
 
 
 func _build_async(title_text: String, verbose: bool) -> void:
@@ -72,6 +79,19 @@ func _build_async(title_text: String, verbose: bool) -> void:
 	box.size_flags_horizontal = POS_FLAGS[pos][0]
 	box.size_flags_vertical = POS_FLAGS[pos][1]
 	_root.add_child(box)
+
+
+func _build_notice(title_text: String) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 14)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for line in [[title_text, 28], [NOTICE_TEXT, 16]]:
+		var label := Label.new()
+		label.text = line[0]
+		label.add_theme_font_size_override("font_size", line[1])
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(label)
+	return box
 
 
 func _build_box(title_text: String, verbose: bool, title_size: int,
