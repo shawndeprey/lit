@@ -1,7 +1,8 @@
 extends Button
 
 ## One scene tile: a darkened thumbnail that grows, zooms, brightens and lights up in a
-## random colour while hovered, then eases back. Every change is tweened.
+## random colour while hovered, then eases back. Every change is tweened. A green check
+## marks a scene already opened this launch.
 
 const GROW := 1.08
 const ZOOM := 1.12
@@ -13,6 +14,7 @@ const OUT_TIME := 0.4
 @onready var _thumb: Sprite2D = $Thumb
 @onready var _glow: LitPointLight2D = $Glow
 @onready var _label: Label = $Name
+@onready var _check: Node2D = $Check
 
 var _tile_size := Vector2(480, 270)
 var _thumb_scale := Vector2.ONE
@@ -27,6 +29,7 @@ func setup(entry: Dictionary) -> void:
 	_label.text = entry.name
 	_thumb.texture = entry.thumb
 	_thumb.visible = entry.thumb != null
+	_check.visible = entry.done
 
 func set_tile_size(tile_size: Vector2, cookie: Texture2D, cookie_scale: float) -> void:
 	_tile_size = tile_size
@@ -40,6 +43,7 @@ func set_tile_size(tile_size: Vector2, cookie: Texture2D, cookie_scale: float) -
 	_glow.texture = cookie
 	_glow.texture_scale = cookie_scale
 	_glow.range = tile_size.length()
+	_check.position = Vector2(tile_size.x - 44.0, 44.0)
 
 func _on_enter() -> void:
 	z_index = 1

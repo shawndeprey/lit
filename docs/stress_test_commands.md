@@ -28,6 +28,7 @@ godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --pat
 
 # Integration Test Harness (every eyeball scene behind one tile menu; thumbs=on regenerates the tile thumbnails and quits)
 godot --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn
+godot --rendering-method mobile --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn
 godot --rendering-method gl_compatibility --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn
 godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn
 godot --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn -- thumbs=on

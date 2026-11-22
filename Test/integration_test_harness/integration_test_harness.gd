@@ -32,6 +32,7 @@ const SCENES: Array[Dictionary] = [
 
 var _menu: Control
 var _scene: Node
+var _done := {}
 var _capture := false
 var _wait := 2.0
 var _shot := ""
@@ -64,6 +65,7 @@ func _open(entry: Dictionary) -> void:
 		remove_child(_menu)
 		_menu.queue_free()
 		_menu = null
+	_done[entry.scene] = true
 	_scene = (load(entry.scene) as PackedScene).instantiate()
 	add_child(_scene)
 	_back.visible = not _capture
@@ -86,6 +88,7 @@ func _entries() -> Array[Dictionary]:
 		var e := s.duplicate()
 		var thumb := _thumb_path(s.scene)
 		e["thumb"] = load(thumb) if ResourceLoader.exists(thumb) else null
+		e["done"] = _done.has(s.scene)
 		out.append(e)
 	return out
 

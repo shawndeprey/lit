@@ -7,7 +7,7 @@
 script = ExtResource("1_harness")
 
 [node name="BackLayer" type="CanvasLayer" parent="."]
-layer = 100
+layer = 200
 
 [node name="Back" type="Button" parent="BackLayer"]
 visible = false
