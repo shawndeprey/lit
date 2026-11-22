@@ -214,6 +214,18 @@ plain / owns an occluder (flat row, mapped row)")
 	var ma := _shared_sprite(map_ct, base + Vector2(-50, 30))
 	var mb := _shared_sprite(map_ct, base + Vector2(50, 30))
 	occluder(Vector2.ZERO, Vector2(40, 40), mb)
+	_cell_index = 28
+	var sc := cell("one texture with a grey specular map,\ntwo materials, light between:\nplain / owns an occluder")
+	var sbase := cell_center(sc) + Vector2(0, 10)
+	var sl := point_light(sbase, 100.0, 0.4, Color.WHITE, 60.0)
+	sl.falloff = 0.0
+	var spec_ct := canvas_tex(tex_sized(Vector2(40, 40)), null, tex_solid(8, Color(0.5, 0.5, 0.5)))
+	var sa := _shared_sprite(spec_ct, sbase + Vector2(-30, 0))
+	var sb := _shared_sprite(spec_ct, sbase + Vector2(30, 0))
+	occluder(Vector2.ZERO, Vector2(40, 40), sb)
+	for s in [sa, sb]:
+		s.specular_strength = 1.0
+		s.specular_k = 2.0
 	await frames(2)
 	var img := await capture()
 	check_true(case_name, "the occluder-owning sprite re-tiered to its own full material",
@@ -226,6 +238,14 @@ plain / owns an occluder (flat row, mapped row)")
 			_ndotl_lit(-1.0, Vector3(-80, -30, 60), 0.6), lum(img, ma.position), 0.04)
 	check_approx(case_name, "occluder-owning sprite on the same mapped texture, 180 px: 0.90",
 			_ndotl_lit(-1.0, Vector3(-180, -30, 60), 0.6), lum(img, mb.position), 0.04)
+	if model == 0:
+		var ldir := Vector3(30, 0, 60).normalized()
+		var h := (ldir + Vector3(0, 0, 1)).normalized()
+		var spec_expected := AMBIENT + 0.4 * ldir.z + 0.4 * 0.5 * pow(h.z, 3.0)
+		check_approx(case_name, "plain sprite, grey specular map, light 30 px away: half a highlight, 0.59",
+				spec_expected, lum(img, sa.position), 0.05)
+		check_approx(case_name, "occluder-owning sprite on the same specular-mapped texture: 0.59",
+				spec_expected, lum(img, sb.position), 0.05)
 
 
 func _shared_sprite(ct: CanvasTexture, pos: Vector2) -> LitSprite2D:
