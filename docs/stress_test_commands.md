@@ -19,19 +19,19 @@ godot --path "D:\Game Dev\lit" res://Test/StressTest.tscn -- shadow_algo=cone wa
 godot --path "D:\Game Dev\lit" res://Test/StressTest.tscn -- shadow_algo=cone warmup=3 measure=6 lines=on linecurve=straight
 godot --path "D:\Game Dev\lit" res://Test/StressTest.tscn -- shadow_algo=cone warmup=3 measure=6 lines=on linelen=0
 
-# Functional Demo
-godot --path "D:\Game Dev\lit" res://Test/Test.tscn
-godot --rendering-method gl_compatibility --path "D:\Game Dev\lit" res://Test/Test.tscn
-godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "D:\Game Dev\lit" res://Test/Test.tscn
-godot --path "D:\Game Dev\lit" res://Test/Test.tscn -- demo=point capture="D:/Game Dev/lit/demo_point.png"
-godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "D:\Game Dev\lit" res://Test/Test.tscn -- demo=dir capture="D:/Game Dev/lit/demo_dir.png"
-
 # Integration Test Harness (every eyeball scene behind one tile menu; thumbs=on regenerates the tile thumbnails and quits)
 godot --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn
 godot --rendering-method mobile --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn
 godot --rendering-method gl_compatibility --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn
 godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn
 godot --path "D:\Game Dev\lit" res://Test/integration_test_harness/integration_test_harness.tscn -- thumbs=on
+
+# Functional Demo
+godot --path "D:\Game Dev\lit" res://Test/Test.tscn
+godot --rendering-method gl_compatibility --path "D:\Game Dev\lit" res://Test/Test.tscn
+godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "D:\Game Dev\lit" res://Test/Test.tscn
+godot --path "D:\Game Dev\lit" res://Test/Test.tscn -- demo=point capture="D:/Game Dev/lit/demo_point.png"
+godot --rendering-method gl_compatibility --rendering-driver opengl3_angle --path "D:\Game Dev\lit" res://Test/Test.tscn -- demo=dir capture="D:/Game Dev/lit/demo_dir.png"
 
 # Line Light Benches
 godot --path "D:\Game Dev\lit" res://Test/integration_tests/line_light_test/line_light_test.tscn
