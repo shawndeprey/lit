@@ -85,14 +85,6 @@ var _capture_frames := 0
 var _stage_index := -1
 var _stage_time := 0.0
 var _clock := 0.0
-var _perf_accum := 0.0
-
-# Per-frame render-time sums, so the perf panel shows a window average.
-var _perf_frames := 0
-var _perf_cpu_sum := 0.0
-var _perf_gpu_sum := 0.0
-# ANGLE has no GL timer query, so Godot reports 0 (or garbage) GPU time there.
-var _gpu_timer: bool = not RenderingServer.get_video_adapter_name().begins_with("ANGLE")
 
 var _white_tex: ImageTexture
 var _circle_tex: ImageTexture
@@ -141,7 +133,6 @@ var _precompile_btn: Button
 var _feature_lbl: Label
 var _desc_lbl: Label
 var _counter_lbl: Label
-var _perf_lbl: Label
 
 # --- stage table ---
 var _stages := [
@@ -176,10 +167,7 @@ var _stages := [
 # =====================================================================================
 
 func _ready() -> void:
-	# Vsync off for uncapped frame times; render-time measurement feeds the perf panel
-	# the same CPU/GPU ms the stress bench reports.
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
-	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
 
 	var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
@@ -221,9 +209,6 @@ func _build_ui() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui.add_child(root)
-
-	_perf_lbl = _make_label(root, 18, Color(0.6, 1.0, 0.7), HORIZONTAL_ALIGNMENT_LEFT)
-	_set_rect(_perf_lbl, 0, 0, 0, 0, 16, 14, 250, 200)
 
 	_feature_lbl = _make_label(root, 46, BRAND, HORIZONTAL_ALIGNMENT_CENTER)
 	_set_rect(_feature_lbl, 0, 0, 1, 0, 0, 22, 0, 86)
@@ -296,8 +281,6 @@ func _set_ui_state(state: String) -> void:
 	_counter_lbl.visible = running
 	_splash_btn.visible = state == "idle"
 	_precompile_btn.visible = state == "idle"
-	# Always visible: the demo scene doubles as the manual performance test.
-	_perf_lbl.visible = true
 
 
 # =====================================================================================
@@ -1078,7 +1061,6 @@ func _on_skip() -> void:
 
 func _process(dt: float) -> void:
 	_clock += dt
-	_update_perf(dt)
 	if not _running:
 		return
 	_update_lights()
@@ -1093,41 +1075,3 @@ func _process(dt: float) -> void:
 			get_viewport().get_texture().get_image().save_png(_capture)
 			print("DEMO capture=%s" % _capture)
 			get_tree().quit()
-
-
-func _update_perf(dt: float) -> void:
-	# Refresh the panel 5x/s with window-averaged render times.
-	var vp_rid := get_viewport().get_viewport_rid()
-	_perf_frames += 1
-	_perf_cpu_sum += RenderingServer.viewport_get_measured_render_time_cpu(vp_rid)
-	_perf_gpu_sum += _gpu_ms(vp_rid)
-	_perf_accum += dt
-	if _perf_accum < 0.2:
-		return
-	var fps := Engine.get_frames_per_second()
-	var ms := 1000.0 / maxf(fps, 1.0)
-	var cpu_ms := _perf_cpu_sum / float(_perf_frames)
-	var gpu_ms := _perf_gpu_sum / float(_perf_frames)
-	_perf_accum = 0.0
-	_perf_frames = 0
-	_perf_cpu_sum = 0.0
-	_perf_gpu_sum = 0.0
-	var draws := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
-	var light_count := _lights.size() if _running else _enabled_scene_lights()
-	var gpu_txt := ("%6.2f ms" % gpu_ms) if _gpu_timer else "   n/a"
-	_perf_lbl.text = "FPS    %4d\nFrame  %6.2f ms\nCPU    %6.2f ms\nGPU    %s\nLights %4d\nDraws  %5d" \
-			% [int(round(fps)), ms, cpu_ms, gpu_txt, light_count, draws]
-
-
-# Enabled, visible scene lights, for the perf panel outside a demo run.
-func _enabled_scene_lights() -> int:
-	var n := 0
-	for l in get_tree().get_nodes_in_group("lit_lights"):
-		if l.get("enabled") and l.is_visible_in_tree():
-			n += 1
-	return n
-
-
-func _gpu_ms(vp: RID) -> float:
-	var ms := RenderingServer.viewport_get_measured_render_time_gpu(vp)
-	return ms if _gpu_timer and ms >= 0.0 and ms < 10000.0 else 0.0

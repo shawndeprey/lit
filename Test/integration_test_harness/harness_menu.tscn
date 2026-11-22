@@ -1,0 +1,41 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Test/integration_test_harness/harness_menu.gd" id="1_menu"]
+[ext_resource type="Script" uid="uid://dtbtq2iowg33y" path="res://addons/lit/nodes/lit_canvas_modulate.gd" id="2_modulate"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="3_sprite"]
+
+[node name="Menu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="LitCanvasModulate" type="Node2D" parent="."]
+script = ExtResource("2_modulate")
+color = Color(1, 1, 1, 1)
+metadata/_custom_type_script = "uid://dtbtq2iowg33y"
+
+[node name="Backdrop" type="Sprite2D" parent="."]
+self_modulate = Color(0.1, 0.1, 0.12, 1)
+centered = false
+script = ExtResource("3_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Scroll" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 3
+
+[node name="Grid" type="GridContainer" parent="Scroll"]
+layout_mode = 2
+theme_override_constants/h_separation = 0
+theme_override_constants/v_separation = 0
+columns = 4

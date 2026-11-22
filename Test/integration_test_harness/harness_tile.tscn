@@ -1,0 +1,42 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Test/integration_test_harness/harness_tile.gd" id="1_tile"]
+[ext_resource type="Script" uid="uid://drrhypxeb6nsg" path="res://addons/lit/nodes/lit_sprite_2d.gd" id="2_sprite"]
+[ext_resource type="Script" uid="uid://cpa2qb3trjq4k" path="res://addons/lit/nodes/lit_point_light_2d.gd" id="3_light"]
+
+[node name="Tile" type="Button"]
+clip_contents = true
+custom_minimum_size = Vector2(480, 270)
+mouse_default_cursor_shape = 2
+flat = true
+script = ExtResource("1_tile")
+
+[node name="Thumb" type="Sprite2D" parent="."]
+position = Vector2(240, 135)
+script = ExtResource("2_sprite")
+metadata/_custom_type_script = "uid://drrhypxeb6nsg"
+
+[node name="Glow" type="Node2D" parent="."]
+position = Vector2(240, 135)
+script = ExtResource("3_light")
+enabled = false
+energy = 0.0
+height = 2000.0
+range = 550.0
+falloff = 0.0
+metadata/_custom_type_script = "uid://cpa2qb3trjq4k"
+
+[node name="Name" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 10
+theme_override_font_sizes/font_size = 40
+horizontal_alignment = 1
+vertical_alignment = 1

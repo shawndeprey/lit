@@ -6,7 +6,6 @@ const NONE: int = 4096
 @onready var light: LitPointLight2D = $Lights/LitSpotLight2D
 @onready var pairs: Array = [[light, $Lights/FloorLight], [$Lights/LitSpotLight2D2, $Lights/FloorLight2]]
 @onready var checkboxes: Array[Node] = $UILayer/UI.get_children()
-@onready var fps: Label = $UILayer/Fps
 var accumulator: float = 0.0
 
 func _ready() -> void:
@@ -17,7 +16,6 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	for p in pairs: p[1].color = p[0].color
-	fps.text = "FPS: %d" % Engine.get_frames_per_second()
 	accumulator += delta
 	if accumulator < COLOR_INTERVAL: return
 	accumulator = 0.0
