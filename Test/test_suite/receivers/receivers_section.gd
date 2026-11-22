@@ -224,11 +224,7 @@ plain / owns an occluder (flat row, mapped row)")
 			_ndotl_lit(0.0, Vector3(-180, 30, 60), 0.6), lum(img, b.position), 0.04)
 	check_approx(case_name, "plain left-facing sprite 80 px: N.L 0.99",
 			_ndotl_lit(-1.0, Vector3(-80, -30, 60), 0.6), lum(img, ma.position), 0.04)
-	# 16 unit GL devices: the second material's sampler slots overwrite the normal map
-	# Godot bound for the first, and it rebinds only when the canvas texture changes.
-	var sixteen_units := OS.has_feature("web") or RenderingServer.get_video_adapter_name().begins_with("ANGLE")
-	var unit_gap := "(known gap) " if sixteen_units else ""
-	check_approx(case_name, unit_gap + "occluder-owning sprite on the same mapped texture, 180 px: 0.90",
+	check_approx(case_name, "occluder-owning sprite on the same mapped texture, 180 px: 0.90",
 			_ndotl_lit(-1.0, Vector3(-180, -30, 60), 0.6), lum(img, mb.position), 0.04)
 
 

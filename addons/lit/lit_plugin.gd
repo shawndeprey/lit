@@ -820,11 +820,11 @@ func _ps_global_defs() -> Array:
 		},
 		{
 			"name": "lit_gl_unit_9",
-			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+			"def": {"type": "sampler3D", "value": ""},
 		},
 		{
 			"name": "lit_gl_unit_10",
-			"def": {"type": "sampler2D", "value": "", "filter": "nearest", "repeat": "disable"},
+			"def": {"type": "sampler3D", "value": ""},
 		},
 		{"name": "lit_gx_count", "def": {"type": "int", "value": 0}},
 		{"name": "lit_gx_rect0", "def": {"type": "vec4", "value": Vector4()}},

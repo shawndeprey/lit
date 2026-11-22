@@ -228,9 +228,9 @@ global uniform vec2      lit_screen_to_sdf;
 #define screen_uv_to_sdf(uv) ((uv) * LIT_SCREEN_TO_SDF)
 // findLSB() is GLSL ES 3.1; the lowest set bit is a power of two, exact in float.
 #define findLSB(v) int(floor(log2(float((v) & (~(v) + 1u))) + 0.5))
-// On a 16 unit device Godot binds its specular and normal textures to units 9 and 10
-// after the material's own; these keep the ninth and tenth sampler slots unused.
-#define LIT_GL_UNIT_PADS global uniform sampler2D lit_gl_unit_9; global uniform sampler2D lit_gl_unit_10;
+// On a 16 unit device Godot keeps its specular and normal maps on units 9 and 10. These
+// fill both sampler slots; a 3D sampler binds its own target and leaves the 2D maps alone.
+#define LIT_GL_UNIT_PADS global uniform sampler3D lit_gl_unit_9; global uniform sampler3D lit_gl_unit_10;
 #endif
 
 // World-space shadow SDF, rendered by the registry's SubViewport over the region that

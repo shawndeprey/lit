@@ -168,15 +168,11 @@ lit_occ_indices={
 "value": ""
 }
 lit_gl_unit_9={
-"filter": "nearest",
-"repeat": "disable",
-"type": "sampler2D",
+"type": "sampler3D",
 "value": ""
 }
 lit_gl_unit_10={
-"filter": "nearest",
-"repeat": "disable",
-"type": "sampler2D",
+"type": "sampler3D",
 "value": ""
 }
 lit_gx_count={

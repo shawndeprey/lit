@@ -30,8 +30,8 @@ static func defs() -> Array:
 		{"name": "lit_occ_data", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": placeholder_texture()},
 		{"name": "lit_occ_headers", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": placeholder_texture()},
 		{"name": "lit_occ_indices", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": placeholder_texture()},
-		{"name": "lit_gl_unit_9", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": pad_texture(Color(1, 1, 1, 1))},
-		{"name": "lit_gl_unit_10", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, "value": pad_texture(Color(0.5, 0.5, 1, 1))},
+		{"name": "lit_gl_unit_9", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER3D, "value": null},
+		{"name": "lit_gl_unit_10", "type": RenderingServer.GLOBAL_VAR_TYPE_SAMPLER3D, "value": null},
 		{"name": "lit_gx_count", "type": RenderingServer.GLOBAL_VAR_TYPE_INT, "value": 0},
 		{"name": "lit_gx_rect0", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
 		{"name": "lit_gx_rect1", "type": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "value": Vector4()},
@@ -62,10 +62,4 @@ static func add_missing() -> int:
 
 ## A 1x1 float texture used only as a sampler global's default value.
 static func placeholder_texture() -> ImageTexture:
-	return pad_texture(Color(0, 0, 0, 0))
-
-## The GLES3 unit 9/10 pads stand in for the canvas specular and normal maps.
-static func pad_texture(color: Color) -> ImageTexture:
-	var img := Image.create(1, 1, false, Image.FORMAT_RGBAF)
-	img.set_pixel(0, 0, color)
-	return ImageTexture.create_from_image(img)
+	return ImageTexture.create_from_image(Image.create(1, 1, false, Image.FORMAT_RGBAF))
