@@ -140,7 +140,9 @@ func _effects() -> void:
 	bloom.radius = 8.0
 	await frames(2)
 	img = await capture()
-	check_gt("fx_bloom", "radius 8 (mips 1.6..8) spreads glow into the dark disc, radius 0.5 (mips 0.1..0.5) does not",
+	# The Compatibility screen mip chain stops at 32 px, so the far mips never reach.
+	var bloom_gap := "(known gap) " if RenderingServer.get_current_rendering_method() == "gl_compatibility" else ""
+	check_gt("fx_bloom", bloom_gap + "radius 8 (mips 1.6..8) spreads glow into the dark disc, radius 0.5 (mips 0.1..0.5) does not",
 			lum(img, _pt(90, 160)), tight_glow, 0.02)
 	bloom.intensity = 2.0
 	await _effect_off(bloom, "fx_bloom", "Bloom")

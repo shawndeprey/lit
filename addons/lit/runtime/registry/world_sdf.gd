@@ -313,6 +313,13 @@ func _wsdf_pack_copy() -> void:
 ## True when SDF content changed: an occluder or tilemap moved, toggled visibility or
 ## SDF flags, swapped its polygon resource, a tilemap's TileSet changed, or the cached
 ## list went stale.
+const WSDF_SLOW_POLL := 30
+var _wsdf_vis_dirty := true
+var _wsdf_slow_age := 0
+
+func _on_wsdf_visibility() -> void:
+	_wsdf_vis_dirty = true
+
 func _poll_wsdf_content(root: Node) -> bool:
 	var changed := _wsdf_layer_changed
 	_wsdf_layer_changed = false
@@ -324,18 +331,31 @@ func _poll_wsdf_content(root: Node) -> bool:
 			for occ in root.find_children("*", "LightOccluder2D", true, false):
 				_wsdf_occ.append([occ, occ.global_transform, occ.is_visible_in_tree(),
 						true, occ.occluder, occ.sdf_collision, _wsdf_poly_hash(occ)])
+				if not occ.visibility_changed.is_connected(_on_wsdf_visibility):
+					occ.visibility_changed.connect(_on_wsdf_visibility)
 			for layer in root.find_children("*", "TileMapLayer", true, false):
 				if _on_changed.is_valid() and not layer.changed.is_connected(_on_changed):
 					layer.changed.connect(_on_changed)
+				if not layer.visibility_changed.is_connected(_on_wsdf_visibility):
+					layer.visibility_changed.connect(_on_wsdf_visibility)
 				_wsdf_occ.append([layer, layer.global_transform, layer.is_visible_in_tree(),
 						false, null, false, 0])
 		return true
+	# is_visible_in_tree() climbs to the root for every occluder: re-read visibility only
+	# after a visibility_changed signal (it also fires when an ancestor is hidden or shown),
+	# plus a full re-check every WSDF_SLOW_POLL frames as a safety net. Transforms, the
+	# occluder resource and sdf_collision (the registry's SDF cull flips it) stay per frame.
+	_wsdf_slow_age += 1
+	var slow := _wsdf_vis_dirty or _wsdf_slow_age >= WSDF_SLOW_POLL or Engine.is_editor_hint()
+	if slow:
+		_wsdf_vis_dirty = false
+		_wsdf_slow_age = 0
 	for entry in _wsdf_occ:
 		var node = entry[0]
 		if not is_instance_valid(node) or not node.is_inside_tree():
 			_wsdf_occ_dirty = true
 			return true
-		var vis: bool = node.is_visible_in_tree()
+		var vis: bool = node.is_visible_in_tree() if slow else entry[2]
 		if node.global_transform != entry[1] or vis != entry[2]:
 			entry[1] = node.global_transform
 			entry[2] = vis

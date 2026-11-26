@@ -37,7 +37,7 @@ func run() -> void:
 	label("Update Project to Lit: fixtures updated in a scratch copy of Test/.update_tool_bench",
 			Vector2(24, 74))
 	if not DirAccess.dir_exists_absolute(SRC):
-		check_true("update_tool", "fixture folder %s present" % SRC, false)
+		check_true_editor("update_tool", "fixture folder %s present" % SRC, false)
 		return
 	var migs := _migrations()
 	_prepare()

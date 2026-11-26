@@ -35,13 +35,13 @@ float lit_self_dist2(vec2 p_canvas) {
 		best = min(best, dot(dv, dv));
 	}
 #ifdef LIT_OCC_GX
-	if (lit_gx_count > 0) {
+	if (LIT_GX_COUNT > 0) {
 		best = min(best, lit_gx_dist2(lit_gx_rect0, p_canvas));
-		if (lit_gx_count > 1) {
+		if (LIT_GX_COUNT > 1) {
 			best = min(best, lit_gx_dist2(lit_gx_rect1, p_canvas));
-			if (lit_gx_count > 2) {
+			if (LIT_GX_COUNT > 2) {
 				best = min(best, lit_gx_dist2(lit_gx_rect2, p_canvas));
-				if (lit_gx_count > 3) {
+				if (LIT_GX_COUNT > 3) {
 					best = min(best, lit_gx_dist2(lit_gx_rect3, p_canvas));
 				}
 			}
@@ -68,13 +68,13 @@ float lit_self_segment_exit(vec2 a, vec2 ab, float pad) {
 		}
 	}
 #ifdef LIT_OCC_GX
-	if (lit_gx_count > 0) {
+	if (LIT_GX_COUNT > 0) {
 		t_end = max(t_end, lit_rect_segment_exit(a, ab, lit_gx_rect0, pad));
-		if (lit_gx_count > 1) {
+		if (LIT_GX_COUNT > 1) {
 			t_end = max(t_end, lit_rect_segment_exit(a, ab, lit_gx_rect1, pad));
-			if (lit_gx_count > 2) {
+			if (LIT_GX_COUNT > 2) {
 				t_end = max(t_end, lit_rect_segment_exit(a, ab, lit_gx_rect2, pad));
-				if (lit_gx_count > 3) {
+				if (LIT_GX_COUNT > 3) {
 					t_end = max(t_end, lit_rect_segment_exit(a, ab, lit_gx_rect3, pad));
 				}
 			}
@@ -108,7 +108,7 @@ bool lit_mk_exempt(int row, vec2 p_canvas, float reach) {
 // via a non-ignored layer keeps its shadow. Candidates come from the sample's
 // occluder tile, so cost scales with local density, not scene-wide caster count.
 bool lit_rx_exempt(vec2 p_canvas, vec2 p_px, float reach, int smask) {
-	ivec2 tile = clamp(ivec2(p_px) / lit_tile_size, ivec2(0), lit_tile_grid - ivec2(1));
+	ivec2 tile = clamp(ivec2(p_px) / LIT_TILE_SIZE, ivec2(0), LIT_TILE_GRID - ivec2(1));
 	vec4 header = texelFetch(lit_occ_headers, tile, 0);
 	// header.w is the OR of the tile's candidate masks: one fetch dismisses tiles
 	// where no candidate can pass the per-candidate mask test below.
@@ -141,7 +141,7 @@ bool lit_rx_exempt(vec2 p_canvas, vec2 p_px, float reach, int smask) {
 // candidate whose rect is nearest the point among those within reach, the smaller
 // ramp on ties. 0 when none is within reach or the nearest is hard.
 float lit_occ_ramp(vec2 p_canvas, vec2 p_px, float reach) {
-	ivec2 tile = clamp(ivec2(p_px) / lit_tile_size, ivec2(0), lit_tile_grid - ivec2(1));
+	ivec2 tile = clamp(ivec2(p_px) / LIT_TILE_SIZE, ivec2(0), LIT_TILE_GRID - ivec2(1));
 	vec4 header = texelFetch(lit_occ_headers, tile, 0);
 	int offset = int(round(header.x));
 	int count = int(round(header.y));

@@ -222,6 +222,16 @@ global uniform int       lit_light_count;
 global uniform int       lit_directional_count;         // directionals occupy rows [0, this)
 global uniform vec2      lit_viewport_size;             // pixels
 global uniform float     lit_canvas_scale;              // world-to-screen px scale (camera/editor zoom)
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+// The GLES3 canvas template declares screen_uv_to_sdf() after user functions.
+global uniform vec2      lit_screen_to_sdf;
+#define screen_uv_to_sdf(uv) ((uv) * LIT_SCREEN_TO_SDF)
+// findLSB() is GLSL ES 3.1; the lowest set bit is a power of two, exact in float.
+#define findLSB(v) int(floor(log2(float((v) & (~(v) + 1u))) + 0.5))
+// On a 16 unit device Godot keeps its specular and normal maps on units 9 and 10. These
+// fill both sampler slots; a 3D sampler binds its own target and leaves the 2D maps alone.
+#define LIT_GL_UNIT_PADS global uniform sampler3D lit_gl_unit_9; global uniform sampler3D lit_gl_unit_10;
+#endif
 
 // World-space shadow SDF, rendered by the registry's SubViewport over the region that
 // can shadow the view. Texel .r is signed distance in world px; the basis/origin pair
@@ -266,7 +276,13 @@ global uniform float     lit_ysort_band;                // fade half-width, worl
 // per-occluder canvas rect, light mask and ramp, binned into the light tile grid.
 global uniform sampler2D lit_occ_data;                  // t0 rect min.xy|max.xy (max.y depth line); t1.x mask, t1.y ramp
 global uniform sampler2D lit_occ_headers;               // per tile: offset | count | min depth
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY && defined(LIT_LINE)
+LIT_GL_UNIT_PADS
+#endif
 global uniform sampler2D lit_occ_indices;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY && !defined(LIT_LINE)
+LIT_GL_UNIT_PADS
+#endif
 
 // Globally excluded occluders (no shadow-casting light's mask matches theirs): exempt
 // canvas rects treated exactly like self rects, for every light at once.
@@ -294,7 +310,7 @@ global uniform vec4 lit_ramp_rect0;                     // canvas min.xy | max.x
 global uniform vec4 lit_ramp_rect1;
 global uniform vec4 lit_ramp_rect2;
 global uniform vec4 lit_ramp_rect3;
-#define LIT_RAMP_ON (lit_ramp_count > 0)
+#define LIT_RAMP_ON (LIT_RAMP_COUNT > 0)
 #define LIT_RAMP_W(p_canvas, p_px, reach, t) (LIT_RAMP_ON ? lit_ramp_weight(p_canvas, p_px, reach, t) : 1.0)
 #else
 #define LIT_RAMP_ON false
@@ -467,12 +483,14 @@ uniform float directional_horizontal_scale = 32.0;
 #define LIT_LINE_PARAMS , bool positional
 #define LIT_LINE_DIR_ARGS , false
 #define LIT_LINE_POS_ARGS , true
+#define LIT_LINE_ARGS(p) , (p)
 #define LIT_SEG_PARAMS , vec2 seg, float src_r
 #define LIT_SEG_ARGS , line_seg, src_r
 #else
 #define LIT_LINE_PARAMS
 #define LIT_LINE_DIR_ARGS
 #define LIT_LINE_POS_ARGS
+#define LIT_LINE_ARGS(p)
 #define LIT_SEG_PARAMS
 #define LIT_SEG_ARGS
 #endif
@@ -486,6 +504,15 @@ varying vec2 v_canvas;
 // normalized out), so the normal map can be rotated into the light vectors' space.
 varying flat vec2 v_tangent;
 varying flat vec2 v_bitangent;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+// The per-frame globals the marches read, carried as flat varyings: a GLES3 global is
+// an indexed buffer fetch, which the Direct3D shader compiler keeps inside every loop.
+varying flat vec4 v_lit_g0;                      // screen_to_sdf.xy | viewport_size.xy
+varying flat vec4 v_lit_g1;                      // wsdf_basis
+varying flat vec4 v_lit_g2;                      // wsdf_origin.xy | canvas_scale
+varying flat ivec4 v_lit_gi;                     // gx_count | ramp_count | tile_size
+varying flat ivec2 v_lit_gt;                     // tile_grid
+#endif
 
 void vertex() {
 	// VERTEX.xy, not VERTEX: identical here (VERTEX is vec2 in canvas_item), but the
@@ -495,5 +522,41 @@ void vertex() {
 	mat4 to_screen = CANVAS_MATRIX * MODEL_MATRIX;
 	v_tangent = normalize(to_screen[0].xy);
 	v_bitangent = normalize(to_screen[1].xy);
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	v_lit_g0 = vec4(lit_screen_to_sdf, lit_viewport_size);
+	v_lit_g1 = lit_wsdf_basis;
+	v_lit_g2 = vec4(lit_wsdf_origin, lit_canvas_scale, 0.0);
+	v_lit_gi = ivec4(0, 0, lit_tile_size, 0);
+#ifdef LIT_OCC_GX
+	v_lit_gi.x = lit_gx_count;
+#endif
+#ifdef LIT_SELF_EXCLUSION
+	v_lit_gi.y = lit_ramp_count;
+#endif
+	v_lit_gt = lit_tile_grid;
+#endif
 }
+// The marches read these per sample; the Compatibility build takes them from the flat
+// varyings above instead of the indexed global buffer.
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+#define LIT_SCREEN_TO_SDF v_lit_g0.xy
+#define LIT_VIEWPORT_SIZE v_lit_g0.zw
+#define LIT_WSDF_BASIS v_lit_g1
+#define LIT_WSDF_ORIGIN v_lit_g2.xy
+#define LIT_CANVAS_SCALE v_lit_g2.z
+#define LIT_GX_COUNT v_lit_gi.x
+#define LIT_RAMP_COUNT v_lit_gi.y
+#define LIT_TILE_SIZE v_lit_gi.z
+#define LIT_TILE_GRID v_lit_gt
+#else
+#define LIT_SCREEN_TO_SDF lit_screen_to_sdf
+#define LIT_VIEWPORT_SIZE lit_viewport_size
+#define LIT_WSDF_BASIS lit_wsdf_basis
+#define LIT_WSDF_ORIGIN lit_wsdf_origin
+#define LIT_CANVAS_SCALE lit_canvas_scale
+#define LIT_GX_COUNT lit_gx_count
+#define LIT_RAMP_COUNT lit_ramp_count
+#define LIT_TILE_SIZE lit_tile_size
+#define LIT_TILE_GRID lit_tile_grid
+#endif
 

@@ -76,6 +76,11 @@ const LIGHT_COUNT := 128
 #   props=off     no prop occluders: the Test scene's own casters only (sparse scene)
 #   linewall=N    an occluder wall N px behind every line light, riding with it (a
 #     light bar on a wall: the gate's hardest case, every open-side pixel sees the wall)
+#   spawn=N       add N plain Node2D + unlit Sprite2D pairs every frame and free the
+#     batch from two frames back (tree churn); filler=N parks N static pairs in the tree
+#   cookiecycle=N every N frames one cookie light (round robin) takes a texture from a
+#     ring of 16 distinct cookies, chosen so the visible set changes and the atlas
+#     repacks each step (use fewer lights than 16); cookiesize=S resizes the ring to SxS
 #   shadow_algo=raymarch|cone|stochastic|mixed   sdf=25|50|100 (SDF scale probe)
 #     mixed cycles the three algorithms across the spawned lights (launch only)
 #   shadowlen=on   random (seeded) shadow_length fraction per light
@@ -148,6 +153,15 @@ var _opt_ropemove := false
 var _rope_root: Node2D
 var _opt_props := true
 var _opt_linewall := 0.0
+var _opt_spawn := 0
+var _opt_filler := 0
+var _spawn_batches: Array = []
+var _opt_cookiecycle := 0
+var _opt_cookiesize := 0
+var _cycle_textures: Array = []
+var _cycle_step := 0
+var _atlas_rebuilds := 0
+var _atlas_last_id := 0
 var _pre_elapsed := -1.0
 var _last_usec := 0
 
@@ -175,6 +189,8 @@ var _frame_times: PackedFloat64Array = PackedFloat64Array()
 var _process_times: PackedFloat64Array = PackedFloat64Array()
 var _render_cpu: PackedFloat64Array = PackedFloat64Array()
 var _render_gpu: PackedFloat64Array = PackedFloat64Array()
+# ANGLE has no GL timer query, so Godot reports 0 (or garbage) GPU time there.
+var _gpu_timer: bool = not RenderingServer.get_video_adapter_name().begins_with("ANGLE")
 var _draw_calls: PackedFloat64Array = PackedFloat64Array()
 
 var _hud: Label
@@ -266,6 +282,14 @@ func _ready() -> void:
 				_opt_props = kv[1] != "off"
 			"linewall":
 				_opt_linewall = float(kv[1])
+			"spawn":
+				_opt_spawn = int(kv[1])
+			"filler":
+				_opt_filler = int(kv[1])
+			"cookiecycle":
+				_opt_cookiecycle = int(kv[1])
+			"cookiesize":
+				_opt_cookiesize = int(kv[1])
 	if _opt_lines:
 		_opt_kinds = ["line"]
 	# A startup takeover (lit/startup/precompile_shaders) is already running by now:
@@ -355,6 +379,8 @@ func _setup() -> void:
 	_rng.seed = RNG_SEED
 	if _opt_props:
 		_spawn_props()
+	if _opt_filler > 0:
+		add_child(_plain_batch(_opt_filler))
 	if _opt_receiver_count > 0 and not (_spawn_pair_grid() if paired else _spawn_receivers()):
 		get_tree().quit(1)
 		return
@@ -520,6 +546,49 @@ func _make_prop(pos: Vector2, size: Vector2) -> void:
 	root.add_child(occ)
 
 	_props.append({"root": root, "mat": mat, "occ": occ})
+
+
+# Plain Node2D + unlit Sprite2D pairs parked far off screen: tree churn without draw cost.
+func _plain_batch(n: int) -> Node2D:
+	var batch := Node2D.new()
+	batch.position = Vector2(-100000, -100000)
+	for i in n:
+		var holder := Node2D.new()
+		var spr := Sprite2D.new()
+		spr.texture = _white_tex
+		holder.add_child(spr)
+		batch.add_child(holder)
+	return batch
+
+
+func _cycle_spawns() -> void:
+	if _spawn_batches.size() >= 2:
+		_spawn_batches.pop_front().queue_free()
+	var batch := _plain_batch(_opt_spawn)
+	add_child(batch)
+	_spawn_batches.append(batch)
+
+
+# One cookie light (round robin) takes a texture from a ring of 16 distinct instances;
+# the window the lights hold shifts by 9 per lap, so every step swaps one texture out.
+func _cycle_cookie() -> void:
+	if _cycle_textures.is_empty():
+		for i in 16:
+			var src: Texture2D = load(COOKIE_DIR + COOKIE_FILES[i % COOKIE_FILES.size()])
+			var img := src.get_image()
+			if _opt_cookiesize > 0:
+				img.resize(_opt_cookiesize, _opt_cookiesize)
+			_cycle_textures.append(ImageTexture.create_from_image(img))
+	var cookies: Array = _lights.filter(func(d): return d.kind == "cookie")
+	if cookies.is_empty():
+		return
+	var lap := _cycle_step / cookies.size()
+	cookies[_cycle_step % cookies.size()].node.texture = _cycle_textures[(_cycle_step % cookies.size() + 9 * lap) % 16]
+	_cycle_step += 1
+	var atlas_tex: Texture2D = get_node("/root/LitManager")._registry._light_packer._cookie_atlas.get_texture()
+	if atlas_tex.get_instance_id() != _atlas_last_id:
+		_atlas_last_id = atlas_tex.get_instance_id()
+		_atlas_rebuilds += 1
 
 
 # --- receivers: skeleton= swaps the Test scene's Skeleton prop; receivers= lays out a
@@ -1000,6 +1069,10 @@ func _process(dt: float) -> void:
 		return
 	_clock += dt
 	_update_lights()
+	if _opt_spawn > 0:
+		_cycle_spawns()
+	if _opt_cookiecycle > 0 and Engine.get_process_frames() % _opt_cookiecycle == 0:
+		_cycle_cookie()
 	_state_time += dt
 
 	if _state == "warmup":
@@ -1026,7 +1099,7 @@ func _process(dt: float) -> void:
 	_frame_times.append(wall)
 	_process_times.append(Performance.get_monitor(Performance.TIME_PROCESS))
 	_render_cpu.append(RenderingServer.viewport_get_measured_render_time_cpu(vp_rid))
-	_render_gpu.append(RenderingServer.viewport_get_measured_render_time_gpu(vp_rid))
+	_render_gpu.append(_gpu_ms(vp_rid))
 	_draw_calls.append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	_hud.text = "MEASURE %.1f / %.1f s   lights %d   algo %s   fps %d" % [_state_time, _opt_measure, _lights.size(), _opt_shadow_algo, Engine.get_frames_per_second()]
 	if _state_time >= _opt_measure or _pre_elapsed >= 0.0:
@@ -1112,6 +1185,11 @@ func _report() -> void:
 		print("LITBENCH linetess=%d" % _opt_linetess)
 	if _opt_plain:
 		print("LITBENCH plain=on")
+	if _opt_spawn > 0 or _opt_filler > 0:
+		print("LITBENCH spawn=%d filler=%d" % [_opt_spawn, _opt_filler])
+	if _opt_cookiecycle > 0:
+		print("LITBENCH cookiecycle=%d cookiesize=%d steps=%d atlas_rebuilds=%d" % [_opt_cookiecycle,
+				_opt_cookiesize, _cycle_step, _atlas_rebuilds])
 	if _opt_receiver_count > 0:
 		print("LITBENCH receivers=%s receiver_count=%d" % [_opt_receivers, _opt_receiver_count])
 	print("LITBENCH frames=%d" % n)
@@ -1120,7 +1198,7 @@ func _report() -> void:
 	print("LITBENCH low1pct_frame_ms=%.3f (%.1f fps)" % [low1_ms, 1000.0 / low1_ms])
 	print("LITBENCH main_process_ms=%.3f" % proc_ms)
 	print("LITBENCH render_cpu_ms=%.3f" % rcpu_ms)
-	print("LITBENCH render_gpu_ms=%.3f" % rgpu_ms)
+	print("LITBENCH render_gpu_ms=%s" % (("%.3f" % rgpu_ms) if _gpu_timer else "n/a"))
 	print("LITBENCH draw_calls=%.0f" % _mean(_draw_calls))
 	print("LITBENCH viewport=%s screen=%s" % [get_viewport_rect().size, DisplayServer.screen_get_size()])
 
@@ -1132,3 +1210,8 @@ func _mean(a: PackedFloat64Array) -> float:
 	for v in a:
 		s += v
 	return s / float(a.size())
+
+
+func _gpu_ms(vp: RID) -> float:
+	var ms := RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	return ms if _gpu_timer and ms >= 0.0 and ms < 10000.0 else 0.0

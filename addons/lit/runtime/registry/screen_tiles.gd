@@ -14,6 +14,9 @@ const FrameContext := preload("res://addons/lit/runtime/registry/frame_context.g
 const INDEX_TEX_WIDTH := 2048
 
 var _tile_header_tex: ImageTexture
+# GLES3 receivers read the headers from the front of the index texture: one sampler fewer,
+# as Chrome's Direct3D path crashes on a program with sixteen.
+var _merged := RenderingServer.get_current_rendering_method() == "gl_compatibility"
 var _tile_index_tex: ImageTexture
 # Re-setting a texture global dirties every material declaring it (a per-material
 # main-thread walk in the RenderingServer), so publish only when the texture OBJECT
@@ -225,7 +228,7 @@ func build_and_publish(ctx: FrameContext) -> void:
 
 	# Prefix-sum the difference array into counts and start offsets; _tile_counts
 	# becomes the scatter cursor.
-	var offset := 0
+	var offset := header_floats if _merged else 0
 	var cnt := 0
 	for t in tile_count:
 		cnt += _tile_counts[t]
@@ -240,6 +243,9 @@ func build_and_publish(ctx: FrameContext) -> void:
 		_index_buf.resize(index_floats)
 	# Entries past total_indices are never read (counts bound the shader's loop), so
 	# the index buffer needs no clearing.
+	if _merged:
+		for i in header_floats:
+			_index_buf[i] = _header_buf[i]
 
 	# Scatter the runs in light order, so every tile lists its lights in row order.
 	var s := 0
@@ -312,7 +318,7 @@ func publish_empty(vp_size: Vector2) -> void:
 	var tiles_y := max(int(ceil(vp_size.y / float(TILE_SIZE))), 1)
 	var header_img := Image.create(tiles_x, tiles_y, false, Image.FORMAT_RGF)
 	header_img.fill(Color(0.0, 0.0, 0.0, 0.0))
-	var index_img := Image.create(INDEX_TEX_WIDTH, 1, false, Image.FORMAT_RF)
+	var index_img := Image.create(INDEX_TEX_WIDTH, int(ceil(float(tiles_x * tiles_y * 2) / float(INDEX_TEX_WIDTH))) if _merged else 1, false, Image.FORMAT_RF)
 
 	_tile_header_tex = _make_or_update(_tile_header_tex, header_img)
 	_tile_index_tex = _make_or_update(_tile_index_tex, index_img)

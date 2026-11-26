@@ -21,6 +21,8 @@ class_name LitDirectionalLight2D
 ## window grows to cover it, so very large values coarsen shadow-casting resolution.
 @export_range(256.0, 16384.0, 1.0, "or_greater") var shadow_reach: float = 4096.0:
 	set(value):
+		if value == shadow_reach:
+			return
 		shadow_reach = value
 		_pack_version += 1
 ## Angular size (full diameter) of the source in degrees (CONE_TRACED / STOCHASTIC):
@@ -31,6 +33,8 @@ class_name LitDirectionalLight2D
 ## softness is visible at game scale.
 @export_range(0.0, 60.0, 0.05) var source_angle: float = 6.0:
 	set(value):
+		if value == source_angle:
+			return
 		source_angle = value
 		_pack_version += 1
 

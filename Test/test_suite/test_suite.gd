@@ -107,9 +107,11 @@ var _finished := false
 var _t0 := 0
 var _copied_at := -100000
 var _copied_lines := 0
+var _errors := ErrorTap.new()
 
 
 func _ready() -> void:
+	OS.add_logger(_errors)
 	_parse_args()
 	LitSuiteSection.pin_render_size(get_window())
 	if not _opt_vsync:
@@ -206,8 +208,10 @@ func _run_all() -> void:
 		_current = sec
 		add_child(sec)
 		var t := Time.get_ticks_msec()
+		_errors.take()
 		await sec.run_section()
 		var ms := Time.get_ticks_msec() - t
+		sec.check("errors", "no script or shader error while the section ran", "", _errors.take())
 		for r in sec.results:
 			var tagged: Dictionary = r.duplicate()
 			tagged["section"] = spec.run_id
@@ -390,3 +394,26 @@ func _render_hud() -> void:
 			t += "[color=#9cf]%s[/color]\n" % title
 		t += "  [color=#8f8]PASS[/color] %s [color=#888](%d checks)[/color]\n" % [f.case, f.total]
 	_hud.text = t
+
+
+## Collects script and shader errors, which abort the function they happen in without
+## failing any check.
+class ErrorTap extends Logger:
+	var _lock := Mutex.new()
+	var _first := ""
+
+	func _log_error(_function: String, file: String, line: int, code: String, rationale: String,
+			_editor_notify: bool, error_type: int, _script_backtraces: Array[ScriptBacktrace]) -> void:
+		if error_type != ERROR_TYPE_SCRIPT and error_type != ERROR_TYPE_SHADER:
+			return
+		_lock.lock()
+		if _first.is_empty():
+			_first = "%s:%d %s" % [file, line, rationale if not rationale.is_empty() else code]
+		_lock.unlock()
+
+	func take() -> String:
+		_lock.lock()
+		var e := _first
+		_first = ""
+		_lock.unlock()
+		return e

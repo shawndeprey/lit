@@ -15,6 +15,9 @@ var _bare_cache: Array = []      # [node, mat, occluders, tile rects, DriveState
 var _bare_driven := {}
 var _bare_dirty := true
 var _bare_shared_warned := false
+# CanvasItems that entered or left the tree since the last apply(); their materials
+# are read at apply time, so one assigned right after add_child still counts.
+var _arrivals: Array = []
 
 # Facade-owned frame state, re-bound at apply()/drive_bare() entry.
 var activity_flags := 0
@@ -40,12 +43,16 @@ func mark_bare_dirty() -> void:
 	_bare_dirty = true
 
 
+## Runtime: a CanvasItem entered or left the tree; apply() tiers it without a walk.
+func note_arrival(node: CanvasItem) -> void:
+	_arrivals.append(node)
+
+
 ## Re-point every Lit receiver material under `root` at the variant compiled for the
 ## currently active shadow algorithms, preserving each material's fast/full axis
-## (LitSprite2D owns that axis and converges to the same target). Work happens only
-## when the mask changed, or when the tree changed while a non-base mask is active
-## (newly added receivers arrive on the base variant and need the swap); a scene that
-## never uses the physical algorithms never walks the tree here.
+## (LitSprite2D owns that axis and converges to the same target). The walk happens
+## only when the mask changed (the editor also walks on tree changes); receivers that
+## entered the tree since the last call are tiered one by one from _arrivals instead.
 func apply(root: Node, key_flags: int, rx_nodes: Dictionary, live_binder: Callable) -> void:
 	activity_flags = key_flags
 	_rx_nodes = rx_nodes
@@ -59,6 +66,7 @@ func apply(root: Node, key_flags: int, rx_nodes: Dictionary, live_binder: Callab
 		_published_algos = key
 		_receiver_dirty = false
 		return
+	_apply_arrivals(key)
 	if key == _published_algos and (key == 0 or not _receiver_dirty):
 		return
 	if root == null:
@@ -82,6 +90,28 @@ func apply(root: Node, key_flags: int, rx_nodes: Dictionary, live_binder: Callab
 			mat.shader = LitShaderLibrary.get_receiver(wanted)
 	_published_algos = key
 	_receiver_dirty = false
+
+## Tier the receivers that arrived since the last apply() and schedule a bare rebuild
+## for bare-receiver candidates among them, in place of a tree walk per tree change.
+func _apply_arrivals(key: int) -> void:
+	if _arrivals.is_empty():
+		return
+	for node in _arrivals:
+		if not is_instance_valid(node) or not node.is_inside_tree():
+			continue
+		var mat := (node as CanvasItem).material as ShaderMaterial
+		if mat == null or mat.shader == null:
+			continue
+		var flags: int = LitShaderLibrary.flags_of(mat.shader)
+		if flags < 0:
+			continue
+		if _bare_candidate(node):
+			_bare_dirty = true
+		if key != 0 and not _rx_nodes.has(node):
+			var wanted := LitShaderLibrary.resolve(flags & LitShaderLibrary.TIER_MASK, 0, key)
+			if flags != wanted:
+				mat.shader = LitShaderLibrary.get_receiver(wanted)
+	_arrivals.clear()
 
 ## Editor walk: heal legacy variant paths in authored materials to their tier's entry
 ## file, and preview activity variants for undriven bare receivers on their RS clones.
@@ -127,10 +157,12 @@ func drive_bare(root: Node, live_binder: Callable) -> void:
 	if _bare_dirty:
 		_rebuild_bare_cache(root)
 	for entry in _bare_cache:
+		if not is_instance_valid(entry[0]):
+			_bare_dirty = true
+			continue
 		var spr: Node2D = entry[0]
 		var mat: ShaderMaterial = entry[1]
-		if not is_instance_valid(spr) or not spr.is_inside_tree() \
-				or spr.material != mat or mat.shader == null:
+		if not spr.is_inside_tree() or spr.material != mat or mat.shader == null:
 			_bare_dirty = true
 			continue
 		_push_self_rects(entry)
@@ -175,9 +207,12 @@ func _rebuild_bare_cache(root: Node) -> void:
 	_bare_driven = driven
 	_bare_dirty = false
 
+static func _bare_candidate(node: Node) -> bool:
+	return (node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer) \
+			and not node.has_method("_update_self_rect")
+
 func _collect_bare_receivers(node: Node, acc: Dictionary) -> void:
-	if (node is Sprite2D or node is AnimatedSprite2D or node is TileMapLayer) \
-			and not node.has_method("_update_self_rect"):
+	if _bare_candidate(node):
 		var mat := (node as CanvasItem).material as ShaderMaterial
 		if mat != null and mat.shader != null and LitShaderLibrary.flags_of(mat.shader) >= 0:
 			if not acc.has(mat):

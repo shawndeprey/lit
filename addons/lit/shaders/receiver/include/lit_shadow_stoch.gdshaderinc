@@ -235,6 +235,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 			}
 		}
 	}
+#if CURRENT_RENDERER != RENDERER_COMPATIBILITY
 	if (march) {
 		float c = lit_shadow_cone(frag_sdf, g_dir, g_reach, g_band, g_w,
 				max_steps, frag_d,
@@ -276,7 +277,9 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 			return 1.0;
 		}
 	}
+#endif
 #else
+#if CURRENT_RENDERER != RENDERER_COMPATIBILITY
 	float c = lit_shadow_cone(frag_sdf, dir, t_cap, band, w_gate,
 			max_steps, frag_d,
 			!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
@@ -284,6 +287,131 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 		return c;
 	}
 #endif
+#endif
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	// One cone call site, the gate as the loop's first pass: the Direct3D shader compiler
+	// inlines a copy per site, and its time grows faster than the program does.
+	float sum = 0.0;
+	for (int i = -1; i < n; i++) {
+		vec2 sdir = dir;
+		float smaxd = t_cap;
+		float sband = band;
+		float w_sub = w_gate;
+		bool sfree = !is_dir && !capped;
+		bool gate_run = i < 0;
+#ifdef LIT_LINE
+		if (i < 0) {
+			sdir = g_dir;
+			smaxd = g_reach;
+			sband = g_band;
+			w_sub = g_w;
+			sfree = !is_dir && !capped && !hull_m;
+			gate_run = march;
+		}
+#endif
+		if (i >= 0) {
+			float rnd = fract(ign + float(i) * 0.61803398875);
+			float u = ((float(i) + 0.5 + jitter_amt * (rnd - 0.5)) / float(n)) * 2.0 - 1.0;
+			if (is_dir) {
+				sdir = normalize(dir + perp * (u * src));
+				smaxd = maxd * cap_frac;
+				w_sub = max(half_stratum, 1e-4);
+#ifdef LIT_LINE
+			} else if (line) {
+				vec2 delta = (light_sdf + seg * u) - frag_sdf;
+				float len = length(delta);
+				sdir = delta / max(len, 1e-4);
+				smaxd = len * cap_frac;
+				w_sub = max((abs(seg.x * sdir.y - seg.y * sdir.x) / float(n) + src_r) / max(len, 1e-4), 1e-4);
+#endif
+			} else {
+				vec2 delta = (light_sdf + perp * (u * src)) - frag_sdf;
+				float len = length(delta);
+				sdir = delta / max(len, 1e-4);
+				smaxd = len * cap_frac;
+				w_sub = max(half_stratum / max(len, 1e-4), 1e-4);
+			}
+		}
+		float c = 0.0;
+		if (gate_run || i >= 0) {
+			c = lit_shadow_cone(frag_sdf, sdir, smaxd, sband, w_sub,
+					max_steps, frag_d,
+					sfree, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
+		}
+		if (i < 0) {
+#ifdef LIT_LINE
+			if (march) {
+				if (hull_m) {
+					if (c <= 0.0 || (c >= 1.0 && frag_d < 0.0)) {
+						return c;
+					}
+					tip = c >= 1.0;
+				} else if (n <= 0 || c <= 0.0 || c >= 1.0) {
+					return c;
+				}
+			}
+			if (tip) {
+				// Past the near end the strata's hull is the triangle's tip: one ball over the
+				// whole tip, then a ball walk shrinking to the tube.
+				vec2 s0 = frag_sdf + axis * reach_n;
+				vec2 to_f = frag_sdf + e_f * cap_frac - s0;
+				float len2 = max(length(to_f), 1e-4);
+				vec2 u2 = to_f / len2;
+				float r0 = w_g * reach_n;
+				float end2 = min(len2, lit_sdf_cov_exit(s0, u2));
+				if (end2 >= 0.5 * len2
+						&& lit_sdf_sample(s0 + u2 * (0.5 * len2)) >= max(length(vec2(0.5 * len2, r0)), 0.5 * len2 + src_r)) {
+					return 1.0;
+				}
+				int steps = min(max_steps, LIT_MAX_SHADOW_STEPS);
+				float tau = 0.0;
+				for (int s = 0; s < steps && tau < end2; s++) {
+					float dd = lit_sdf_sample(s0 + u2 * tau);
+					if (dd < r0 * (1.0 - tau / len2) + src_r) {
+						break;
+					}
+					tau += max(dd, max(shadow_min_step, (end2 - tau) / float(steps - s)));
+				}
+				if (tau >= end2) {
+					return 1.0;
+				}
+			}
+			// Plain line strata march in pairs.
+			if (line && frag_d >= 0.0 && !self_ex && !LIT_YS_ON && !LIT_RAMP_ON && !LIT_MK_ON && !LIT_RX_ON) {
+				for (int i = 0; i < n; i += 2) {
+					vec4 a = lit_seg_stratum(frag_sdf, light_sdf, seg, src_r, i, n, jitter_amt, ign, cap_frac);
+					vec4 b = i + 1 < n ? lit_seg_stratum(frag_sdf, light_sdf, seg, src_r, i + 1, n, jitter_amt, ign, cap_frac)
+							: vec4(0.0, 0.0, 0.0, 1.0);
+					vec2 c2 = lit_shadow_cone2(frag_sdf, vec4(a.xy, b.xy), vec2(a.z, b.z), vec2(band), vec2(a.w, b.w), max_steps, !capped);
+					sum += c2.x;
+					sum += i + 1 < n ? c2.y : 0.0;
+				}
+				return sum / float(n);
+			}
+#else
+			if (n <= 0 || c <= 0.0 || c >= 1.0) {
+				return c;
+			}
+			// Plain strata march in pairs.
+			if (frag_d >= 0.0 && !self_ex && !LIT_YS_ON && !LIT_RAMP_ON && !LIT_MK_ON && !LIT_RX_ON) {
+				for (int i = 0; i < n; i += 2) {
+					vec4 a = lit_pt_stratum(frag_sdf, light_sdf, dir, perp, maxd, src, is_dir, i, n, jitter_amt, ign, half_stratum, cap_frac);
+					vec4 b = i + 1 < n ? lit_pt_stratum(frag_sdf, light_sdf, dir, perp, maxd, src, is_dir, i + 1, n, jitter_amt, ign,
+							half_stratum, cap_frac) : vec4(0.0, 0.0, 0.0, 1.0);
+					vec2 c2 = lit_shadow_cone2(frag_sdf, vec4(a.xy, b.xy), vec2(a.z, b.z), vec2(band), vec2(a.w, b.w), max_steps,
+							!is_dir && !capped);
+					sum += c2.x;
+					sum += i + 1 < n ? c2.y : 0.0;
+				}
+				return sum / float(n);
+			}
+#endif
+			continue;
+		}
+		sum += c;
+	}
+	return sum / float(n);
+#else
 	float sum = 0.0;
 #ifdef LIT_LINE
 	// Plain line strata march in pairs.
@@ -343,6 +471,7 @@ float lit_shadow_stoch(vec2 frag_sdf, vec2 light_sdf, vec2 dir, float maxd, floa
 				!is_dir && !capped, self_ex, self_canvas, sdf_to_canvas, self_scale LIT_PX_ARGS LIT_YS_ARGS LIT_RX_ARGS LIT_MK_ARGS);
 	}
 	return sum / float(n);
+#endif
 }
 
 #ifdef LIT_LINE
@@ -360,8 +489,8 @@ vec4 lit_path_stratum(vec2 frag_sdf, int row, int i, int n, vec3 N, vec3 tube, f
 	if (w <= 0.0) {
 		return vec4(0.0, 0.0, 0.0, 1.0);
 	}
-	vec2 mid = screen_uv_to_sdf(ch.xy / lit_viewport_size);
-	vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / lit_viewport_size) - mid;
+	vec2 mid = screen_uv_to_sdf(ch.xy / LIT_VIEWPORT_SIZE);
+	vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / LIT_VIEWPORT_SIZE) - mid;
 	float rnd = fract(ign + float(i) * 0.61803398875);
 	vec2 delta = mid + hv * (2.0 * jitter_amt * (rnd - 0.5)) - frag_sdf;
 	float len = length(delta);
@@ -385,9 +514,9 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float ca
 		bool self_ex, vec2 self_canvas, mat2 sdf_to_canvas, float self_scale LIT_PX_PARAMS LIT_YS_PARAMS LIT_RX_PARAMS LIT_MK_PARAMS) {
 	n = clamp(n, 1, LIT_MAX_SHADOW_SAMPLES);
 	vec4 c0 = texelFetch(lit_light_path, ivec2(0, row), 0);
-	vec2 c_sdf = screen_uv_to_sdf(c0.xy / lit_viewport_size);
-	float r_sdf = max(length(screen_uv_to_sdf((c0.xy + vec2(c0.z, 0.0)) / lit_viewport_size) - c_sdf),
-			length(screen_uv_to_sdf((c0.xy + vec2(0.0, c0.z)) / lit_viewport_size) - c_sdf));
+	vec2 c_sdf = screen_uv_to_sdf(c0.xy / LIT_VIEWPORT_SIZE);
+	float r_sdf = max(length(screen_uv_to_sdf((c0.xy + vec2(c0.z, 0.0)) / LIT_VIEWPORT_SIZE) - c_sdf),
+			length(screen_uv_to_sdf((c0.xy + vec2(0.0, c0.z)) / LIT_VIEWPORT_SIZE) - c_sdf));
 	vec2 axis = c_sdf - frag_sdf;
 	float c_len = length(axis);
 	if (frag_d >= (c_len + 2.0 * r_sdf + src_r) * 1.05 + 0.5) {
@@ -413,8 +542,8 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float ca
 	bool hull = true;
 	for (int i = 0; i < n; i++) {
 		vec4 ch = texelFetch(lit_light_path, ivec2(LIT_PATH_SHADOW + i, row), 0);
-		vec2 mid = screen_uv_to_sdf(ch.xy / lit_viewport_size);
-		vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / lit_viewport_size) - mid;
+		vec2 mid = screen_uv_to_sdf(ch.xy / LIT_VIEWPORT_SIZE);
+		vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / LIT_VIEWPORT_SIZE) - mid;
 		float rnd = fract(ign + float(i) * 0.61803398875);
 		vec2 delta = mid + hv * (2.0 * jitter_amt * (rnd - 0.5)) - frag_sdf;
 		float len = length(delta);
@@ -472,8 +601,8 @@ float lit_shadow_path(vec2 frag_sdf, int row, int n, vec3 N, vec3 tube, float ca
 		if (w <= 0.0) {
 			continue;
 		}
-		vec2 mid = screen_uv_to_sdf(ch.xy / lit_viewport_size);
-		vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / lit_viewport_size) - mid;
+		vec2 mid = screen_uv_to_sdf(ch.xy / LIT_VIEWPORT_SIZE);
+		vec2 hv = screen_uv_to_sdf((ch.xy + ch.zw) / LIT_VIEWPORT_SIZE) - mid;
 		float rnd = fract(ign + float(i) * 0.61803398875);
 		vec2 delta = mid + hv * (2.0 * jitter_amt * (rnd - 0.5)) - frag_sdf;
 		float len = length(delta);

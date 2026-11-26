@@ -14,12 +14,16 @@ const TextureSizeMode = LitShaderLibrary.TextureSizeMode
 ## like a PointLight2D's texture footprint); drives attenuation and AABB culling.
 @export var range: float = 256.0:
 	set(value):
+		if value == range:
+			return
 		range = value
 		_pack_version += 1
 		LitLightRegistry.light_state_changed(self)
 ## Attenuation curve exponent.
 @export var falloff: float = 1.0:
 	set(value):
+		if value == falloff:
+			return
 		falloff = value
 		_pack_version += 1
 
@@ -30,6 +34,8 @@ const TextureSizeMode = LitShaderLibrary.TextureSizeMode
 ## light's shape.
 @export var texture: Texture2D:
 	set(value):
+		if value == texture:
+			return
 		texture = value
 		_pack_version += 1
 ## Multiplier on the cookie's footprint.
@@ -51,6 +57,8 @@ const TextureSizeMode = LitShaderLibrary.TextureSizeMode
 ## which is how far the light reaches.
 @export_range(0.0, 256.0, 0.5, "or_greater") var source_radius: float = 32.0:
 	set(value):
+		if value == source_radius:
+			return
 		source_radius = value
 		_pack_version += 1
 

@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Lit"
-run/main_scene="uid://dnpho6vflpb77"
+run/main_scene="res://Test/integration_test_harness/integration_test_harness.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 boot_splash/bg_color=Color(0, 0, 0, 1)
 config/icon="uid://b7egrpryv4f3y"
@@ -72,6 +72,10 @@ lit_viewport_size={
 lit_canvas_scale={
 "type": "float",
 "value": 1.0
+}
+lit_screen_to_sdf={
+"type": "vec2",
+"value": Vector2(0, 0)
 }
 lit_world_sdf={
 "filter": "linear",
@@ -161,6 +165,14 @@ lit_occ_indices={
 "filter": "nearest",
 "repeat": "disable",
 "type": "sampler2D",
+"value": ""
+}
+lit_gl_unit_9={
+"type": "sampler3D",
+"value": ""
+}
+lit_gl_unit_10={
+"type": "sampler3D",
 "value": ""
 }
 lit_gx_count={

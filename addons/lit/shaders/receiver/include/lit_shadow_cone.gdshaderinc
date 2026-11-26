@@ -157,7 +157,7 @@ float lit_shadow_cone(vec2 frag_sdf, vec2 dir, float maxd, float tip_band, float
 		}
 #endif
 #ifdef LIT_SELF_EXCLUSION
-		for (int bi = 0; bi < lit_ramp_count; bi++) {
+		for (int bi = 0; bi < LIT_RAMP_COUNT; bi++) {
 			t_slow_end = max(t_slow_end,
 					lit_rect_segment_exit(self_canvas, dir_canvas * maxd, lit_ramp_rect(bi), pad) * maxd);
 		}
